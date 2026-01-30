@@ -1,0 +1,121 @@
+/* StatusCardsPane styles */
+
+StatusCardsPane {
+    background: $background;
+}
+
+.cards-header {
+    height: 3;
+    dock: top;
+    background: $primary;
+    color: $foreground;
+    content-align: center middle;
+}
+
+.cards-grid {
+    width: 80;
+    height: auto;
+    align: center middle;
+    background: $surface;
+    border: solid $secondary;
+    padding: 1;
+}
+
+.status-card {
+    width: 40;
+    height: 8;
+    background: $surface-darken-1;
+    border: solid $secondary;
+    margin: 0 1 1 0;
+}
+
+.status-card.info {
+    border: solid $primary;
+}
+
+.status-card.success {
+    border: solid $success;
+}
+
+.status-card.warning {
+    border: solid $warning;
+}
+
+.status-card.error {
+    border: solid $error;
+}
+
+.card-icon {
+    height: 3;
+    content-align: center middle;
+}
+
+.card-title {
+    height: 2;
+    color: $foreground-muted;
+    content-align: center middle;
+}
+
+.card-value {
+    height: 2;
+    color: $foreground;
+    font-size: 1.2;
+    font-weight: bold;
+    content-align: center middle;
+}
+
+.card-subtitle {
+    height: 2;
+    color: $foreground-muted;
+    font-size: small;
+    content-align: center middle;
+}
+
+.cards-list {
+    width: 1fr;
+    height: auto;
+    dock: center;
+}
+
+.list-card {
+    width: 80;
+    height: 5;
+    background: $surface-darken-1;
+    border: solid $secondary;
+    margin: 0 1 1 0;
+    dock: left;
+}
+
+.list-card-row {
+    height: 1fr;
+    width: 1fr;
+    dock: left;
+    align: left middle;
+    padding: 0 1;
+}
+
+.list-icon {
+    width: 5;
+    font-size: 1.2;
+    content-align: center middle;
+}
+
+.list-content {
+    width: 1fr;
+}
+
+.list-title {
+    color: $foreground;
+    font-weight: bold;
+}
+
+.list-value {
+    color: $foreground;
+    font-size: 1.1;
+}
+
+.list-subtitle {
+    color: $foreground-muted;
+    font-size: small;
+}
+

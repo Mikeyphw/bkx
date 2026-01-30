@@ -1,0 +1,49 @@
+/* RestoreScreen styles */
+
+RestoreScreen {
+    background: $background;
+}
+
+.screen-header {
+    height: 3;
+    dock: top;
+    background: $primary;
+    content-align: center middle;
+}
+
+
+.form-container {
+    width: 60;
+    height: auto;
+    align: center middle;
+    background: $surface;
+    border: solid $secondary;
+    padding: 1;
+    margin: 1;
+}
+
+
+.form-row {
+    height: auto;
+    width: 1fr;
+    margin-bottom: 1;
+}
+
+.form-label {
+    color: $foreground;
+    width: 20;
+    text-align: right;
+    margin-right: 1;
+}
+
+.button-row {
+    height: 3;
+    dock: bottom;
+    align: center middle;
+}
+
+.button-row Button {
+    margin: 0 1;
+    min-width: 15;
+}
+

@@ -1,0 +1,24 @@
+/* LogsScreen styles */
+
+LogsScreen {
+    background: $background;
+}
+
+.screen-header {
+    height: 3;
+    dock: top;
+    background: $primary;
+    content-align: center middle;
+}
+
+.button-row {
+    height: 3;
+    dock: bottom;
+    align: center middle;
+}
+
+.button-row Button {
+    margin: 0 1;
+    min-width: 12;
+}
+

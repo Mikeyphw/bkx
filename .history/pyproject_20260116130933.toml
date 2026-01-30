@@ -1,0 +1,42 @@
+[project]
+name = "bakery"
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bkx"
+version = "0.0.0"
+description = "Contract-controlled CLI-first backup/archive tool (skeleton)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "You", email = "you@example.com"}]
+dependencies = [
+  "typer>=0.12",
+]
+
+[project.optional-dependencies]
+interactive = [
+  # TODO(Phase 5): add mikomn interactive extras deps if needed
+]
+tui = [
+  # TODO(Phase 6): textual + mikomn tui extras deps if needed
+]
+
+[project.scripts]
+bkx = "bkx.cli.app:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src"]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

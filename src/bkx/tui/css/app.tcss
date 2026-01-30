@@ -1,0 +1,27 @@
+/* BKX TUI main stylesheet entry point */
+
+/* Load app-level styles */
+@import "app.tcss";
+
+/* Load pane styles */
+@import "panes/status_cards.tcss";
+@import "panes/theme_settings.tcss";
+@import "panes/tools_dashboard.tcss";
+@import "panes/empty_state.tcss";
+@import "panes/log.tcss";
+@import "panes/status.tcss";
+@import "panes/progress.tcss";
+@import "panes/status_bar.tcss";
+@import "panes/transfer_progress.tcss";
+@import "panes/archive_list.tcss";
+@import "panes/archive_preview.tcss";
+@import "panes/navigation.tcss";
+
+/* Load screen styles */
+@import "screens/restore.tcss";
+@import "screens/backup.tcss";
+@import "screens/archive.tcss";
+@import "screens/transfer.tcss";
+@import "screens/tools.tcss";
+@import "screens/logs.tcss";
+

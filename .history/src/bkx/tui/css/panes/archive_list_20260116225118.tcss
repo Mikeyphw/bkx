@@ -1,0 +1,88 @@
+/* ArchiveListPane styles (mikomn available) */
+
+ArchiveListPane {
+    width: 50;
+    dock: left;
+    background: $surface;
+    border: solid $secondary;
+}
+
+ArchiveListPane > .label {
+    height: 3;
+    background: $primary;
+    color: $foreground;
+    content-align: center middle;
+    dock: top;
+}
+
+ArchiveListPane > .filter {
+    height: 3;
+    dock: top;
+    background: $surface-darken-1;
+}
+
+ArchiveListPane > .list {
+    height: 1fr;
+    dock: bottom;
+}
+
+ArchiveListPane > .count-label {
+    height: 2;
+    dock: bottom;
+    background: $surface-darken-1;
+    color: $foreground-muted;
+    content-align: center middle;
+}
+
+/* Fallback styles without mikomn */
+
+.header {
+    height: 3;
+    background: $primary;
+    color: $foreground;
+    content-align: center middle;
+}
+
+.filter-input {
+    height: 3;
+    dock: top;
+    background: $surface-darken-1;
+}
+
+.archive-list {
+    height: 1fr;
+    dock: bottom;
+}
+
+.count-label {
+    height: 2;
+    dock: bottom;
+    background: $surface-darken-1;
+    color: $foreground-muted;
+    content-align: center middle;
+}
+
+ListItem {
+    height: 2;
+    padding: 0 1;
+}
+
+ListItem:hover {
+    background: $accent;
+}
+
+ListItem:focus {
+    background: $primary;
+}
+
+
+.archive-name {
+    color: $foreground;
+    text-style: bold;
+}
+
+.archive-meta {
+    color: $foreground-muted;
+}
+
+

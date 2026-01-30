@@ -1,0 +1,164 @@
+"""File picker integration utilities for bkx TUI."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Callable
+
+from textual.app import ComposeResult
+from textual.containers import Container
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Label, Static
+
+from mikomn.tui_base.widgets.file_picker import (
+    FileDirPicker,
+    FilterMode,
+    PathsSelected,
+    PickerCancelled,
+)
+
+
+class DestinationPicker(ModalScreen):
+    """Destination path picker with save dialog."""
+
+    def __init__(
+        self,
+        *,
+        start_path: Path | None = None,
+        suggest_name: str | None = None,
+        on_confirm: Callable[[Path], None] | None = None,
+        on_cancel: Callable[[], None] | None = None,
+    ) -> None:
+        super().__init__()
+        self._start_path = start_path or Path.cwd()
+        self._suggest_name = suggest_name
+        self._on_confirm = on_confirm
+        self._on_cancel = on_cancel
+
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Static("Select Destination", classes="picker-header"),
+            Container(
+                Label("Path:", classes="form-label"),
+                Input(
+                    placeholder=str(self._start_path),
+                    id="destination-path",
+                    classes="form-input",
+                ),
+                classes="form-row",
+            ),
+            Container(
+                Button("📁 Browse...", id="btn-browse"),
+                Button("OK", id="btn-ok"),
+                Button("Cancel", id="btn-cancel"),
+                classes="button-row",
+            ),
+            classes="destination-picker",
+        )
+
+    def on_mount(self) -> None:
+        self.query_one("#destination-path", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-browse":
+            self._browse_destination()
+        elif event.button.id == "btn-ok":
+            self._confirm_destination()
+        elif event.button.id == "btn-cancel":
+            self._cancel()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "destination-path":
+            self._confirm_destination()
+
+    def _browse_destination(self) -> None:
+        self.app.push_screen(
+            FileDirPicker(
+                start_path=self._start_path,
+                filter_mode=FilterMode.DIRS_ONLY,
+            ),
+            self._on_destination_selected,
+        )
+
+    def _on_destination_selected(self, paths: list[Path] | None) -> None:
+        if paths:
+            path = paths[0]
+            self.query_one("#destination-path", Input).value = str(path)
+            self._start_path = path
+
+    def _confirm_destination(self) -> None:
+        input_widget = self.query_one("#destination-path", Input)
+        path = Path(input_widget.value.strip())
+        if path.exists() or path.parent.exists():
+            if self._on_confirm:
+                self._on_confirm(path)
+            self.dismiss(path)
+        else:
+            input_widget.focus()
+
+    def _cancel(self) -> None:
+        if self._on_cancel:
+            self._on_cancel()
+        self.dismiss(None)
+
+
+def show_file_picker(
+    app,
+    *,
+    allow_multiple: bool = True,
+    filter_mode: FilterMode = FilterMode.NONE,
+    start_path: Path | None = None,
+    on_select: Callable[[list[Path]], None] | None = None,
+    on_cancel: Callable[[], None] | None = None,
+) -> None:
+    """Show file/dir picker and handle selection.
+
+    Args:
+        app: The Textual app instance
+        allow_multiple: Allow selecting multiple items
+        filter_mode: Filter mode (NONE, FILES_ONLY, DIRS_ONLY)
+        start_path: Starting directory path
+        on_select: Callback when files are selected, receives list[Path]
+        on_cancel: Callback when picker is cancelled
+    """
+    picker = FileDirPicker(
+        start_path=start_path or Path.cwd(),
+        filter_mode=filter_mode,
+    )
+
+    def handle_result(paths: list[Path] | None) -> None:
+        if paths:
+            if on_select:
+                on_select(paths)
+        else:
+            if on_cancel:
+                on_cancel()
+
+    app.push_screen(picker, handle_result)
+
+
+def show_destination_picker(
+    app,
+    *,
+    start_path: Path | None = None,
+    suggest_name: str | None = None,
+    on_confirm: Callable[[Path], None] | None = None,
+    on_cancel: Callable[[], None] | None = None,
+) -> None:
+    """Show destination path picker dialog.
+
+    Args:
+        app: The Textual app instance
+        start_path: Starting directory path
+        suggest_name: Suggested filename
+        on_confirm: Callback when destination is confirmed, receives Path
+        on_cancel: Callback when picker is cancelled
+    """
+    picker = DestinationPicker(
+        start_path=start_path or Path.cwd(),
+        suggest_name=suggest_name,
+        on_confirm=on_confirm,
+        on_cancel=on_cancel,
+    )
+    app.push_screen(picker)
+

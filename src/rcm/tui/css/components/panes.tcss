@@ -1,0 +1,21 @@
+/* Panes - shared sizing/scroll (Step 8) */
+
+.rcm .pane-scroll {
+    height: 1fr;
+    width: 1fr;
+}
+
+.rcm .list-pane {
+    height: 1fr;
+    width: 1fr;
+}
+
+.rcm .filterable-list-pane {
+    height: 1fr;
+    width: 1fr;
+}
+
+.rcm .preview-pane {
+    height: 1fr;
+    width: 1fr;
+}

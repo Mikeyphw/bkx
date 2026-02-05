@@ -119,4 +119,3 @@ class RunService:
             error_message=run.error_message,
             spec_snapshot=run.spec_snapshot,
         )
-

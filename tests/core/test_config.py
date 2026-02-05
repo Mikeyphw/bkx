@@ -19,7 +19,7 @@ class TestBkxConfigDefaults:
     def test_default_values(self):
         """Test that default values are set correctly."""
         config = BkxConfig()
-        
+
         assert config.verify_after_operation is True
         assert config.preserve_permissions is True
         assert config.compression_algorithm == "zstd"
@@ -43,13 +43,15 @@ class TestBkxConfigFromDict:
 
     def test_from_dict_with_values(self):
         """Test creating config from dict with custom values."""
-        config = BkxConfig.from_dict({
-            "default_destination": "/custom/path",
-            "compression_algorithm": "gzip",
-            "compression_level": 6,
-            "fresh_restore_dir": False,
-        })
-        
+        config = BkxConfig.from_dict(
+            {
+                "default_destination": "/custom/path",
+                "compression_algorithm": "gzip",
+                "compression_level": 6,
+                "fresh_restore_dir": False,
+            }
+        )
+
         assert config.default_destination == Path("/custom/path")
         assert config.compression_algorithm == "gzip"
         assert config.compression_level == 6
@@ -59,7 +61,7 @@ class TestBkxConfigFromDict:
     def test_from_dict_missing_values_use_defaults(self):
         """Test that missing values use defaults."""
         config = BkxConfig.from_dict({})
-        
+
         assert config.verify_after_operation is True
         assert config.compression_algorithm == "zstd"
         assert config.fresh_restore_dir is True
@@ -76,17 +78,17 @@ class TestBkxConfigFromEnv:
             "BKX_COMPRESSION_LEVEL": "9",
             "BKX_FRESH_RESTORE_DIR": "false",
         }
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
                 for key, value in env_vars.items():
                     os.environ[key] = value
-                
+
                 try:
                     config = BkxConfig.from_env()
-                    
+
                     assert config.default_destination == Path("/env/path")
                     assert config.compression_algorithm == "xz"
                     assert config.compression_level == 9
@@ -103,9 +105,9 @@ class TestBkxConfigFromEnv:
         # Clear relevant env vars
         for key in ["BKX_DESTINATION", "BKX_COMPRESSION_ALGORITHM", "BKX_VERIFY"]:
             os.environ.pop(key, None)
-        
+
         config = BkxConfig.from_env()
-        
+
         assert config.default_destination is None
         assert config.compression_algorithm == "zstd"
         assert config.verify_after_operation is True
@@ -121,9 +123,9 @@ class TestBkxConfigMerge:
             os.chdir(tmpdir)
             try:
                 os.environ["BKX_COMPRESSION_ALGORITHM"] = "lz4"
-                
+
                 config = BkxConfig.load()
-                
+
                 assert config.compression_algorithm == "lz4"
             finally:
                 os.environ.pop("BKX_COMPRESSION_ALGORITHM", None)
@@ -141,12 +143,12 @@ class TestBkxConfigMerge:
 compression_algorithm: bzip2
 compression_level: 5
 """)
-                
+
                 os.environ["BKX_COMPRESSION_ALGORITHM"] = "zstd"
-                
+
                 reset_config()  # Clear cached config
                 config = BkxConfig.load()
-                
+
                 # Config file should override env
                 assert config.compression_algorithm == "bzip2"
                 assert config.compression_level == 5
@@ -165,9 +167,9 @@ class TestBkxConfigHelpers:
             compression_algorithm="zstd",
             compression_level=5,
         )
-        
+
         profile = config.get_compression_profile()
-        
+
         assert profile["algorithm"] == "zstd"
         assert profile["level"] == 5
 
@@ -179,9 +181,9 @@ class TestBkxConfigHelpers:
             preferred_hasher="xxh128",
             preferred_transfer="rsync",
         )
-        
+
         prefs = config.get_tool_preferences()
-        
+
         assert prefs["archiver"] == "tar"
         assert prefs["compressor"] == "zstd"
         assert prefs["hasher"] == "xxh128"
@@ -195,7 +197,7 @@ class TestGetConfig:
         """Test that get_config returns a config object."""
         reset_config()
         config = get_config()
-        
+
         assert isinstance(config, BkxConfig)
 
     def test_get_config_is_singleton(self):
@@ -203,19 +205,19 @@ class TestGetConfig:
         reset_config()
         config1 = get_config()
         config2 = get_config()
-        
+
         assert config1 is config2
 
     def test_reload_config(self):
         """Test that reload_config forces reload."""
         reset_config()
         config1 = get_config()
-        
+
         # Modify env and reload
         os.environ["BKX_VERBOSE"] = "true"
         try:
             config2 = reload_config()
-            
+
             assert config2.verbose is True
             assert config2 is not config1
         finally:
@@ -257,16 +259,15 @@ class TestConfigFileSearch:
         # The search order is: .bkx.yaml, bkx.yaml, ~/.bkx.yaml
         # We test the _load_from_file method behavior
         # by checking that it doesn't crash and returns None when no files exist
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
                 reset_config()
                 result = BkxConfig._load_from_file()
-                
+
                 # Should return None when no config files exist
                 assert result is None
             finally:
                 os.chdir(old_cwd)
-

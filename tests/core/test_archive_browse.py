@@ -51,12 +51,16 @@ class MockArchiver:
 
 def make_entry(path: str, is_dir: bool = False, size: int = 100, mtime_ns: int = 0):
     """Create a mock archive entry."""
-    return type("ArchiveEntry", (), {
-        "path": path,
-        "is_dir": is_dir,
-        "size": size,
-        "mtime_ns": mtime_ns,
-    })()
+    return type(
+        "ArchiveEntry",
+        (),
+        {
+            "path": path,
+            "is_dir": is_dir,
+            "size": size,
+            "mtime_ns": mtime_ns,
+        },
+    )()
 
 
 class TestArchiveBrowseSpec:
@@ -294,9 +298,7 @@ class TestArchiveBrowseService:
 
     def test_browse_with_pagination(self):
         """Test browsing with pagination."""
-        entries = [
-            make_entry(f"file{i}.txt", size=100) for i in range(10)
-        ]
+        entries = [make_entry(f"file{i}.txt", size=100) for i in range(10)]
 
         service = ArchiveService(archiver=MockArchiver(entries))
 
@@ -368,4 +370,3 @@ class TestArchiveBrowseService:
             assert len(result.entries) == 0
             assert result.files_count == 0
             assert result.directories_count == 0
-

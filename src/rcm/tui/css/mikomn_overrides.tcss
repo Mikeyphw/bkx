@@ -1,0 +1,28 @@
+/* mikomn overrides - scoped to .rcm (Step 8) */
+
+.rcm Input:focus,
+.rcm Select:focus,
+.rcm TextArea:focus {
+    outline: solid $accent_primary;
+}
+
+.rcm .pane {
+    background: $surface;
+    border: solid $border_subtle;
+    min-height: 1;
+}
+
+.rcm .pane-title {
+    text-style: bold;
+    color: $text_primary;
+    padding: 0 1;
+}
+
+.rcm .pane-empty {
+    color: $muted;
+    padding: 0 1;
+}
+
+.rcm .pane-error {
+    color: $error;
+}

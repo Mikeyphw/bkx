@@ -21,4 +21,3 @@ __all__ = [
     "warning_color",
     "DEFAULT_THEME",
 ]
-

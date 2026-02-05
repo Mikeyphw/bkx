@@ -55,4 +55,3 @@ class RunSummary:
     started_at: datetime
     completed_at: datetime | None
     source_count: int
-

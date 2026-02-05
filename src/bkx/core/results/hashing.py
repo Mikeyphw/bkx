@@ -22,4 +22,3 @@ class HashingResult:
     timing_ms: int
     error: str | None = None
     warnings: list[str] = field(default_factory=list)
-

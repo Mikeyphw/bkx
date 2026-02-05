@@ -73,4 +73,3 @@ BACKUP_SPEC_SCHEMA = {
         },
     },
 }
-

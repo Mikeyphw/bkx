@@ -1,13 +1,12 @@
-"""File pickers using mikomn's FilePicker with Yazi/FZF fallback chain.
+"""File pickers using mikomn's picker chain (yazi -> fzf -> manual).
 
-Contract rule:
-- Optional external tools runtime-detected.
-- yazi -> fzf -> rich picker -> numbered prompt.
+bkx wraps mikomn's ``FilePicker`` and normalizes return types.
 
-This module uses mikomn's FilePicker which provides:
-- YaziAdapter (primary, if available)
-- FzfAdapter (fallback, if available)
-- Rich console picker (final fallback)
+Notes:
+- mikomn SelectionMode (v0.3+) does not currently include single-file/dir kinds.
+  bkx emulates single selection by returning the first result.
+- When ``must_exist=False``, bkx falls back to prompt-based input because picker
+  backends inherently enumerate existing filesystem entries.
 """
 
 from __future__ import annotations
@@ -16,22 +15,24 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
+from mikomn.cli_base.interactive.models import PickOptions, PickerType, SelectionMode
+from mikomn.cli_base.interactive.prompts import ask_path, ask_text
 from mikomn.cli_base.pickers import FilePicker
-from mikomn.cli_base.pickers.adapters import YaziAdapter, FzfAdapter
-from mikomn.cli_base.interactive.models import PickOptions, SelectionMode
+from mikomn.cli_base.pickers.adapters import FzfAdapter, YaziAdapter
+from mikomn.cli_base.ui2.exceptions import NonInteractiveInput, UserCancelled
 
 
-def _get_available_picker() -> Optional[str]:
-    """Check which picker is available.
-    
-    Returns:
-        "yazi", "fzf", "rich", or None if no pickers available
-    """
+def _preferred_picker() -> PickerType:
     if shutil.which("yazi"):
-        return "yazi"
+        return PickerType.YAZI
     if shutil.which("fzf"):
-        return "fzf"
-    return "rich"
+        return PickerType.FZF
+    return PickerType.MANUAL
+
+
+def _maybe_adapter(adapter_cls):
+    adapter = adapter_cls()
+    return adapter if adapter.is_available() else None
 
 
 def pick_files(
@@ -40,47 +41,35 @@ def pick_files(
     must_exist: bool = True,
     base_dir: Optional[Path] = None,
 ) -> list[Path]:
-    """Pick files using the best available picker.
-    
-    Args:
-        title: Title for the picker
-        allow_multi: Allow multiple selections
-        must_exist: Selected paths must exist
-        base_dir: Base directory for the picker
-        
-    Returns:
-        List of selected file paths (empty if cancelled)
+    """Pick file paths.
+
+    Returns an empty list if cancelled or non-interactive.
     """
-    picker_type = _get_available_picker()
-    
-    # Build pick options
-    mode = SelectionMode.MULTI if allow_multi else SelectionMode.SINGLE
+    if not must_exist:
+        # Picker backends enumerate existing entries; use prompt input instead.
+        try:
+            raw = ask_text(f"{title} (comma-separated paths)", default="")
+        except (UserCancelled, NonInteractiveInput):
+            return []
+        paths = [Path(p.strip()).expanduser() for p in raw.split(",") if p.strip()]
+        return paths if allow_multi else paths[:1]
+
     options = PickOptions(
         title=title,
-        mode=mode,
-        must_exist=must_exist,
-        base_dir=str(base_dir) if base_dir else None,
+        base_path=base_dir or Path("."),
+        mode=SelectionMode.FILES_ONLY,
+        picker=_preferred_picker(),
     )
-    
-    # Create adapters for fallback chain
-    adapters = []
-    if shutil.which("yazi"):
-        adapters.append(YaziAdapter())
-    if shutil.which("fzf"):
-        adapters.append(FzfAdapter())
-    
-    # Create picker with adapters (falls back to rich if no adapters work)
-    picker = FilePicker(options, *adapters)
-    
-    # Execute picker
-    result = picker.pick()
-    
-    # Convert to Path objects
-    if isinstance(result, str):
-        return [Path(result)]
-    elif isinstance(result, list):
-        return [Path(p) for p in result]
-    return []
+    picker = FilePicker(
+        options,
+        yazi=_maybe_adapter(YaziAdapter),
+        fzf=_maybe_adapter(FzfAdapter),
+    )
+    try:
+        results = picker.pick()
+    except (UserCancelled, NonInteractiveInput):
+        return []
+    return results if allow_multi else results[:1]
 
 
 def pick_directories(
@@ -89,47 +78,34 @@ def pick_directories(
     must_exist: bool = True,
     base_dir: Optional[Path] = None,
 ) -> list[Path]:
-    """Pick directories using the best available picker.
-    
-    Args:
-        title: Title for the picker
-        allow_multi: Allow multiple selections
-        must_exist: Selected paths must exist
-        base_dir: Base directory for the picker
-        
-    Returns:
-        List of selected directory paths (empty if cancelled)
+    """Pick directory paths.
+
+    Returns an empty list if cancelled or non-interactive.
     """
-    picker_type = _get_available_picker()
-    
-    # Build pick options for directories
-    mode = SelectionMode.DIRECTORIES if allow_multi else SelectionMode.SINGLE_DIR
+    if not must_exist:
+        try:
+            raw = ask_text(f"{title} (comma-separated paths)", default="")
+        except (UserCancelled, NonInteractiveInput):
+            return []
+        paths = [Path(p.strip()).expanduser() for p in raw.split(",") if p.strip()]
+        return paths if allow_multi else paths[:1]
+
     options = PickOptions(
         title=title,
-        mode=mode,
-        must_exist=must_exist,
-        base_dir=str(base_dir) if base_dir else None,
+        base_path=base_dir or Path("."),
+        mode=SelectionMode.DIRS_ONLY,
+        picker=_preferred_picker(),
     )
-    
-    # Create adapters for fallback chain
-    adapters = []
-    if shutil.which("yazi"):
-        adapters.append(YaziAdapter())
-    if shutil.which("fzf"):
-        adapters.append(FzfAdapter())
-    
-    # Create picker with adapters
-    picker = FilePicker(options, *adapters)
-    
-    # Execute picker
-    result = picker.pick()
-    
-    # Convert to Path objects
-    if isinstance(result, str):
-        return [Path(result)]
-    elif isinstance(result, list):
-        return [Path(p) for p in result]
-    return []
+    picker = FilePicker(
+        options,
+        yazi=_maybe_adapter(YaziAdapter),
+        fzf=_maybe_adapter(FzfAdapter),
+    )
+    try:
+        results = picker.pick()
+    except (UserCancelled, NonInteractiveInput):
+        return []
+    return results if allow_multi else results[:1]
 
 
 def pick_file(
@@ -137,22 +113,8 @@ def pick_file(
     must_exist: bool = True,
     base_dir: Optional[Path] = None,
 ) -> Optional[Path]:
-    """Pick a single file.
-    
-    Args:
-        title: Title for the picker
-        must_exist: Selected path must exist
-        base_dir: Base directory for the picker
-        
-    Returns:
-        Selected file path or None if cancelled
-    """
-    results = pick_files(
-        title=title,
-        allow_multi=False,
-        must_exist=must_exist,
-        base_dir=base_dir,
-    )
+    """Pick a single file path."""
+    results = pick_files(title=title, allow_multi=False, must_exist=must_exist, base_dir=base_dir)
     return results[0] if results else None
 
 
@@ -161,35 +123,20 @@ def pick_directory(
     must_exist: bool = True,
     base_dir: Optional[Path] = None,
 ) -> Optional[Path]:
-    """Pick a single directory.
-    
-    Args:
-        title: Title for the picker
-        must_exist: Selected path must exist
-        base_dir: Base directory for the picker
-        
-    Returns:
-        Selected directory path or None if cancelled
-    """
+    """Pick a single directory path."""
     results = pick_directories(
-        title=title,
-        allow_multi=False,
-        must_exist=must_exist,
-        base_dir=base_dir,
+        title=title, allow_multi=False, must_exist=must_exist, base_dir=base_dir
     )
     return results[0] if results else None
 
 
-# Convenience function to show picker info
-def get_picker_info() -> dict:
-    """Get information about available pickers.
-    
-    Returns:
-        Dict with picker availability info
-    """
-    return {
-        "yazi_available": bool(shutil.which("yazi")),
-        "fzf_available": bool(shutil.which("fzf")),
-        "active_picker": _get_available_picker(),
-    }
-
+def prompt_for_path(
+    title: str,
+    default: Optional[Path] = None,
+    must_exist: bool = True,
+) -> Optional[Path]:
+    """Prompt for a path (supports must_exist=False)."""
+    try:
+        return ask_path(title, default=default, must_exist=must_exist)
+    except (UserCancelled, NonInteractiveInput):
+        return None

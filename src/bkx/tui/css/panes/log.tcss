@@ -1,10 +1,15 @@
 /* RunLogPane styles */
 
-RunLogPane {
+.bkx-run-log-pane {
     height: 15;
     dock: bottom;
     background: $surface;
     border: solid $secondary;
+}
+
+.bkx-run-log-pane RichLog {
+    height: 1fr;
+    dock: bottom;
 }
 
 .log-header {
@@ -30,10 +35,5 @@ RunLogPane {
 .log-controls Button {
     margin: 0 1;
     min-width: 8;
-}
-
-RichLog {
-    height: 1fr;
-    dock: bottom;
 }
 

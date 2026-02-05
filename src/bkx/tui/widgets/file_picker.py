@@ -161,4 +161,3 @@ def show_destination_picker(
         on_cancel=on_cancel,
     )
     app.push_screen(picker)
-

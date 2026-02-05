@@ -105,7 +105,9 @@ class BackupSpec:
             verify=self.verify,
             dry_run=self.dry_run,
             _resolved_destination=destination,
-            _archive_path=destination / f"{archive_name}.bakery" if archive_name and destination else None,
+            _archive_path=destination / f"{archive_name}.bakery"
+            if archive_name and destination
+            else None,
         )
 
         return normalized
@@ -129,4 +131,3 @@ class BackupSpec:
     def archive_path(self) -> Path | None:
         """Get the full archive path if available."""
         return self._archive_path
-

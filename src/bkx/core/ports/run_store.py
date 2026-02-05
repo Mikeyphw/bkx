@@ -119,4 +119,3 @@ class RunStorePort(Protocol):
             Number of runs that were cleared.
         """
         ...
-

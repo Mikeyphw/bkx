@@ -1,0 +1,17 @@
+--- src/bkx/tui/panes/status_cards.py
++++ src/bkx/tui/panes/status_cards.py
+@@ -281,11 +281,10 @@
+ 
+     DEFAULT_CLASSES = "bkx-tools-dashboard-pane"
+ 
+-    def __init__(self, **kwargs):
++    def __init__(self, config: StatusCardConfig | None = None, **kwargs):
+         super().__init__(**kwargs)
+-        self._status_cards_config = StatusCardConfig()
+-
+-    def compose(self) -> ComposeResult:
++        self._status_cards_config = config or StatusCardConfig(cards=create_default_status_cards())
++def compose(self) -> ComposeResult:
+         yield Label("🔧 Tools & Settings", classes="dashboard-header")
+ 
+         yield Container(

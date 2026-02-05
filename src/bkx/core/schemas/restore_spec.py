@@ -55,4 +55,3 @@ RESTORE_SPEC_SCHEMA = {
         },
     },
 }
-

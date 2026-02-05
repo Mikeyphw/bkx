@@ -21,10 +21,10 @@ __all__ = [
 
 def get_schema_for_spec(spec_type: str) -> dict:
     """Get the JSON schema for a specific spec type.
-    
+
     Args:
         spec_type: Type name (backup, archive, transfer, restore)
-        
+
     Returns:
         JSON schema dictionary
     """
@@ -35,4 +35,3 @@ def get_schema_for_spec(spec_type: str) -> dict:
         "restore": RESTORE_SPEC_SCHEMA,
     }
     return schema_map.get(spec_type, {})
-

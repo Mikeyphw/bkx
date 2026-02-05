@@ -1,6 +1,6 @@
 /* ToolsDashboardPane styles */
 
-ToolsDashboardPane {
+.bkx-tools-dashboard-pane {
     background: $background;
 }
 

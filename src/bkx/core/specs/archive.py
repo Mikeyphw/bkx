@@ -176,4 +176,3 @@ class ArchiveBrowseSpec:
             sort_by=self.sort_by,
             sort_order=self.sort_order,
         )
-

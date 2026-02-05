@@ -57,4 +57,3 @@ ARCHIVE_SPEC_SCHEMA = {
         },
     },
 }
-

@@ -1,0 +1,31 @@
+--- src/bkx/tui/css/shell.tcss
++++ src/bkx/tui/css/shell.tcss
+@@ -120,3 +120,28 @@
+     layout: vertical;
+ }
+ 
++
++.form-field {
++    width: 1fr;
++}
++
++.form-field-wrapper {
++    width: 1fr;
++}
++
++.form-error {
++    height: auto;
++}
++
++.sources-block {
++    width: 1fr;
++}
++
++.sources-header {
++    height: auto;
++}
++
++.sources-list {
++    height: auto;
++}
++

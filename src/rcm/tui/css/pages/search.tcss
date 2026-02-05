@@ -1,0 +1,24 @@
+/* Search page (Step 8) */
+
+.rcm .rcm-search-toprow {
+    height: auto;
+    padding: 0 1;
+    align: left middle;
+}
+
+.rcm .rcm-search-toggle {
+    height: auto;
+    width: auto;
+    margin-left: 1;
+}
+
+.rcm .rcm-search-toggles {
+    height: auto;
+    width: auto;
+    padding: 0 1;
+}
+
+.rcm .rcm-search-actions {
+    padding: 0 1;
+    height: auto;
+}

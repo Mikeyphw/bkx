@@ -10,74 +10,70 @@ Contract rule:
 - Message-driven; no business logic in widgets.
 - App dispatches Intents to services, never performs business logic.
 """
-from typing import Optional
 
-from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal
-from textual.widgets import Header, Footer
+# mikomn TUI base for theme cycling, layout modes, and platform behavior
+import uuid
 
-# mikomn TUI base for theme cycling, command palette, layout modes
 from mikomn.tui_base import BaseTuiApp
-from mikomn.tui import generate_tcss
-
-# mikomn toast notifications (if available)
-try:
-    from mikomn.tui_base.widgets import ToastManager, Toast, DebugOverlay
-    _HAS_TOAST = True
-except ImportError:
-    _HAS_TOAST = False
-    DebugOverlay = None
+from mikomn.tui_base.models import Command, ToastData
+from mikomn.tui_base.notifications import NotificationHistory
+from mikomn.tui_base.overlays import CommandPalette, CommandSelected
+from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
+from mikomn.tui_base.widgets import DebugOverlay
+from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
+from textual.app import App, ComposeResult
 
 # Theme integration
-from bkx.ui.theme import (
-    get_current_theme_name,
-    cycle_theme,
-    on_theme_change as bkx_on_theme_change,
-    off_theme_change as bkx_off_theme_change,
-    enable_theme_persistence,
-    is_theme_persistence_enabled,
-    save_theme_preference,
-)
-
-# BKX components
-from bkx.tui.panes import NavigationPane, RunLogPane, StatusFooterPane
-from bkx.tui.screens import (
-    BackupScreen,
-    ArchiveScreen,
-    RestoreScreen,
-    TransferScreen,
-    ToolsScreen,
-    LogsScreen,
-)
-from bkx.tui.messages import (
-    Intent,
-    BackupIntent,
-    ArchiveIntent,
-    RestoreIntent,
-    TransferIntent,
-    NavigateToScreen,
-    UpdateLog,
-    SetBusy,
-    ClearBusy,
-    ShowNotification,
-    ShowToast,
-    ProgressUpdate,
-    ProgressStarted,
-    ProgressCompleted,
-    FilterChanged,
-    ItemsSelected,
-    RequestEmptyState,
-    ClearEmptyState,
-)
 from bkx.cli.spec_builders import (
-    build_backup_spec,
     build_archive_spec,
+    build_backup_spec,
     build_restore_spec,
     build_transfer_spec,
 )
-from bkx.cli.exit_codes import error_to_exit_code, EXIT_OK
-from bkx.core.services import get_backup_service, get_archive_service, get_restore_service, get_transfer_service
 from bkx.core.errors import BkxError
+from bkx.core.services import (
+    get_archive_service,
+    get_backup_service,
+    get_restore_service,
+    get_transfer_service,
+)
+from bkx.tui.messages import (
+    ArchiveIntent,
+    BackupIntent,
+    ClearBusy,
+    ClearEmptyState,
+    FilterChanged,
+    Intent,
+    ItemsSelected,
+    NavigateToScreen,
+    ProgressCompleted,
+    ProgressStarted,
+    ProgressUpdate,
+    RequestEmptyState,
+    RestoreIntent,
+    SetBusy,
+    ShowNotification,
+    ShowToast,
+    TransferIntent,
+    UpdateLog,
+)
+from bkx.tui.pages import create_page_registry
+
+# BKX components
+from bkx.tui.widgets.shell import BkxShell
+from bkx.ui.theme import (
+    cycle_theme,
+    enable_theme_persistence,
+    get_current_theme_name,
+    is_theme_persistence_enabled,
+    save_theme_preference,
+)
+from bkx.ui.theme import (
+    off_theme_change as bkx_off_theme_change,
+)
+from bkx.ui.theme import (
+    on_theme_change as bkx_on_theme_change,
+)
 
 # Patch Textual default CSS to satisfy hatch parser expectations.
 App.DEFAULT_CSS = App.DEFAULT_CSS.replace(
@@ -88,7 +84,7 @@ App.DEFAULT_CSS = App.DEFAULT_CSS.replace(
 
 class BkxTuiApp(BaseTuiApp):
     """BKX Textual TUI Application.
-    
+
     Extends mikomn's BaseTuiApp for:
     - Theme cycling (t key)
     - Command palette (Ctrl+K)
@@ -96,7 +92,7 @@ class BkxTuiApp(BaseTuiApp):
     - Platform-aware CSS
     - Focus management
     - mikomn theme registration with Textual
-    
+
     Message-driven architecture:
     - Widgets emit Intents
     - App handles Intents and dispatches to services
@@ -105,68 +101,56 @@ class BkxTuiApp(BaseTuiApp):
 
     # BKX-specific bindings in addition to BaseTuiApp bindings
     BINDINGS = BaseTuiApp.BINDINGS + [
-        ("b", "navigate_backup", "Backup"),
-        ("a", "navigate_archive", "Archive"),
-        ("r", "navigate_restore", "Restore"),
-        ("t", "navigate_transfer", "Transfer"),
-        ("l", "navigate_logs", "Logs"),
-        ("ctrl+n", "toggle_notifications", "Notifications"),
-        ("ctrl+d", "toggle_debug", "Debug Overlay"),
-        ("ctrl+shift+d", "dump_debug", "Dump Debug"),
+        ("1", "navigate_backup", "Backup"),
+        ("2", "navigate_archive", "Archive"),
+        ("3", "navigate_restore", "Restore"),
+        ("4", "navigate_transfer", "Transfer"),
+        ("5", "navigate_tools", "Tools"),
+        ("6", "navigate_logs", "Logs"),
+        ("ctrl+p", "command_palette", "Commands"),
+        ("ctrl+n", "notification_center", "Notifications"),
+        ("N", "toggle_toasts", "Toasts"),
     ]
-    
-    # Screens registered for navigation
-    SCREENS = {
-        "backup": BackupScreen,
-        "archive": ArchiveScreen,
-        "restore": RestoreScreen,
-        "transfer": TransferScreen,
-        "tools": ToolsScreen,
-        "logs": LogsScreen,
-    }
-    
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._pages = create_page_registry()
         self._theme_name = get_current_theme_name()
         self._theme_callback_id = None
-        self._log_pane: Optional[RunLogPane] = None
-        self._status_pane: Optional[StatusFooterPane] = None
-        self._progress_pane = None
-        self._toast_manager: Optional[ToastManager] = None
-        self._notification_queue: list[dict] = []
-        self._show_notifications = True
-        self._debug_overlay: Optional[DebugOverlay] = None
-    
+        self._show_toasts = True
+        self._debug_overlay: DebugOverlay | None = None
+
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
         return self._theme_name
-    
+
     def get_theme_transitions_css(self) -> str:
         """Return empty string to disable web CSS transitions.
-        
+
         Theme transitions are designed for web CSS ([data-theme] selectors)
         and are not compatible with Textual TCSS.
         """
         return ""
-    
+
     def cycle_theme_local(self) -> str:
         """Cycle theme and update internal state."""
         self._theme_name = cycle_theme()
         return self._theme_name
-    
-    async def _apply_theme_tcss(self, theme_name: str) -> None:
-        """Apply mikomn theme TCSS to the app.
-        
-        Args:
-            theme_name: Name of the theme to apply
+
+    def _apply_theme_tcss(self, theme_name: str) -> None:
+        """Apply a theme to the Textual app.
+
+        bkx's theme preference system (bkx.ui.theme) is the source of truth.
+        This method bridges it into mikomn's BaseTuiApp theme application.
         """
         try:
-            tcss = generate_tcss(theme_name)
-            if tcss:
-                self.stylesheet.parse(tcss)
+            self.action_set_theme(theme_name)
         except Exception:
-            pass  # Don't let theme errors break the app
-    
+            try:
+                self.theme = theme_name
+            except Exception:
+                pass
+
     async def on_mount(self) -> None:
         """Called when app is mounted."""
         # Parent's on_mount handles theme registration and CSS loading
@@ -175,24 +159,16 @@ class BkxTuiApp(BaseTuiApp):
 
         # Ensure CSS variables are populated even if no themes are registered.
         self.stylesheet.set_variables(self.get_css_variables())
-        
+
         # Enable theme persistence for TUI
         enable_theme_persistence(True)
-        
-        # Get references to panes
-        self._log_pane = self.query_one("#run-log", RunLogPane)
-        self._status_pane = self.query_one("#status-bar", StatusFooterPane)
-        
-        # Try to get progress pane if it exists
+
+        # Toast container is mounted in compose(); link it to the global manager.
         try:
-            self._progress_pane = self.query_one("#progress-pane")
+            ToastManager.set_container(self.query_one("#toast-container", ToastContainer))
         except Exception:
             pass
-        
-        # Initialize toast manager if available
-        if _HAS_TOAST:
-            self._toast_manager = ToastManager()
-        
+
         # Initialize debug overlay if available
         if DebugOverlay is not None:
             try:
@@ -201,24 +177,62 @@ class BkxTuiApp(BaseTuiApp):
                 self._debug_overlay.styles.display = "none"
             except Exception:
                 self._debug_overlay = None
-        
-        # Log startup
-        self._log_pane.write("BKX TUI started", level="info")
-        
+
+        # Log startup via run panel
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write("BKX TUI started")
+
         # Load BKX-specific external TCSS styles
         from bkx.tui.css import load_bkx_css
+
         load_bkx_css(self)
-        
+
         # Register theme change callback to update TCSS
         def _on_theme_changed(new_theme: str):
             self._theme_name = new_theme
             self.call_after_refresh(self._apply_theme_tcss, new_theme)
             if is_theme_persistence_enabled():
                 save_theme_preference(new_theme)
-        
+
         self._theme_callback_id = _on_theme_changed
         bkx_on_theme_change(_on_theme_changed)
-    
+
+    def _get_run_panel(self):
+        """Return the mounted RunPanel (if available)."""
+        try:
+            shell = self.query_one(BkxShell)
+            return shell.run_panel
+        except Exception:
+            return None
+
+
+
+    def _get_logs_pane(self):
+        """Return the expanded logs pane (if available)."""
+        try:
+            from bkx.tui.panes.log import RunLogPane
+
+            return self.query_one("#bkx-logs-log", RunLogPane)
+        except Exception:
+            return None
+
+    def _write_to_logs(self, message: str, level: str = "info") -> None:
+        """Write to the persistent Run Panel and the expanded Logs pane."""
+        run_panel = self._get_run_panel()
+        if run_panel:
+            try:
+                run_panel.write(message, level=level)
+            except Exception:
+                run_panel.write(message)
+
+        logs_pane = self._get_logs_pane()
+        if logs_pane:
+            try:
+                logs_pane.write(message, level=level)
+            except Exception:
+                logs_pane.write(message)
+
     def on_unmount(self) -> None:
         """Called when app is unmounted."""
         if self._theme_callback_id:
@@ -228,57 +242,56 @@ class BkxTuiApp(BaseTuiApp):
             super().on_unmount()
         except AttributeError:
             pass
-    
+
     def compose(self) -> ComposeResult:
-        """Compose the TUI layout."""
-        yield Header(show_clock=True)
-        
-        yield Horizontal(
-            NavigationPane(),
-            Container(
-                id="main-content",
-            ),
-            RunLogPane(id="run-log"),
-            StatusFooterPane(id="status-bar"),
-            id="tui-layout",
-        )
-        
-        yield Footer()
-        
-        # Debug overlay (hidden by default)
-        if DebugOverlay is not None:
-            yield DebugOverlay(id="debug-overlay")
-    
+        """Compose BKX shell (responsive sidebar + compact tabs)."""
+        yield BkxShell(pages=self._pages)
+        yield ToastContainer(id="toast-container")
+
+    def _goto_page(self, route: str) -> None:
+        """Navigate to a shell page route."""
+        try:
+            self.query_one(BkxShell).goto_page(route)
+        except Exception:
+            run_panel = self._get_run_panel()
+            if run_panel:
+                run_panel.write(f"Unknown page: {route}")
+            self.notify(f"Unknown page: {route}", severity="warning")
+
     # =========================================================================
     # Navigation Actions
     # =========================================================================
-    
+
     def action_navigate_backup(self) -> None:
-        """Navigate to backup screen."""
-        self.push_screen("backup")
-    
+        """Navigate to backup page."""
+        self._goto_page("backup")
+
     def action_navigate_archive(self) -> None:
-        """Navigate to archive screen."""
-        self.push_screen("archive")
-    
+        """Navigate to archive page."""
+        self._goto_page("archive")
+
     def action_navigate_restore(self) -> None:
-        """Navigate to restore screen."""
-        self.push_screen("restore")
-    
+        """Navigate to restore page."""
+        self._goto_page("restore")
+
     def action_navigate_transfer(self) -> None:
-        """Navigate to transfer screen."""
-        self.push_screen("transfer")
-    
+        """Navigate to transfer page."""
+        self._goto_page("transfer")
+
+    def action_navigate_tools(self) -> None:
+        """Navigate to tools page."""
+        self._goto_page("tools")
+
     def action_navigate_logs(self) -> None:
-        """Navigate to logs screen."""
-        self.push_screen("logs")
-    
-    def action_toggle_notifications(self) -> None:
-        """Toggle notification display."""
-        self._show_notifications = not self._show_notifications
-        status = "enabled" if self._show_notifications else "disabled"
-        self.notify(f"Notifications {status}", severity="info")
-    
+        """Navigate to logs page."""
+        self._goto_page("logs")
+
+    def action_toggle_toasts(self) -> None:
+        """Toggle toast display."""
+        self._show_toasts = not self._show_toasts
+        status = "enabled" if self._show_toasts else "disabled"
+        self.notify(f"Toasts {status}", severity="info")
+
     def action_toggle_debug(self) -> None:
         """Toggle debug overlay visibility."""
         if self._debug_overlay is None:
@@ -290,19 +303,20 @@ class BkxTuiApp(BaseTuiApp):
             else:
                 self.notify("Debug overlay not available", severity="warning")
             return
-        
+
         # Toggle visibility
         current_display = self._debug_overlay.display
         self._debug_overlay.display = not current_display
         status = "shown" if not current_display else "hidden"
         self.notify(f"Debug overlay {status}", severity="info")
-    
+
     def action_dump_debug(self) -> None:
         """Dump debug information to file."""
         if self._debug_overlay is None:
             if DebugOverlay is not None:
                 # Create a temporary overlay for dumping
                 from mikomn.tui_base.widgets.debug_overlay import DebugOverlay as TempOverlay
+
                 overlay = TempOverlay()
                 path = self.dump_debug_snapshot(overlay=overlay)
             else:
@@ -310,23 +324,25 @@ class BkxTuiApp(BaseTuiApp):
                 return
         else:
             path = self.dump_debug_snapshot(overlay=self._debug_overlay)
-        
+
         if path:
             self.notify(f"Debug dump saved to {path}", severity="info")
-            if self._log_pane:
-                self._log_pane.write(f"Debug dump: {path}", level="info")
+            run_panel = self._get_run_panel()
+            if run_panel:
+                run_panel.write(f"Debug dump: {path}")
         else:
             self.notify("Failed to save debug dump", severity="error")
-    
+
     def action_cycle_theme(self) -> None:
         """Cycle to the next theme."""
         self._theme_name = cycle_theme()
         # Defer setting the theme to allow parent to register themes first
         self.call_after_refresh(self._set_theme)
         self.notify(f"Theme: {self._theme_name}")
-        if self._log_pane:
-            self._log_pane.write(f"Theme changed to {self._theme_name}", level="info")
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"Theme changed to {self._theme_name}")
+
     def _set_theme(self) -> None:
         """Set the current theme after themes are registered."""
         try:
@@ -334,14 +350,128 @@ class BkxTuiApp(BaseTuiApp):
         except Exception:
             pass  # Don't let theme errors break the app
         self.call_after_refresh(self._apply_theme_tcss, self._theme_name)
-    
+
+    # =========================================================================
+    # Overlays
+    # =========================================================================
+
+    def build_command_palette_commands(self) -> list[Command]:
+        """Build the command list for the command palette."""
+        commands: list[Command] = []
+        for spec in self._pages.specs():
+            if getattr(spec, "disabled", False):
+                continue
+            key = (spec.key or "").strip()
+            keywords = [spec.route, spec.label]
+            if key:
+                keywords.append(key)
+            commands.append(
+                Command(
+                    id=f"nav:{spec.route}",
+                    title=f"Go to {spec.label}",
+                    keywords=keywords,
+                    group="Navigate",
+                    meta={"route": spec.route},
+                )
+            )
+
+        commands.extend(
+            [
+                Command(
+                    id="app:cycle-theme",
+                    title="Cycle theme",
+                    keywords=["theme", "palette"],
+                    group="App",
+                ),
+                Command(
+                    id="app:reload-css",
+                    title="Reload CSS",
+                    keywords=["css", "tcss", "style"],
+                    group="App",
+                ),
+                Command(
+                    id="app:toggle-debug",
+                    title="Toggle debug overlay",
+                    keywords=["debug", "overlay"],
+                    group="App",
+                ),
+                Command(
+                    id="app:clear-run-log",
+                    title="Clear run log",
+                    keywords=["log", "clear"],
+                    group="App",
+                ),
+                Command(
+                    id="app:notifications",
+                    title="Open notification center",
+                    keywords=["notifications", "history"],
+                    group="App",
+                ),
+                Command(
+                    id="app:toggle-toasts",
+                    title="Toggle toasts",
+                    keywords=["toast", "notifications"],
+                    group="App",
+                ),
+            ]
+        )
+        return commands
+
+    def action_command_palette(self) -> None:
+        """Open the command palette."""
+        self.push_screen(CommandPalette(commands=self.build_command_palette_commands()))
+
+    def on_command_selected(self, event: CommandSelected) -> None:
+        """Handle command selections from the palette."""
+        cmd_id = getattr(event.command, "id", None) or event.command_id
+        meta = getattr(event.command, "meta", None) or {}
+
+        if isinstance(meta, dict) and cmd_id.startswith("nav:"):
+            route = str(meta.get("route") or cmd_id.split(":", 1)[1])
+            self._goto_page(route)
+            return
+
+        if cmd_id == "app:cycle-theme":
+            self.action_cycle_theme()
+            return
+
+        if cmd_id == "app:reload-css":
+            from bkx.tui.css import reload_bkx_css
+
+            reload_bkx_css(self)
+            self.notify("CSS reloaded", severity="info")
+            return
+
+        if cmd_id == "app:toggle-debug":
+            self.action_toggle_debug()
+            return
+
+        if cmd_id == "app:clear-run-log":
+            run_panel = self._get_run_panel()
+            if run_panel:
+                run_panel.clear_log()
+            self.notify("Run log cleared", severity="info")
+            return
+
+        if cmd_id == "app:notifications":
+            self.action_notification_center()
+            return
+
+        if cmd_id == "app:toggle-toasts":
+            self.action_toggle_toasts()
+            return
+
+    def action_notification_center(self) -> None:
+        """Open the notification center (history) screen."""
+        self.push_screen(NotificationCenterScreen(title="BKX Notifications"))
+
     # =========================================================================
     # Message Handlers - Intent Dispatching
     # =========================================================================
-    
+
     def on_intent(self, intent: Intent) -> None:
         """Handle all intents from widgets.
-        
+
         Args:
             intent: Intent message from widget
         """
@@ -379,306 +509,327 @@ class BkxTuiApp(BaseTuiApp):
             self._handle_request_empty_state(intent)
         elif isinstance(intent, ClearEmptyState):
             self._handle_clear_empty_state(intent)
-    
+
     def _handle_backup_intent(self, intent: BackupIntent) -> None:
         """Handle backup intent - dispatch to service."""
-        if self._log_pane:
-            self._log_pane.write(f"Starting backup: {intent.sources}", level="info")
-        if self._status_pane:
-            self._status_pane.set_busy("Backing up...")
-        
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status("Backing up", level="info")
+            run_panel.write(f"Starting backup: {intent.sources}")
+
         # Post progress started
-        self.post_message(ProgressStarted(operation="backup", message="Starting backup..."))
-        
+        self.post_message(ProgressStarted(operation="backup", message="Starting backup"))
+
         try:
             spec = build_backup_spec(**intent.to_spec_params())
             service = get_backup_service()
             result = service.create(spec)
-            
-            if self._log_pane:
-                self._log_pane.write(f"Backup complete: {result.archive_path}", level="success")
-                self._log_pane.write(f"  Files: {result.files_count}, Size: {result.bytes_total}", level="info")
-            if self._status_pane:
-                self._status_pane.set_success("Backup complete")
-            
+
+            if run_panel:
+                run_panel.set_status("Backup complete", level="success")
+                run_panel.write(f"Backup complete: {result.archive_path}")
+                run_panel.write(f"  Files: {result.files_count}, Size: {result.bytes_total}")
+
             # Show toast notification
-            self.post_message(ShowToast(
-                message=f"Backup complete: {result.files_count} files",
-                severity="success",
-                duration=4.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Backup complete: {result.files_count} files",
+                    severity="success",
+                    duration=4.0,
+                )
+            )
+
             # Post progress completed
             self.post_message(ProgressCompleted(operation="backup", message="Backup complete"))
-            
+
         except BkxError as e:
-            if self._log_pane:
-                self._log_pane.write(f"Backup failed: {e}", level="error")
-            if self._status_pane:
-                self._status_pane.set_error(str(e))
-            
+            if run_panel:
+                run_panel.set_status(f"Backup failed: {e}", level="error")
+                run_panel.write(f"Backup failed: {e}")
+
             # Show error toast
-            self.post_message(ShowToast(
-                message=f"Backup failed: {e}",
-                severity="error",
-                duration=5.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Backup failed: {e}",
+                    severity="error",
+                    duration=5.0,
+                )
+            )
+
             # Post progress completed with error
             self.post_message(ProgressCompleted(operation="backup", message=f"Error: {e}"))
-    
+
     def _handle_archive_intent(self, intent: ArchiveIntent) -> None:
         """Handle archive intent - dispatch to service."""
-        if self._log_pane:
-            self._log_pane.write(f"Creating archive: {intent.sources}", level="info")
-        if self._status_pane:
-            self._status_pane.set_busy("Creating archive...")
-        
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status("Creating archive", level="info")
+            run_panel.write(f"Creating archive: {intent.sources}")
+
         # Post progress started
-        self.post_message(ProgressStarted(operation="archive", message="Creating archive..."))
-        
+        self.post_message(ProgressStarted(operation="archive", message="Creating archive"))
+
         try:
             spec = build_archive_spec(**intent.to_spec_params())
             service = get_archive_service()
             result = service.create(spec)
-            
-            if self._log_pane:
-                self._log_pane.write(f"Archive created: {result.archive_path}", level="success")
-                self._log_pane.write(f"  Files: {result.files_count}", level="info")
-            if self._status_pane:
-                self._status_pane.set_success("Archive created")
-            
+
+            if run_panel:
+                run_panel.set_status("Archive created", level="success")
+                run_panel.write(f"Archive created: {result.archive_path}")
+                run_panel.write(f"  Files: {result.files_count}")
+
             # Show toast notification
-            self.post_message(ShowToast(
-                message=f"Archive created: {result.files_count} files",
-                severity="success",
-                duration=4.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Archive created: {result.files_count} files",
+                    severity="success",
+                    duration=4.0,
+                )
+            )
+
             # Post progress completed
             self.post_message(ProgressCompleted(operation="archive", message="Archive created"))
-            
+
         except BkxError as e:
-            if self._log_pane:
-                self._log_pane.write(f"Archive failed: {e}", level="error")
-            if self._status_pane:
-                self._status_pane.set_error(str(e))
-            
+            if run_panel:
+                run_panel.set_status(f"Archive failed: {e}", level="error")
+                run_panel.write(f"Archive failed: {e}")
+
             # Show error toast
-            self.post_message(ShowToast(
-                message=f"Archive failed: {e}",
-                severity="error",
-                duration=5.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Archive failed: {e}",
+                    severity="error",
+                    duration=5.0,
+                )
+            )
+
             # Post progress completed with error
             self.post_message(ProgressCompleted(operation="archive", message=f"Error: {e}"))
-    
+
     def _handle_restore_intent(self, intent: RestoreIntent) -> None:
         """Handle restore intent - dispatch to service."""
-        if self._log_pane:
-            self._log_pane.write(f"Restoring: {intent.archive}", level="info")
-        if self._status_pane:
-            self._status_pane.set_busy("Restoring...")
-        
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status("Restoring", level="info")
+            run_panel.write(f"Restoring: {intent.archive}")
+
         # Post progress started
-        self.post_message(ProgressStarted(operation="restore", message="Restoring archive..."))
-        
+        self.post_message(ProgressStarted(operation="restore", message="Restoring archive"))
+
         try:
             spec = build_restore_spec(**intent.to_spec_params())
             service = get_restore_service()
             result = service.extract(spec)
-            
-            if self._log_pane:
-                self._log_pane.write(f"Restore complete: {result.destination_path}", level="success")
-                self._log_pane.write(f"  Files: {result.files_count}", level="info")
-            if self._status_pane:
-                self._status_pane.set_success("Restore complete")
-            
+
+            if run_panel:
+                run_panel.set_status("Restore complete", level="success")
+                run_panel.write(f"Restore complete: {result.destination_path}")
+                run_panel.write(f"  Files: {result.files_count}")
+
             # Show toast notification
-            self.post_message(ShowToast(
-                message=f"Restore complete: {result.files_count} files",
-                severity="success",
-                duration=4.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Restore complete: {result.files_count} files",
+                    severity="success",
+                    duration=4.0,
+                )
+            )
+
             # Post progress completed
             self.post_message(ProgressCompleted(operation="restore", message="Restore complete"))
-            
+
         except BkxError as e:
-            if self._log_pane:
-                self._log_pane.write(f"Restore failed: {e}", level="error")
-            if self._status_pane:
-                self._status_pane.set_error(str(e))
-            
+            if run_panel:
+                run_panel.set_status(f"Restore failed: {e}", level="error")
+                run_panel.write(f"Restore failed: {e}")
+
             # Show error toast
-            self.post_message(ShowToast(
-                message=f"Restore failed: {e}",
-                severity="error",
-                duration=5.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Restore failed: {e}",
+                    severity="error",
+                    duration=5.0,
+                )
+            )
+
             # Post progress completed with error
             self.post_message(ProgressCompleted(operation="restore", message=f"Error: {e}"))
-    
+
     def _handle_transfer_intent(self, intent: TransferIntent) -> None:
         """Handle transfer intent - dispatch to service."""
-        if self._log_pane:
-            self._log_pane.write(f"Transferring: {intent.source} → {intent.destination}", level="info")
-        if self._status_pane:
-            self._status_pane.set_busy("Transferring...")
-        
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status("Transferring", level="info")
+            run_panel.write(f"Transferring: {intent.source} → {intent.destination}")
+
         # Post progress started
-        self.post_message(ProgressStarted(operation="transfer", message="Transferring files..."))
-        
+        self.post_message(ProgressStarted(operation="transfer", message="Transferring files"))
+
         try:
             spec = build_transfer_spec(**intent.to_spec_params())
             service = get_transfer_service()
             result = service.transfer(spec)
-            
-            if self._log_pane:
-                self._log_pane.write(f"Transfer complete", level="success")
-            if self._status_pane:
-                self._status_pane.set_success("Transfer complete")
-            
+
+            if run_panel:
+                run_panel.set_status("Transfer complete", level="success")
+                run_panel.write("Transfer complete")
+
             # Show toast notification
-            self.post_message(ShowToast(
-                message="Transfer complete",
-                severity="success",
-                duration=4.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message="Transfer complete",
+                    severity="success",
+                    duration=4.0,
+                )
+            )
+
             # Post progress completed
             self.post_message(ProgressCompleted(operation="transfer", message="Transfer complete"))
-            
+
         except BkxError as e:
-            if self._log_pane:
-                self._log_pane.write(f"Transfer failed: {e}", level="error")
-            if self._status_pane:
-                self._status_pane.set_error(str(e))
-            
+            if run_panel:
+                run_panel.set_status(f"Transfer failed: {e}", level="error")
+                run_panel.write(f"Transfer failed: {e}")
+
             # Show error toast
-            self.post_message(ShowToast(
-                message=f"Transfer failed: {e}",
-                severity="error",
-                duration=5.0,
-            ))
-            
+            self.post_message(
+                ShowToast(
+                    message=f"Transfer failed: {e}",
+                    severity="error",
+                    duration=5.0,
+                )
+            )
+
             # Post progress completed with error
             self.post_message(ProgressCompleted(operation="transfer", message=f"Error: {e}"))
-    
+
     def _handle_navigate(self, intent: NavigateToScreen) -> None:
         """Handle navigation intent."""
+        run_panel = self._get_run_panel()
         screen_name = intent.screen_name
-        if screen_name in self.SCREENS:
-            self.push_screen(screen_name)
-        elif self._log_pane:
-            self._log_pane.write(f"Unknown screen: {screen_name}", level="warning")
-    
+        try:
+            shell = self.query_one(BkxShell)
+            shell.goto_page(screen_name)
+        except Exception:
+            if run_panel:
+                run_panel.write(f"Unknown screen: {screen_name}")
+
     def _handle_set_busy(self, intent: SetBusy) -> None:
         """Handle set busy state."""
-        if self._status_pane:
-            self._status_pane.set_busy(intent.message)
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status(intent.message, level="info")
+
     def _handle_clear_busy(self) -> None:
         """Clear busy state."""
-        if self._status_pane:
-            self._status_pane.set_ready()
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.set_status("Ready", level="info")
+
     def _handle_update_log(self, intent: UpdateLog) -> None:
         """Handle update log message."""
-        if self._log_pane:
-            self._log_pane.write(intent.message, intent.level)
-    
+        self._write_to_logs(intent.message, intent.level)
+
     def _handle_show_notification(self, intent: ShowNotification) -> None:
         """Handle show notification message."""
+        try:
+            NotificationHistory.record_status(intent.message, level=str(intent.level), source="bkx")
+        except Exception:
+            pass
+        self._write_to_logs(intent.message, str(intent.level))
         self.notify(intent.message, severity=intent.level)
-    
+
     def _handle_show_toast(self, intent: ShowToast) -> None:
         """Handle show toast message."""
-        if not self._show_notifications:
+        toast_id = str(uuid.uuid4())[:8]
+        try:
+            NotificationHistory.record_toast(
+                ToastData(
+                    id=toast_id,
+                    message=intent.message,
+                    level=str(intent.severity),
+                    duration=float(intent.duration) if intent.duration is not None else None,
+                ),
+                source="bkx",
+            )
+        except Exception:
+            pass
+
+        if not self._show_toasts:
             return
-        
-        if _HAS_TOAST and self._toast_manager:
-            severity_map = {
-                "info": "info",
-                "success": "success",
-                "warning": "warning",
-                "error": "error",
-            }
-            severity = severity_map.get(intent.severity, "info")
-            self._toast_manager.show(Toast(
-                message=intent.message,
-                severity=severity,
-                duration=intent.duration,
-            ))
-        else:
-            # Fallback to Textual's notify
+
+        shown = ""
+        try:
+            shown = ToastManager.add_toast(
+                intent.message,
+                level=str(intent.severity),
+                duration=float(intent.duration) if intent.duration is not None else 3.0,
+                toast_id=toast_id,
+            )
+        except Exception:
+            shown = ""
+
+        if not shown:
             self.notify(intent.message, severity=intent.severity, duration=intent.duration)
-    
+
     def _handle_progress_started(self, intent: ProgressStarted) -> None:
         """Handle progress started message."""
-        if self._progress_pane:
-            self._progress_pane.start_progress(
-                operation=intent.operation,
-                total=intent.total,
-                message=intent.message,
-            )
-        if self._log_pane:
-            self._log_pane.write(f"[{intent.operation}] {intent.message}", level="info")
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"[{intent.operation}] {intent.message}")
+            run_panel.start_progress(total=intent.total, message=intent.message)
+
     def _handle_progress_update(self, intent: ProgressUpdate) -> None:
         """Handle progress update message."""
-        if self._progress_pane:
-            self._progress_pane.update_progress(
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.update_progress(
                 current=intent.current,
+                total=intent.total,
+                percent=intent.percent,
                 message=intent.message,
             )
-    
+
     def _handle_progress_completed(self, intent: ProgressCompleted) -> None:
         """Handle progress completed message."""
-        if self._progress_pane:
-            self._progress_pane.complete_progress(intent.message)
-        if self._log_pane:
-            self._log_pane.write(f"[{intent.operation}] {intent.message}", level="success")
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"[{intent.operation}] {intent.message}")
+            run_panel.complete_progress(message=intent.message, success=True)
+
     def _handle_filter_changed(self, intent: FilterChanged) -> None:
         """Handle filter changed message."""
-        if self._log_pane:
-            self._log_pane.write(
-                f"Filter: '{intent.filter_text}' ({intent.filtered_count}/{intent.total_count})",
-                level="debug"
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(
+                f"Filter: '{intent.filter_text}' ({intent.filtered_count}/{intent.total_count})"
             )
-    
+
     def _handle_items_selected(self, intent: ItemsSelected) -> None:
         """Handle items selected message."""
-        if self._log_pane:
-            self._log_pane.write(
-                f"Selected {len(intent.item_ids)} items for {intent.picker_for}",
-                level="info"
-            )
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"Selected {len(intent.item_ids)} items for {intent.picker_for}")
+
     def _handle_request_empty_state(self, intent: RequestEmptyState) -> None:
         """Handle request empty state message."""
         # This would be handled by a container that knows how to show empty states
-        if self._log_pane:
-            self._log_pane.write(
-                f"Empty state requested for {intent.container_id}: {intent.title}",
-                level="debug"
-            )
-    
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"Empty state requested for {intent.container_id}: {intent.title}")
+
     def _handle_clear_empty_state(self, intent: ClearEmptyState) -> None:
         """Handle clear empty state message."""
-        if self._log_pane:
-            self._log_pane.write(
-                f"Empty state cleared for {intent.container_id}",
-                level="debug"
-            )
+        run_panel = self._get_run_panel()
+        if run_panel:
+            run_panel.write(f"Empty state cleared for {intent.container_id}")
 
 
 def run_tui() -> int:
     """Run the BKX TUI.
-    
+
     Returns:
         Exit code
     """

@@ -8,13 +8,15 @@ from typing import Iterable
 
 def get_css_paths() -> list[str]:
     """Return ordered CSS paths for BKX TUI.
-    
+
     Returns:
         List of CSS file paths in load order.
     """
     base_dir = Path(__file__).parent
-    
+
     css_paths: list[str] = [
+        # Shell layout
+        str(base_dir / "shell.tcss"),
         # Panes
         str(base_dir / "panes" / "status_cards.tcss"),
         str(base_dir / "panes" / "theme_settings.tcss"),
@@ -28,28 +30,21 @@ def get_css_paths() -> list[str]:
         str(base_dir / "panes" / "archive_list.tcss"),
         str(base_dir / "panes" / "archive_preview.tcss"),
         str(base_dir / "panes" / "navigation.tcss"),
-        # Screens
-        str(base_dir / "screens" / "restore.tcss"),
-        str(base_dir / "screens" / "backup.tcss"),
-        str(base_dir / "screens" / "archive.tcss"),
-        str(base_dir / "screens" / "transfer.tcss"),
-        str(base_dir / "screens" / "tools.tcss"),
-        str(base_dir / "screens" / "logs.tcss"),
     ]
-    
+
     return css_paths
 
 
 def load_css(app, *, extra_paths: Iterable[str] | None = None) -> None:
     """Load base and optional extra CSS into the Textual app.
-    
+
     Args:
         app: Textual app instance
         extra_paths: Optional additional CSS paths to load
     """
     for path in get_css_paths():
         app.stylesheet.read(path)
-    
+
     if extra_paths:
         for path in extra_paths:
             app.stylesheet.read(path)
@@ -57,7 +52,7 @@ def load_css(app, *, extra_paths: Iterable[str] | None = None) -> None:
 
 def reload_css(app, *, extra_paths: Iterable[str] | None = None) -> None:
     """Reload all CSS for the app.
-    
+
     Args:
         app: Textual app instance
         extra_paths: Optional additional CSS paths to load
@@ -70,10 +65,10 @@ def reload_css(app, *, extra_paths: Iterable[str] | None = None) -> None:
 
 def load_bkx_css(app) -> None:
     """Load BKX-specific CSS after parent CSS is loaded.
-    
+
     This is called after mikomn's BaseTuiApp.on_mount() to add
     BKX-specific styles on top of the base styles.
-    
+
     Args:
         app: Textual app instance
     """
@@ -87,7 +82,7 @@ def load_bkx_css(app) -> None:
 
 def reload_bkx_css(app) -> None:
     """Reload BKX-specific CSS.
-    
+
     Args:
         app: Textual app instance
     """

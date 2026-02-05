@@ -40,37 +40,37 @@ from bkx.ui.theme import (
 
 class Renderer(ABC):
     """Base renderer interface."""
-    
+
     @abstractmethod
     def render_backup_result(self, result: BackupResult) -> None:
         """Render a backup result."""
         ...
-    
+
     @abstractmethod
     def render_archive_result(self, result: ArchiveCreateResult) -> None:
         """Render an archive creation result."""
         ...
-    
+
     @abstractmethod
     def render_transfer_result(self, result: TransferResult) -> None:
         """Render a transfer result."""
         ...
-    
+
     @abstractmethod
     def render_restore_result(self, result: RestoreResult) -> None:
         """Render a restore result."""
         ...
-    
+
     @abstractmethod
     def render_message(self, message: str, level: str = "info") -> None:
         """Render a message."""
         ...
-    
+
     @abstractmethod
     def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
         """Render an error."""
         ...
-    
+
     @abstractmethod
     def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
         """Render a dry-run plan."""
@@ -79,7 +79,7 @@ class Renderer(ABC):
 
 class JSONRenderer(Renderer):
     """Render results as JSON."""
-    
+
     def render_backup_result(self, result: BackupResult) -> None:
         output = {
             "type": "backup",
@@ -93,7 +93,7 @@ class JSONRenderer(Renderer):
         }
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_archive_result(self, result: ArchiveCreateResult) -> None:
         output = {
             "type": "archive",
@@ -106,7 +106,7 @@ class JSONRenderer(Renderer):
         }
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_transfer_result(self, result: TransferResult) -> None:
         output = {
             "type": "transfer",
@@ -119,7 +119,7 @@ class JSONRenderer(Renderer):
         }
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_restore_result(self, result: RestoreResult) -> None:
         output = {
             "type": "restore",
@@ -132,19 +132,19 @@ class JSONRenderer(Renderer):
         }
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_message(self, message: str, level: str = "info") -> None:
         output = {"type": "message", "level": level, "message": message}
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
         output = {"type": "error", "message": message}
         if details:
             output["details"] = details
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
-    
+
     def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
         output = {"type": "plan", "spec_type": spec_type, "spec": spec_data}
         json.dump(output, sys.stdout, indent=2)
@@ -153,7 +153,7 @@ class JSONRenderer(Renderer):
 
 class TextRenderer(Renderer):
     """Render results as human-readable text with mikomn theme integration."""
-    
+
     def render_backup_result(self, result: BackupResult) -> None:
         if result.success:
             sys.stdout.write(f"[{success_color()}]✅ Backup completed successfully[/]\n")
@@ -170,7 +170,7 @@ class TextRenderer(Renderer):
             sys.stdout.write(f"[{error_color()}]❌ Backup failed[/]\n")
             if result.error_message:
                 sys.stdout.write(f"   Error: {result.error_message}\n")
-    
+
     def render_archive_result(self, result: ArchiveCreateResult) -> None:
         if result.success:
             sys.stdout.write(f"[{success_color()}]✅ Archive created successfully[/]\n")
@@ -185,7 +185,7 @@ class TextRenderer(Renderer):
             sys.stdout.write(f"[{error_color()}]❌ Archive creation failed[/]\n")
             if result.error_message:
                 sys.stdout.write(f"   Error: {result.error_message}\n")
-    
+
     def render_transfer_result(self, result: TransferResult) -> None:
         if result.success:
             direction = "pushed" if result.source else "transferred"
@@ -201,7 +201,7 @@ class TextRenderer(Renderer):
             sys.stdout.write(f"[{error_color()}]❌ Transfer failed[/]\n")
             if result.error_message:
                 sys.stdout.write(f"   Error: {result.error_message}\n")
-    
+
     def render_restore_result(self, result: RestoreResult) -> None:
         if result.success:
             sys.stdout.write(f"[{success_color()}]✅ Restore completed successfully[/]\n")
@@ -216,7 +216,7 @@ class TextRenderer(Renderer):
             sys.stdout.write(f"[{error_color()}]❌ Restore failed[/]\n")
             if result.error_message:
                 sys.stdout.write(f"   Error: {result.error_message}\n")
-    
+
     def render_message(self, message: str, level: str = "info") -> None:
         """Render a message with theme-aware styling."""
         style_map = {
@@ -234,14 +234,14 @@ class TextRenderer(Renderer):
         style = style_map.get(level, info_style())
         icon = icon_map.get(level, "ℹ️")
         sys.stdout.write(f"{icon} [{style}]{message}[/]\n")
-    
+
     def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
         """Render an error with theme-aware styling."""
         sys.stdout.write(f"❌ [{error_style()}]{message}[/]\n")
         if details:
             for key, value in details.items():
                 sys.stdout.write(f"   {key}: {value}\n")
-    
+
     def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
         """Render a dry-run plan with theme-aware styling."""
         sys.stdout.write(f"📋 [{primary_color()}]Dry-run plan for {spec_type}[/]:\n")
@@ -256,7 +256,7 @@ class TextRenderer(Renderer):
                     sys.stdout.write(f"     - {k}: {v}\n")
             else:
                 sys.stdout.write(f"   {key}: {value}\n")
-    
+
     def _format_bytes(self, bytes_val: int) -> str:
         """Format bytes to human-readable string."""
         for unit in ["B", "KB", "MB", "GB", "TB"]:
@@ -268,10 +268,10 @@ class TextRenderer(Renderer):
 
 def get_renderer(json_output: bool = False) -> Renderer:
     """Get the appropriate renderer.
-    
+
     Args:
         json_output: Whether to use JSON renderer
-        
+
     Returns:
         Renderer instance
     """
@@ -282,13 +282,13 @@ def get_renderer(json_output: bool = False) -> Renderer:
 
 def render_result(result: Any, json_output: bool = False) -> None:
     """Render a result using the appropriate renderer.
-    
+
     Args:
         result: The result to render
         json_output: Whether to use JSON output
     """
     renderer = get_renderer(json_output)
-    
+
     if isinstance(result, BackupResult):
         renderer.render_backup_result(result)
     elif isinstance(result, ArchiveCreateResult):
@@ -305,4 +305,3 @@ def render_result(result: Any, json_output: bool = False) -> None:
                 json.dump(data, sys.stdout, indent=2, default=str)
             else:
                 sys.stdout.write(str(data))
-

@@ -1,13 +1,13 @@
 /* ArchiveListPane styles (mikomn available) */
 
-ArchiveListPane {
+.bkx-archive-list-pane {
     width: 50;
     dock: left;
     background: $surface;
     border: solid $secondary;
 }
 
-ArchiveListPane > .label {
+.bkx-archive-list-pane > .label {
     height: 3;
     background: $primary;
     color: $foreground;
@@ -15,18 +15,18 @@ ArchiveListPane > .label {
     dock: top;
 }
 
-ArchiveListPane > .filter {
+.bkx-archive-list-pane > .filter {
     height: 3;
     dock: top;
     background: $surface-darken-1;
 }
 
-ArchiveListPane > .list {
+.bkx-archive-list-pane > .list {
     height: 1fr;
     dock: bottom;
 }
 
-ArchiveListPane > .count-label {
+.bkx-archive-list-pane > .count-label {
     height: 2;
     dock: bottom;
     background: $surface-darken-1;
@@ -62,16 +62,16 @@ ArchiveListPane > .count-label {
     content-align: center middle;
 }
 
-ListItem {
+.bkx-archive-list-pane ListItem {
     height: 2;
     padding: 0 1;
 }
 
-ListItem:hover {
+.bkx-archive-list-pane ListItem:hover {
     background: $accent;
 }
 
-ListItem:focus {
+.bkx-archive-list-pane ListItem:focus {
     background: $primary;
 }
 
@@ -84,5 +84,4 @@ ListItem:focus {
 .archive-meta {
     color: $foreground-muted;
 }
-
 

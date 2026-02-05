@@ -177,9 +177,8 @@ class FallbackToolDetector:
 
 def get_tool_detector() -> FallbackToolDetector:
     """Get the default tool detector implementation.
-    
+
     Returns:
         FallbackToolDetector instance
     """
     return FallbackToolDetector()
-

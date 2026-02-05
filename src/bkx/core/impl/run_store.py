@@ -289,4 +289,3 @@ def set_run_store(store: RunStorePort) -> None:
 def _metadata_to_metadata(meta: RunMetadata) -> RunMetadata:
     """Identity function for type checking."""
     return meta
-

@@ -287,4 +287,3 @@ class TestBuildRestoreSpec:
             )
 
             assert spec.dry_run is True
-

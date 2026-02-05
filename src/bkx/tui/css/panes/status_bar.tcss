@@ -1,6 +1,6 @@
 /* StatusBarPane styles */
 
-StatusBarPane {
+.bkx-status-bar-pane {
     height: 2;
     dock: bottom;
     background: $surface-darken-1;

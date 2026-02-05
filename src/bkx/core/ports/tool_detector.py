@@ -81,7 +81,6 @@ class ToolDetectorPort(Protocol):
 KNOWN_TOOLS = {
     # Python (for pure Python fallbacks)
     "python": ("runtime", "Python interpreter"),
-
     # Archivers
     "zstd": ("compression", "fast compression with zstd"),
     "pigz": ("compression", "parallel gzip"),
@@ -90,12 +89,10 @@ KNOWN_TOOLS = {
     "7z": ("compression", "7-Zip compression"),
     "zip": ("compression", "zip compression"),
     "tar": ("archiving", "tar archiving"),
-
     # Transfer
     "rsync": ("transfer", "efficient file transfer"),
     "rclone": ("cloud", "cloud storage sync"),
     "scp": ("transfer", "SSH file transfer"),
-
     # Hashing
     "xxh128": ("hashing", "xxh128 hash"),
     "xxh64": ("hashing", "xxh64 hash"),
@@ -111,4 +108,3 @@ PREFERRED_TOOLS = {
     "transfer": ("rsync", "rclone", "scp", "cp"),
     "hashing": ("xxh128", "xxh64", "sha256sum"),
 }
-

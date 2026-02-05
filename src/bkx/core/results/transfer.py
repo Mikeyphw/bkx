@@ -91,4 +91,3 @@ def _human_bytes(n: int) -> str:
             return f"{n:.2f}{unit}"
         n /= 1024
     return f"{n:.2f}PB"
-

@@ -124,4 +124,3 @@ class TestRestoreSpec:
 
         assert len(spec.paths) == 2
         assert "file1.txt" in spec.paths
-

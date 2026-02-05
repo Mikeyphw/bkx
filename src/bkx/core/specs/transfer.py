@@ -108,4 +108,3 @@ class TransferSpec:
     def is_pull(self) -> bool:
         """Check if this is a pull operation."""
         return self.direction == "pull"
-

@@ -157,4 +157,3 @@ ZIP = ArchiveFormat(
     supports_compression=True,
     supports_splitting=False,
 )
-

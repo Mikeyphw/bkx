@@ -1,91 +1,115 @@
-"""Theme management for bkx using mikomn's unified theme system.
+"""Theme management for bkx using mikomn's unified theme registry.
 
-This module integrates mikomn's theme capabilities for consistent styling
-across CLI (Rich), TUI (Textual), and any other UI components.
+bkx treats themes as palette dictionaries (mikomn v0.3+):
+- Themes are JSON: <name>.json
+- Each theme contains a top-level ``palette`` mapping token -> hex color
 
-Features:
-- Theme loading and caching
-- Theme switching and cycling
-- Custom theme directory support
-- Theme preference persistence
-- Theme-aware status messages for interactive mode
-- Integration with mikomn's CLI prompts and TUI widgets
-
-Related:
-- mikomn.cli_base.interactive: Theme-aware prompts
-- mikomn.cli_base.menus: Themed menu rendering
-- mikomn.tui_base: Textual TUI integration
+This module provides:
+- A small bkx-facing API for retrieving palette colors
+- Rich style helpers for CLI output
+- Theme directory registration and preference persistence
+- Bridged theme-change callbacks for both bkx and mikomn callback conventions
 """
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from mikomn import (
-    load_theme,
+    get_current_theme as _get_current_theme,
     get_theme_names as _get_theme_names,
-    get_default_theme,
-    on_theme_change as _on_theme_change,
+    load_theme,
     off_theme_change as _off_theme_change,
+    on_theme_change as _on_theme_change,
     register_theme_dir as _register_theme_dir,
 )
-from mikomn.rich import generate_rich_styles
+from mikomn.themes.core import generate_rich_styles, set_current_theme
 
-# Default theme for bkx
 DEFAULT_THEME = "sweet-dracula"
 
-# Environment variable for theme override
 _THEME_ENV = "BKX_THEME"
-
-# Environment variable for custom theme directory
 _THEME_DIR_ENV = "BKX_THEME_DIR"
-
-# Environment variable for persisting theme preference
 _THEME_PERSIST_ENV = "BKX_PERSIST_THEME"
 
-# Cache for loaded theme
 _current_theme: str = DEFAULT_THEME
 _theme_cache: dict[str, Any] = {}
 _rich_styles_cache: dict[str, str] = {}
 _custom_theme_dirs: list[str] = []
 _theme_persist_enabled: bool = False
 
+# Callback bridge
+_on_theme_change_callbacks: list[Callable[..., None]] = []
+_bridge_registered: bool = False
+
 
 def _init_theme() -> None:
-    """Initialize theme from environment or default."""
-    global _current_theme
+    """Initialize theme from environment/default and sync to mikomn."""
+    global _current_theme, _theme_persist_enabled
+
     env_theme = os.environ.get(_THEME_ENV)
     if env_theme:
         _current_theme = env_theme
     else:
         _current_theme = DEFAULT_THEME
 
+    _theme_persist_enabled = os.environ.get(_THEME_PERSIST_ENV, "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+    try:
+        # Ensure mikomn global theme state matches bkx preference.
+        set_current_theme(_current_theme)
+    except Exception:
+        # Keep bkx usable even if mikomn theme registry is unavailable.
+        pass
+
 
 def get_current_theme_name() -> str:
-    """Get the currently active theme name."""
+    """Return the currently active theme name."""
     return _current_theme
 
 
+def _load_theme_or_empty(name: str) -> dict[str, Any]:
+    theme = load_theme(name)
+    return theme if isinstance(theme, dict) else {}
+
+
 def get_active_theme() -> dict[str, Any]:
-    """Get the currently active theme dictionary.
-    
-    Returns:
-        Theme dict with colors, styles, and metadata
-    """
+    """Return the active theme dict (as loaded by mikomn)."""
     global _theme_cache, _rich_styles_cache
     if not _theme_cache:
-        _theme_cache = load_theme(_current_theme) or {}
+        # Prefer mikomn's global current theme (if any).
+        try:
+            cur = _get_current_theme()
+            if isinstance(cur, dict) and cur.get("name"):
+                _theme_cache = cur
+            else:
+                _theme_cache = _load_theme_or_empty(_current_theme)
+        except Exception:
+            _theme_cache = _load_theme_or_empty(_current_theme)
+
         _rich_styles_cache = generate_rich_styles(_current_theme) or {}
     return _theme_cache
 
 
+def get_palette() -> dict[str, str]:
+    """Return the active palette mapping token -> hex color."""
+    theme = get_active_theme()
+    pal = theme.get("palette", {})
+    return pal if isinstance(pal, dict) else {}
+
+
 def get_rich_styles() -> dict[str, str]:
-    """Get Rich-compatible styles for the active theme.
-    
-    Returns:
-        Dict mapping style names to Rich markup strings
+    """Return a small dict of common Rich styles (hex colors).
+
+    mikomn's ``generate_rich_styles`` returns hex colors, which are valid Rich style
+    values (e.g. ``"#50FA7B"``). bkx wraps these into markup when formatting.
     """
     global _rich_styles_cache
     if not _rich_styles_cache:
@@ -94,289 +118,222 @@ def get_rich_styles() -> dict[str, str]:
 
 
 def set_theme(name: str) -> bool:
-    """Set the active theme by name.
-    
-    Args:
-        name: Theme name to activate
-        
-    Returns:
-        True if theme was loaded successfully, False otherwise
-    """
+    """Set the active theme by name, syncing to mikomn."""
     global _current_theme, _theme_cache, _rich_styles_cache
-    theme = load_theme(name)
-    if theme:
-        _current_theme = name
-        _theme_cache = theme
-        _rich_styles_cache = generate_rich_styles(name) or {}
-        _notify_theme_change(name)
-        return True
-    return False
+
+    theme = _load_theme_or_empty(name)
+    if not theme:
+        return False
+
+    _current_theme = name
+    _theme_cache = theme
+    _rich_styles_cache = generate_rich_styles(name) or {}
+
+    try:
+        set_current_theme(name)
+    except Exception:
+        pass
+
+    if _theme_persist_enabled:
+        save_theme_preference(name)
+
+    return True
 
 
 def cycle_theme() -> str:
-    """Cycle to the next available theme.
-    
-    Returns:
-        Name of the newly active theme
-    """
-    global _current_theme, _theme_cache, _rich_styles_cache
+    """Cycle to the next available theme and activate it."""
     names = get_all_theme_names()
     if not names:
         return _current_theme
+
     try:
         idx = names.index(_current_theme)
-        _current_theme = names[(idx + 1) % len(names)]
+        next_name = names[(idx + 1) % len(names)]
     except ValueError:
-        _current_theme = names[0]
-    _theme_cache.clear()
-    _rich_styles_cache.clear()
-    _notify_theme_change(_current_theme)
-    return _current_theme
+        next_name = names[0]
+
+    set_theme(next_name)
+    return next_name
 
 
 def get_all_theme_names() -> list[str]:
-    """Get list of available theme names.
-    
-    Returns:
-        List of theme names registered with mikomn
-    """
-    return _get_theme_names()
+    """Return all theme names registered with mikomn."""
+    try:
+        return list(_get_theme_names())
+    except Exception:
+        return []
 
 
-# Alias for backward compatibility
 def get_theme_names() -> list[str]:
-    """Get list of available theme names (alias for get_all_theme_names)."""
+    """Alias for backward compatibility."""
     return get_all_theme_names()
 
 
 def reload_theme() -> None:
-    """Reload the current theme (useful after theme dir changes)."""
+    """Reload cached theme data for the currently selected theme."""
     global _theme_cache, _rich_styles_cache
-    _theme_cache = load_theme(_current_theme) or {}
+    _theme_cache = _load_theme_or_empty(_current_theme)
     _rich_styles_cache = generate_rich_styles(_current_theme) or {}
 
 
-# Convenience color accessors
+# ---------------------------------------------------------------------------
+# Palette accessors (bkx-friendly names)
+# ---------------------------------------------------------------------------
+
 def primary_color() -> str:
-    """Get primary accent color.
-    
-    Returns:
-        Hex color string (e.g., "#3B82F6")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("primary", "#3B82F6")
+    pal = get_palette()
+    return pal.get("accent_primary", pal.get("accent", "#3B82F6"))
 
 
 def secondary_color() -> str:
-    """Get secondary accent color.
-    
-    Returns:
-        Hex color string (e.g., "#8B5CF6")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("secondary", "#8B5CF6")
+    pal = get_palette()
+    return pal.get("accent_secondary", pal.get("accent2", "#8B5CF6"))
 
 
 def accent_color() -> str:
-    """Get selection/highlight color.
-    
-    Returns:
-        Hex color string (e.g., "#F59E0B")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("accent", "#F59E0B")
+    pal = get_palette()
+    return pal.get("accent", pal.get("accent_primary", "#F59E0B"))
 
 
 def foreground_color() -> str:
-    """Get main foreground/text color.
-    
-    Returns:
-        Hex color string (e.g., "#F9FAFB")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("foreground", "#F9FAFB")
+    pal = get_palette()
+    return pal.get("fg", pal.get("text_primary", "#F9FAFB"))
 
 
 def background_color() -> str:
-    """Get background color.
-    
-    Returns:
-        Hex color string (e.g., "#1A1A2E")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("background", "#1A1A2E")
+    pal = get_palette()
+    return pal.get("bg", "#1A1A2E")
 
 
 def surface_color() -> str:
-    """Get surface/panel background color.
-    
-    Returns:
-        Hex color string (e.g., "#16213E")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("surface", "#16213E")
+    pal = get_palette()
+    return pal.get("surface", "#16213E")
 
 
 def success_color() -> str:
-    """Get success state color.
-    
-    Returns:
-        Hex color string (e.g., "#10B981")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("success", "#10B981")
+    pal = get_palette()
+    return pal.get("success", "#10B981")
 
 
 def warning_color() -> str:
-    """Get warning state color.
-    
-    Returns:
-        Hex color string (e.g., "#F59E0B")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("warning", "#F59E0B")
+    pal = get_palette()
+    return pal.get("warning", "#F59E0B")
 
 
 def error_color() -> str:
-    """Get error state color.
-    
-    Returns:
-        Hex color string (e.g., "#EF4444")
-    """
-    colors = get_active_theme().get("colors", {})
-    return colors.get("error", "#EF4444")
+    pal = get_palette()
+    return pal.get("error", "#EF4444")
 
 
 def foreground_muted_color() -> str:
-    """Get muted foreground color.
-    
-    Returns:
-        Hex color string (e.g., "#9CA3AF")
-    """
-    colors = get_active_theme().get("colors", {})
-    text_colors = colors.get("text", {})
-    return text_colors.get("foreground-muted", "#9CA3AF")
+    pal = get_palette()
+    return pal.get("muted", pal.get("text_secondary", "#9CA3AF"))
 
 
+# ---------------------------------------------------------------------------
 # Rich style helpers
+# ---------------------------------------------------------------------------
+
 def success_style() -> str:
-    """Get Rich style string for success messages."""
-    return get_rich_styles().get("success", f"[{success_color()}]")
+    return f"bold {get_rich_styles().get('success', success_color())}"
 
 
 def warning_style() -> str:
-    """Get Rich style string for warning messages."""
-    return get_rich_styles().get("warning", f"[{warning_color()}]")
+    return f"bold {get_rich_styles().get('warning', warning_color())}"
 
 
 def error_style() -> str:
-    """Get Rich style string for error messages."""
-    return get_rich_styles().get("error", f"[{error_color()}]")
+    return f"bold {get_rich_styles().get('error', error_color())}"
 
 
 def info_style() -> str:
-    """Get Rich style string for info messages."""
-    return get_rich_styles().get("info", f"[{foreground_color()}]")
+    return get_rich_styles().get("fg", foreground_color())
 
 
 def primary_style() -> str:
-    """Get Rich style string for primary elements."""
-    return f"[bold {primary_color()}]"
+    return f"bold {primary_color()}"
 
 
 def accent_style() -> str:
-    """Get Rich style string for accent elements."""
-    return f"[bold {accent_color()}]"
+    return f"bold {accent_color()}"
 
 
-# Theme change callbacks
-_on_theme_change_callbacks: list[Callable[[str], None]] = []
+# ---------------------------------------------------------------------------
+# Theme change callbacks (bridged)
+# ---------------------------------------------------------------------------
+
+def _bridge_theme_change(theme_name: str, palette: dict[str, str]) -> None:
+    for cb in list(_on_theme_change_callbacks):
+        try:
+            cb(theme_name, palette)
+            continue
+        except TypeError:
+            try:
+                cb(theme_name)
+            except Exception:
+                continue
+        except Exception:
+            continue
 
 
-def on_theme_change(callback: Callable[[str], None]) -> None:
-    """Register a callback to be called when the theme changes.
-    
-    Args:
-        callback: Function that receives the new theme name
+def on_theme_change(callback: Callable[..., None]) -> None:
+    """Register a callback for theme changes.
+
+    Callback may accept:
+    - (theme_name: str)
+    - (theme_name: str, palette: dict[str, str])
     """
+    global _bridge_registered
     _on_theme_change_callbacks.append(callback)
-    _on_theme_change(callback)
+    if not _bridge_registered:
+        _on_theme_change(_bridge_theme_change)
+        _bridge_registered = True
 
 
-def off_theme_change(callback: Callable[[str], None]) -> None:
-    """Unregister a theme change callback.
-    
-    Args:
-        callback: Function to remove from callbacks
-    """
+def off_theme_change(callback: Callable[..., None]) -> None:
+    """Unregister a previously registered callback."""
     if callback in _on_theme_change_callbacks:
         _on_theme_change_callbacks.remove(callback)
-    _off_theme_change(callback)
-
-
-def _notify_theme_change(new_theme: str) -> None:
-    """Internal: notify all registered callbacks of theme change."""
-    for callback in _on_theme_change_callbacks:
+    if not _on_theme_change_callbacks:
         try:
-            callback(new_theme)
+            _off_theme_change(_bridge_theme_change)
         except Exception:
-            pass  # Don't let callback errors break theme switching
+            pass
 
 
-# Initialize on module load
-_init_theme()
-
-
-# ============================================================================
-# Custom Theme Directory Support
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Custom theme directories
+# ---------------------------------------------------------------------------
 
 def register_theme_dir(directory: str) -> bool:
-    """Register a custom theme directory.
-    
-    Args:
-        directory: Path to directory containing theme files
-        
-    Returns:
-        True if directory was registered successfully
-    """
+    """Register a custom theme directory with mikomn."""
     global _custom_theme_dirs
     path = Path(directory)
-    if path.exists() and path.is_dir():
-        _register_theme_dir(str(path))
-        if str(path) not in _custom_theme_dirs:
-            _custom_theme_dirs.append(str(path))
-        reload_theme()
-        return True
-    return False
+    if not (path.exists() and path.is_dir()):
+        return False
+
+    _register_theme_dir(path)
+    if str(path) not in _custom_theme_dirs:
+        _custom_theme_dirs.append(str(path))
+    reload_theme()
+    return True
 
 
 def get_custom_theme_dirs() -> list[str]:
-    """Get list of registered custom theme directories.
-    
-    Returns:
-        List of custom theme directory paths
-    """
     return list(_custom_theme_dirs)
 
 
 def load_custom_theme_dirs() -> None:
-    """Load custom theme directories from environment variable."""
     env_dir = os.environ.get(_THEME_DIR_ENV)
     if env_dir:
         register_theme_dir(env_dir)
 
 
-# ============================================================================
-# Theme Persistence
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Theme persistence
+# ---------------------------------------------------------------------------
 
 def _get_config_dir() -> Path:
-    """Get the bkx config directory.
-    
-    Returns:
-        Path to config directory
-    """
     config_home = os.environ.get("XDG_CONFIG_HOME", "")
     if config_home:
         return Path(config_home) / "bkx"
@@ -384,147 +341,71 @@ def _get_config_dir() -> Path:
 
 
 def _get_theme_config_file() -> Path:
-    """Get the theme preference config file path.
-    
-    Returns:
-        Path to theme config file
-    """
     return _get_config_dir() / "theme.json"
 
 
 def enable_theme_persistence(enabled: bool = True) -> None:
-    """Enable or disable theme preference persistence.
-    
-    Args:
-        enabled: Whether to persist theme changes
-    """
     global _theme_persist_enabled
     _theme_persist_enabled = enabled
 
 
 def is_theme_persistence_enabled() -> bool:
-    """Check if theme persistence is enabled.
-    
-    Returns:
-        True if theme preference will be persisted
-    """
     return _theme_persist_enabled
 
 
 def save_theme_preference(theme_name: str) -> bool:
-    """Save the theme preference to config file.
-    
-    Args:
-        theme_name: Theme name to save
-        
-    Returns:
-        True if saved successfully
-    """
     if not _theme_persist_enabled:
         return False
+
+    config_dir = _get_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_file = _get_theme_config_file()
     try:
-        config_dir = _get_config_dir()
-        config_dir.mkdir(parents=True, exist_ok=True)
-        config_file = _get_theme_config_file()
-        import json
-        config_file.write_text(json.dumps({"theme": theme_name}))
-        return True
+        config_file.write_text(json.dumps({"theme": theme_name}, indent=2), encoding="utf-8")
     except Exception:
         return False
+    return True
 
 
-def load_theme_preference() -> str | None:
-    """Load the saved theme preference from config file.
-    
-    Returns:
-        Saved theme name or None if not found
-    """
+def load_theme_preference() -> Optional[str]:
+    config_file = _get_theme_config_file()
+    if not config_file.exists():
+        return None
     try:
-        config_file = _get_theme_config_file()
-        if config_file.exists():
-            import json
-            data = json.loads(config_file.read_text())
-            return data.get("theme")
+        data = json.loads(config_file.read_text(encoding="utf-8"))
     except Exception:
-        pass
-    return None
+        return None
+    theme = data.get("theme")
+    return theme if isinstance(theme, str) else None
 
 
-def _persist_theme_change(new_theme: str) -> None:
-    """Internal: Save theme change if persistence is enabled."""
-    if _theme_persist_enabled:
-        save_theme_preference(new_theme)
-
-
-# ============================================================================
-# Theme-Aware Status Messages for Interactive Mode
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Themed message helpers (Rich markup)
+# ---------------------------------------------------------------------------
 
 def get_status_message(level: str = "info") -> tuple[str, str]:
-    """Get a themed status message with icon and style.
-    
-    Args:
-        level: Message level (info, success, warning, error)
-        
-    Returns:
-        Tuple of (icon, style_string)
-    """
-    icon_map = {
-        "info": "ℹ️",
-        "success": "✅",
-        "warning": "⚠️",
-        "error": "❌",
-    }
+    icon_map = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}
     style_map = {
         "info": info_style(),
         "success": success_style(),
         "warning": warning_style(),
         "error": error_style(),
     }
-    return (
-        icon_map.get(level, "ℹ️"),
-        style_map.get(level, info_style())
-    )
+    return (icon_map.get(level, "ℹ️"), style_map.get(level, info_style()))
 
 
 def themed_message(message: str, level: str = "info") -> str:
-    """Format a message with theme-aware styling.
-    
-    Args:
-        message: Message text
-        level: Message level
-        
-    Returns:
-        Rich-formatted message string
-    """
     icon, style = get_status_message(level)
     return f"{icon} [{style}]{message}[/]"
 
 
 def themed_header(title: str) -> str:
-    """Format a section header with theme-aware styling.
-    
-    Args:
-        title: Header text
-        
-    Returns:
-        Rich-formatted header string
-    """
     return f"[bold {primary_color()}]{title}[/]"
 
 
 def themed_prompt(prompt_text: str) -> str:
-    """Format a prompt with theme-aware styling.
-    
-    Args:
-        prompt_text: Prompt text
-        
-    Returns:
-        Rich-formatted prompt string
-    """
     return f"[bold {accent_color()}]{prompt_text}[/]"
 
 
-# Initialize custom theme directories from environment
+_init_theme()
 load_custom_theme_dirs()
-

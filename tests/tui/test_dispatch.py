@@ -237,7 +237,6 @@ class TestIntentHandlerProtocol:
         ]
 
         for intent in intents:
-            assert isinstance(
-                intent, Message
-            ), f"{type(intent).__name__} should be a Message subclass"
-
+            assert isinstance(intent, Message), (
+                f"{type(intent).__name__} should be a Message subclass"
+            )

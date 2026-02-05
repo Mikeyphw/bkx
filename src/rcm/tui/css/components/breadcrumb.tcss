@@ -1,0 +1,31 @@
+/* Breadcrumb - rcm clickable breadcrumb (Step 8) */
+
+.rcm .rcm-browse-breadcrumb,
+.rcm .rcm-search-breadcrumb {
+    height: auto;
+    width: 1fr;
+    align: left middle;
+    overflow: hidden;
+}
+
+.rcm .rcm-browse-breadcrumb .crumb-btn,
+.rcm .rcm-search-breadcrumb .crumb-btn {
+    padding: 0 1;
+    background: transparent;
+    border: none;
+    color: $muted;
+}
+
+.rcm .rcm-browse-breadcrumb .crumb-btn:hover,
+.rcm .rcm-search-breadcrumb .crumb-btn:hover,
+.rcm .rcm-browse-breadcrumb .crumb-btn:focus,
+.rcm .rcm-search-breadcrumb .crumb-btn:focus {
+    color: $fg;
+    text-style: underline;
+}
+
+.rcm .rcm-browse-breadcrumb .crumb-sep,
+.rcm .rcm-search-breadcrumb .crumb-sep {
+    padding: 0 0;
+    color: $muted;
+}

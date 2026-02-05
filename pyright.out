@@ -1,0 +1,106 @@
+venv .venv subdirectory not found in venv path /home/mike/Documents/python_scripts/modules.
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:225:42 - error: No parameter named "level" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:242:21 - error: Cannot access attribute "on_unmount" for class "object"
+    Attribute "on_unmount" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:293:50 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:302:63 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:311:57 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:329:65 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:442:50 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:453:53 - error: Argument of type "Literal['info']" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "Literal['info']" is not assignable to type "SeverityLevel"
+      "Literal['info']" is not assignable to type "Literal['information']"
+      "Literal['info']" is not assignable to type "Literal['warning']"
+      "Literal['info']" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:530:60 - error: Cannot access attribute "archive_path" for class "BackupResult"
+    Attribute "archive_path" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:531:52 - error: Cannot access attribute "files_count" for class "BackupResult"
+    Attribute "files_count" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:531:80 - error: Cannot access attribute "bytes_total" for class "BackupResult"
+    Attribute "bytes_total" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:536:56 - error: Cannot access attribute "files_count" for class "BackupResult"
+    Attribute "files_count" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:628:61 - error: Cannot access attribute "destination_path" for class "RestoreResult"
+    Attribute "destination_path" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:629:52 - error: Cannot access attribute "files_count" for class "RestoreResult"
+    Attribute "files_count" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:634:57 - error: Cannot access attribute "files_count" for class "RestoreResult"
+    Attribute "files_count" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:673:30 - error: Cannot access attribute "transfer" for class "TransferService"
+    Attribute "transfer" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:742:46 - error: Argument of type "str" cannot be assigned to parameter "severity" of type "SeverityLevel" in function "notify"
+    Type "str" is not assignable to type "SeverityLevel"
+      "str" is not assignable to type "Literal['information']"
+      "str" is not assignable to type "Literal['warning']"
+      "str" is not assignable to type "Literal['error']" (reportArgumentType)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:775:67 - error: No parameter named "duration" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/app.py:837:12 - error: Type "Unknown | None" is not assignable to return type "int"
+    Type "Unknown | None" is not assignable to type "int"
+      "None" is not assignable to "int" (reportReturnType)
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:114:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:115:13 - error: No parameter named "title" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:116:13 - error: No parameter named "mode" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:116:29 - error: Cannot access attribute "FILES_AND_DIRS" for class "type[FilterMode]"
+    Attribute "FILES_AND_DIRS" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:117:13 - error: No parameter named "multiple" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:126:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/backup.py:126:50 - error: No parameter named "title" (reportCallIssue)
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:53:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:53:43 - error: No parameter named "title" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:53:67 - error: No parameter named "mode" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:53:95 - error: No parameter named "multiple" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:60:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/restore.py:60:50 - error: No parameter named "title" (reportCallIssue)
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/tools.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/tools.py:39:14 - error: Cannot access attribute "update_setting" for class "ToolsDashboardPane"
+    Attribute "update_setting" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/tools.py:40:14 - error: Cannot access attribute "update_setting" for class "ToolsDashboardPane"
+    Attribute "update_setting" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/tools.py:41:14 - error: Cannot access attribute "update_setting" for class "ToolsDashboardPane"
+    Attribute "update_setting" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/tools.py:42:14 - error: Cannot access attribute "update_setting" for class "ToolsDashboardPane"
+    Attribute "update_setting" is unknown (reportAttributeAccessIssue)
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:57:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:57:43 - error: No parameter named "title" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:57:66 - error: No parameter named "mode" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:57:82 - error: Cannot access attribute "FILES_AND_DIRS" for class "type[FilterMode]"
+    Attribute "FILES_AND_DIRS" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:57:98 - error: No parameter named "multiple" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:64:26 - error: Argument missing for parameter "app" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/pages/transfer.py:64:50 - error: No parameter named "title" (reportCallIssue)
+/home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:18:41 - error: "StatusCardData" is unknown import symbol (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:48:11 - error: Class declaration "StatusCardsPane" is obscured by a declaration of the same name (reportRedeclaration)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:97:17 - error: Argument missing for parameter "card" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:99:21 - error: No parameter named "value" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:100:21 - error: No parameter named "subtitle" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:101:21 - error: No parameter named "status" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:143:27 - error: Cannot access attribute "append" for class "Grid"
+    Attribute "append" is unknown (reportAttributeAccessIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:276:47 - error: No parameter named "setting_key" (reportCallIssue)
+  /home/mike/Documents/python_scripts/modules/bkx/src/bkx/tui/panes/status_cards.py:276:64 - error: No parameter named "setting_value" (reportCallIssue)
+52 errors, 0 warnings, 0 informations

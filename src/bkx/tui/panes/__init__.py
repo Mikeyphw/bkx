@@ -3,8 +3,17 @@
 from bkx.tui.panes.navigation import NavigationPane
 from bkx.tui.panes.log import RunLogPane
 from bkx.tui.panes.status import StatusFooterPane
-from bkx.tui.panes.archive_list import ArchiveListPane, ArchivePreviewPane, create_archive_list_items
-from bkx.tui.panes.progress import ProgressPane, StatusBarPane, TransferProgressPane, create_progress_callback
+from bkx.tui.panes.archive_list import (
+    ArchiveListPane,
+    ArchivePreviewPane,
+    create_archive_list_items,
+)
+from bkx.tui.panes.progress import (
+    ProgressPane,
+    StatusBarPane,
+    TransferProgressPane,
+    create_progress_callback,
+)
 from bkx.tui.panes.status_cards import (
     StatusCardsPane,
     StatusCard,
@@ -45,4 +54,3 @@ __all__ = [
     "EmptyStatePresets",
     "EmptyStateManager",
 ]
-

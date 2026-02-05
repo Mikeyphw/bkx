@@ -6,17 +6,17 @@ Uses mikomn's StatusCards for displaying settings and status information.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Container, Grid, Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Button, Label, Static
+from textual.widgets import Label, Static
 
 # mikomn TUI base widgets for enhanced UI
 try:
-    from mikomn.tui_base.widgets import StatusCards, StatusCardData
     from mikomn.tui_base.models import StatusCardData as MikomnStatusCardData
+    from mikomn.tui_base.widgets import StatusCardData, StatusCards
+
     _HAS_MIKOMN = True
 except ImportError:
     _HAS_MIKOMN = False
@@ -25,6 +25,7 @@ except ImportError:
 @dataclass
 class StatusCard:
     """Represents a status card."""
+
     id: str
     title: str
     value: str
@@ -36,24 +37,28 @@ class StatusCard:
 @dataclass
 class StatusCardConfig:
     """Configuration for status cards display."""
+
     cards: list[StatusCard] = field(default_factory=list)
     layout: str = "grid"  # "grid", "list", "columns"
     columns: int = 2
 
 
 if _HAS_MIKOMN:
+
     class StatusCardsPane(Container):
         """Status cards pane using mikomn's StatusCards."""
-        
+
+        DEFAULT_CLASSES = "bkx-status-cards-pane"
+
         def __init__(
             self,
-            config: Optional[StatusCardConfig] = None,
+            config: StatusCardConfig | None = None,
             **kwargs,
         ):
             super().__init__(**kwargs)
             self._config = config or StatusCardConfig()
-            self._status_cards: Optional[StatusCards] = None
-        
+            self._status_cards: StatusCards | None = None
+
         def compose(self) -> ComposeResult:
             cards_data = [
                 MikomnStatusCardData(
@@ -72,7 +77,7 @@ if _HAS_MIKOMN:
                 id="status-cards",
             )
             yield self._status_cards
-        
+
         def update_card(
             self,
             card_id: str,
@@ -81,7 +86,7 @@ if _HAS_MIKOMN:
             status: str = "info",
         ) -> None:
             """Update a card's value.
-            
+
             Args:
                 card_id: ID of the card to update
                 value: New value
@@ -95,8 +100,8 @@ if _HAS_MIKOMN:
                     subtitle=subtitle,
                     status=status,
                 )
-        
-        def get_card(self, card_id: str) -> Optional[StatusCard]:
+
+        def get_card(self, card_id: str) -> StatusCard | None:
             """Get a card by ID."""
             for card in self._config.cards:
                 if card.id == card_id:
@@ -104,45 +109,46 @@ if _HAS_MIKOMN:
             return None
 
 else:
+
     class StatusCardsPane(Container):
         """Status cards pane with custom implementation."""
-        
+
         def __init__(
             self,
-            config: Optional[StatusCardConfig] = None,
+            config: StatusCardConfig | None = None,
             **kwargs,
         ):
             super().__init__(**kwargs)
             self._config = config or StatusCardConfig()
             self._card_widgets: dict[str, Container] = {}
-        
+
         def compose(self) -> ComposeResult:
             yield Label("📊 Status", classes="cards-header")
-            
+
             if self._config.layout == "list":
                 yield Grid(classes="cards-list", id="cards-container")
             else:
                 yield Grid(classes="cards-grid", id="cards-container")
-            
+
             self._compose_cards()
-        
+
         def _compose_cards(self) -> None:
             """Compose card widgets."""
             container = self.query_one("#cards-container", Grid)
             container.remove_children()
             self._card_widgets.clear()
-            
+
             for card in self._config.cards:
                 card_widget = self._create_card_widget(card)
                 container.append(card_widget)
                 self._card_widgets[card.id] = card_widget
-        
+
         def _create_card_widget(self, card: StatusCard) -> Container:
             """Create a card widget."""
             if self._config.layout == "list":
                 return self._create_list_card(card)
             return self._create_grid_card(card)
-        
+
         def _create_grid_card(self, card: StatusCard) -> Container:
             """Create a grid-style card."""
             card_container = Container(
@@ -154,7 +160,7 @@ else:
                 id=f"card-{card.id}",
             )
             return card_container
-        
+
         def _create_list_card(self, card: StatusCard) -> Container:
             """Create a list-style card."""
             card_container = Container(
@@ -172,7 +178,7 @@ else:
                 id=f"card-{card.id}",
             )
             return card_container
-        
+
         def update_card(
             self,
             card_id: str,
@@ -189,7 +195,7 @@ else:
                         card.subtitle = subtitle
                     card.status = status
                     break
-            
+
             # Update widget
             card_widget = self.query_one(f"#card-{card_id}", Container)
             if card_widget:
@@ -201,8 +207,8 @@ else:
                 subtitle_label = card_widget.query_one(".card-subtitle, .list-subtitle", Label)
                 if subtitle_label and subtitle:
                     subtitle_label.update(subtitle)
-        
-        def get_card(self, card_id: str) -> Optional[StatusCard]:
+
+        def get_card(self, card_id: str) -> StatusCard | None:
             """Get a card by ID."""
             for card in self._config.cards:
                 if card.id == card_id:
@@ -212,17 +218,19 @@ else:
 
 class ThemeSettingsPane(Container):
     """Settings pane for theme configuration."""
-    
+
+    DEFAULT_CLASSES = "bkx-theme-settings-pane"
+
     class SettingChanged(Message):
         """A setting was changed."""
-    
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._settings: dict[str, str] = {}
-    
+
     def compose(self) -> ComposeResult:
         yield Label("⚙️ Settings", classes="settings-header")
-        
+
         yield Container(
             Grid(
                 # Theme setting
@@ -253,10 +261,10 @@ class ThemeSettingsPane(Container):
             ),
             classes="settings-grid",
         )
-    
+
     def update_setting(self, key: str, value: str) -> None:
         """Update a setting value.
-        
+
         Args:
             key: Setting key (e.g., "theme", "compression")
             value: New value
@@ -270,14 +278,16 @@ class ThemeSettingsPane(Container):
 
 class ToolsDashboardPane(Container):
     """Dashboard-style pane combining status cards and settings."""
-    
-    def __init__(self, **kwargs):
+
+    DEFAULT_CLASSES = "bkx-tools-dashboard-pane"
+
+    def __init__(self, config: StatusCardConfig | None = None, **kwargs):
         super().__init__(**kwargs)
-        self._status_cards_config = StatusCardConfig()
-    
+        self._status_cards_config = config or StatusCardConfig(cards=create_default_status_cards())
+
     def compose(self) -> ComposeResult:
         yield Label("🔧 Tools & Settings", classes="dashboard-header")
-        
+
         yield Container(
             StatusCardsPane(
                 config=self._status_cards_config,
@@ -286,11 +296,11 @@ class ToolsDashboardPane(Container):
             ThemeSettingsPane(id="theme-settings"),
             classes="dashboard-content",
         )
-    
+
     def add_status_card(self, card: StatusCard) -> None:
         """Add a status card."""
         self._status_cards_config.cards.append(card)
-    
+
     def update_status_card(
         self,
         card_id: str,
@@ -305,12 +315,12 @@ class ToolsDashboardPane(Container):
 
 def create_default_status_cards() -> list[StatusCard]:
     """Create default status cards for BKX.
-    
+
     Returns:
         List of default status cards
     """
     from bkx.ui.theme import get_current_theme_name
-    
+
     return [
         StatusCard(
             id="theme",
@@ -361,4 +371,3 @@ def create_default_status_cards() -> list[StatusCard]:
             status="info",
         ),
     ]
-

@@ -191,10 +191,8 @@ class FallbackArchiver:
         # Apply filter if provided
         if filter_pattern:
             import fnmatch
-            entries = [
-                e for e in entries
-                if fnmatch.fnmatch(e.path, filter_pattern)
-            ]
+
+            entries = [e for e in entries if fnmatch.fnmatch(e.path, filter_pattern)]
 
         # Paginate
         start = page * page_size
@@ -257,9 +255,7 @@ class FallbackArchiver:
         uncompressed_size = sum(e.size for e in entries)
 
         # Calculate compression ratio
-        compression_ratio = (
-            total_size / uncompressed_size if uncompressed_size > 0 else 1.0
-        )
+        compression_ratio = total_size / uncompressed_size if uncompressed_size > 0 else 1.0
 
         return ArchiveInfoResult(
             success=True,
@@ -404,10 +400,7 @@ class FallbackArchiver:
 
                 # Filter by paths if partial restore
                 if spec.paths:
-                    members = [
-                        m for m in members
-                        if any(p in m.name for p in spec.paths)
-                    ]
+                    members = [m for m in members if any(p in m.name for p in spec.paths)]
 
                 for member in members:
                     tar.extract(member, destination)
@@ -427,9 +420,8 @@ class CreateResult:
 
 def get_archiver() -> FallbackArchiver:
     """Get the default archiver implementation.
-    
+
     Returns:
         FallbackArchiver instance (pure Python implementation)
     """
     return FallbackArchiver()
-

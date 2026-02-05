@@ -84,7 +84,7 @@ class BackupService:
                 success=False,
                 dry_run=False,
                 timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-                warnings=archive_result.warnings if hasattr(archive_result, 'warnings') else (),
+                warnings=archive_result.warnings if hasattr(archive_result, "warnings") else (),
                 step_results=step_results,
             )
 
@@ -97,18 +97,28 @@ class BackupService:
                 success=False,
                 dry_run=False,
                 timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-                files_processed=archive_result.files_archived if hasattr(archive_result, 'files_archived') else 0,
-                bytes_written=archive_result.bytes_written if hasattr(archive_result, 'bytes_written') else 0,
+                files_processed=archive_result.files_archived
+                if hasattr(archive_result, "files_archived")
+                else 0,
+                bytes_written=archive_result.bytes_written
+                if hasattr(archive_result, "bytes_written")
+                else 0,
                 archives_created=1,
-                archive_paths=(archive_result.archive_path,) if hasattr(archive_result, 'archive_path') and archive_result.archive_path else (),
+                archive_paths=(archive_result.archive_path,)
+                if hasattr(archive_result, "archive_path") and archive_result.archive_path
+                else (),
                 step_results=step_results,
-                warnings=transfer_result.warnings if hasattr(transfer_result, 'warnings') else (),
+                warnings=transfer_result.warnings if hasattr(transfer_result, "warnings") else (),
             )
 
         # Step 3: Verify if requested
         verify_passed = None
         if spec.verify:
-            archive_path = archive_result.archive_path if hasattr(archive_result, 'archive_path') and archive_result.archive_path else None
+            archive_path = (
+                archive_result.archive_path
+                if hasattr(archive_result, "archive_path") and archive_result.archive_path
+                else None
+            )
             if archive_path:
                 verify_passed = self._verify_backup(archive_path)
                 step_results["verify"] = verify_passed
@@ -117,10 +127,16 @@ class BackupService:
             success=True,
             dry_run=False,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-            files_processed=archive_result.files_archived if hasattr(archive_result, 'files_archived') else 0,
-            bytes_written=archive_result.bytes_written if hasattr(archive_result, 'bytes_written') else 0,
+            files_processed=archive_result.files_archived
+            if hasattr(archive_result, "files_archived")
+            else 0,
+            bytes_written=archive_result.bytes_written
+            if hasattr(archive_result, "bytes_written")
+            else 0,
             archives_created=1,
-            archive_paths=(archive_result.archive_path,) if hasattr(archive_result, 'archive_path') and archive_result.archive_path else (),
+            archive_paths=(archive_result.archive_path,)
+            if hasattr(archive_result, "archive_path") and archive_result.archive_path
+            else (),
             verification_passed=verify_passed,
             step_results=step_results,
         )
@@ -159,6 +175,7 @@ class BackupService:
             # No transfer needed - archive is already in place
             from ..results.transfer import TransferResult, Timing
             import time
+
             return TransferResult(
                 success=True,
                 direction="none",
@@ -172,6 +189,7 @@ class BackupService:
         if not archive_path:
             from ..results.transfer import TransferResult, Timing
             import time
+
             return TransferResult(
                 success=False,
                 direction="push",
@@ -218,4 +236,3 @@ class BackupService:
             warnings=tuple(warnings),
             step_results={},
         )
-

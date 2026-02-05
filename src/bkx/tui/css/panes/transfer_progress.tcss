@@ -1,6 +1,6 @@
 /* TransferProgressPane styles */
 
-TransferProgressPane {
+.bkx-transfer-progress-pane {
     height: 10;
     dock: bottom;
     background: $surface;

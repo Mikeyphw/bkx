@@ -26,7 +26,7 @@ class RestoreSpec:
     overwrite: bool = False  # Overwrite existing files
     verify: bool = True  # Verify archive integrity before restore
     dry_run: bool = False  # Just show plan, don't execute
-    
+
     # Safety options
     fresh_dir: bool = True  # Create fresh dir by default (safer default)
     confirm_overwrite: bool = True  # Require confirmation for overwrite
@@ -119,4 +119,3 @@ class RestoreSpec:
         if self.effective_destination and self.effective_destination.exists():
             return True
         return False
-

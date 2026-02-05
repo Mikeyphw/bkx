@@ -251,4 +251,3 @@ class TestFallbackHasher:
             assert result.success is True
             assert result.file_count == 2
             assert result.directory_checksum is not None
-

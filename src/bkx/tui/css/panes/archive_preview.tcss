@@ -1,6 +1,6 @@
 /* ArchivePreviewPane styles */
 
-ArchivePreviewPane {
+.bkx-archive-preview-pane {
     width: 1fr;
     dock: right;
     background: $surface;

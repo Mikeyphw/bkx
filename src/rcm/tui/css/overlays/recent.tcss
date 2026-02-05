@@ -1,0 +1,47 @@
+/* Recent Locations overlay (Step 8) */
+
+.rcm .rcm-recent-dialog {
+    width: 90%;
+    height: 90%;
+}
+
+.rcm .rcm-recent-body {
+    height: 100%;
+    width: 100%;
+}
+
+.rcm .rcm-recent-header {
+    height: auto;
+    padding: 0 1;
+    align: left middle;
+}
+
+.rcm .rcm-recent-title {
+    text-style: bold;
+}
+
+.rcm .rcm-recent-close {
+    width: auto;
+    height: auto;
+}
+
+.rcm .rcm-recent-footer {
+    height: auto;
+    padding: 0 1;
+    color: $muted;
+}
+
+.rcm .rcm-recent-right {
+    height: 100%;
+    width: 100%;
+}
+
+.rcm .rcm-recent-actions {
+    height: auto;
+    padding: 0 1;
+}
+
+.rcm .rcm-recent-preview {
+    height: 1fr;
+    width: 100%;
+}

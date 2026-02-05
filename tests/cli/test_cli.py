@@ -83,4 +83,3 @@ class TestToolsCommand:
 
         assert result.exit_code == EXIT_OK
         assert "detect" in result.output
-

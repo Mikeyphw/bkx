@@ -91,9 +91,7 @@ class FallbackTransfer:
                     dest_path = destination
                 # Ensure parent directory exists
                 dest_path.parent.mkdir(parents=True, exist_ok=True)
-                bytes = self._copy_with_progress(
-                    source, dest_path, progress_callback
-                )
+                bytes = self._copy_with_progress(source, dest_path, progress_callback)
                 files_transferred += 1
                 bytes_transferred += bytes
             elif source.is_dir():
@@ -102,9 +100,7 @@ class FallbackTransfer:
                 else:
                     dest_subdir = destination
                 dest_subdir.mkdir(parents=True, exist_ok=True)
-                files, bytes = self._copy_dir_with_progress(
-                    source, dest_subdir, progress_callback
-                )
+                files, bytes = self._copy_dir_with_progress(source, dest_subdir, progress_callback)
                 files_transferred += files
                 bytes_transferred += bytes
 
@@ -185,9 +181,7 @@ class FallbackTransfer:
         destination.mkdir(parents=True, exist_ok=True)
 
         if source.is_file():
-            bytes = self._copy_with_progress(
-                source, destination / source.name, progress_callback
-            )
+            bytes = self._copy_with_progress(source, destination / source.name, progress_callback)
             files_transferred = 1
             bytes_transferred = bytes
         elif source.is_dir():
@@ -252,9 +246,7 @@ class FallbackTransfer:
             for fname in fnames:
                 fpath = Path(root) / fname
                 dest_path = dest_dir / fname
-                bytes_copied = self._copy_with_progress(
-                    fpath, dest_path, progress_callback
-                )
+                bytes_copied = self._copy_with_progress(fpath, dest_path, progress_callback)
                 files += 1
                 bytes_total += bytes_copied
 
@@ -286,9 +278,7 @@ class FallbackTransfer:
 
             for fname in fnames:
                 # Check exclude patterns
-                if exclude and any(
-                    fnmatch.fnmatch(fname, pattern) for pattern in exclude
-                ):
+                if exclude and any(fnmatch.fnmatch(fname, pattern) for pattern in exclude):
                     continue
 
                 fpath = Path(root) / fname
@@ -299,9 +289,7 @@ class FallbackTransfer:
 
                 # Copy if newer or doesn't exist
                 if not dest_path.exists() or dest_path.stat().st_mtime < fpath.stat().st_mtime:
-                    bytes_copied = self._copy_with_progress(
-                        fpath, dest_path, progress_callback
-                    )
+                    bytes_copied = self._copy_with_progress(fpath, dest_path, progress_callback)
                     files += 1
                     bytes_total += bytes_copied
 
@@ -315,9 +303,8 @@ class FallbackTransfer:
 
 def get_transfer() -> FallbackTransfer:
     """Get the default transfer implementation.
-    
+
     Returns:
         FallbackTransfer instance (pure Python implementation)
     """
     return FallbackTransfer()
-

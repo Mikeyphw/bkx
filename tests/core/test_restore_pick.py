@@ -43,23 +43,31 @@ class RealArchiver:
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for info in zf.infolist():
                     entries.append(
-                        type("ArchiveEntry", (), {
-                            "path": info.filename,
-                            "is_dir": info.is_dir(),
-                            "size": info.file_size,
-                            "mtime_ns": 0,
-                        })()
+                        type(
+                            "ArchiveEntry",
+                            (),
+                            {
+                                "path": info.filename,
+                                "is_dir": info.is_dir(),
+                                "size": info.file_size,
+                                "mtime_ns": 0,
+                            },
+                        )()
                     )
         else:
             with tarfile.open(archive_path, "r") as tar:
                 for member in tar.getmembers():
                     entries.append(
-                        type("ArchiveEntry", (), {
-                            "path": member.name,
-                            "is_dir": member.isdir(),
-                            "size": member.size,
-                            "mtime_ns": 0,
-                        })()
+                        type(
+                            "ArchiveEntry",
+                            (),
+                            {
+                                "path": member.name,
+                                "is_dir": member.isdir(),
+                                "size": member.size,
+                                "mtime_ns": 0,
+                            },
+                        )()
                     )
         return entries
 
@@ -68,16 +76,20 @@ class RealArchiver:
 
     def verify(self, archive_path: Path):
         """Return a proper verification result."""
-        return type("ArchiveVerifyResult", (), {
-            "success": True,
-            "archive_path": archive_path,
-            "checksums_valid": True,
-            "structure_valid": True,
-            "entries_checked": 1,
-            "entries_failed": 0,
-            "failed_entries": (),
-            "warnings": (),
-        })()
+        return type(
+            "ArchiveVerifyResult",
+            (),
+            {
+                "success": True,
+                "archive_path": archive_path,
+                "checksums_valid": True,
+                "structure_valid": True,
+                "entries_checked": 1,
+                "entries_failed": 0,
+                "failed_entries": (),
+                "warnings": (),
+            },
+        )()
 
     def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
         """Extract files from archive, handling partial restore."""
@@ -101,10 +113,7 @@ class RealArchiver:
 
                 # Filter by paths if partial restore
                 if spec.paths:
-                    members = [
-                        m for m in members
-                        if any(p in m.name for p in spec.paths)
-                    ]
+                    members = [m for m in members if any(p in m.name for p in spec.paths)]
 
                 for member in members:
                     tar.extract(member, destination)
@@ -282,4 +291,3 @@ class TestArchiveVerify:
 
         with pytest.raises(NotFoundError):
             archiver.verify(Path("/nonexistent/archive.tar"))
-

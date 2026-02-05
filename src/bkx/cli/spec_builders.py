@@ -34,7 +34,7 @@ def build_backup_spec(
     dry_run: bool = False,
 ) -> BackupSpec:
     """Build BackupSpec from CLI inputs.
-    
+
     Args:
         sources: Source paths to back up
         destination: Optional destination path
@@ -46,7 +46,7 @@ def build_backup_spec(
         level: Compression level, defaults to config
         verify: Whether to verify after creation, defaults to config
         dry_run: Whether this is a dry run
-        
+
     Returns:
         Normalized BackupSpec ready for service
     """
@@ -55,7 +55,7 @@ def build_backup_spec(
     _algorithm = algorithm if algorithm is not None else config.compression_algorithm
     _level = level if level is not None else config.compression_level
     _verify = verify if verify is not None else config.verify_after_operation
-    
+
     spec = BackupSpec(
         sources=tuple(sources),
         destination=destination,
@@ -67,7 +67,7 @@ def build_backup_spec(
         verify=_verify,
         dry_run=dry_run,
     )
-    
+
     # Normalize with auto-naming
     return spec.normalize(default_destination=destination, auto_name=True)
 
@@ -85,7 +85,7 @@ def build_archive_spec(
     dry_run: bool = False,
 ) -> ArchiveCreateSpec:
     """Build ArchiveCreateSpec from CLI inputs.
-    
+
     Args:
         sources: Source paths to archive
         output: Output file path
@@ -96,7 +96,7 @@ def build_archive_spec(
         level: Compression level, defaults to config
         verify: Whether to verify after creation, defaults to config
         dry_run: Whether this is a dry run
-        
+
     Returns:
         Normalized ArchiveCreateSpec ready for service
     """
@@ -105,7 +105,7 @@ def build_archive_spec(
     _algorithm = algorithm if algorithm is not None else config.compression_algorithm
     _level = level if level is not None else config.compression_level
     _verify = verify if verify is not None else config.verify_after_operation
-    
+
     spec = ArchiveCreateSpec(
         sources=tuple(sources),
         output_path=output,
@@ -116,7 +116,7 @@ def build_archive_spec(
         verify=_verify,
         dry_run=dry_run,
     )
-    
+
     return spec.normalize()
 
 
@@ -131,7 +131,7 @@ def build_transfer_spec(
     overwrite: bool = False,
 ) -> TransferSpec:
     """Build TransferSpec from CLI inputs.
-    
+
     Args:
         source: Source path
         destination: Destination path
@@ -140,7 +140,7 @@ def build_transfer_spec(
         checksum: Expected checksum for verification
         dry_run: Whether this is a dry run
         overwrite: Whether to overwrite existing files
-        
+
     Returns:
         Normalized TransferSpec ready for service
     """
@@ -153,7 +153,7 @@ def build_transfer_spec(
         dry_run=dry_run,
         overwrite=overwrite,
     )
-    
+
     return spec.normalize()
 
 
@@ -170,7 +170,7 @@ def build_restore_spec(
     confirm_overwrite: bool | None = None,
 ) -> RestoreSpec:
     """Build RestoreSpec from CLI inputs.
-    
+
     Args:
         archive: Path to archive to restore
         destination: Destination path
@@ -183,7 +183,7 @@ def build_restore_spec(
         confirm_overwrite: Whether to require confirmation for overwrite, defaults to config
                         Note: if overwrite=True is set, confirm_overwrite defaults to False
                         to maintain backward compatibility.
-        
+
     Returns:
         Normalized RestoreSpec ready for service
     """
@@ -191,8 +191,8 @@ def build_restore_spec(
     config = get_config()
     _fresh_dir = fresh_dir if fresh_dir is not None else config.fresh_restore_dir
     _verify = verify if verify is not None else config.verify_after_operation
-    
-    # Handle confirm_overwrite: if overwrite=True is explicitly set, 
+
+    # Handle confirm_overwrite: if overwrite=True is explicitly set,
     # default confirm_overwrite to False (backward compat)
     # Otherwise use config value
     if confirm_overwrite is None:
@@ -202,10 +202,10 @@ def build_restore_spec(
             _confirm_overwrite = config.confirm_overwrite
     else:
         _confirm_overwrite = confirm_overwrite
-    
+
     # Normalize overwrite: None -> False
     _overwrite = overwrite if overwrite is not None else False
-    
+
     spec = RestoreSpec(
         archive=archive,
         destination=destination,
@@ -216,7 +216,7 @@ def build_restore_spec(
         fresh_dir=_fresh_dir,
         confirm_overwrite=_confirm_overwrite,
     )
-    
+
     return spec.normalize(default_destination=destination)
 
 
@@ -233,7 +233,7 @@ def build_archive_browse_spec(
     sort_order: str = "asc",
 ) -> "ArchiveBrowseSpec":
     """Build ArchiveBrowseSpec from CLI inputs.
-    
+
     Args:
         archive: Path to archive to browse
         query: Search query (matches path)
@@ -244,12 +244,12 @@ def build_archive_browse_spec(
         offset: Offset for pagination
         sort_by: Sort field: "path", "size", "mtime"
         sort_order: Sort order: "asc", "desc"
-        
+
     Returns:
         Normalized ArchiveBrowseSpec ready for service
     """
     from bkx.core.specs.archive import ArchiveBrowseSpec
-    
+
     spec = ArchiveBrowseSpec(
         archive_path=archive,
         query=query,
@@ -261,6 +261,5 @@ def build_archive_browse_spec(
         sort_by=sort_by,
         sort_order=sort_order,
     )
-    
-    return spec.normalize()
 
+    return spec.normalize()

@@ -1,6 +1,6 @@
 /* ProgressPane styles (mikomn available) */
 
-ProgressPane {
+.bkx-progress-pane {
     height: 8;
     dock: bottom;
     background: $surface;
@@ -54,5 +54,4 @@ ProgressPane {
 .progress-details {
     width: 1fr;
 }
-
 

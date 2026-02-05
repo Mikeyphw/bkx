@@ -96,9 +96,7 @@ class RestoreService:
 
         # Filter to requested paths if partial restore
         if spec.paths:
-            entries = tuple(
-                e for e in entries if any(p in e.path for p in spec.paths)
-            )
+            entries = tuple(e for e in entries if any(p in e.path for p in spec.paths))
 
         total_size = sum(e.size for e in entries)
 
@@ -167,4 +165,3 @@ class RestoreService:
 # Import RestoreFileInfo at module level for type checking
 if TYPE_CHECKING:
     from ..results.restore import RestoreFileInfo
-

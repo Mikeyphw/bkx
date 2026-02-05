@@ -231,4 +231,3 @@ class ArchiveService:
             directories_count=directories_count,
             files_count=files_count,
         )
-

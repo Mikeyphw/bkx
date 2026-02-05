@@ -162,4 +162,3 @@ class TransferService:
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
             warnings=("Dry run - transfer not executed",),
         )
-

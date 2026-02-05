@@ -69,22 +69,30 @@ class FakeArchiver:
         )
 
     def info(self, path: Path):
-        return type("ArchiveInfoResult", (), {
-            "success": True,
-            "path": path,
-            "format": "tar",
-            "total_entries": 5,
-            "total_size": 1024,
-        })()
+        return type(
+            "ArchiveInfoResult",
+            (),
+            {
+                "success": True,
+                "path": path,
+                "format": "tar",
+                "total_entries": 5,
+                "total_size": 1024,
+            },
+        )()
 
     def verify(self, path: Path):
-        return type("ArchiveVerifyResult", (), {
-            "success": True,
-            "path": path,
-            "checksums_valid": True,
-            "structure_valid": True,
-            "entries_checked": 5,
-        })()
+        return type(
+            "ArchiveVerifyResult",
+            (),
+            {
+                "success": True,
+                "path": path,
+                "checksums_valid": True,
+                "structure_valid": True,
+                "entries_checked": 5,
+            },
+        )()
 
 
 class FakeTransfer:
@@ -184,23 +192,31 @@ class FakeHasher:
         return {p: self.hash_file(p) for p in paths}
 
     def hash_directory(self, path: Path, **kwargs):
-        return type("DirHashResult", (), {
-            "success": True,
-            "file_count": 5,
-            "directory_checksum": "dir123",
-        })()
+        return type(
+            "DirHashResult",
+            (),
+            {
+                "success": True,
+                "file_count": 5,
+                "directory_checksum": "dir123",
+            },
+        )()
 
 
 class FakeToolDetector:
     """Fake tool detector for testing."""
 
     def detect(self, name: str):
-        return type("ToolInfo", (), {
-            "name": name,
-            "available": False,
-            "path": None,
-            "version": None,
-        })()
+        return type(
+            "ToolInfo",
+            (),
+            {
+                "name": name,
+                "available": False,
+                "path": None,
+                "version": None,
+            },
+        )()
 
     def detect_all(self, names):
         return {n: self.detect(n) for n in names}
@@ -447,4 +463,3 @@ class TestTransferService:
             # Try to pull with push spec
             with pytest.raises(ValidationError):
                 service.pull(spec)
-

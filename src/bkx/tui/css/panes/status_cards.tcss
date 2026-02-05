@@ -1,6 +1,6 @@
 /* StatusCardsPane styles */
 
-StatusCardsPane {
+.bkx-status-cards-pane {
     background: $background;
 }
 

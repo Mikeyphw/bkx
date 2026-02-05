@@ -124,4 +124,3 @@ SHA256 = "sha256"
 SHA512 = "sha512"
 XXH3 = "xxh3"
 MD5 = "md5"
-

@@ -43,4 +43,3 @@ TRANSFER_SPEC_SCHEMA = {
         },
     },
 }
-

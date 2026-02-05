@@ -180,9 +180,8 @@ class FallbackHasher:
 
 def get_hasher() -> FallbackHasher:
     """Get the default hasher implementation.
-    
+
     Returns:
         FallbackHasher instance (pure Python implementation)
     """
     return FallbackHasher()
-

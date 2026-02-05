@@ -36,73 +36,55 @@ from bkx.ui.theme import (
 
 # mikomn imports for interactive prompts
 from mikomn.cli_base.interactive import (
-    banner,
-    ask_text,
+    MenuConfig,
+    MenuItem,
     ask_confirm,
-    ask_path,
-    ask_int,
     ask_float,
+    ask_int,
+    ask_path,
+    ask_text,
+    banner,
 )
 from mikomn.cli_base.menus import show_menu
-from mikomn.cli_base.menus.models import MenuItem, MenuConfig
+from mikomn.cli_base.ui2.exceptions import NonInteractiveInput, UserCancelled
+from rich.prompt import Prompt
 
 
-def prompt_path(prompt_text: str, must_exist: bool = True, default: Optional[str] = None) -> Optional[Path]:
+def prompt_path(
+    prompt_text: str, must_exist: bool = True, default: Optional[str] = None
+) -> Optional[Path]:
     """Prompt for a path with validation.
-    
-    Args:
-        prompt_text: Prompt message
-        must_exist: Whether the path must exist
-        default: Optional default path
-        
-    Returns:
-        Validated Path object or None if cancelled
+
+    Returns None if cancelled or non-interactive.
     """
-    path_str = ask_path(
-        message=prompt_text,
-        default=default,
-        must_exist=must_exist,
-    )
-    if path_str is None:
+    try:
+        default_path = Path(default).expanduser() if default else None
+        return ask_path(prompt_text, default=default_path, must_exist=must_exist)
+    except (UserCancelled, NonInteractiveInput):
         return None
-    return Path(path_str)
 
 
 def prompt_text(prompt_text: str, default: Optional[str] = None) -> Optional[str]:
     """Prompt for text input.
-    
-    Args:
-        prompt_text: Prompt message
-        default: Optional default value
-        
-    Returns:
-        Input string or None if cancelled
+
+    Returns None if cancelled or non-interactive.
     """
-    result = ask_text(
-        message=prompt_text,
-        default=default or "",
-        accept_empty=True,
-    )
-    if result is None or result.strip() == "":
+    try:
+        result = ask_text(prompt_text, default=default)
+    except (UserCancelled, NonInteractiveInput):
+        return None
+    value = (result or "").strip()
+    if value == "":
         return default
-    return result.strip()
+    return value
 
 
 def prompt_confirm(prompt_text: str, default: bool = False) -> bool:
-    """Prompt for yes/no confirmation.
-    
-    Args:
-        prompt_text: Prompt message
-        default: Default value
-        
-    Returns:
-        True for yes, False for no
-    """
-    result = ask_confirm(
-        message=prompt_text,
-        default=default,
-    )
-    return result if result is not None else default
+    """Prompt for yes/no confirmation (False if cancelled/non-interactive)."""
+    try:
+        return bool(ask_confirm(prompt_text, default=default))
+    except (UserCancelled, NonInteractiveInput):
+        return False
 
 
 def prompt_select(
@@ -111,31 +93,21 @@ def prompt_select(
     default: int = 0,
 ) -> Optional[str]:
     """Prompt for selection from a list.
-    
-    Args:
-        prompt_text: Prompt message
-        choices: List of choices
-        default: Default index
-        
-    Returns:
-        Selected choice or None if cancelled
+
+    Returns None if cancelled/non-interactive.
     """
-    menu_items = [
-        MenuItem(
-            label=choice,
-            value=choice,
-        )
-        for choice in choices
-    ]
-    
-    config = MenuConfig(
-        title=prompt_text,
-        items=menu_items,
-        default_index=default,
-    )
-    
-    result = show_menu(config)
-    return result
+    menu_items = [MenuItem(label=choice, value=choice) for choice in choices]
+    cfg = MenuConfig(title=prompt_text, prompt="Choice", allow_quit=True)
+
+    def _prompt_ask(text: str, **kwargs) -> str:
+        # Prefer Enter -> default selection (1-indexed) while preserving quit via 'q'.
+        kwargs["default"] = str(default + 1)
+        return Prompt.ask(text, **kwargs)
+
+    try:
+        return show_menu(menu_items, config=cfg, prompt_ask=_prompt_ask)
+    except (UserCancelled, NonInteractiveInput):
+        return None
 
 
 def prompt_multiselect(
@@ -143,22 +115,15 @@ def prompt_multiselect(
     choices: list[str],
 ) -> list[str]:
     """Prompt for multiple selections.
-    
-    Args:
-        prompt_text: Prompt message
-        choices: List of choices
-        
-    Returns:
-        List of selected choices (empty list if cancelled)
+
+    Returns empty list if cancelled/non-interactive.
     """
-    # For now, use simple checkbox via text input
-    # mikomn's multi-select can be added when available
-    selected = []
-    for i, choice in enumerate(choices):
-        is_selected = ask_confirm(
-            message=f"{prompt_text} - {choice}",
-            default=False,
-        )
+    selected: list[str] = []
+    for choice in choices:
+        try:
+            is_selected = ask_confirm(f"{prompt_text} - {choice}", default=False)
+        except (UserCancelled, NonInteractiveInput):
+            return []
         if is_selected:
             selected.append(choice)
     return selected
@@ -166,7 +131,7 @@ def prompt_multiselect(
 
 def _section_header(title: str) -> None:
     """Print a styled section header.
-    
+
     Args:
         title: Header text
     """
@@ -175,13 +140,13 @@ def _section_header(title: str) -> None:
 
 def run_backup_interactive() -> int:
     """Run interactive backup flow.
-    
+
     Returns:
         Exit code
     """
     renderer = get_renderer(json=False)
     _section_header("Interactive Backup")
-    
+
     # Step 1: Select sources
     sources_text = prompt_text(
         "Source paths to back up (space-separated, or leave empty for current directory)",
@@ -189,38 +154,38 @@ def run_backup_interactive() -> int:
     )
     if sources_text is None:
         return EXIT_OK
-    
+
     sources = [Path(p.strip()) for p in sources_text.split() if p.strip()]
     if not sources:
         sources = [Path(".")]
-    
+
     # Step 2: Destination
     destination_text = prompt_text(
         "Destination path for archive (optional, will auto-generate if empty)",
         default=None,
     )
     destination = Path(destination_text) if destination_text else None
-    
+
     # Step 3: Archive name
     archive_name = prompt_text("Archive name (optional, auto-generated if empty)", default=None)
-    
+
     # Step 4: Excludes
     excludes_text = prompt_text(
         "Exclude patterns (space-separated, e.g., '*.pyc __pycache__')",
         default="",
     )
     excludes = excludes_text.split() if excludes_text else []
-    
+
     # Step 5: Compression settings (with config defaults)
     config = get_config()
     algorithm = prompt_select(
         "Compression algorithm",
         choices=["zstd", "gzip", "lz4", "xz", "bzip2", "none"],
-        default=["zstd", "gzip", "lz4", "xz", "bzip2", "none"].index(
-            config.compression_algorithm
-        ) if config.compression_algorithm in ["zstd", "gzip", "lz4", "xz", "bzip2"] else 0,
+        default=["zstd", "gzip", "lz4", "xz", "bzip2", "none"].index(config.compression_algorithm)
+        if config.compression_algorithm in ["zstd", "gzip", "lz4", "xz", "bzip2"]
+        else 0,
     )
-    
+
     level_text = prompt_text(
         "Compression level (1-22 for zstd, 1-9 for others)",
         default=str(config.compression_level),
@@ -229,13 +194,13 @@ def run_backup_interactive() -> int:
         level = int(level_text) if level_text else config.compression_level
     except ValueError:
         level = config.compression_level
-    
+
     # Step 6: Verify
     verify = prompt_confirm(
         "Verify archive after creation?",
         default=config.verify_after_operation,
     )
-    
+
     # Step 7: Preview and confirm
     renderer.render_message("", level="info")
     renderer.render_message("Backup Plan:", level="info")
@@ -248,11 +213,11 @@ def run_backup_interactive() -> int:
     renderer.render_message(f"  Algorithm: {algorithm} (level {level})", level="info")
     renderer.render_message(f"  Verify: {verify}", level="info")
     renderer.render_message("", level="info")
-    
+
     if not prompt_confirm("Proceed with backup?", default=True):
         renderer.render_message("Cancelled.", level="warning")
         return EXIT_OK
-    
+
     # Build spec and execute
     try:
         spec = build_backup_spec(
@@ -264,19 +229,20 @@ def run_backup_interactive() -> int:
             level=level,
             verify=verify,
         )
-        
+
         from bkx.core.services import get_backup_service
+
         service = get_backup_service()
         result = service.create(spec)
-        
+
         renderer.render_message("", level="info")
         renderer.render_message("Backup completed!", level="success")
         renderer.render_message(f"  Archive: {result.archive_path}", level="info")
         renderer.render_message(f"  Files: {result.files_count}", level="info")
         renderer.render_message(f"  Size: {result.bytes_total} bytes", level="info")
-        
+
         return EXIT_OK
-        
+
     except BkxError as e:
         renderer.render_error(str(e), e.details)
         return error_to_exit_code(e)
@@ -284,13 +250,13 @@ def run_backup_interactive() -> int:
 
 def run_archive_interactive() -> int:
     """Run interactive archive flow.
-    
+
     Returns:
         Exit code
     """
     renderer = get_renderer(json=False)
     _section_header("Interactive Archive")
-    
+
     # Step 1: Select sources
     sources_text = prompt_text(
         "Source paths to archive (space-separated)",
@@ -298,41 +264,41 @@ def run_archive_interactive() -> int:
     )
     if sources_text is None:
         return EXIT_OK
-    
+
     sources = [Path(p.strip()) for p in sources_text.split() if p.strip()]
     if not sources:
         sources = [Path(".")]
-    
+
     # Step 2: Output path
     output_text = prompt_text("Output archive path (required)", default=None)
     if output_text is None or not output_text.strip():
         renderer.render_error("Output path is required", {})
         return 2
     output = Path(output_text.strip())
-    
+
     # Step 3: Excludes
     excludes_text = prompt_text(
         "Exclude patterns (space-separated)",
         default="",
     )
     excludes = excludes_text.split() if excludes_text else []
-    
+
     # Step 4: Compression
     config = get_config()
     algorithm = prompt_select(
         "Compression algorithm",
         choices=["zstd", "gzip", "lz4", "xz", "bzip2", "none"],
-        default=["zstd", "gzip", "lz4", "xz", "bzip2", "none"].index(
-            config.compression_algorithm
-        ) if config.compression_algorithm in ["zstd", "gzip", "lz4", "xz", "bzip2"] else 0,
+        default=["zstd", "gzip", "lz4", "xz", "bzip2", "none"].index(config.compression_algorithm)
+        if config.compression_algorithm in ["zstd", "gzip", "lz4", "xz", "bzip2"]
+        else 0,
     )
-    
+
     # Step 5: Verify
     verify = prompt_confirm(
         "Verify archive after creation?",
         default=config.verify_after_operation,
     )
-    
+
     # Preview
     renderer.render_message("", level="info")
     renderer.render_message("Archive Plan:", level="info")
@@ -341,11 +307,11 @@ def run_archive_interactive() -> int:
     renderer.render_message(f"  Excludes: {excludes}", level="info")
     renderer.render_message(f"  Algorithm: {algorithm}", level="info")
     renderer.render_message(f"  Verify: {verify}", level="info")
-    
+
     if not prompt_confirm("Proceed with archive?", default=True):
         renderer.render_message("Cancelled.", level="warning")
         return EXIT_OK
-    
+
     try:
         spec = build_archive_spec(
             sources=sources,
@@ -354,18 +320,19 @@ def run_archive_interactive() -> int:
             algorithm=algorithm if algorithm != "none" else "zstd",
             verify=verify,
         )
-        
+
         from bkx.core.services import get_archive_service
+
         service = get_archive_service()
         result = service.create(spec)
-        
+
         renderer.render_message("", level="info")
         renderer.render_message("Archive created!", level="success")
         renderer.render_message(f"  Path: {result.archive_path}", level="info")
         renderer.render_message(f"  Files: {result.files_count}", level="info")
-        
+
         return EXIT_OK
-        
+
     except BkxError as e:
         renderer.render_error(str(e), e.details)
         return error_to_exit_code(e)
@@ -373,45 +340,45 @@ def run_archive_interactive() -> int:
 
 def run_restore_interactive() -> int:
     """Run interactive restore flow.
-    
+
     Returns:
         Exit code
     """
     renderer = get_renderer(json=False)
     _section_header("Interactive Restore")
-    
+
     # Step 1: Archive path
     archive_text = prompt_text("Archive path to restore from", default=None)
     if archive_text is None:
         return EXIT_OK
     archive = Path(archive_text.strip())
-    
+
     # Step 2: Destination
     dest_text = prompt_text(
         "Destination path (optional, will create fresh dir if empty)",
         default=None,
     )
     destination = Path(dest_text) if dest_text else None
-    
+
     # Step 3: Fresh directory
     config = get_config()
     fresh_dir = prompt_confirm(
         "Create fresh directory with timestamp?",
         default=config.fresh_restore_dir,
     )
-    
+
     # Step 4: Overwrite
     overwrite = prompt_confirm(
         "Allow overwriting existing files?",
         default=False,
     )
-    
+
     # Step 5: Verify
     verify = prompt_confirm(
         "Verify archive before restore?",
         default=config.verify_after_operation,
     )
-    
+
     # Preview
     renderer.render_message("", level="info")
     renderer.render_message("Restore Plan:", level="info")
@@ -422,11 +389,11 @@ def run_restore_interactive() -> int:
         renderer.render_message(f"  Fresh dir: {fresh_dir}", level="info")
     renderer.render_message(f"  Overwrite: {overwrite}", level="info")
     renderer.render_message(f"  Verify: {verify}", level="info")
-    
+
     if not prompt_confirm("Proceed with restore?", default=True):
         renderer.render_message("Cancelled.", level="warning")
         return EXIT_OK
-    
+
     try:
         spec = build_restore_spec(
             archive=archive,
@@ -436,18 +403,19 @@ def run_restore_interactive() -> int:
             overwrite=overwrite,
             verify=verify,
         )
-        
+
         from bkx.core.services import get_restore_service
+
         service = get_restore_service()
         result = service.extract(spec)
-        
+
         renderer.render_message("", level="info")
         renderer.render_message("Restore completed!", level="success")
         renderer.render_message(f"  Destination: {result.destination_path}", level="info")
         renderer.render_message(f"  Files: {result.files_count}", level="info")
-        
+
         return EXIT_OK
-        
+
     except BkxError as e:
         renderer.render_error(str(e), e.details)
         return error_to_exit_code(e)
@@ -455,13 +423,13 @@ def run_restore_interactive() -> int:
 
 def run_transfer_interactive() -> int:
     """Run interactive transfer flow.
-    
+
     Returns:
         Exit code
     """
     renderer = get_renderer(json=False)
     _section_header("Interactive Transfer")
-    
+
     # Step 1: Direction
     direction = prompt_select(
         "Transfer direction",
@@ -470,22 +438,22 @@ def run_transfer_interactive() -> int:
     )
     if direction is None:
         return EXIT_OK
-    
+
     # Step 2: Source
     source_text = prompt_text("Source path", default=None)
     if source_text is None:
         return EXIT_OK
     source = Path(source_text.strip())
-    
+
     # Step 3: Destination
     dest_text = prompt_text("Destination path", default=None)
     if dest_text is None:
         return EXIT_OK
     destination = Path(dest_text.strip())
-    
+
     # Step 4: Verify
     verify = prompt_confirm("Verify after transfer?", default=True)
-    
+
     # Preview
     renderer.render_message("", level="info")
     renderer.render_message("Transfer Plan:", level="info")
@@ -493,11 +461,11 @@ def run_transfer_interactive() -> int:
     renderer.render_message(f"  Source: {source}", level="info")
     renderer.render_message(f"  Destination: {destination}", level="info")
     renderer.render_message(f"  Verify: {verify}", level="info")
-    
+
     if not prompt_confirm("Proceed with transfer?", default=True):
         renderer.render_message("Cancelled.", level="warning")
         return EXIT_OK
-    
+
     try:
         spec = build_transfer_spec(
             source=source,
@@ -505,18 +473,19 @@ def run_transfer_interactive() -> int:
             direction=direction,
             verify=verify,
         )
-        
+
         from bkx.core.services import get_transfer_service
+
         service = get_transfer_service()
         result = service.transfer(spec)
-        
+
         renderer.render_message("", level="info")
         renderer.render_message("Transfer completed!", level="success")
         renderer.render_message(f"  Source: {result.source_path}", level="info")
         renderer.render_message(f"  Destination: {result.destination_path}", level="info")
-        
+
         return EXIT_OK
-        
+
     except BkxError as e:
         renderer.render_error(str(e), e.details)
         return error_to_exit_code(e)
@@ -524,12 +493,12 @@ def run_transfer_interactive() -> int:
 
 def main() -> int:
     """Main interactive entrypoint.
-    
+
     Returns:
         Exit code
     """
     _section_header("BKX Interactive Mode")
-    
+
     while True:
         operation = prompt_select(
             message="What would you like to do?",
@@ -542,12 +511,12 @@ def main() -> int:
             ],
             default=0,
         )
-        
+
         if operation == "Exit" or operation is None:
             renderer = get_renderer(json=False)
             renderer.render_message("Goodbye!", level="info")
             return EXIT_OK
-        
+
         if operation == "Backup":
             return run_backup_interactive()
         elif operation == "Archive":
@@ -556,4 +525,3 @@ def main() -> int:
             return run_restore_interactive()
         elif operation == "Transfer":
             return run_transfer_interactive()
-

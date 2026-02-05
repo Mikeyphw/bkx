@@ -408,4 +408,3 @@ class TestRunService:
         assert result.timing is None
         assert result.files_count is None
         assert result.bytes_processed is None
-

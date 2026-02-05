@@ -170,7 +170,9 @@ class TestCLIDryRunMode:
             source = Path(tmpdir)
             output = Path(tmpdir) / "archive.tar"
             # --dry-run is a global flag
-            result = runner.invoke(app, ["--dry-run", "archive", "create", str(source), "-o", str(output)])
+            result = runner.invoke(
+                app, ["--dry-run", "archive", "create", str(source), "-o", str(output)]
+            )
 
             assert result.exit_code == 0
             # Should show plan, not create archive
@@ -205,7 +207,9 @@ class TestCLIDryRunMode:
             archive.write_text("content")
             dest = Path(tmpdir) / "restore"
             # --dry-run is a global flag
-            result = runner.invoke(app, ["--dry-run", "restore", "extract", str(archive), "-d", str(dest)])
+            result = runner.invoke(
+                app, ["--dry-run", "restore", "extract", str(archive), "-d", str(dest)]
+            )
 
             assert result.exit_code == 0
             # Should show plan, not extract
@@ -250,7 +254,7 @@ class TestCLIJsonOutput:
 
     def test_tools_detect_json_output(self):
         """Test tools detect with --json flag.
-        
+
         Note: This test may fail if the tools detect output contains
         non-JSON-serializable types like Path objects. This is a known
         issue that needs to be fixed in the tools detect implementation.
@@ -262,4 +266,3 @@ class TestCLIJsonOutput:
         # Should not be a usage error (exit code 2)
         # Either succeeds with JSON, or fails with a serialization error
         assert result.exit_code != 2, "JSON flag should be accepted"
-

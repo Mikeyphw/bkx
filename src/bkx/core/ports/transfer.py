@@ -93,4 +93,3 @@ class TransferPort(Protocol):
             Transfer result with metrics.
         """
         ...
-

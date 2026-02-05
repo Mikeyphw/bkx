@@ -92,7 +92,7 @@ class TestArchiveListPane:
         # Test with empty list
         items = create_archive_list_items([])
         assert items == []
-        
+
         # Test with non-existent path
         items = create_archive_list_items([Path("/nonexistent/archive.tar.zst")])
         assert items == []
@@ -177,9 +177,9 @@ class TestTransferProgressPane:
         pane._speed_label = Mock()
         pane._eta_label = Mock()
         pane._progress_label = Mock()
-        
+
         pane.start_transfer(total_bytes=1000000, current_file="test.txt")
-        
+
         pane._file_label.update.assert_called_with("📄 test.txt")
         assert pane._total_bytes == 1000000
 
@@ -195,10 +195,10 @@ class TestTransferProgressPane:
         pane._total_bytes = 1000000
         pane._transferred_bytes = 0
         pane._start_time = 0
-        
-        with patch('time.time', return_value=1.0):
+
+        with patch("time.time", return_value=1.0):
             pane.update_transfer(bytes_transferred=500000, current_file="test.txt")
-        
+
         pane._fill.update_styles.assert_called()
         pane._speed_label.update.assert_called()
         pane._eta_label.update.assert_called()
@@ -263,10 +263,10 @@ class TestEmptyStatePane:
         no_archives = EmptyStatePresets.no_archives()
         assert no_archives._title == "No Archives"
         assert no_archives._action_id == "create-archive"
-        
+
         no_files = EmptyStatePresets.no_files_selected()
         assert no_files._title == "No Files Selected"
-        
+
         search_no_results = EmptyStatePresets.search_no_results("test")
         assert "test" in search_no_results._message
 
@@ -286,7 +286,7 @@ class TestEmptyStateManager:
         mock_container = Mock()
         mock_container.mount = Mock()
         mock_container.remove = Mock()
-        
+
         # Show state
         state = manager.show(
             mock_container,
@@ -296,7 +296,7 @@ class TestEmptyStateManager:
         )
         assert state._title == "Test"
         mock_container.mount.assert_called_once()
-        
+
         # Hide state
         manager.hide(mock_container)
         # Note: actual hide depends on state.is_mounted
@@ -423,18 +423,18 @@ class TestIntegrationScenarios:
             )
             for i in range(1, 4)
         ]
-        
+
         # Create list pane
         list_pane = ArchiveListPane()
         list_pane.set_archives(items)
-        
+
         # Create preview pane
         preview_pane = ArchivePreviewPane()
-        
+
         # Simulate selection
         selected_item = items[0]
         preview_pane.set_archive(selected_item)
-        
+
         assert preview_pane._current_archive == selected_item
 
     def test_progress_workflow(self) -> None:
@@ -444,7 +444,7 @@ class TestIntegrationScenarios:
         update1 = ProgressUpdate(operation="backup", current=25, percent=0.25)
         update2 = ProgressUpdate(operation="backup", current=50, percent=0.50)
         completed = ProgressCompleted(operation="backup", message="Backup complete")
-        
+
         assert started.total == 100
         assert update1.percent == 0.25
         assert completed.message == "Backup complete"
@@ -457,19 +457,19 @@ class TestIntegrationScenarios:
             severity="success",
             duration=4.0,
         )
-        
+
         error_toast = ShowToast(
             message="Backup failed: disk full",
             severity="error",
             duration=5.0,
         )
-        
+
         info_toast = ShowToast(
             message="Transfer in progress...",
             severity="info",
             duration=3.0,
         )
-        
+
         assert success_toast.severity == "success"
         assert error_toast.severity == "error"
         assert info_toast.severity == "info"
@@ -478,13 +478,13 @@ class TestIntegrationScenarios:
         """Test status cards workflow."""
         # Create status cards
         cards = create_default_status_cards()
-        
+
         # Verify card structure
         for card in cards:
             assert card.id is not None
             assert card.title is not None
             assert card.value is not None
-        
+
         # Test card config
         config = StatusCardConfig(cards=cards, layout="grid")
         assert len(config.cards) == len(cards)
@@ -499,11 +499,11 @@ class TestIntegrationScenarios:
             EmptyStatePresets.logs_empty(),
             EmptyStatePresets.tools_empty(),
         ]
-        
+
         for preset in presets:
             assert preset._title is not None
             assert preset._icon is not None
-        
+
         # Test manager
         manager = EmptyStateManager("test")
         assert manager._container_id == "test"
@@ -524,7 +524,7 @@ class TestPolishAcceptanceCriteria:
             )
             for i, name in enumerate(["2024", "2023", "docs", "photos"])
         ]
-        
+
         # Test filter functionality
         filter_text = "2024"
         filtered = [i for i in items if filter_text in i.name or filter_text in str(i.path)]
@@ -541,7 +541,7 @@ class TestPolishAcceptanceCriteria:
             ProgressUpdate(operation="backup", current=90, percent=0.9),
             ProgressCompleted(operation="backup", message="Backup complete"),
         ]
-        
+
         assert len(progress_messages) == 5
         assert progress_messages[0].operation == "backup"
         assert progress_messages[-1].message == "Backup complete"
@@ -549,7 +549,7 @@ class TestPolishAcceptanceCriteria:
     def test_settings_display_with_status_cards(self) -> None:
         """Test that settings can be displayed with StatusCards."""
         cards = create_default_status_cards()
-        
+
         # Verify settings cards exist
         settings_cards = ["theme", "compression", "verification", "level"]
         for card_id in settings_cards:
@@ -565,7 +565,7 @@ class TestPolishAcceptanceCriteria:
             ShowToast(message="Error", severity="error"),
             ShowToast(message="Info", severity="info"),
         ]
-        
+
         for toast in toasts:
             assert toast.message is not None
             assert toast.severity in ["success", "warning", "error", "info"]
@@ -583,9 +583,8 @@ class TestPolishAcceptanceCriteria:
             EmptyStatePresets.logs_empty(),
             EmptyStatePresets.tools_empty(),
         ]
-        
+
         for state in empty_states:
             assert state._title is not None
             assert state._icon is not None
             assert state._action_id is not None or state._action_label == ""
-

@@ -52,6 +52,7 @@ runner = CliRunner()
 # CLI to Spec Parity Tests
 # =============================================================================
 
+
 class TestCLIToSpecParity:
     """Tests for CLI arguments → Spec parity."""
 
@@ -153,9 +154,10 @@ class TestCLIToSpecParity:
 # Cross-Interface Parity Tests (CLI vs TUI)
 # =============================================================================
 
+
 class TestCrossInterfaceParity:
     """Tests for parity between CLI, TUI, and Interactive interfaces.
-    
+
     The promise: Same intent → same Spec → same outcome.
     """
 
@@ -164,7 +166,7 @@ class TestCrossInterfaceParity:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             dest = Path(tmpdir) / "backup"
-            
+
             spec = build_backup_spec(
                 sources=[source],
                 destination=dest,
@@ -172,11 +174,11 @@ class TestCrossInterfaceParity:
                 level=3,
                 dry_run=True,
             )
-            
+
             # Compute hash twice - should be identical
             hash1 = compute_spec_hash(spec_to_dict(spec))
             hash2 = compute_spec_hash(spec_to_dict(spec))
-            
+
             assert hash1 == hash2
             assert len(hash1) == 64  # SHA256 hex digest length
 
@@ -185,7 +187,7 @@ class TestCrossInterfaceParity:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             dest = Path(tmpdir) / "backup"
-            
+
             # CLI-style input (via spec builder)
             cli_spec = build_backup_spec(
                 sources=[source],
@@ -197,7 +199,7 @@ class TestCrossInterfaceParity:
                 verify=True,
                 dry_run=True,
             )
-            
+
             # TUI-style input - same params (simulated)
             # TUI uses to_spec_params() which returns dict for spec builder
             tui_params = {
@@ -210,7 +212,7 @@ class TestCrossInterfaceParity:
                 "verify": True,
             }
             tui_spec = build_backup_spec(**tui_params, dry_run=True)
-            
+
             # Both should produce identical specs
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"CLI/TUI parity failed: {diffs}"
@@ -220,7 +222,7 @@ class TestCrossInterfaceParity:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             output = Path(tmpdir) / "archive.tar"
-            
+
             cli_spec = build_archive_spec(
                 sources=[source],
                 output=output,
@@ -230,7 +232,7 @@ class TestCrossInterfaceParity:
                 verify=True,
                 dry_run=True,
             )
-            
+
             tui_params = {
                 "sources": [source],
                 "output": output,
@@ -240,7 +242,7 @@ class TestCrossInterfaceParity:
                 "verify": True,
             }
             tui_spec = build_archive_spec(**tui_params, dry_run=True)
-            
+
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"CLI/TUI parity failed: {diffs}"
 
@@ -250,7 +252,7 @@ class TestCrossInterfaceParity:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
             dest = Path(tmpdir) / "restore"
-            
+
             cli_spec = build_restore_spec(
                 archive=archive,
                 destination=dest,
@@ -259,7 +261,7 @@ class TestCrossInterfaceParity:
                 fresh_dir=True,
                 dry_run=True,
             )
-            
+
             tui_params = {
                 "archive": archive,
                 "destination": dest,
@@ -268,7 +270,7 @@ class TestCrossInterfaceParity:
                 "fresh_dir": True,
             }
             tui_spec = build_restore_spec(**tui_params, dry_run=True)
-            
+
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"CLI/TUI parity failed: {diffs}"
 
@@ -276,7 +278,7 @@ class TestCrossInterfaceParity:
         """Verify CLI and TUI produce identical transfer specs."""
         source = Path("/source/file")
         dest = Path("/dest/file")
-        
+
         cli_spec = build_transfer_spec(
             source=source,
             destination=dest,
@@ -285,7 +287,7 @@ class TestCrossInterfaceParity:
             overwrite=True,
             dry_run=True,
         )
-        
+
         tui_params = {
             "source": source,
             "destination": dest,
@@ -293,7 +295,7 @@ class TestCrossInterfaceParity:
             "verify": True,
         }
         tui_spec = build_transfer_spec(**tui_params, overwrite=True, dry_run=True)
-        
+
         is_parity, diffs = verify_parity(cli_spec, tui_spec)
         assert is_parity, f"CLI/TUI parity failed: {diffs}"
 
@@ -301,6 +303,7 @@ class TestCrossInterfaceParity:
 # =============================================================================
 # Spec Determinism Tests
 # =============================================================================
+
 
 class TestSpecDeterminism:
     """Tests for Spec normalization determinism."""
@@ -352,6 +355,7 @@ class TestSpecDeterminism:
 # Schema Validation Tests
 # =============================================================================
 
+
 class TestSchemaValidation:
     """Tests for JSON schema validation of specs."""
 
@@ -360,7 +364,7 @@ class TestSchemaValidation:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             dest = Path(tmpdir) / "backup"
-            
+
             spec = build_backup_spec(
                 sources=[source],
                 destination=dest,
@@ -368,10 +372,10 @@ class TestSchemaValidation:
                 level=3,
                 dry_run=True,
             )
-            
+
             spec_dict = spec_to_dict(spec)
             is_valid, errors = validate_spec_against_schema(spec_dict, BACKUP_SPEC_SCHEMA)
-            
+
             assert is_valid, f"Schema validation failed: {errors}"
 
     def test_archive_spec_validates_against_schema(self):
@@ -379,7 +383,7 @@ class TestSchemaValidation:
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             output = Path(tmpdir) / "archive.tar"
-            
+
             spec = build_archive_spec(
                 sources=[source],
                 output=output,
@@ -387,27 +391,27 @@ class TestSchemaValidation:
                 level=3,
                 dry_run=True,
             )
-            
+
             spec_dict = spec_to_dict(spec)
             is_valid, errors = validate_spec_against_schema(spec_dict, ARCHIVE_SPEC_SCHEMA)
-            
+
             assert is_valid, f"Schema validation failed: {errors}"
 
     def test_transfer_spec_validates_against_schema(self):
         """Verify transfer spec passes schema validation."""
         source = Path("/source")
         dest = Path("/dest")
-        
+
         spec = build_transfer_spec(
             source=source,
             destination=dest,
             direction="push",
             dry_run=True,
         )
-        
+
         spec_dict = spec_to_dict(spec)
         is_valid, errors = validate_spec_against_schema(spec_dict, TRANSFER_SPEC_SCHEMA)
-        
+
         assert is_valid, f"Schema validation failed: {errors}"
 
     def test_restore_spec_validates_against_schema(self):
@@ -415,15 +419,15 @@ class TestSchemaValidation:
         with tempfile.TemporaryDirectory() as tmpdir:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
-            
+
             spec = build_restore_spec(
                 archive=archive,
                 dry_run=True,
             )
-            
+
             spec_dict = spec_to_dict(spec)
             is_valid, errors = validate_spec_against_schema(spec_dict, RESTORE_SPEC_SCHEMA)
-            
+
             assert is_valid, f"Schema validation failed: {errors}"
 
 
@@ -439,7 +443,15 @@ try:
         """Property-based tests for parity across interfaces."""
 
         @given(
-            sources=st.lists(st.text(min_size=1, max_size=50, alphabet=st.sampled_from(["a", "b", "c", "1", "2", "3"])), min_size=1, max_size=5),
+            sources=st.lists(
+                st.text(
+                    min_size=1,
+                    max_size=50,
+                    alphabet=st.sampled_from(["a", "b", "c", "1", "2", "3"]),
+                ),
+                min_size=1,
+                max_size=5,
+            ),
             algorithm=st.sampled_from(["zstd", "gzip", "lz4"]),
             level=st.integers(min_value=1, max_value=9),
         )
@@ -449,13 +461,13 @@ try:
             with tempfile.TemporaryDirectory() as tmpdir:
                 source = Path(tmpdir)
                 dest = Path(tmpdir) / "backup"
-                
+
                 # Create actual directories for sources (sanitized names)
                 for s in sources:
                     safe_name = "".join(c for c in s[:10] if c.isalnum() or c in "-_.")
                     if safe_name:
                         (source / safe_name).mkdir(exist_ok=True)
-                
+
                 # CLI-style
                 cli_spec = build_backup_spec(
                     sources=[source],
@@ -464,7 +476,7 @@ try:
                     level=level,
                     dry_run=True,
                 )
-                
+
                 # TUI-style (simulated - same params)
                 tui_spec = build_backup_spec(
                     sources=[source],
@@ -473,10 +485,10 @@ try:
                     level=level,
                     dry_run=True,
                 )
-                
+
                 cli_hash = compute_spec_hash(spec_to_dict(cli_spec))
                 tui_hash = compute_spec_hash(spec_to_dict(tui_spec))
-                
+
                 assert cli_hash == tui_hash, "Property-based parity test failed"
 
         @given(
@@ -489,7 +501,7 @@ try:
             """Same transfer params produce same spec hash."""
             source = Path("/source")
             dest = Path("/dest")
-            
+
             spec1 = build_transfer_spec(
                 source=source,
                 destination=dest,
@@ -498,7 +510,7 @@ try:
                 overwrite=overwrite,
                 dry_run=True,
             )
-            
+
             spec2 = build_transfer_spec(
                 source=source,
                 destination=dest,
@@ -507,10 +519,10 @@ try:
                 overwrite=overwrite,
                 dry_run=True,
             )
-            
+
             hash1 = compute_spec_hash(spec_to_dict(spec1))
             hash2 = compute_spec_hash(spec_to_dict(spec2))
-            
+
             assert hash1 == hash2
 
 except ImportError:
@@ -521,6 +533,7 @@ except ImportError:
 # =============================================================================
 # CLI Help Parity Tests
 # =============================================================================
+
 
 class TestCLIHelpParity:
     """Tests for CLI help output consistency."""
@@ -564,6 +577,7 @@ class TestCLIHelpParity:
 # =============================================================================
 # Dry Run Parity Tests
 # =============================================================================
+
 
 class TestDryRunParity:
     """Tests for dry-run mode consistency across commands."""
@@ -627,17 +641,18 @@ class TestDryRunParity:
 # TUI Intent to Spec Parity Tests
 # =============================================================================
 
+
 class TestTUIIntentParity:
     """Tests for TUI intent → spec parity with CLI."""
 
     def test_backup_intent_to_spec_parity(self):
         """Verify BackupIntent produces same spec as CLI."""
         from bkx.tui.messages import BackupIntent
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             dest = Path(tmpdir) / "backup"
-            
+
             # Create intent (simulating TUI input)
             intent = BackupIntent(
                 sources=[source],
@@ -648,11 +663,11 @@ class TestTUIIntentParity:
                 level=5,
                 verify=True,
             )
-            
+
             # Convert to spec params and build spec
             spec_params = intent.to_spec_params()
             tui_spec = build_backup_spec(**spec_params, dry_run=True)
-            
+
             # Build CLI spec with same params
             cli_spec = build_backup_spec(
                 sources=[source],
@@ -664,7 +679,7 @@ class TestTUIIntentParity:
                 verify=True,
                 dry_run=True,
             )
-            
+
             # Verify parity
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"BackupIntent parity failed: {diffs}"
@@ -672,11 +687,11 @@ class TestTUIIntentParity:
     def test_archive_intent_to_spec_parity(self):
         """Verify ArchiveIntent produces same spec as CLI."""
         from bkx.tui.messages import ArchiveIntent
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir)
             output = Path(tmpdir) / "archive.tar"
-            
+
             intent = ArchiveIntent(
                 sources=[source],
                 output=output,
@@ -684,10 +699,10 @@ class TestTUIIntentParity:
                 algorithm="gzip",
                 verify=True,
             )
-            
+
             spec_params = intent.to_spec_params()
             tui_spec = build_archive_spec(**spec_params, dry_run=True)
-            
+
             cli_spec = build_archive_spec(
                 sources=[source],
                 output=output,
@@ -696,19 +711,19 @@ class TestTUIIntentParity:
                 verify=True,
                 dry_run=True,
             )
-            
+
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"ArchiveIntent parity failed: {diffs}"
 
     def test_restore_intent_to_spec_parity(self):
         """Verify RestoreIntent produces same spec as CLI."""
         from bkx.tui.messages import RestoreIntent
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
             dest = Path(tmpdir) / "restore"
-            
+
             intent = RestoreIntent(
                 archive=archive,
                 destination=dest,
@@ -717,10 +732,10 @@ class TestTUIIntentParity:
                 verify=True,
                 fresh_dir=False,  # Explicit to match config default
             )
-            
+
             spec_params = intent.to_spec_params()
             tui_spec = build_restore_spec(**spec_params, dry_run=True)
-            
+
             cli_spec = build_restore_spec(
                 archive=archive,
                 destination=dest,
@@ -730,27 +745,27 @@ class TestTUIIntentParity:
                 fresh_dir=False,
                 dry_run=True,
             )
-            
+
             is_parity, diffs = verify_parity(cli_spec, tui_spec)
             assert is_parity, f"RestoreIntent parity failed: {diffs}"
 
     def test_transfer_intent_to_spec_parity(self):
         """Verify TransferIntent produces same spec as CLI."""
         from bkx.tui.messages import TransferIntent
-        
+
         source = Path("/source")
         dest = Path("/dest")
-        
+
         intent = TransferIntent(
             source=source,
             destination=dest,
             direction="push",
             verify=True,
         )
-        
+
         spec_params = intent.to_spec_params()
         tui_spec = build_transfer_spec(**spec_params, overwrite=True, dry_run=True)
-        
+
         cli_spec = build_transfer_spec(
             source=source,
             destination=dest,
@@ -759,7 +774,6 @@ class TestTUIIntentParity:
             overwrite=True,
             dry_run=True,
         )
-        
+
         is_parity, diffs = verify_parity(cli_spec, tui_spec)
         assert is_parity, f"TransferIntent parity failed: {diffs}"
-

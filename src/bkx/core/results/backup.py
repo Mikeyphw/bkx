@@ -84,4 +84,3 @@ class BackupStepResult:
     files: int = 0
     error: str | None = None
     details: dict[str, str] = field(default_factory=dict)
-

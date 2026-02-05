@@ -17,6 +17,7 @@ import pytest
 # Hypothesis is optional - only used for property-based tests
 try:
     from hypothesis import strategies as st
+
     _HAS_HYPOTHESIS = True
 except ImportError:
     _HAS_HYPOTHESIS = False
@@ -39,15 +40,16 @@ from bkx.cli.spec_builders import (
 # Strategies for Property-Based Testing
 # =============================================================================
 
+
 @st.composite
 def strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:
     """Generate a list of valid paths.
-    
+
     Args:
         draw: Hypothesis draw function
         min_size: Minimum number of paths
         max_size: Maximum number of paths
-        
+
     Returns:
         List of Path objects
     """
@@ -66,10 +68,10 @@ def strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:
 @st.composite
 def strategy_backup_params(draw) -> dict[str, Any]:
     """Generate backup spec parameters.
-    
+
     Args:
         draw: Hypothesis draw function
-        
+
     Returns:
         Dictionary of backup parameters
     """
@@ -77,7 +79,7 @@ def strategy_backup_params(draw) -> dict[str, Any]:
         source = Path(tmpdir)
         (source / "file.txt").touch()
         (source / "subdir").mkdir()
-        
+
         return {
             "sources": [source],
             "destination": Path(tmpdir) / "backup",
@@ -93,17 +95,17 @@ def strategy_backup_params(draw) -> dict[str, Any]:
 @st.composite
 def strategy_archive_params(draw) -> dict[str, Any]:
     """Generate archive spec parameters.
-    
+
     Args:
         draw: Hypothesis draw function
-        
+
     Returns:
         Dictionary of archive parameters
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         source = Path(tmpdir)
         (source / "file.txt").touch()
-        
+
         return {
             "sources": [source],
             "output": Path(tmpdir) / "archive.tar",
@@ -118,17 +120,17 @@ def strategy_archive_params(draw) -> dict[str, Any]:
 @st.composite
 def strategy_restore_params(draw) -> dict[str, Any]:
     """Generate restore spec parameters.
-    
+
     Args:
         draw: Hypothesis draw function
-        
+
     Returns:
         Dictionary of restore parameters
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         archive = Path(tmpdir) / "archive.tar"
         archive.touch()
-        
+
         return {
             "archive": archive,
             "destination": Path(tmpdir) / "restore",
@@ -143,10 +145,10 @@ def strategy_restore_params(draw) -> dict[str, Any]:
 @st.composite
 def strategy_transfer_params(draw) -> dict[str, Any]:
     """Generate transfer spec parameters.
-    
+
     Args:
         draw: Hypothesis draw function
-        
+
     Returns:
         Dictionary of transfer parameters
     """
@@ -163,10 +165,10 @@ def strategy_transfer_params(draw) -> dict[str, Any]:
 @st.composite
 def strategy_exclude_patterns(draw) -> list[str]:
     """Generate exclude patterns.
-    
+
     Args:
         draw: Hypothesis draw function
-        
+
     Returns:
         List of glob patterns
     """
@@ -177,6 +179,7 @@ def strategy_exclude_patterns(draw) -> list[str]:
 # =============================================================================
 # Fixtures
 # =============================================================================
+
 
 @pytest.fixture
 def temp_source_dir():
@@ -200,6 +203,7 @@ def temp_archive_file():
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
 
 def compute_cli_backup_hash(
     sources: list[Path],
@@ -254,12 +258,12 @@ def verify_backup_parity(
     **kwargs,
 ) -> tuple[bool, str]:
     """Verify backup spec parity between CLI and TUI sources.
-    
+
     Args:
         cli_sources: CLI-provided sources
         tui_sources: TUI-provided sources (should be same as CLI)
         **kwargs: Additional spec parameters
-        
+
     Returns:
         Tuple of (is_parity, message)
     """
@@ -273,25 +277,24 @@ def verify_backup_parity(
         dry_run=True,
         **kwargs,
     )
-    
+
     is_equal, diffs = verify_parity(cli_spec, tui_spec)
     return is_equal, ", ".join(diffs) if diffs else "parity OK"
 
 
 def verify_spec_normalization_determinism(spec_factory) -> bool:
     """Verify that repeated normalization produces identical specs.
-    
+
     Args:
         spec_factory: Callable that creates a spec
-        
+
     Returns:
         True if normalization is deterministic
     """
     spec1 = spec_factory()
     spec2 = spec_factory()
-    
+
     dict1 = spec_to_dict(spec1.normalize())
     dict2 = spec_to_dict(spec2.normalize())
-    
-    return compute_spec_hash(dict1) == compute_spec_hash(dict2)
 
+    return compute_spec_hash(dict1) == compute_spec_hash(dict2)

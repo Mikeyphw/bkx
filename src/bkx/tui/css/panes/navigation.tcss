@@ -1,22 +1,22 @@
 /* NavigationPane styles */
 
-NavigationPane {
+.bkx-navigation-pane {
     width: 25;
     dock: left;
     background: $surface;
     border: solid $primary;
 }
 
-NavListItem {
+.bkx-navigation-pane NavListItem {
     height: 1;
     padding: 0 1;
 }
 
-NavListItem:hover {
+.bkx-navigation-pane NavListItem:hover {
     background: $accent;
 }
 
-NavListItem:focus {
+.bkx-navigation-pane NavListItem:focus {
     background: $primary;
 }
 
@@ -39,5 +39,4 @@ NavListItem:focus {
     text-align: center;
     color: $foreground-muted;
 }
-
 

@@ -1,0 +1,32 @@
+/* Action Bar - mikomn AdaptiveActionBar (Step 8) */
+
+.rcm AdaptiveActionBar.adaptive-action-bar {
+    height: auto;
+    padding: 0 1;
+}
+
+.rcm Button.action-button {
+    height: 1;
+    min-height: 1;
+    padding: 0 1;
+    border: none;
+    background: $accent_muted;
+    color: $fg;
+}
+
+.rcm Button.action-button:hover {
+    background: $accent_primary;
+    color: $bg;
+}
+
+.rcm Button.action-button.primary-action {
+    background: $accent_primary;
+    color: $bg;
+    text-style: bold;
+}
+
+.rcm .action-bar-hint {
+    color: $muted;
+    padding: 0 1;
+    height: 1;
+}

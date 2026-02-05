@@ -1,6 +1,6 @@
 /* StatusFooterPane styles */
 
-StatusFooterPane {
+.bkx-status-footer-pane {
     height: 2;
     dock: bottom;
     background: $surface;

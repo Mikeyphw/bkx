@@ -124,4 +124,3 @@ class TestErrorToExitCode:
 
         error = BkxError(msg="unknown error")
         assert error_to_exit_code(error) == EXIT_GENERIC
-

@@ -25,9 +25,9 @@ def _normalize_for_json(value: Any) -> Any:
     """
     import dataclasses
     from pathlib import Path
-    
+
     from dataclasses import Field
-    
+
     # Handle dataclass Field objects (extract the actual value)
     if isinstance(value, Field):
         if value.default is not dataclasses.MISSING:
@@ -36,11 +36,11 @@ def _normalize_for_json(value: Any) -> Any:
             return _normalize_for_json(value.default_factory())
         else:
             return None
-    
+
     # Handle Path objects (including subclasses like PurePath, WindowsPath, PosixPath)
     if isinstance(value, Path):
         return str(value)
-    
+
     # Handle tuples before checking for sequences
     if isinstance(value, tuple):
         # Check if it's a NamedTuple (has _fields attribute)
@@ -49,19 +49,19 @@ def _normalize_for_json(value: Any) -> Any:
             return {field: _normalize_for_json(getattr(value, field)) for field in value._fields}
         else:
             return [_normalize_for_json(item) for item in value]
-    
+
     # Handle dictionaries
     if isinstance(value, dict):
         return {k: _normalize_for_json(v) for k, v in value.items()}
-    
+
     # Handle lists
     if isinstance(value, list):
         return [_normalize_for_json(item) for item in value]
-    
+
     # Handle sets (convert to sorted list for deterministic serialization)
     if isinstance(value, (set, frozenset)):
         return sorted([_normalize_for_json(item) for item in value], key=str)
-    
+
     # Handle dataclass instances
     if hasattr(value, "__dataclass_fields__"):
         result = {}
@@ -73,15 +73,15 @@ def _normalize_for_json(value: Any) -> Any:
                 # For frozen dataclasses with properties, skip
                 pass
         return result
-    
+
     # Handle objects with __dict__
     if hasattr(value, "__dict__"):
         return _normalize_for_json(value.__dict__)
-    
+
     # Handle None
     if value is None:
         return None
-    
+
     # Return other values as-is
     return value
 
@@ -171,7 +171,9 @@ def verify_parity(*specs: Any, ignore_fields: tuple[str, ...] = ()) -> tuple[boo
 
     for i, spec_hash in enumerate(hashes[1:], start=1):
         if spec_hash != first_hash:
-            differences.append(f"Spec {i} hash differs: {spec_hash[:16]}... vs {first_hash[:16]}...")
+            differences.append(
+                f"Spec {i} hash differs: {spec_hash[:16]}... vs {first_hash[:16]}..."
+            )
 
     return len(differences) == 0, differences
 
@@ -209,7 +211,7 @@ def validate_spec_against_schema(spec: dict, schema: dict) -> tuple[bool, list[s
                 errors.append(f"Field '{field}' should be array, got {type(value).__name__}")
             elif expected_type == "object" and not isinstance(value, dict):
                 errors.append(f"Field '{field}' should be object, got {type(value).__name__}")
-            
+
             # Validate nested object properties
             if expected_type == "object" and isinstance(value, dict):
                 nested_properties = field_schema.get("properties", {})
@@ -221,9 +223,13 @@ def validate_spec_against_schema(spec: dict, schema: dict) -> tuple[bool, list[s
                         nested_value = value[nested_field]
                         nested_type = nested_schema.get("type")
                         if nested_type == "string" and not isinstance(nested_value, str):
-                            errors.append(f"Field '{field}.{nested_field}' should be string, got {type(nested_value).__name__}")
+                            errors.append(
+                                f"Field '{field}.{nested_field}' should be string, got {type(nested_value).__name__}"
+                            )
                         elif nested_type == "integer" and not isinstance(nested_value, int):
-                            errors.append(f"Field '{field}.{nested_field}' should be integer, got {type(nested_value).__name__}")
+                            errors.append(
+                                f"Field '{field}.{nested_field}' should be integer, got {type(nested_value).__name__}"
+                            )
 
     return len(errors) == 0, errors
 

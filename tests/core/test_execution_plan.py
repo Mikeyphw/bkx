@@ -267,4 +267,3 @@ class TestHumanReadableOutput:
         # 1 MB
         plan = ExecutionPlan(command="test", total_bytes=1024 * 1024)
         assert plan.human_bytes_estimate == "1.00MB"
-

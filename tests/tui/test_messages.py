@@ -314,4 +314,3 @@ class TestServiceResultMessages:
         assert result.success is False
         assert result.error_code == 10
         assert result.error_details["reason"] == "disk full"
-

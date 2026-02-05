@@ -1,0 +1,35 @@
+/* Global - app-scoped primitives (Step 8) */
+
+.rcm Screen {
+    background: $bg;
+    color: $fg;
+}
+
+.rcm .page {
+    height: 100%;
+    width: 100%;
+}
+
+.rcm .rcm-pane {
+    height: 100%;
+    width: 100%;
+    padding: 0 1;
+}
+
+.rcm .rcm-list-title {
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+.rcm .rcm-section-title {
+    text-style: bold;
+    margin-top: 1;
+}
+
+.rcm .rcm-settings-body {
+    padding: 1 2;
+}
+
+.rcm .rcm-spacer {
+    width: 1fr;
+}

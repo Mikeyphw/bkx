@@ -1,6 +1,6 @@
 /* ThemeSettingsPane styles */
 
-ThemeSettingsPane {
+.bkx-theme-settings-pane {
     background: $background;
 }
 

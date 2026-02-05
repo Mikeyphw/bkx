@@ -1,0 +1,147 @@
+/* bkx/src/bkx/tui/css/shell.tcss */
+
+.bkx-shell-layout {
+    height: 100%;
+    width: 100%;
+}
+
+.bkx-shell {
+    height: 100%;
+    width: 100%;
+}
+
+.bkx-shell-panes {
+    height: 100%;
+    width: 100%;
+}
+
+.bkx-sidebar-region {
+    min-width: 18;
+    max-width: 30;
+}
+
+.bkx-content-region {
+    width: 1fr;
+    height: 100%;
+}
+
+.bkx-switcher {
+    width: 1fr;
+    height: 100%;
+}
+
+.bkx-run-panel-region {
+    min-width: 32;
+    max-width: 52;
+    height: 100%;
+}
+
+.bkx-run-panel {
+    height: 100%;
+    width: 1fr;
+}
+
+.bkx-page {
+    padding: 1 2;
+    height: 100%;
+    width: 100%;
+}
+
+.page-title {
+    text-style: bold;
+    margin: 0 0 1 0;
+}
+
+.section-title {
+    text-style: bold;
+    margin: 1 0 1 0;
+}
+
+.muted {
+    opacity: 70%;
+    margin: 1 0 0 0;
+}
+
+.form-container {
+    width: 1fr;
+    margin: 0 0 1 0;
+}
+
+.form-row {
+    layout: horizontal;
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+.form-label {
+    width: 16;
+    content-align: right middle;
+    padding: 0 1 0 0;
+}
+
+.form-input {
+    width: 1fr;
+}
+
+.button-row {
+    layout: horizontal;
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+.archive-split {
+    layout: horizontal;
+    height: 1fr;
+}
+
+.archive-list {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+.archive-create {
+    width: 1fr;
+}
+
+/* Responsive rules */
+.expanded .bkx-footer-tabs {
+    display: none;
+}
+
+.compact .bkx-sidebar-region {
+    display: none;
+}
+
+.compact .bkx-run-panel-region {
+    min-width: 1;
+}
+
+.compact .archive-split {
+    layout: vertical;
+}
+
+
+.form-field {
+    width: 1fr;
+}
+
+.form-field-wrapper {
+    width: 1fr;
+}
+
+.form-error {
+    height: auto;
+}
+
+.sources-block {
+    width: 1fr;
+}
+
+.sources-header {
+    height: auto;
+}
+
+.sources-list {
+    height: auto;
+}
+

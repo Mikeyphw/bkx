@@ -15,8 +15,20 @@ def get_css_paths() -> list[str]:
     base_dir = Path(__file__).parent
 
     css_paths: list[str] = [
+        # Overlays (Step 4B)
+        str(base_dir / "overlays.tcss"),
+        # Overlays (Step 4B)
+        str(base_dir / "overlays.tcss"),
+        # Overlays (Step 4B)
+        str(base_dir / "overlays.tcss"),
+        # Overlays (Step 4B)
+        str(base_dir / "overlays.tcss"),
+        # Overlays (Step 4B)
+        str(base_dir / "overlays.tcss"),
         # Shell layout
         str(base_dir / "shell.tcss"),
+        # Overlays
+        str(base_dir / "overlays.tcss"),
         # Panes
         str(base_dir / "panes" / "status_cards.tcss"),
         str(base_dir / "panes" / "theme_settings.tcss"),

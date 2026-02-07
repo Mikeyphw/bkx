@@ -16,10 +16,9 @@ import uuid
 
 from mikomn.tui_base import BaseTuiApp
 from mikomn.tui_base.css_registry import reload_css
-from mikomn.tui_base.models import Command, ToastData
+from mikomn.tui_base.models import Command, FilterGroup, FilterOption, ToastData
 from mikomn.tui_base.notifications import NotificationHistory
-from mikomn.tui_base.overlays import CommandPalette, CommandSelected
-from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
+from mikomn.tui_base.overlays import CommandSelected
 from mikomn.tui_base.widgets import DebugOverlay
 from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
 from textual.app import App, ComposeResult
@@ -67,6 +66,8 @@ from bkx.tui.messages import (
     TransferIntent,
     UpdateLog,
 )
+from bkx.tui.overlays import BkxCommandPalette, BkxNotificationCenterScreen
+from bkx.tui.overlays.filter_sheet import BkxFilterSheet
 from bkx.tui.pages import create_page_registry
 
 # BKX components
@@ -258,6 +259,43 @@ class BkxTuiApp(BaseTuiApp):
         yield BkxShell(pages=self._pages)
         yield ToastContainer(id="toast-container")
 
+
+
+    # =========================================================================
+    # Overlay helpers (Step 4A)
+    # =========================================================================
+
+    def _shell(self) -> BkxShell | None:
+        try:
+            return self.query_one(BkxShell)
+        except Exception:
+            return None
+
+    def _push_modal(self, screen) -> None:
+        """Push a modal screen and restore focus on dismiss (best-effort)."""
+        prev_focus = getattr(self, "focused", None)
+
+        def _restore(_: object | None = None) -> None:
+            if prev_focus is None:
+                return
+            try:
+                self.call_after_refresh(lambda: prev_focus.focus())
+            except Exception:
+                pass
+
+        try:
+            self.push_screen(screen, _restore)  # type: ignore[arg-type]
+        except TypeError:
+            self.push_screen(screen)  # type: ignore[arg-type]
+        except Exception:
+            _restore()
+
+    def _sync_toasts_indicator(self) -> None:
+        shell = self._shell()
+        if not shell:
+            return
+        shell.set_footer_message(None if self._show_toasts else "Toasts OFF")
+
     def _goto_page(self, route: str) -> None:
         """Navigate to a shell page route."""
         try:
@@ -326,11 +364,11 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_show_command_palette_intent(self) -> None:
         """Show the command palette overlay."""
-        self.push_screen(CommandPalette(commands=self.build_command_palette_commands()))
+        self._push_modal(BkxCommandPalette(commands=self.build_command_palette_commands()))
 
     def _handle_open_notification_center_intent(self) -> None:
         """Open the notification center (history) overlay."""
-        self.push_screen(NotificationCenterScreen(title="BKX Notifications"))
+        self._push_modal(BkxNotificationCenterScreen(title="BKX Notifications"))
 
     def _handle_reload_css_intent(self) -> None:
         """Reload TCSS for the current layout."""
@@ -369,6 +407,22 @@ class BkxTuiApp(BaseTuiApp):
         """Enable/disable toast rendering."""
         self._show_toasts = not self._show_toasts
         status = "enabled" if self._show_toasts else "disabled"
+
+        try:
+            container = self.query_one("#toast-container", ToastContainer)
+            if not self._show_toasts:
+                for meth in ("remove_all", "clear", "dismiss_all"):
+                    fn = getattr(container, meth, None)
+                    if callable(fn):
+                        fn()
+                        break
+                container.display = False
+            else:
+                container.display = True
+        except Exception:
+            pass
+
+        self._sync_toasts_indicator()
         self.notify(f"Toasts {status}", severity="info")
 
     def _handle_toggle_debug_overlay_intent(self) -> None:
@@ -511,6 +565,51 @@ class BkxTuiApp(BaseTuiApp):
             )
 
         return commands
+
+    def open_log_filter_sheet(self, pane: object) -> None:
+        """Open filter sheet for the run log pane."""
+        current = getattr(pane, "_filter_level", None)
+
+        options = [
+            FilterOption(value="*", label="All", selected=current is None),
+            FilterOption(value="info", label="info", selected=current == "info"),
+            FilterOption(value="success", label="success", selected=current == "success"),
+            FilterOption(value="warning", label="warning", selected=current == "warning"),
+            FilterOption(value="error", label="error", selected=current == "error"),
+            FilterOption(value="debug", label="debug", selected=current == "debug"),
+        ]
+        group = FilterGroup(field="level", label="Level", options=options, multi_select=False)
+
+        def _apply(selected: dict[str, list[str]]) -> None:
+            picked = (selected.get("level") or ["*"])[0]
+            try:
+                pane.set_filter_level(None if picked == "*" else picked)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        self._push_modal(
+            BkxFilterSheet(filter_groups=[group], on_apply=_apply, title="Log Filters")
+        )
+
+    def open_archive_filter_sheet(self, pane: object) -> None:
+        """Open filter sheet for the archive list pane (extension group)."""
+        build = getattr(pane, "build_extension_filter_group", None)
+        if not callable(build):
+            return
+        group = build()
+        if group is None:
+            return
+
+        def _apply(selected: dict[str, list[str]]) -> None:
+            picked = (selected.get("extension") or ["*"])[0]
+            try:
+                pane.set_extension_filter(None if picked == "*" else picked)  # type: ignore[attr-defined]
+            except Exception:
+                pass
+
+        self._push_modal(
+            BkxFilterSheet(filter_groups=[group], on_apply=_apply, title="Archive Filters")
+        )
 
     def action_command_palette(self) -> None:
         """Request the command palette overlay."""
@@ -792,7 +891,7 @@ class BkxTuiApp(BaseTuiApp):
         try:
             spec = build_transfer_spec(**intent.to_spec_params())
             service = get_transfer_service()
-            result = service.transfer(spec)
+            service.transfer(spec)
 
             if run_panel:
                 run_panel.set_status("Transfer complete", level="success")

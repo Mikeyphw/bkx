@@ -113,6 +113,41 @@ class RunLogPane(Container):
 
     @on(Button.Pressed, "#filter-btn")
     def _on_filter(self) -> None:
+        """Open filter sheet (Step 4B)."""
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "open_log_filter_sheet"):
+            app.open_log_filter_sheet(self)
+            return
+
+        # Fallback: keep old cycling behavior.
+        """Open filter sheet (Step 4B)."""
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "open_log_filter_sheet"):
+            app.open_log_filter_sheet(self)
+            return
+
+        # Fallback: keep old cycling behavior.
+        """Open filter sheet (Step 4B)."""
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "open_log_filter_sheet"):
+            app.open_log_filter_sheet(self)
+            return
+
+        # Fallback: keep old cycling behavior.
+        """Open filter sheet (Step 4B)."""
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "open_log_filter_sheet"):
+            app.open_log_filter_sheet(self)
+            return
+
+        # Fallback: keep old cycling behavior.
+        """Open filter sheet (Step 4B)."""
+        app = getattr(self, "app", None)
+        if app is not None and hasattr(app, "open_log_filter_sheet"):
+            app.open_log_filter_sheet(self)
+            return
+
+        # Fallback: keep old cycling behavior.
         cur = self._FILTER_LEVELS.index(self._filter_level) if self._filter_level in self._FILTER_LEVELS else 0
         self._filter_level = self._FILTER_LEVELS[(cur + 1) % len(self._FILTER_LEVELS)]
         self._write_system_message(f"Filter set to: {self._filter_level or 'all'}")

@@ -131,6 +131,19 @@ class BkxShell(Container):
             except Exception:
                 pass
 
+
+    def set_footer_message(self, message: str | None) -> None:
+        """Set/clear a footer message (center text) if supported by AppFooter."""
+        if not self._footer:
+            return
+        try:
+            set_message = getattr(self._footer, "set_message", None)
+            if callable(set_message):
+                set_message(message)
+                return
+        except Exception:
+            pass
+
     @property
     def run_panel(self) -> RunPanel | None:
         return self._run_panel

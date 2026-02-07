@@ -1,0 +1,24 @@
+/* src/bkx/tui/css/overlays.tcss
+   Step 4A overlay polish (class selectors only). */
+
+.bkx-command-palette {
+    width: 86%;
+    height: 72%;
+}
+
+.bkx-notification-center-screen {
+    width: 90%;
+    height: 80%;
+}
+
+/* Compact terminals: keep overlays usable */
+.compact .bkx-command-palette {
+    width: 98%;
+    height: 86%;
+}
+
+.compact .bkx-notification-center-screen {
+    width: 98%;
+    height: 90%;
+}
+

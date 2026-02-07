@@ -14,6 +14,7 @@ from textual.widgets import Label, RichLog
 
 try:
     from mikomn.tui_base.panes.common.filterable_list_pane import FilterableListPane
+    from mikomn.tui_base.models import FilterGroup, FilterOption
 
     _HAS_MIKOMN = True
 except Exception:
@@ -39,6 +40,13 @@ class ArchiveListItem:
         self.size = size
         self.modified = modified
         self.icon = icon
+
+    @property
+    def extension(self) -> str:
+        suffixes = self.path.suffixes
+        if not suffixes:
+            return "(none)"
+        return "".join(suffixes)
 
     def __str__(self) -> str:
         return f"{self.icon} {self.name}"
@@ -86,10 +94,47 @@ if _HAS_MIKOMN:
         ):
             super().__init__(title=title, filter_placeholder=filter_placeholder, **kwargs)
             self._archives: list[ArchiveListItem] = []
+            self._ext_filter: str | None = None
 
         def set_archives(self, archives: list[ArchiveListItem]) -> None:
             self._archives = archives
+            self._apply_extension_filter()
+
+        def action_filters(self) -> None:
+            app = getattr(self, "app", None)
+            if app is None:
+                return
+            open_fn = getattr(app, "open_archive_filter_sheet", None)
+            if callable(open_fn):
+                open_fn(self)
+
+        def set_extension_filter(self, ext: str | None) -> None:
+            self._ext_filter = ext
+            self._apply_extension_filter()
+
+        def _apply_extension_filter(self) -> None:
+            archives = self._archives
+            if self._ext_filter and self._ext_filter != "*":
+                archives = [a for a in archives if a.extension == self._ext_filter]
             self.set_items([(str(a), a) for a in archives])
+
+        def build_extension_filter_group(self) -> "FilterGroup | None":
+            counts: dict[str, int] = {}
+            for a in self._archives:
+                counts[a.extension] = counts.get(a.extension, 0) + 1
+            if not counts:
+                return None
+
+            options = [FilterOption(value="*", label="All", selected=self._ext_filter in (None, "*"))]
+            for ext in sorted(counts.keys()):
+                options.append(
+                    FilterOption(
+                        value=ext,
+                        label=f"{ext} ({counts[ext]})",
+                        selected=self._ext_filter == ext,
+                    )
+                )
+            return FilterGroup(field="extension", label="Extension", options=options, multi_select=False)
 
         def on_filter_changed(self, event: FilterableListPane.FilterChanged) -> None:
             self.post_message(self.FilterChanged(event.filter_text, event.filtered_count, event.total_count))

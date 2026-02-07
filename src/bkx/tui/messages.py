@@ -143,6 +143,43 @@ class CycleTheme(Intent):
     """Cycle to the next theme."""
 
 
+@dataclass
+class SetTheme(Intent):
+    """Set the active theme by name."""
+
+    theme_name: str
+
+
+@dataclass
+class ReloadCss(Intent):
+    """Reload the TCSS cascade."""
+
+
+@dataclass
+class ClearRunLog(Intent):
+    """Clear the run/log output panes."""
+
+
+@dataclass
+class OpenNotificationCenter(Intent):
+    """Open the notification history overlay."""
+
+
+@dataclass
+class ToggleToasts(Intent):
+    """Enable/disable toast rendering."""
+
+
+@dataclass
+class ToggleDebugOverlay(Intent):
+    """Toggle the debug overlay visibility."""
+
+
+@dataclass
+class DumpDebugSnapshot(Intent):
+    """Dump a debug snapshot to disk."""
+
+
 # =============================================================================
 # Service Result Messages
 # =============================================================================

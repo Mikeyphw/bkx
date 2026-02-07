@@ -56,6 +56,13 @@ from bkx.tui.messages import (
     ShowToast,
     TransferIntent,
     UpdateLog,
+    OpenNotificationCenter,
+    ReloadCss,
+    ClearRunLog,
+    ToggleToasts,
+    ToggleDebugOverlay,
+    DumpDebugSnapshot,
+    SetTheme,
 )
 from bkx.tui.pages import create_page_registry
 
@@ -65,7 +72,9 @@ from bkx.ui.theme import (
     cycle_theme,
     enable_theme_persistence,
     get_current_theme_name,
+    get_theme_names,
     is_theme_persistence_enabled,
+    set_theme,
     save_theme_preference,
 )
 from bkx.ui.theme import (
@@ -113,12 +122,21 @@ class BkxTuiApp(BaseTuiApp):
     ]
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        if args:
+            raise TypeError("BkxTuiApp accepts keyword arguments only")
+
+        from bkx.tui.css import get_css_paths
+
+        theme_name = kwargs.pop("theme_name", None) or get_current_theme_name()
+        extra_css_paths = kwargs.pop("extra_css_paths", None) or get_css_paths()
+
+        super().__init__(theme_name=theme_name, extra_css_paths=extra_css_paths, **kwargs)
         self._pages = create_page_registry()
-        self._theme_name = get_current_theme_name()
+        self._theme_name = theme_name
         self._theme_callback_id = None
         self._show_toasts = True
         self._debug_overlay: DebugOverlay | None = None
+
 
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
@@ -183,10 +201,6 @@ class BkxTuiApp(BaseTuiApp):
         if run_panel:
             run_panel.write("BKX TUI started")
 
-        # Load BKX-specific external TCSS styles
-        from bkx.tui.css import load_bkx_css
-
-        load_bkx_css(self)
 
         # Register theme change callback to update TCSS
         def _on_theme_changed(new_theme: str):
@@ -287,16 +301,94 @@ class BkxTuiApp(BaseTuiApp):
         self._goto_page("logs")
 
     def action_toggle_toasts(self) -> None:
-        """Toggle toast display."""
+        """Toggle toast rendering (intent-driven)."""
+        self.post_message(ToggleToasts())
+
+    def action_toggle_debug(self) -> None:
+        """Toggle debug overlay visibility (intent-driven)."""
+        self.post_message(ToggleDebugOverlay())
+
+    def action_dump_debug(self) -> None:
+        """Dump debug information to file (intent-driven)."""
+        self.post_message(DumpDebugSnapshot())
+
+    def action_cycle_theme(self) -> None:
+        """Cycle to the next theme (intent-driven)."""
+        self.post_message(CycleTheme())
+
+    def _set_theme(self) -> None:
+        """Set the current theme after themes are registered."""
+        try:
+            self.theme = self._theme_name
+        except Exception:
+            pass  # Don't let theme errors break the app
+        self.call_after_refresh(self._apply_theme_tcss, self._theme_name)
+
+    # =========================================================================
+    # Overlays
+    # =========================================================================
+
+    def _handle_show_command_palette_intent(self) -> None:
+        """Show the command palette overlay."""
+        self.push_screen(CommandPalette(commands=self.build_command_palette_commands()))
+
+    def _handle_open_notification_center_intent(self) -> None:
+        """Open the notification center (history) overlay."""
+        self.push_screen(NotificationCenterScreen(title="BKX Notifications"))
+
+    def _handle_reload_css_intent(self) -> None:
+        """Reload TCSS for the current layout."""
+        try:
+            from mikomn.tui_base.css_registry import reload_css as mikomn_reload_css
+
+            mikomn_reload_css(
+                self,
+                layout_mode=self.layout_mode,
+                extra_paths=self.get_extra_css_paths(),
+                exclude_files=self.get_css_excludes(),
+            )
+        except Exception:
+            try:
+                from bkx.tui.css import reload_css as bkx_reload_css
+
+                bkx_reload_css(self)
+            except Exception:
+                pass
+
+        self.notify("CSS reloaded", severity="info")
+
+    def _handle_clear_run_log_intent(self) -> None:
+        """Clear run/log panes."""
+        run_panel = self._get_run_panel()
+        if run_panel:
+            try:
+                run_panel.clear_log()
+            except Exception:
+                pass
+
+        logs_pane = self._get_logs_pane()
+        if logs_pane:
+            for attr in ("clear_log", "clear"):
+                fn = getattr(logs_pane, attr, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
+                    break
+
+        self.notify("Run log cleared", severity="info")
+
+    def _handle_toggle_toasts_intent(self) -> None:
+        """Enable/disable toast rendering."""
         self._show_toasts = not self._show_toasts
         status = "enabled" if self._show_toasts else "disabled"
         self.notify(f"Toasts {status}", severity="info")
 
-    def action_toggle_debug(self) -> None:
+    def _handle_toggle_debug_overlay_intent(self) -> None:
         """Toggle debug overlay visibility."""
         if self._debug_overlay is None:
             if DebugOverlay is not None:
-                # Create and mount debug overlay if it doesn't exist
                 self._debug_overlay = DebugOverlay(id="debug-overlay", display=True)
                 self.mount(self._debug_overlay)
                 self.notify("Debug overlay enabled", severity="info")
@@ -304,17 +396,15 @@ class BkxTuiApp(BaseTuiApp):
                 self.notify("Debug overlay not available", severity="warning")
             return
 
-        # Toggle visibility
         current_display = self._debug_overlay.display
         self._debug_overlay.display = not current_display
         status = "shown" if not current_display else "hidden"
         self.notify(f"Debug overlay {status}", severity="info")
 
-    def action_dump_debug(self) -> None:
+    def _handle_dump_debug_snapshot_intent(self) -> None:
         """Dump debug information to file."""
         if self._debug_overlay is None:
             if DebugOverlay is not None:
-                # Create a temporary overlay for dumping
                 from mikomn.tui_base.widgets.debug_overlay import DebugOverlay as TempOverlay
 
                 overlay = TempOverlay()
@@ -333,27 +423,28 @@ class BkxTuiApp(BaseTuiApp):
         else:
             self.notify("Failed to save debug dump", severity="error")
 
-    def action_cycle_theme(self) -> None:
+    def _handle_cycle_theme_intent(self) -> None:
         """Cycle to the next theme."""
         self._theme_name = cycle_theme()
-        # Defer setting the theme to allow parent to register themes first
         self.call_after_refresh(self._set_theme)
         self.notify(f"Theme: {self._theme_name}")
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.write(f"Theme changed to {self._theme_name}")
 
-    def _set_theme(self) -> None:
-        """Set the current theme after themes are registered."""
-        try:
-            self.theme = self._theme_name
-        except Exception:
-            pass  # Don't let theme errors break the app
-        self.call_after_refresh(self._apply_theme_tcss, self._theme_name)
+    def _handle_set_theme_intent(self, intent: SetTheme) -> None:
+        """Activate a theme by name."""
+        name = (intent.theme_name or "").strip()
+        if not name:
+            return
 
-    # =========================================================================
-    # Overlays
-    # =========================================================================
+        if not set_theme(name):
+            self.notify(f"Unknown theme: {name}", severity="warning")
+            return
+
+        self._theme_name = name
+        self.call_after_refresh(self._set_theme)
+        self.notify(f"Theme: {self._theme_name}")
 
     def build_command_palette_commands(self) -> list[Command]:
         """Build the command list for the command palette."""
@@ -370,7 +461,7 @@ class BkxTuiApp(BaseTuiApp):
                     id=f"nav:{spec.route}",
                     title=f"Go to {spec.label}",
                     keywords=keywords,
-                    group="Navigate",
+                    group="Navigation",
                     meta={"route": spec.route},
                 )
             )
@@ -396,6 +487,12 @@ class BkxTuiApp(BaseTuiApp):
                     group="App",
                 ),
                 Command(
+                    id="app:dump-debug",
+                    title="Dump debug snapshot",
+                    keywords=["debug", "dump", "snapshot"],
+                    group="App",
+                ),
+                Command(
                     id="app:clear-run-log",
                     title="Clear run log",
                     keywords=["log", "clear"],
@@ -415,55 +512,55 @@ class BkxTuiApp(BaseTuiApp):
                 ),
             ]
         )
+
+        for theme_name in get_theme_names():
+            commands.append(
+                Command(
+                    id=f"theme:set:{theme_name}",
+                    title=f"Set theme: {theme_name}",
+                    keywords=["theme", theme_name],
+                    group="Theme",
+                    meta={"theme": theme_name},
+                )
+            )
+
         return commands
 
     def action_command_palette(self) -> None:
-        """Open the command palette."""
-        self.push_screen(CommandPalette(commands=self.build_command_palette_commands()))
+        """Request the command palette overlay."""
+        self.post_message(ShowCommandPalette())
 
     def on_command_selected(self, event: CommandSelected) -> None:
-        """Handle command selections from the palette."""
+        """Handle command selections from the palette (intent-driven)."""
         cmd_id = getattr(event.command, "id", None) or event.command_id
         meta = getattr(event.command, "meta", None) or {}
 
         if isinstance(meta, dict) and cmd_id.startswith("nav:"):
             route = str(meta.get("route") or cmd_id.split(":", 1)[1])
-            self._goto_page(route)
+            self.post_message(NavigateToScreen(screen_name=route))
             return
 
-        if cmd_id == "app:cycle-theme":
-            self.action_cycle_theme()
+        if cmd_id.startswith("theme:set:"):
+            theme_name = str(meta.get("theme") or cmd_id.split(":", 2)[2])
+            self.post_message(SetTheme(theme_name=theme_name))
             return
 
-        if cmd_id == "app:reload-css":
-            from bkx.tui.css import reload_bkx_css
-
-            reload_bkx_css(self)
-            self.notify("CSS reloaded", severity="info")
-            return
-
-        if cmd_id == "app:toggle-debug":
-            self.action_toggle_debug()
-            return
-
-        if cmd_id == "app:clear-run-log":
-            run_panel = self._get_run_panel()
-            if run_panel:
-                run_panel.clear_log()
-            self.notify("Run log cleared", severity="info")
-            return
-
-        if cmd_id == "app:notifications":
-            self.action_notification_center()
-            return
-
-        if cmd_id == "app:toggle-toasts":
-            self.action_toggle_toasts()
-            return
+        mapping = {
+            "app:cycle-theme": CycleTheme(),
+            "app:reload-css": ReloadCss(),
+            "app:toggle-debug": ToggleDebugOverlay(),
+            "app:dump-debug": DumpDebugSnapshot(),
+            "app:clear-run-log": ClearRunLog(),
+            "app:notifications": OpenNotificationCenter(),
+            "app:toggle-toasts": ToggleToasts(),
+        }
+        intent = mapping.get(cmd_id)
+        if intent is not None:
+            self.post_message(intent)
 
     def action_notification_center(self) -> None:
-        """Open the notification center (history) screen."""
-        self.push_screen(NotificationCenterScreen(title="BKX Notifications"))
+        """Request the notification center overlay."""
+        self.post_message(OpenNotificationCenter())
 
     # =========================================================================
     # Message Handlers - Intent Dispatching
@@ -485,6 +582,25 @@ class BkxTuiApp(BaseTuiApp):
             self._handle_transfer_intent(intent)
         elif isinstance(intent, NavigateToScreen):
             self._handle_navigate(intent)
+        elif isinstance(intent, ShowCommandPalette):
+            self._handle_show_command_palette_intent()
+        elif isinstance(intent, OpenNotificationCenter):
+            self._handle_open_notification_center_intent()
+        elif isinstance(intent, CycleTheme):
+            self._handle_cycle_theme_intent()
+        elif isinstance(intent, SetTheme):
+            self._handle_set_theme_intent(intent)
+        elif isinstance(intent, ReloadCss):
+            self._handle_reload_css_intent()
+        elif isinstance(intent, ClearRunLog):
+            self._handle_clear_run_log_intent()
+        elif isinstance(intent, ToggleToasts):
+            self._handle_toggle_toasts_intent()
+        elif isinstance(intent, ToggleDebugOverlay):
+            self._handle_toggle_debug_overlay_intent()
+        elif isinstance(intent, DumpDebugSnapshot):
+            self._handle_dump_debug_snapshot_intent()
+
         elif isinstance(intent, SetBusy):
             self._handle_set_busy(intent)
         elif isinstance(intent, ClearBusy):

@@ -15,10 +15,10 @@ Contract rule:
 import uuid
 
 from mikomn.tui_base import BaseTuiApp
+from mikomn.tui_base.css_registry import reload_css
 from mikomn.tui_base.models import Command, ToastData
 from mikomn.tui_base.notifications import NotificationHistory
 from mikomn.tui_base.overlays import CommandPalette, CommandSelected
-from mikomn.tui_base.css_registry import reload_css
 from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
 from mikomn.tui_base.widgets import DebugOverlay
 from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
@@ -43,29 +43,29 @@ from bkx.tui.messages import (
     BackupIntent,
     ClearBusy,
     ClearEmptyState,
+    ClearRunLog,
+    CycleTheme,
+    DumpDebugSnapshot,
     FilterChanged,
     Intent,
     ItemsSelected,
     NavigateToScreen,
+    OpenNotificationCenter,
     ProgressCompleted,
     ProgressStarted,
     ProgressUpdate,
+    ReloadCss,
     RequestEmptyState,
     RestoreIntent,
     SetBusy,
+    SetTheme,
+    ShowCommandPalette,
     ShowNotification,
     ShowToast,
+    ToggleDebugOverlay,
+    ToggleToasts,
     TransferIntent,
     UpdateLog,
-    ShowCommandPalette,
-    OpenNotificationCenter,
-    CycleTheme,
-    ReloadCss,
-    ClearRunLog,
-    ToggleToasts,
-    ToggleDebugOverlay,
-    DumpDebugSnapshot,
-    SetTheme,
 )
 from bkx.tui.pages import create_page_registry
 
@@ -77,8 +77,8 @@ from bkx.ui.theme import (
     get_current_theme_name,
     get_theme_names,
     is_theme_persistence_enabled,
-    set_theme,
     save_theme_preference,
+    set_theme,
 )
 from bkx.ui.theme import (
     off_theme_change as bkx_off_theme_change,
@@ -124,10 +124,7 @@ class BkxTuiApp(BaseTuiApp):
         ("N", "toggle_toasts", "Toasts"),
     ]
 
-    def __init__(self, *args, **kwargs):
-        if args:
-            raise TypeError("BkxTuiApp accepts keyword arguments only")
-
+    def __init__(self, **kwargs) -> None:
         from bkx.tui.css import get_css_paths
 
         theme_name = kwargs.pop("theme_name", None) or get_current_theme_name()
@@ -139,7 +136,6 @@ class BkxTuiApp(BaseTuiApp):
         self._theme_callback_id = None
         self._show_toasts = True
         self._debug_overlay: DebugOverlay | None = None
-
 
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
@@ -204,7 +200,6 @@ class BkxTuiApp(BaseTuiApp):
         if run_panel:
             run_panel.write("BKX TUI started")
 
-
         # Register theme change callback to update TCSS
         def _on_theme_changed(new_theme: str):
             self._theme_name = new_theme
@@ -222,8 +217,6 @@ class BkxTuiApp(BaseTuiApp):
             return shell.run_panel
         except Exception:
             return None
-
-
 
     def _get_logs_pane(self):
         """Return the expanded logs pane (if available)."""
@@ -530,8 +523,7 @@ class BkxTuiApp(BaseTuiApp):
 
         if cmd_id.startswith("nav:"):
             route = (
-                str(meta.get("route") if isinstance(meta, dict) else "")
-                or cmd_id.split(":", 1)[1]
+                str(meta.get("route") if isinstance(meta, dict) else "") or cmd_id.split(":", 1)[1]
             )
             self.post_message(NavigateToScreen(screen_name=route))
             return

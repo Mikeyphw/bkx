@@ -1,8 +1,7 @@
-"""BKX Textual TUI Package.
+"""BKX Textual TUI package.
 
-Provides TUI experience using Textual.
+This package is intentionally import-light.
+Import submodules explicitly (e.g. ``bkx.tui.app``).
 """
-
-from bkx.tui import app
 
 from __future__ import annotations

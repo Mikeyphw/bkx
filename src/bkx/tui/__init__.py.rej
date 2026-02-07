@@ -1,0 +1,12 @@
+--- src/bkx/tui/__init__.py
++++ src/bkx/tui/__init__.py
+@@ -1,6 +1,5 @@
+-"""BKX Textual TUI Package.
++"""BKX Textual TUI package.
+ 
+-Provides TUI experience using Textual.
++Keep this package import-light: importing :mod:`bkx.tui` should not import Textual
++or mikomn-heavy modules. Import submodules explicitly (e.g. ``bkx.tui.app``).
+ """
+-
+-from bkx.tui import app

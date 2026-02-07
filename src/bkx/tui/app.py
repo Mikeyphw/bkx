@@ -18,6 +18,7 @@ from mikomn.tui_base import BaseTuiApp
 from mikomn.tui_base.models import Command, ToastData
 from mikomn.tui_base.notifications import NotificationHistory
 from mikomn.tui_base.overlays import CommandPalette, CommandSelected
+from mikomn.tui_base.css_registry import reload_css
 from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
 from mikomn.tui_base.widgets import DebugOverlay
 from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
@@ -56,7 +57,9 @@ from bkx.tui.messages import (
     ShowToast,
     TransferIntent,
     UpdateLog,
+    ShowCommandPalette,
     OpenNotificationCenter,
+    CycleTheme,
     ReloadCss,
     ClearRunLog,
     ToggleToasts,
@@ -338,22 +341,12 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_reload_css_intent(self) -> None:
         """Reload TCSS for the current layout."""
-        try:
-            from mikomn.tui_base.css_registry import reload_css as mikomn_reload_css
-
-            mikomn_reload_css(
-                self,
-                layout_mode=self.layout_mode,
-                extra_paths=self.get_extra_css_paths(),
-                exclude_files=self.get_css_excludes(),
-            )
-        except Exception:
-            try:
-                from bkx.tui.css import reload_css as bkx_reload_css
-
-                bkx_reload_css(self)
-            except Exception:
-                pass
+        reload_css(
+            self,
+            layout_mode=self.layout_mode,
+            extra_paths=self.get_extra_css_paths(),
+            exclude_files=self.get_css_excludes(),
+        )
 
         self.notify("CSS reloaded", severity="info")
 
@@ -520,7 +513,7 @@ class BkxTuiApp(BaseTuiApp):
                     title=f"Set theme: {theme_name}",
                     keywords=["theme", theme_name],
                     group="Theme",
-                    meta={"theme": theme_name},
+                    meta={"theme_name": theme_name},
                 )
             )
 
@@ -535,28 +528,49 @@ class BkxTuiApp(BaseTuiApp):
         cmd_id = getattr(event.command, "id", None) or event.command_id
         meta = getattr(event.command, "meta", None) or {}
 
-        if isinstance(meta, dict) and cmd_id.startswith("nav:"):
-            route = str(meta.get("route") or cmd_id.split(":", 1)[1])
+        if cmd_id.startswith("nav:"):
+            route = (
+                str(meta.get("route") if isinstance(meta, dict) else "")
+                or cmd_id.split(":", 1)[1]
+            )
             self.post_message(NavigateToScreen(screen_name=route))
             return
 
         if cmd_id.startswith("theme:set:"):
-            theme_name = str(meta.get("theme") or cmd_id.split(":", 2)[2])
+            theme_name = (
+                str(meta.get("theme_name") if isinstance(meta, dict) else "")
+                or cmd_id.split(":", 2)[2]
+            )
             self.post_message(SetTheme(theme_name=theme_name))
             return
 
-        mapping = {
-            "app:cycle-theme": CycleTheme(),
-            "app:reload-css": ReloadCss(),
-            "app:toggle-debug": ToggleDebugOverlay(),
-            "app:dump-debug": DumpDebugSnapshot(),
-            "app:clear-run-log": ClearRunLog(),
-            "app:notifications": OpenNotificationCenter(),
-            "app:toggle-toasts": ToggleToasts(),
-        }
-        intent = mapping.get(cmd_id)
-        if intent is not None:
-            self.post_message(intent)
+        if cmd_id == "app:cycle-theme":
+            self.post_message(CycleTheme())
+            return
+
+        if cmd_id == "app:reload-css":
+            self.post_message(ReloadCss())
+            return
+
+        if cmd_id == "app:toggle-debug":
+            self.post_message(ToggleDebugOverlay())
+            return
+
+        if cmd_id == "app:dump-debug":
+            self.post_message(DumpDebugSnapshot())
+            return
+
+        if cmd_id == "app:clear-run-log":
+            self.post_message(ClearRunLog())
+            return
+
+        if cmd_id == "app:notifications":
+            self.post_message(OpenNotificationCenter())
+            return
+
+        if cmd_id == "app:toggle-toasts":
+            self.post_message(ToggleToasts())
+            return
 
     def action_notification_center(self) -> None:
         """Request the notification center overlay."""

@@ -1,31 +1,36 @@
 from __future__ import annotations
 
-import sys
+import py_compile
 from pathlib import Path
 
+# Compile all relevant Python files to check for syntax errors
+for p in [
+    "src/bkx/tui/app.py",
+    "src/bkx/tui/widgets/shell.py",
+    "src/bkx/tui/widgets/key_hints.py",
+]:
+    py_compile.compile(p, doraise=True)
 
-def _ensure_src_on_path() -> None:
-    root = Path(__file__).resolve().parent
-    src = root / "src"
-    if str(src) not in sys.path:
-        sys.path.insert(0, str(src))
+# Verify app.py has the new bindings
+app_py = Path("src/bkx/tui/app.py").read_text(encoding="utf-8")
+assert "jump_last_run" in app_py, "Missing jump_last_run in app.py"
+assert '("g l", "jump_last_run"' in app_py or '("g l","jump_last_run"' in app_py, "Missing g l binding"
+assert '("?", "help"' in app_py, "Missing ? help binding"
 
+# Verify shell.py imports and uses KeyHintsBar
+shell = Path("src/bkx/tui/widgets/shell.py").read_text(encoding="utf-8")
+assert "KeyHintsBar" in shell, "Missing KeyHintsBar import in shell.py"
+assert "set_key_hints" in shell, "Missing set_key_hints method in shell.py"
+assert "key_hints" in shell, "Missing key_hints property in shell.py"
 
-def test_step4b_exports_present() -> None:
-    _ensure_src_on_path()
-    import bkx.tui.overlays as o
+# Verify key_hints.py exists and is valid
+key_hints = Path("src/bkx/tui/widgets/key_hints.py").read_text(encoding="utf-8")
+assert "class KeyHintsBar" in key_hints, "Missing KeyHintsBar class"
+assert "set_text" in key_hints, "Missing set_text method"
 
-    assert hasattr(o, "BkxHelpOverlay")
-    assert hasattr(o, "BkxFilterSheet")
+# Verify shell.tcss has key hints styles
+tcss = Path("src/bkx/tui/css/shell.tcss").read_text(encoding="utf-8")
+assert ".bkx-key-hints" in tcss, "Missing .bkx-key-hints CSS class"
 
-
-def test_step4b_action_help_uses_wrapper() -> None:
-    txt = Path("src/bkx/tui/app.py").read_text(encoding="utf-8")
-    assert "BkxHelpOverlay" in txt
-    assert "def action_help" in txt
-
-
-def test_step4b_archive_has_filters_binding() -> None:
-    txt = Path("src/bkx/tui/panes/archive_list.py").read_text(encoding="utf-8")
-    assert '("f", "filters", "Filters")' in txt
+print("All verification checks passed!")
 

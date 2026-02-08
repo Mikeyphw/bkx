@@ -17,10 +17,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 from textual.message import Message
-
 
 # =============================================================================
 # Intent Messages (User Actions)
@@ -38,8 +37,8 @@ class BackupIntent(Intent):
     """User wants to perform a backup operation."""
 
     sources: list[Path] = field(default_factory=list)
-    destination: Optional[Path] = None
-    archive_name: Optional[str] = None
+    destination: Path | None = None
+    archive_name: str | None = None
     excludes: list[str] = field(default_factory=list)
     algorithm: str = "zstd"
     level: int = 3
@@ -84,7 +83,7 @@ class RestoreIntent(Intent):
     """User wants to restore from an archive."""
 
     archive: Path
-    destination: Optional[Path] = None
+    destination: Path | None = None
     paths: list[str] = field(default_factory=list)
     fresh_dir: bool = False
     overwrite: bool = False
@@ -198,7 +197,7 @@ class ServiceResult(Intent):
 class BackupResult(ServiceResult):
     """Result from a backup operation."""
 
-    archive_path: Optional[Path] = None
+    archive_path: Path | None = None
     files_count: int = 0
     bytes_total: int = 0
 
@@ -207,7 +206,7 @@ class BackupResult(ServiceResult):
 class ArchiveResult(ServiceResult):
     """Result from an archive creation operation."""
 
-    archive_path: Optional[Path] = None
+    archive_path: Path | None = None
     files_count: int = 0
 
 
@@ -215,7 +214,7 @@ class ArchiveResult(ServiceResult):
 class RestoreResult(ServiceResult):
     """Result from a restore operation."""
 
-    destination_path: Optional[Path] = None
+    destination_path: Path | None = None
     files_count: int = 0
 
 
@@ -223,8 +222,8 @@ class RestoreResult(ServiceResult):
 class TransferResult(ServiceResult):
     """Result from a transfer operation."""
 
-    source_path: Optional[Path] = None
-    destination_path: Optional[Path] = None
+    source_path: Path | None = None
+    destination_path: Path | None = None
 
 
 @dataclass
@@ -258,6 +257,7 @@ class ShowNotification(Intent):
 
     message: str
     level: str = "info"  # "info", "success", "warning", "error"
+    link: dict[str, str] | None = None  # Optional deep-link: {"route": "...", "focus": "..."}
 
 
 @dataclass
@@ -368,6 +368,7 @@ class ShowToast(Intent):
     message: str
     severity: str = "info"  # "info", "success", "warning", "error"
     duration: float = 3.0  # Seconds to display
+    link: dict[str, str] | None = None  # Optional deep-link: {"route": "...", "focus": "..."}
 
 
 # =============================================================================

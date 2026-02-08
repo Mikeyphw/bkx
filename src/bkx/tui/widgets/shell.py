@@ -26,6 +26,7 @@ from mikomn.tui_base.widgets.header import AppHeader
 
 from bkx.tui.widgets.run_panel import RunPanel
 from bkx.tui.widgets.context_bar import ContextBar
+from bkx.tui.widgets.key_hints import KeyHintsBar
 
 
 class BkxShell(Container):
@@ -40,6 +41,7 @@ class BkxShell(Container):
         self._sidebar: Sidebar | None = None
         self._footer: AppFooter | None = None
         self._run_panel: RunPanel | None = None
+        self._key_hints: KeyHintsBar | None = None
         self._page_cache: dict[str, Any] = {}
 
     def compose(self) -> ComposeResult:
@@ -90,6 +92,9 @@ class BkxShell(Container):
         ]
         self._footer = AppFooter(tabs=footer_tabs, classes="bkx-footer-tabs")
         footer_slot.mount(self._footer)
+
+        self._key_hints = KeyHintsBar(id="bkx-key-hints")
+        footer_slot.mount(self._key_hints)
 
         for s in specs:
             if not s.disabled:
@@ -163,4 +168,18 @@ class BkxShell(Container):
     @property
     def run_panel(self) -> RunPanel | None:
         return self._run_panel
+
+
+def set_key_hints(self, text: str) -> None:
+    """Update key hints text if present."""
+    if not self._key_hints:
+        return
+    try:
+        self._key_hints.set_text(text)
+    except Exception:
+        pass
+
+@property
+def key_hints(self) -> KeyHintsBar | None:
+    return self._key_hints
 

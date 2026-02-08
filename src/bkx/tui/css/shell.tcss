@@ -158,3 +158,16 @@
     width: 100%;
 }
 
+
+/* Step 5C: key hints strip above footer */
+.bkx-key-hints {
+    height: 1;
+    width: 100%;
+    padding: 0 2;
+    opacity: 80%;
+}
+
+.bkx-key-hints > #bkx-key-hints-label {
+    width: 100%;
+}
+

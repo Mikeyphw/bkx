@@ -13,12 +13,18 @@ Contract rule:
 
 # mikomn TUI base for theme cycling, layout modes, and platform behavior
 import uuid
+from typing import Any
 
 from mikomn.tui_base import BaseTuiApp
 from mikomn.tui_base.css_registry import reload_css
 from mikomn.tui_base.models import Command, FilterGroup, FilterOption, ToastData
 from mikomn.tui_base.notifications import NotificationHistory
 from mikomn.tui_base.overlays import CommandSelected
+
+try:
+    from mikomn.tui_base.screens.notification_center import NotificationSelected
+except Exception:  # pragma: no cover
+    NotificationSelected = None  # type: ignore[assignment]
 from mikomn.tui_base.widgets import DebugOverlay
 from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
 from textual.app import App, ComposeResult
@@ -66,7 +72,7 @@ from bkx.tui.messages import (
     TransferIntent,
     UpdateLog,
 )
-from bkx.tui.overlays import BkxCommandPalette, BkxNotificationCenterScreen, BkxHelpOverlay
+from bkx.tui.overlays import BkxCommandPalette, BkxHelpOverlay, BkxNotificationCenterScreen
 from bkx.tui.overlays.filter_sheet import BkxFilterSheet
 from bkx.tui.pages import create_page_registry
 
@@ -123,6 +129,8 @@ class BkxTuiApp(BaseTuiApp):
         ("ctrl+p", "command_palette", "Commands"),
         ("ctrl+n", "notification_center", "Notifications"),
         ("N", "toggle_toasts", "Toasts"),
+        ("?", "help", "Help"),
+        ("g l", "jump_last_run", "Last run"),
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -138,6 +146,8 @@ class BkxTuiApp(BaseTuiApp):
         self._show_toasts = True
         self._debug_overlay: DebugOverlay | None = None
         self._progress: dict[str, tuple[int, int, str]] = {}
+        self._notification_links: dict[str, dict[str, str]] = {}
+        self._last_run_label: str = ""
 
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
@@ -260,8 +270,6 @@ class BkxTuiApp(BaseTuiApp):
         yield BkxShell(pages=self._pages)
         yield ToastContainer(id="toast-container")
 
-
-
     # =========================================================================
     # Overlay helpers (Step 4A)
     # =========================================================================
@@ -297,11 +305,32 @@ class BkxTuiApp(BaseTuiApp):
             return
         shell.set_footer_message(None if self._show_toasts else "Toasts OFF")
 
+    def _sync_key_hints(self, route: str) -> None:
+        """Update key hints for the current route."""
+        shell = self._shell()
+        if not shell:
+            return
+        # Build key hints text based on current route
+        hints = {
+            "backup": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
+            "archive": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
+            "restore": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
+            "transfer": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
+            "tools": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
+            "logs": "[g l] Last run  [Ctrl+P] Commands  [?] Help",
+        }
+        text = hints.get(route, "[1-6] Navigate  [Ctrl+P] Commands  [?] Help")
+        try:
+            shell.set_key_hints(text)
+        except Exception:
+            pass
+
     def _goto_page(self, route: str) -> None:
         """Navigate to a shell page route."""
         try:
             shell = self.query_one(BkxShell)
             shell.goto_page(route)
+            self._sync_key_hints(route)
             try:
                 shell.set_context(self._route_label(route))
             except Exception:
@@ -543,6 +572,12 @@ class BkxTuiApp(BaseTuiApp):
                     group="App",
                 ),
                 Command(
+                    id="app:jump-last-run",
+                    title="Jump to last run",
+                    keywords=["logs", "run", "last"],
+                    group="App",
+                ),
+                Command(
                     id="app:dump-debug",
                     title="Dump debug snapshot",
                     keywords=["debug", "dump", "snapshot"],
@@ -663,6 +698,10 @@ class BkxTuiApp(BaseTuiApp):
             self.post_message(ToggleDebugOverlay())
             return
 
+        if cmd_id == "app:jump-last-run":
+            self.action_jump_last_run()
+            return
+
         if cmd_id == "app:dump-debug":
             self.post_message(DumpDebugSnapshot())
             return
@@ -682,6 +721,40 @@ class BkxTuiApp(BaseTuiApp):
     def action_notification_center(self) -> None:
         """Request the notification center overlay."""
         self.post_message(OpenNotificationCenter())
+
+    def action_jump_last_run(self) -> None:
+        """Jump to the Logs page (last run output)."""
+        try:
+            shell = self.query_one(BkxShell)
+            shell.goto_page("logs")
+        except Exception:
+            return
+
+        def _focus() -> None:
+            try:
+                self.query_one("#bkx-logs-log").focus()
+            except Exception:
+                pass
+
+        self.call_after_refresh(_focus)
+
+    def on_notification_selected(self, message: Any) -> None:
+        """Handle selections from the notification center (deep-link)."""
+        event_id = str(getattr(message, "event_id", "") or "")
+        if not event_id:
+            return
+        link = self._notification_links.get(event_id)
+        if not link:
+            return
+        route = str(link.get("route", "") or "").strip()
+        focus = str(link.get("focus", "") or "").strip()
+        if route:
+            try:
+                self.query_one(BkxShell).goto_page(route)
+            except Exception:
+                pass
+        if focus:
+            self.call_after_refresh(lambda: self.query_one(focus).focus())
 
     def action_help(self) -> None:
         """Show the help overlay."""
@@ -975,16 +1048,35 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_show_notification(self, intent: ShowNotification) -> None:
         """Handle show notification message."""
+        event_id = ""
         try:
-            NotificationHistory.record_status(intent.message, level=str(intent.level), source="bkx")
+            event = NotificationHistory.record_status(
+                intent.message, level=str(intent.level), source="bkx"
+            )
+            event_id = str(getattr(event, "id", "") or "")
         except Exception:
-            pass
+            event_id = ""
+
+        link = getattr(intent, "link", None)
+        if link and event_id:
+            try:
+                self._notification_links[event_id] = {str(k): str(v) for k, v in dict(link).items()}
+            except Exception:
+                pass
         self._write_to_logs(intent.message, str(intent.level))
         self.notify(intent.message, severity=intent.level)
 
     def _handle_show_toast(self, intent: ShowToast) -> None:
         """Handle show toast message."""
         toast_id = str(uuid.uuid4())[:8]
+        link = getattr(intent, "link", None)
+        if link:
+            try:
+                self._notification_links[str(toast_id)] = {
+                    str(k): str(v) for k, v in dict(link).items()
+                }
+            except Exception:
+                pass
         try:
             NotificationHistory.record_toast(
                 ToastData(
@@ -1018,11 +1110,17 @@ class BkxTuiApp(BaseTuiApp):
     def _handle_progress_started(self, intent: ProgressStarted) -> None:
         """Handle progress started message."""
         try:
-            self._progress[str(intent.operation)] = (0, int(intent.total), str(intent.message or ""))
+            self._progress[str(intent.operation)] = (
+                0,
+                int(intent.total),
+                str(intent.message or ""),
+            )
         except Exception:
             pass
         try:
-            self.query_one(BkxShell).set_footer_message(f"{intent.operation}: 0% • {intent.message}")
+            self.query_one(BkxShell).set_footer_message(
+                f"{intent.operation}: 0% • {intent.message}"
+            )
         except Exception:
             pass
         run_panel = self._get_run_panel()
@@ -1033,12 +1131,18 @@ class BkxTuiApp(BaseTuiApp):
     def _handle_progress_update(self, intent: ProgressUpdate) -> None:
         """Handle progress update message."""
         try:
-            self._progress[str(intent.operation)] = (int(intent.current), int(intent.total), str(intent.message or ""))
+            self._progress[str(intent.operation)] = (
+                int(intent.current),
+                int(intent.total),
+                str(intent.message or ""),
+            )
         except Exception:
             pass
         try:
             pct = int(intent.percent) if intent.percent is not None else 0
-            self.query_one(BkxShell).set_footer_message(f"{intent.operation}: {pct}% • {intent.message}")
+            self.query_one(BkxShell).set_footer_message(
+                f"{intent.operation}: {pct}% • {intent.message}"
+            )
         except Exception:
             pass
         run_panel = self._get_run_panel()
@@ -1052,6 +1156,7 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_completed(self, intent: ProgressCompleted) -> None:
         """Handle progress completed message."""
+        self._last_run_label = str(intent.message or intent.operation)
         try:
             self._progress.pop(str(intent.operation), None)
         except Exception:

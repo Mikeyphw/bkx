@@ -145,3 +145,16 @@
     height: auto;
 }
 
+/* Step 5A: context bar under header */
+.bkx-context-bar {
+    height: 1;
+    width: 100%;
+    padding: 0 2;
+    margin: 0 0 1 0;
+    opacity: 85%;
+}
+
+.bkx-context-bar > #bkx-context-bar-label {
+    width: 100%;
+}
+

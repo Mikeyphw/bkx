@@ -25,6 +25,7 @@ from mikomn.tui_base.widgets.footer import AppFooter, FooterTab, TabSelected
 from mikomn.tui_base.widgets.header import AppHeader
 
 from bkx.tui.widgets.run_panel import RunPanel
+from bkx.tui.widgets.context_bar import ContextBar
 
 
 class BkxShell(Container):
@@ -57,6 +58,8 @@ class BkxShell(Container):
             return
 
         header_slot.mount(AppHeader(title="BKX", subtitle="backup tool", classes="bkx-header"))
+        self._context_bar = ContextBar(id="bkx-context-bar")
+        header_slot.mount(self._context_bar)
 
         specs = list(self._pages.specs())
         sidebar_items = [
@@ -130,6 +133,19 @@ class BkxShell(Container):
                 self._footer.set_active_tab(enabled.index(route))
             except Exception:
                 pass
+
+    def set_context(self, text: str) -> None:
+        """Update the context bar text if present."""
+        if not self._context_bar:
+            return
+        try:
+            self._context_bar.set_text(text)
+        except Exception:
+            pass
+
+    @property
+    def context_bar(self) -> ContextBar | None:
+        return self._context_bar
 
 
     def set_footer_message(self, message: str | None) -> None:

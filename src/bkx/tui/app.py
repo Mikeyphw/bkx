@@ -137,6 +137,7 @@ class BkxTuiApp(BaseTuiApp):
         self._theme_callback_id = None
         self._show_toasts = True
         self._debug_overlay: DebugOverlay | None = None
+        self._progress: dict[str, tuple[int, int, str]] = {}
 
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
@@ -299,12 +300,27 @@ class BkxTuiApp(BaseTuiApp):
     def _goto_page(self, route: str) -> None:
         """Navigate to a shell page route."""
         try:
-            self.query_one(BkxShell).goto_page(route)
+            shell = self.query_one(BkxShell)
+            shell.goto_page(route)
+            try:
+                shell.set_context(self._route_label(route))
+            except Exception:
+                pass
         except Exception:
             run_panel = self._get_run_panel()
             if run_panel:
                 run_panel.write(f"Unknown page: {route}")
             self.notify(f"Unknown page: {route}", severity="warning")
+
+    def _route_label(self, route: str) -> str:
+        """Resolve a route to a PageSpec label; fallback to the route string."""
+        try:
+            for spec in list(self._pages.specs()):
+                if getattr(spec, "route", None) == route:
+                    return str(getattr(spec, "label", route) or route)
+        except Exception:
+            pass
+        return route
 
     # =========================================================================
     # Navigation Actions
@@ -1001,6 +1017,14 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_started(self, intent: ProgressStarted) -> None:
         """Handle progress started message."""
+        try:
+            self._progress[str(intent.operation)] = (0, int(intent.total), str(intent.message or ""))
+        except Exception:
+            pass
+        try:
+            self.query_one(BkxShell).set_footer_message(f"{intent.operation}: 0% • {intent.message}")
+        except Exception:
+            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.write(f"[{intent.operation}] {intent.message}")
@@ -1008,6 +1032,15 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_update(self, intent: ProgressUpdate) -> None:
         """Handle progress update message."""
+        try:
+            self._progress[str(intent.operation)] = (int(intent.current), int(intent.total), str(intent.message or ""))
+        except Exception:
+            pass
+        try:
+            pct = int(intent.percent) if intent.percent is not None else 0
+            self.query_one(BkxShell).set_footer_message(f"{intent.operation}: {pct}% • {intent.message}")
+        except Exception:
+            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.update_progress(
@@ -1019,6 +1052,20 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_completed(self, intent: ProgressCompleted) -> None:
         """Handle progress completed message."""
+        try:
+            self._progress.pop(str(intent.operation), None)
+        except Exception:
+            pass
+        try:
+            shell = self.query_one(BkxShell)
+            if not self._progress:
+                shell.set_footer_message(None)
+            else:
+                op, (cur, tot, msg) = next(iter(self._progress.items()))
+                pct = int((cur / tot) * 100) if tot else 0
+                shell.set_footer_message(f"{op}: {pct}% • {msg}")
+        except Exception:
+            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.write(f"[{intent.operation}] {intent.message}")

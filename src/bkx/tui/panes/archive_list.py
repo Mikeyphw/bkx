@@ -67,6 +67,9 @@ if _HAS_MIKOMN:
         """Filterable list pane for browsing archives (mikomn)."""
 
         DEFAULT_CLASSES = "bkx-archive-list-pane"
+        BINDINGS = [
+            ("f", "filters", "Filters"),
+        ]
 
         class FilterChanged(Message):
             """Filter text changed."""

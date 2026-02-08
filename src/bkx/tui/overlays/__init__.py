@@ -11,9 +11,13 @@ These wrappers provide:
 
 from bkx.tui.overlays.command_palette import BkxCommandPalette
 from bkx.tui.overlays.notifications import BkxNotificationCenterScreen
+from bkx.tui.overlays.help_overlay import BkxHelpOverlay
+from bkx.tui.overlays.filter_sheet import BkxFilterSheet
 
 __all__ = [
     "BkxCommandPalette",
     "BkxNotificationCenterScreen",
+    "BkxHelpOverlay",
+    "BkxFilterSheet",
 ]
 

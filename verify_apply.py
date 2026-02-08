@@ -1,33 +1,31 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 
-def test_no_preview_pane_in_src() -> None:
-    repo_root = Path(__file__).resolve().parent
-    src = repo_root / "src" / "rcm"
-    assert src.exists(), "Missing src/rcm"
-
-    offenders: list[str] = []
-    for p in src.rglob("*.py"):
-        txt = p.read_text(encoding="utf-8")
-        if "PreviewPane" in txt or "preview_pane" in txt:
-            offenders.append(str(p.relative_to(repo_root)))
-
-    assert not offenders, f"Legacy PreviewPane usage found: {offenders}"
+def _ensure_src_on_path() -> None:
+    root = Path(__file__).resolve().parent
+    src = root / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
 
 
-def test_settings_and_recent_locations_use_inspector() -> None:
-    repo_root = Path(__file__).resolve().parent
+def test_step4b_exports_present() -> None:
+    _ensure_src_on_path()
+    import bkx.tui.overlays as o
 
-    settings = (repo_root / "src/rcm/tui/views/settings.py").read_text(encoding="utf-8")
-    recent = (repo_root / "src/rcm/tui/overlays/recent_locations.py").read_text(encoding="utf-8")
-
-    assert "InspectorPane" in settings and "PreviewPane" not in settings
-    assert "InspectorPane" in recent and "PreviewPane" not in recent
+    assert hasattr(o, "BkxHelpOverlay")
+    assert hasattr(o, "BkxFilterSheet")
 
 
-def test_runner_artifacts_removed() -> None:
-    repo_root = Path(__file__).resolve().parent
-    assert not (repo_root / "spec.py").exists(), "Remove repo-root spec.py runner artifact"
-    assert not (repo_root / "p.patch").exists(), "Remove repo-root p.patch runner artifact"
+def test_step4b_action_help_uses_wrapper() -> None:
+    txt = Path("src/bkx/tui/app.py").read_text(encoding="utf-8")
+    assert "BkxHelpOverlay" in txt
+    assert "def action_help" in txt
+
+
+def test_step4b_archive_has_filters_binding() -> None:
+    txt = Path("src/bkx/tui/panes/archive_list.py").read_text(encoding="utf-8")
+    assert '("f", "filters", "Filters")' in txt
+

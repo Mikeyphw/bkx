@@ -66,7 +66,7 @@ from bkx.tui.messages import (
     TransferIntent,
     UpdateLog,
 )
-from bkx.tui.overlays import BkxCommandPalette, BkxNotificationCenterScreen
+from bkx.tui.overlays import BkxCommandPalette, BkxNotificationCenterScreen, BkxHelpOverlay
 from bkx.tui.overlays.filter_sheet import BkxFilterSheet
 from bkx.tui.pages import create_page_registry
 
@@ -666,6 +666,10 @@ class BkxTuiApp(BaseTuiApp):
     def action_notification_center(self) -> None:
         """Request the notification center overlay."""
         self.post_message(OpenNotificationCenter())
+
+    def action_help(self) -> None:
+        """Show the help overlay."""
+        self._push_modal(BkxHelpOverlay())
 
     # =========================================================================
     # Message Handlers - Intent Dispatching

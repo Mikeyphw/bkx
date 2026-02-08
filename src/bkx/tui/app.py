@@ -147,6 +147,7 @@ class BkxTuiApp(BaseTuiApp):
         self._debug_overlay: DebugOverlay | None = None
         self._progress: dict[str, tuple[int, int, str]] = {}
         self._notification_links: dict[str, dict[str, str]] = {}
+        self._last_run_link: dict[str, str] | None = None
         self._last_run_label: str = ""
 
     def get_theme_name(self) -> str:
@@ -306,20 +307,49 @@ class BkxTuiApp(BaseTuiApp):
         shell.set_footer_message(None if self._show_toasts else "Toasts OFF")
 
     def _sync_key_hints(self, route: str) -> None:
-        """Update key hints for the current route."""
+        """Update key hints for the current route.
+
+        Supports optional per-widget hints via `focused.bkx_key_hints()`.
+        """
         shell = self._shell()
         if not shell:
             return
-        # Build key hints text based on current route
-        hints = {
-            "backup": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
-            "archive": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
-            "restore": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
-            "transfer": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
-            "tools": "[1] Backup  [2] Archive  [3] Restore  [4] Transfer",
-            "logs": "[g l] Last run  [Ctrl+P] Commands  [?] Help",
+
+        nav = "[1] Backup  [2] Archive  [3] Restore  [4] Transfer"
+        route_hints = {
+            "backup": nav,
+            "archive": nav,
+            "restore": nav,
+            "transfer": nav,
+            "tools": nav,
+            "logs": "[g l] Last run",
         }
-        text = hints.get(route, "[1-6] Navigate  [Ctrl+P] Commands  [?] Help")
+        parts: list[str] = []
+        base = route_hints.get(route)
+        if base:
+            parts.append(base)
+
+        if getattr(self, "_last_run_link", None):
+            if "[g l] Last run" not in "  ".join(parts):
+                parts.append("[g l] Last run")
+
+        # Focused widget may contribute additional hints.
+        try:
+            focused = getattr(self, "focused", None)
+            get_hints = getattr(focused, "bkx_key_hints", None)
+            if callable(get_hints):
+                extra = get_hints()
+                if isinstance(extra, str) and extra.strip():
+                    parts.append(extra.strip())
+                elif isinstance(extra, (list, tuple)):
+                    for item in extra:
+                        if isinstance(item, str) and item.strip():
+                            parts.append(item.strip())
+        except Exception:
+            pass
+
+        parts.append("[Ctrl+P] Commands  [?] Help")
+        text = "  ".join(dict.fromkeys(parts)) or "[Ctrl+P] Commands  [?] Help"
         try:
             shell.set_key_hints(text)
         except Exception:
@@ -615,6 +645,16 @@ class BkxTuiApp(BaseTuiApp):
                 )
             )
 
+        try:
+            focused = getattr(self, "focused", None)
+            get_cmds = getattr(focused, "bkx_commands", None)
+            if callable(get_cmds):
+                for cmd in list(get_cmds() or []):
+                    if isinstance(cmd, Command):
+                        commands.append(cmd)
+        except Exception:
+            pass
+
         return commands
 
     def open_log_filter_sheet(self, pane: object) -> None:
@@ -723,20 +763,18 @@ class BkxTuiApp(BaseTuiApp):
         self.post_message(OpenNotificationCenter())
 
     def action_jump_last_run(self) -> None:
-        """Jump to the Logs page (last run output)."""
+        """Jump to the last run output (deep-link if available)."""
+        link = self._last_run_link or {"route": "logs", "focus": "#bkx-logs-log"}
+        route = str(link.get("route", "") or "").strip()
+        focus = str(link.get("focus", "") or "").strip()
+
         try:
-            shell = self.query_one(BkxShell)
-            shell.goto_page("logs")
+            self.query_one(BkxShell).goto_page(route or "logs")
         except Exception:
             return
 
-        def _focus() -> None:
-            try:
-                self.query_one("#bkx-logs-log").focus()
-            except Exception:
-                pass
-
-        self.call_after_refresh(_focus)
+        if focus:
+            self.call_after_refresh(lambda: self.query_one(focus).focus())
 
     def on_notification_selected(self, message: Any) -> None:
         """Handle selections from the notification center (deep-link)."""
@@ -1157,6 +1195,7 @@ class BkxTuiApp(BaseTuiApp):
     def _handle_progress_completed(self, intent: ProgressCompleted) -> None:
         """Handle progress completed message."""
         self._last_run_label = str(intent.message or intent.operation)
+        self._last_run_link = {"route": "logs", "focus": "#bkx-logs-log"}
         try:
             self._progress.pop(str(intent.operation), None)
         except Exception:

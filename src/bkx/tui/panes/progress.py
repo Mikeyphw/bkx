@@ -5,308 +5,143 @@ Uses mikomn's GlobalProgressBar and StatusBar for progress tracking.
 
 from __future__ import annotations
 
+from mikomn.tui_base.panes.display.progress_pane import ProgressPane as MikomnProgressPane
+from mikomn.tui_base.widgets import StatusBar
+from mikomn.tui_base.widgets.status import StatusMessage
 from textual.app import ComposeResult
-from textual.containers import Container
+from textual.containers import Container, Horizontal
 from textual.message import Message
 from textual.widgets import Label, Static
 
-# mikomn TUI base widgets for enhanced UI
-try:
-    from mikomn.tui_base.panes.display.progress_pane import ProgressPane as MikomnProgressPane
-    from mikomn.tui_base.widgets import GlobalProgressBar, StatusBar, StatusMessage
 
-    _HAS_MIKOMN = True
-except ImportError:
-    _HAS_MIKOMN = False
+class ProgressPane(MikomnProgressPane):
+    """Progress pane using mikomn's ProgressPane."""
 
+    class ProgressUpdate(Message):
+        """Progress was updated."""
 
-if _HAS_MIKOMN:
-    # Use mikomn's progress widgets when available
-    class ProgressPane(MikomnProgressPane):
-        """Progress pane using mikomn's ProgressPane."""
+    class ProgressComplete(Message):
+        """Progress operation completed."""
 
-        class ProgressUpdate(Message):
-            """Progress was updated."""
+        operation: str = ""
 
-        class ProgressComplete(Message):
-            """Progress operation completed."""
+        def __init__(self, operation: str = "") -> None:
+            super().__init__()
+            self.operation = operation
 
-        def __init__(
-            self,
-            title: str = "Progress",
-            show_percentage: bool = True,
-            show_speed: bool = True,
-            show_eta: bool = True,
+    def __init__(
+        self,
+        title: str = "Progress",
+        show_percentage: bool = True,
+        show_speed: bool = True,
+        show_eta: bool = True,
+        **kwargs,
+    ):
+        super().__init__(
+            title=title,
+            show_percentage=show_percentage,
+            show_speed=show_speed,
+            show_eta=show_eta,
             **kwargs,
-        ):
-            super().__init__(
-                title=title,
-                show_percentage=show_percentage,
-                show_speed=show_speed,
-                show_eta=show_eta,
-                **kwargs,
-            )
-            self.add_class("bkx-progress-pane")
-            self._operation_name = ""
+        )
+        self.add_class("bkx-progress-pane")
+        self._operation_name = ""
 
-        def start_progress(
-            self,
-            operation: str,
-            total: int = 100,
-            message: str = "",
-        ) -> None:
-            """Start a progress operation.
+    def start_progress(
+        self,
+        operation: str,
+        total: int = 100,
+        message: str = "",
+    ) -> None:
+        """Start a progress operation.
 
-            Args:
-                operation: Name of the operation
-                total: Total units for progress
-                message: Status message
-            """
-            self._operation_name = operation
-            self.set_total(total)
-            if message:
-                self.set_status(StatusMessage(text=message, severity="info"))
+        Args:
+            operation: Name of the operation
+            total: Total units for progress
+            message: Status message
+        """
+        self._operation_name = operation
+        self.progress_bar.progress = float(total)
+        if message:
+            self.post_message(StatusMessage(text=message, level="info"))
 
-        def update_progress(
-            self,
-            current: int,
-            message: str = "",
-            speed: str | None = None,
-            eta: str | None = None,
-        ) -> None:
-            """Update progress.
+    def update_progress(
+        self,
+        current: int,
+        message: str = "",
+        speed: str | None = None,
+        eta: str | None = None,
+    ) -> None:
+        """Update progress.
 
-            Args:
-                current: Current progress value
-                message: Status message
-                speed: Transfer speed string
-                eta: Estimated time remaining
-            """
-            self.advance(current)
-            if message:
-                self.set_status(StatusMessage(text=message, severity="info"))
-            if speed:
-                self.set_speed(speed)
-            if eta:
-                self.set_eta(eta)
+        Args:
+            current: Current progress value
+            message: Status message
+            speed: Transfer speed string
+            eta: Estimated time remaining
+        """
+        self.progress_bar.progress = float(current)
+        if message:
+            self.post_message(StatusMessage(text=message, level="info"))
+        # Note: speed and eta would need to be handled differently
+        # GlobalProgressBar doesn't have direct set_speed/set_eta methods
 
-        def complete_progress(self, message: str = "Complete") -> None:
-            """Complete the progress operation.
+    def complete_progress(self, message: str = "Complete") -> None:
+        """Complete the progress operation.
 
-            Args:
-                message: Completion message
-            """
-            self.set_total(100)
-            self.advance(100)
-            self.set_status(StatusMessage(text=message, severity="success"))
-            self.post_message(self.ProgressComplete(operation=self._operation_name))
+        Args:
+            message: Completion message
+        """
+        self.progress_bar.progress = 100.0
+        self.post_message(StatusMessage(text=message, level="success"))
+        self.post_message(self.ProgressComplete(operation=self._operation_name))
 
-        def error_progress(self, message: str = "Error") -> None:
-            """Mark progress as error.
+    def error_progress(self, message: str = "Error") -> None:
+        """Mark progress as error.
 
-            Args:
-                message: Error message
-            """
-            self.set_status(StatusMessage(text=message, severity="error"))
-            self.post_message(self.ProgressComplete(operation=self._operation_name))
+        Args:
+            message: Error message
+        """
+        self.post_message(StatusMessage(text=message, level="error"))
+        self.post_message(self.ProgressComplete(operation=self._operation_name))
 
-    class StatusBarPane(Container):
-        """Status bar pane using mikomn's StatusBar."""
 
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self.add_class("bkx-status-bar-pane")
-            self._status_bar = StatusBar()
+class StatusBarPane(Container):
+    """Status bar pane using mikomn's StatusBar."""
 
-        def compose(self) -> ComposeResult:
-            yield self._status_bar
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.add_class("bkx-status-bar-pane")
+        self._status_bar = StatusBar()
 
-        def display_status(
-            self,
-            message: str,
-            severity: str = "info",
-            icon: str = "ℹ️",
-        ) -> None:
-            """Display a status message.
+    def compose(self) -> ComposeResult:
+        yield self._status_bar
 
-            Args:
-                message: Status message text
-                severity: Message severity (info, success, warning, error)
-                icon: Icon to display
-            """
-            severity_map = {
-                "info": "info",
-                "success": "success",
-                "warning": "warning",
-                "error": "error",
-            }
-            sev = severity_map.get(severity, "info")
-            self._status_bar.display_status(StatusMessage(text=f"{icon} {message}", severity=sev))
+    def display_status(
+        self,
+        message: str,
+        severity: str = "information",
+        icon: str = "ℹ️",
+    ) -> None:
+        """Display a status message.
 
-        def clear_status(self) -> None:
-            """Clear the status message."""
-            self._status_bar.clear_status()
+        Args:
+            message: Status message text
+            severity: Message severity (information, success, warning, error)
+            icon: Icon to display
+        """
+        severity_map = {
+            "information": "info",
+            "success": "success",
+            "warning": "warning",
+            "error": "error",
+        }
+        sev = severity_map.get(severity, "info")
+        self._status_bar.post_message(StatusMessage(text=f"{icon} {message}", level=sev))
 
-else:
-    # Fallback implementation without mikomn
-    class ProgressPane(Container):
-        """Progress pane with custom progress bar implementation."""
-
-        class ProgressUpdate(Message):
-            """Progress was updated."""
-
-        class ProgressComplete(Message):
-            """Progress operation completed."""
-
-        def __init__(
-            self,
-            title: str = "Progress",
-            **kwargs,
-        ):
-            super().__init__(**kwargs)
-            self.add_class("bkx-progress-pane")
-            self._operation_name = ""
-            self._total = 100
-            self._current = 0
-            self._message = ""
-            self._speed = ""
-            self._eta = ""
-
-        def compose(self) -> ComposeResult:
-            yield Container(
-                Label("", classes="progress-operation", id="operation-name"),
-                Label("", classes="progress-message", id="message"),
-                classes="progress-header",
-            )
-            yield Container(
-                Static(classes="progress-bar-fill", id="progress-fill"),
-                classes="progress-bar-container",
-            )
-            yield Container(
-                Label("", id="progress-details", classes="progress-stats progress-details"),
-                Label("0%", id="percentage", classes="progress-stats progress-percentage"),
-                classes="progress-stats",
-            )
-
-        def on_mount(self) -> None:
-            self._operation_label = self.query_one("#operation-name", Label)
-            self._message_label = self.query_one("#message", Label)
-            self._progress_fill = self.query_one("#progress-fill", Static)
-            self._details_label = self.query_one("#progress-details", Label)
-            self._percentage_label = self.query_one("#percentage", Label)
-
-        def start_progress(
-            self,
-            operation: str,
-            total: int = 100,
-            message: str = "",
-        ) -> None:
-            """Start a progress operation."""
-            self._operation_name = operation
-            self._total = total
-            self._current = 0
-            self._message = message
-            self._operation_label.update(operation)
-            self._message_label.update(message)
-            self._update_progress_ui()
-            self._progress_fill.add_class("progress-active")
-
-        def update_progress(
-            self,
-            current: int,
-            message: str = "",
-            speed: str = "",
-            eta: str = "",
-        ) -> None:
-            """Update progress."""
-            self._current = current
-            if message:
-                self._message = message
-                self._message_label.update(message)
-            if speed:
-                self._speed = speed
-            if eta:
-                self._eta = eta
-            self._update_progress_ui()
-            self.post_message(
-                self.ProgressUpdate(
-                    operation=self._operation_name,
-                    current=current,
-                    total=self._total,
-                    percent=current / self._total if self._total > 0 else 0,
-                )
-            )
-
-        def _update_progress_ui(self) -> None:
-            """Update the progress UI."""
-            percent = (self._current / self._total * 100) if self._total > 0 else 0
-            self._progress_fill.update_styles(width=f"{percent}%")
-            self._percentage_label.update(f"{percent:.1f}%")
-
-            details = []
-            if self._speed:
-                details.append(f"Speed: {self._speed}")
-            if self._eta:
-                details.append(f"ETA: {self._eta}")
-            if details:
-                self._details_label.update(" | ".join(details))
-
-        def complete_progress(self, message: str = "Complete") -> None:
-            """Complete the progress operation."""
-            self._current = self._total
-            self._update_progress_ui()
-            self._message_label.update(message)
-            self._progress_fill.remove_class("progress-active")
-            self.post_message(self.ProgressComplete(operation=self._operation_name))
-
-        def error_progress(self, message: str = "Error") -> None:
-            """Mark progress as error."""
-            self._message_label.update(message)
-            self._progress_fill.add_class("error")
-            self._progress_fill.remove_class("progress-active")
-            self.post_message(self.ProgressComplete(operation=self._operation_name))
-
-    class StatusBarPane(Container):
-        """Simple status bar pane."""
-
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self.add_class("bkx-status-bar-pane")
-            self._current_status = ""
-
-        def compose(self) -> ComposeResult:
-            yield Label(id="status-left", classes="status-left")
-            yield Label(id="status-right", classes="status-right")
-
-        def on_mount(self) -> None:
-            self._left_label = self.query_one("#status-left", Label)
-            self._right_label = self.query_one("#status-right", Label)
-
-        def display_status(
-            self,
-            message: str,
-            severity: str = "info",
-            icon: str = "ℹ️",
-        ) -> None:
-            """Display a status message."""
-            icon_map = {
-                "info": "ℹ️",
-                "success": "✅",
-                "warning": "⚠️",
-                "error": "❌",
-            }
-            display_icon = icon_map.get(severity, icon)
-            self._current_status = f"{display_icon} {message}"
-            self._left_label.update(self._current_status)
-
-        def set_right_content(self, content: str) -> None:
-            """Set content on the right side."""
-            self._right_label.update(content)
-
-        def clear_status(self) -> None:
-            """Clear the status message."""
-            self._current_status = ""
-            self._left_label.update("")
+    def clear_status(self) -> None:
+        """Clear the status message."""
+        self._status_bar.update("")
 
 
 # Convenience function to create progress tracking callbacks
@@ -323,12 +158,8 @@ def create_progress_callback(progress_pane: ProgressPane, operation: str):
 
     def callback(progress):
         progress_pane.update_progress(
-            current=progress.current_file
-            if hasattr(progress, "current_file")
-            else progress.percent * 100,
-            speed=f"{progress.bytes_current / 1024 / 1024:.1f} MB/s"
-            if hasattr(progress, "bytes_current")
-            else None,
+            current=progress.current_file if hasattr(progress, "current_file") else int(progress.percent * 100),
+            speed=f"{progress.bytes_current / 1024 / 1024:.1f} MB/s" if hasattr(progress, "bytes_current") else None,
         )
 
     return callback
@@ -342,8 +173,8 @@ class TransferProgressPane(Container):
 
         def __init__(
             self,
-            bytes_transferred: int,
-            total_bytes: int,
+            bytes_transferred: float,
+            total_bytes: float,
             percent: float,
             speed: float = 0.0,
         ):
@@ -357,11 +188,11 @@ class TransferProgressPane(Container):
         super().__init__(**kwargs)
         self.add_class("bkx-transfer-progress-pane")
         self._title = title
-        self._total_bytes = 0
-        self._transferred_bytes = 0
+        self._total_bytes: float = 0
+        self._transferred_bytes: float = 0
         self._current_file = ""
         self._speed = 0.0
-        self._start_time = 0
+        self._start_time: float = 0.0
 
     def compose(self) -> ComposeResult:
         yield Label(self._title, classes="transfer-header")
@@ -371,12 +202,18 @@ class TransferProgressPane(Container):
             classes="transfer-bar",
         )
         yield Container(
-            Label("Speed: ", classes="stat-label")
-            + Label("", id="speed-value", classes="stat-value")
-            + Label("  ETA: ", classes="stat-label")
-            + Label("", id="eta-value", classes="stat-value")
-            + Label("  ", classes="stat-label")
-            + Label("", id="progress-value", classes="stat-value"),
+            Horizontal(
+                Label("Speed: ", classes="stat-label"),
+                Label("", id="speed-value", classes="stat-value"),
+            ),
+            Horizontal(
+                Label("  ETA: ", classes="stat-label"),
+                Label("", id="eta-value", classes="stat-value"),
+            ),
+            Horizontal(
+                Label("  ", classes="stat-label"),
+                Label("", id="progress-value", classes="stat-value"),
+            ),
             classes="transfer-stats",
         )
 
@@ -392,7 +229,7 @@ class TransferProgressPane(Container):
 
     def start_transfer(
         self,
-        total_bytes: int,
+        total_bytes: float,
         current_file: str = "",
     ) -> None:
         """Start transfer progress tracking.
@@ -411,7 +248,7 @@ class TransferProgressPane(Container):
 
     def update_transfer(
         self,
-        bytes_transferred: int,
+        bytes_transferred: float,
         current_file: str = "",
     ) -> None:
         """Update transfer progress.
@@ -434,7 +271,7 @@ class TransferProgressPane(Container):
 
         # Update UI
         percent = (bytes_transferred / self._total_bytes * 100) if self._total_bytes > 0 else 0
-        self._fill.update_styles(width=f"{percent}%")
+        self._fill.styles.width = f"{percent}%"
 
         # Speed
         speed_str = self._format_speed(self._speed)
@@ -450,9 +287,7 @@ class TransferProgressPane(Container):
         self._eta_label.update(eta_str)
 
         # Progress
-        self._progress_label.update(
-            f"{self._format_size(bytes_transferred)} / {self._format_size(self._total_bytes)}"
-        )
+        self._progress_label.update(f"{self._format_size(bytes_transferred)} / {self._format_size(self._total_bytes)}")
 
         self.post_message(
             self.TransferProgressUpdate(
@@ -488,8 +323,9 @@ class TransferProgressPane(Container):
             minutes = int((seconds % 3600) // 60)
             return f"{hours}h {minutes}m"
 
-    def _format_size(self, size_bytes: int) -> str:
+    def _format_size(self, size_bytes: float) -> str:
         """Format bytes to human-readable size."""
+        size_bytes = int(size_bytes)  # Cast to int for display
         for unit in ["B", "KB", "MB", "GB", "TB"]:
             if size_bytes < 1024:
                 return f"{size_bytes:.1f} {unit}"

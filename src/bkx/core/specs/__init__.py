@@ -6,10 +6,10 @@ Contract rule:
 - Specs are deterministic and hashable (parity tests later).
 """
 
-from .backup import BackupSpec, CompressionProfile, DEFAULT_COMPRESSION
 from .archive import ArchiveCreateSpec
-from .transfer import TransferSpec
+from .backup import DEFAULT_COMPRESSION, BackupSpec, CompressionProfile
 from .restore import RestoreSpec
+from .transfer import TransferSpec
 
 __all__ = [
     "BackupSpec",

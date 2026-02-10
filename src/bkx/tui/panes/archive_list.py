@@ -1,25 +1,18 @@
 """Archive list pane - Filterable list for searching archives.
 
-Prefers mikomn's FilterableListPane when available.
+Uses mikomn's FilterableListPane.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from mikomn.tui_base.models import FilterGroup, FilterOption
+from mikomn.tui_base.panes.common.filterable_list_pane import FilterableListPane
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.message import Message
 from textual.widgets import Label, RichLog
-
-try:
-    from mikomn.tui_base.panes.common.filterable_list_pane import FilterableListPane
-    from mikomn.tui_base.models import FilterGroup, FilterOption
-
-    _HAS_MIKOMN = True
-except Exception:
-    _HAS_MIKOMN = False
-    from textual.widgets import Input, ListItem, ListView
 
 
 class ArchiveListItem:
@@ -61,181 +54,214 @@ class ArchiveListItem:
         }
 
 
-if _HAS_MIKOMN:
+class ArchiveListPane(FilterableListPane[ArchiveListItem]):
+    """Filterable list pane for browsing archives."""
 
-    class ArchiveListPane(FilterableListPane[ArchiveListItem]):
-        """Filterable list pane for browsing archives (mikomn)."""
+    DEFAULT_CLASSES = "bkx-archive-list-pane"
+    BINDINGS = [
+        ("f", "filters", "Filters"),
+    ]
 
-        DEFAULT_CLASSES = "bkx-archive-list-pane"
-        BINDINGS = [
-            ("f", "filters", "Filters"),
-        ]
+    class FilterChanged(Message):
+        """Filter text changed."""
 
-        class FilterChanged(Message):
-            """Filter text changed."""
+        def __init__(self, filter_text: str, filtered_count: int, total_count: int) -> None:
+            super().__init__()
+            self.filter_text = filter_text
+            self.filtered_count = filtered_count
+            self.total_count = total_count
 
-            def __init__(self, filter_text: str, filtered_count: int, total_count: int) -> None:
-                super().__init__()
-                self.filter_text = filter_text
-                self.filtered_count = filtered_count
-                self.total_count = total_count
+    class ArchiveSelected(Message):
+        """Archive was selected."""
 
-        class ArchiveSelected(Message):
-            """Archive was selected."""
+        def __init__(self, archive_id: str, archive_path: Path, archive_data: dict) -> None:
+            super().__init__()
+            self.archive_id = archive_id
+            self.archive_path = archive_path
+            self.archive_data = archive_data
 
-            def __init__(self, archive_id: str, archive_path: Path, archive_data: dict) -> None:
-                super().__init__()
-                self.archive_id = archive_id
-                self.archive_path = archive_path
-                self.archive_data = archive_data
+    def __init__(
+        self,
+        title: str = "Archives",
+        filter_placeholder: str = "Search archives...",
+        **kwargs,
+    ):
+        super().__init__(title=title, filter_placeholder=filter_placeholder, **kwargs)
+        self._archives: list[ArchiveListItem] = []
+        self._ext_filter: str | None = None
+        self._current_archive: ArchiveListItem | None = None  # Track selected archive
 
-        def __init__(
-            self,
-            title: str = "Archives",
-            filter_placeholder: str = "Search archives...",
-            **kwargs,
-        ):
-            super().__init__(title=title, filter_placeholder=filter_placeholder, **kwargs)
-            self._archives: list[ArchiveListItem] = []
-            self._ext_filter: str | None = None
+    def set_archives(self, archives: list[ArchiveListItem]) -> None:
+        self._archives = archives
+        self._apply_extension_filter()
 
-        def set_archives(self, archives: list[ArchiveListItem]) -> None:
-            self._archives = archives
-            self._apply_extension_filter()
+    def action_filters(self) -> None:
+        app = getattr(self, "app", None)
+        if app is None:
+            return
+        open_fn = getattr(app, "open_archive_filter_sheet", None)
+        if callable(open_fn):
+            open_fn(self)
 
-        def action_filters(self) -> None:
-            app = getattr(self, "app", None)
-            if app is None:
-                return
-            open_fn = getattr(app, "open_archive_filter_sheet", None)
-            if callable(open_fn):
-                open_fn(self)
+    def set_extension_filter(self, ext: str | None) -> None:
+        self._ext_filter = ext
+        self._apply_extension_filter()
 
-        def set_extension_filter(self, ext: str | None) -> None:
-            self._ext_filter = ext
-            self._apply_extension_filter()
+    def _apply_extension_filter(self) -> None:
+        archives = self._archives
+        if self._ext_filter and self._ext_filter != "*":
+            archives = [a for a in archives if a.extension == self._ext_filter]
+        self.set_items([(str(a), a) for a in archives])
 
-        def _apply_extension_filter(self) -> None:
-            archives = self._archives
-            if self._ext_filter and self._ext_filter != "*":
-                archives = [a for a in archives if a.extension == self._ext_filter]
-            self.set_items([(str(a), a) for a in archives])
+    # -------------------------------------------------------------------------
+    # Persistence helpers (best-effort, no dependency on internal mikomn API)
+    # -------------------------------------------------------------------------
 
-        def build_extension_filter_group(self) -> "FilterGroup | None":
-            counts: dict[str, int] = {}
+    def set_filter_text(self, filter_text: str) -> None:
+        """Set the filter text if the base class supports it."""
+        fn = getattr(super(), "set_filter_text", None)
+        if callable(fn):
+            try:
+                fn(filter_text)
+            except Exception:
+                pass
+
+    def focus_filter(self) -> None:
+        """Focus the filter input if available."""
+        fn = getattr(super(), "focus_filter", None)
+        if callable(fn):
+            try:
+                fn()
+            except Exception:
+                pass
+
+    def select_archive_id(self, archive_id: str) -> None:
+        """Select an archive by id when possible."""
+        try:
             for a in self._archives:
-                counts[a.extension] = counts.get(a.extension, 0) + 1
-            if not counts:
-                return None
+                if a.archive_id == archive_id:
+                    for cand in ("select_value", "set_selected", "select_item", "select"):
+                        fn = getattr(self, cand, None)
+                        if callable(fn):
+                            try:
+                                fn(a)
+                                return
+                            except Exception:
+                                continue
+                    return
+        except Exception:
+            return
 
-            options = [FilterOption(value="*", label="All", selected=self._ext_filter in (None, "*"))]
-            for ext in sorted(counts.keys()):
-                options.append(
-                    FilterOption(
-                        value=ext,
-                        label=f"{ext} ({counts[ext]})",
-                        selected=self._ext_filter == ext,
-                    )
+    # -------------------------------------------------------------------------
+    # Scroll position persistence helpers
+    # -------------------------------------------------------------------------
+
+    def get_scroll_position(self) -> int:
+        """Get current scroll position (best-effort)."""
+        try:
+            # Try to get scroll position from the underlying list/scroll view
+            for attr in ("scroll_y", "scroll_target_y", "_scroll_y"):
+                pos = getattr(self, attr, None)
+                if isinstance(pos, (int, float)) and pos >= 0:
+                    return int(pos)
+        except Exception:
+            pass
+        return 0
+
+    def set_scroll_position(self, position: int) -> None:
+        """Set scroll position (best-effort)."""
+        try:
+            for method_name in ("scroll_to", "scroll_y", "scroll_to_line"):
+                method = getattr(self, method_name, None)
+                if callable(method):
+                    try:
+                        method(position)
+                        return
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    # -------------------------------------------------------------------------
+    # Keyboard navigation (j/k for selection, Enter for details, Esc for clear)
+    # -------------------------------------------------------------------------
+
+    def action_move_selection_down(self) -> None:
+        """Move selection down (j key)."""
+        try:
+            for method_name in ("action_cursor_down", "action_down", "_move_cursor_down"):
+                method = getattr(self, method_name, None)
+                if callable(method):
+                    method()
+                    return
+        except Exception:
+            pass
+
+    def action_move_selection_up(self) -> None:
+        """Move selection up (k key)."""
+        try:
+            for method_name in ("action_cursor_up", "action_up", "_move_cursor_up"):
+                method = getattr(self, method_name, None)
+                if callable(method):
+                    method()
+                    return
+        except Exception:
+            pass
+
+    def action_activate_selection(self) -> None:
+        """Activate selected item (Enter key)."""
+        # Emit ArchiveSelected for currently selected item
+        try:
+            # Try to get selected item
+            for attr in ("_selected_item", "selected", "_last_selected"):
+                item = getattr(self, attr, None)
+                if isinstance(item, ArchiveListItem):
+                    self.post_message(self.ArchiveSelected(item.archive_id, item.path, item.to_dict()))
+                    return
+        except Exception:
+            pass
+
+    def action_clear_filter(self) -> None:
+        """Clear filter and reset selection (Esc key)."""
+        try:
+            clear_fn = getattr(super(), "clear_filter", None)
+            if callable(clear_fn):
+                clear_fn()
+            # Also try to clear input directly
+            for attr in ("_input", "_filter_input", "filter_input"):
+                inp = getattr(self, attr, None)
+                if inp is not None and hasattr(inp, "value"):
+                    inp.value = ""
+                    break
+        except Exception:
+            pass
+
+    def build_extension_filter_group(self) -> FilterGroup | None:
+        counts: dict[str, int] = {}
+        for a in self._archives:
+            counts[a.extension] = counts.get(a.extension, 0) + 1
+        if not counts:
+            return None
+
+        options = [FilterOption(value="*", label="All", selected=self._ext_filter in (None, "*"))]
+        for ext in sorted(counts.keys()):
+            options.append(
+                FilterOption(
+                    value=ext,
+                    label=f"{ext} ({counts[ext]})",
+                    selected=self._ext_filter == ext,
                 )
-            return FilterGroup(field="extension", label="Extension", options=options, multi_select=False)
+            )
+        return FilterGroup(field="extension", label="Extension", options=options, multi_select=False)
 
-        def on_filter_changed(self, event: FilterableListPane.FilterChanged) -> None:
-            self.post_message(self.FilterChanged(event.filter_text, event.filtered_count, event.total_count))
+    def on_filter_changed(self, event: FilterableListPane.FilterChanged) -> None:
+        self.post_message(self.FilterChanged(event.filter_text, event.filtered_count, event.total_count))
 
-        def on_selection_changed(self, event: FilterableListPane.SelectionChanged) -> None:
-            archive = getattr(event, "single_selected", None)
-            if not isinstance(archive, ArchiveListItem):
-                return
-            self.post_message(self.ArchiveSelected(archive.archive_id, archive.path, archive.to_dict()))
-
-else:
-
-    class ArchiveListPane(Container):
-        """Simple list pane for archives (fallback when mikomn not available)."""
-
-        DEFAULT_CLASSES = "bkx-archive-list-pane"
-
-        class FilterChanged(Message):
-            """Filter text changed."""
-
-            def __init__(self, filter_text: str, filtered_count: int, total_count: int) -> None:
-                super().__init__()
-                self.filter_text = filter_text
-                self.filtered_count = filtered_count
-                self.total_count = total_count
-
-        class ArchiveSelected(Message):
-            """Archive was selected."""
-
-            def __init__(self, archive_id: str, archive_path: Path, archive_data: dict) -> None:
-                super().__init__()
-                self.archive_id = archive_id
-                self.archive_path = archive_path
-                self.archive_data = archive_data
-
-        def __init__(
-            self,
-            title: str = "Archives",
-            filter_placeholder: str = "Search archives...",
-            **kwargs,
-        ):
-            super().__init__(**kwargs)
-            self._title = title
-            self._filter_placeholder = filter_placeholder
-            self._archives: list[ArchiveListItem] = []
-            self._filtered_archives: list[ArchiveListItem] = []
-
-        def compose(self) -> ComposeResult:
-            yield Label(self._title, classes="header")
-            yield Input(placeholder=self._filter_placeholder, classes="filter-input")
-            yield ListView(classes="archive-list")
-            yield Label("", classes="count-label", id="count-label")
-
-        def on_mount(self) -> None:
-            self._list_view = self.query_one(ListView)
-            self._input = self.query_one(Input)
-            self._count_label = self.query_one("#count-label", Label)
-
-        def set_archives(self, archives: list[ArchiveListItem]) -> None:
-            self._archives = archives
-            self._apply_filter(self._input.value)
-
-        def _apply_filter(self, filter_text: str) -> None:
-            if not filter_text.strip():
-                self._filtered_archives = self._archives
-            else:
-                q = filter_text.lower()
-                self._filtered_archives = [
-                    a for a in self._archives if q in a.name.lower() or q in str(a.path).lower()
-                ]
-
-            self._list_view.clear()
-            for archive in self._filtered_archives:
-                item = ListItem(
-                    Label(
-                        f"{archive.icon} {archive.name}\n    {archive.path} [{archive.size}]",
-                        classes="archive-item",
-                    ),
-                    id=f"archive-{archive.archive_id}",
-                )
-                item._archive = archive
-                self._list_view.append(item)
-
-            self._update_count_label()
-
-        def _update_count_label(self) -> None:
-            total = len(self._archives)
-            filtered = len(self._filtered_archives)
-            self._count_label.update(f"Showing {filtered}/{total} archives")
-
-        def on_input_changed(self, event: Input.Changed) -> None:
-            self._apply_filter(event.value)
-            self.post_message(self.FilterChanged(event.value, len(self._filtered_archives), len(self._archives)))
-
-        def on_list_view_selected(self, event: ListView.Selected) -> None:
-            if isinstance(event.item, ListItem) and hasattr(event.item, "_archive"):
-                archive = event.item._archive
-                self.post_message(self.ArchiveSelected(archive.archive_id, archive.path, archive.to_dict()))
+    def on_selection_changed(self, event: FilterableListPane.SelectionChanged) -> None:
+        archive = getattr(event, "single_selected", None)
+        if not isinstance(archive, ArchiveListItem):
+            return
+        self.post_message(self.ArchiveSelected(archive.archive_id, archive.path, archive.to_dict()))
 
 
 class ArchivePreviewPane(Container):
@@ -251,6 +277,10 @@ class ArchivePreviewPane(Container):
 
     class PreviewUpdate(Message):
         """Preview content was updated."""
+
+        def __init__(self, archive: dict) -> None:
+            super().__init__()
+            self.archive = archive
 
     def __init__(self, title: str = "Preview", **kwargs):
         super().__init__(**kwargs)
@@ -340,7 +370,7 @@ def create_archive_list_items(archive_paths: list[Path]) -> list[ArchiveListItem
     return items
 
 
-def _format_size(size_bytes: int) -> str:
+def _format_size(size_bytes: float) -> str:
     """Format bytes to human-readable size."""
     for unit in ["B", "KB", "MB", "GB", "TB"]:
         if size_bytes < 1024:

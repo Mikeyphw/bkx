@@ -8,15 +8,16 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
-import tarfile
 import tempfile
 from pathlib import Path
 
-from bkx.core.services.archive import ArchiveService
-from bkx.core.specs.archive import ArchiveBrowseSpec
-from bkx.core.results.archive import ArchiveBrowseResult
+import pytest
+
 from bkx.core.errors import NotFoundError, ValidationError
+from bkx.core.results.archive import ArchiveCreateResult, ArchiveInfoResult, ArchiveVerifyResult, Timing
+from bkx.core.services.archive import ArchiveService
+from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec
+from bkx.core.specs.restore import RestoreSpec
 
 
 class MockArchiver:
@@ -26,27 +27,48 @@ class MockArchiver:
         self._entries = entries
 
     @property
-    def name(self):
+    def name(self) -> str:
         return "mock-archiver"
 
     @property
-    def supported_formats(self):
+    def supported_formats(self) -> tuple[str, ...]:
         return ("tar",)
 
-    def create(self, spec):
-        pass  # Not needed
+    def create(
+        self,
+        spec: ArchiveCreateSpec,
+        *,
+        total_size: int | None = None,
+    ) -> ArchiveCreateResult:
+        return ArchiveCreateResult(
+            success=True,
+            dry_run=spec.dry_run,
+            timing=Timing(start_ms=0, end_ms=0),
+        )
 
-    def list(self, archive_path: Path, **kwargs):
+    def list(self, archive_path: Path, **kwargs) -> tuple:
         return self._entries
 
-    def info(self, path: Path):
-        pass  # Not needed
+    def info(self, archive_path: Path) -> ArchiveInfoResult:
+        return ArchiveInfoResult(
+            success=True,
+            archive_path=archive_path,
+            format="tar",
+            created_at=0,
+            total_entries=0,
+            total_size=0,
+            uncompressed_size=0,
+            compression_ratio=0.0,
+        )
 
-    def verify(self, archive_path: Path):
-        pass  # Not needed
+    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+        return ArchiveVerifyResult(
+            success=True,
+            archive_path=archive_path,
+        )
 
-    def extract(self, spec):
-        pass  # Not needed
+    def extract(self, spec: RestoreSpec) -> tuple:
+        return ()
 
 
 def make_entry(path: str, is_dir: bool = False, size: int = 100, mtime_ns: int = 0):

@@ -17,163 +17,177 @@ import pytest
 # Hypothesis is optional - only used for property-based tests
 try:
     from hypothesis import strategies as st
+    from hypothesis.strategies import booleans, composite, integers, lists, sampled_from, text
 
     _HAS_HYPOTHESIS = True
 except ImportError:
     _HAS_HYPOTHESIS = False
     st = None  # type: ignore
 
+from bkx.cli.spec_builders import (
+    build_backup_spec,
+)
 from bkx.core.parity import (
     compute_spec_hash,
     spec_to_dict,
     verify_parity,
 )
-from bkx.cli.spec_builders import (
-    build_backup_spec,
-    build_archive_spec,
-    build_transfer_spec,
-    build_restore_spec,
-)
-
 
 # =============================================================================
 # Strategies for Property-Based Testing
 # =============================================================================
 
+if _HAS_HYPOTHESIS:
 
-@st.composite
-def strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:
-    """Generate a list of valid paths.
+    @composite
+    def _strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:
+        """Generate a list of valid paths.
 
-    Args:
-        draw: Hypothesis draw function
-        min_size: Minimum number of paths
-        max_size: Maximum number of paths
+        Args:
+            draw: Hypothesis draw function
+            min_size: Minimum number of paths
+            max_size: Maximum number of paths
 
-    Returns:
-        List of Path objects
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        base = Path(tmpdir)
-        num_paths = draw(st.integers(min_value=min_size, max_value=max_size))
-        paths = []
-        for i in range(num_paths):
-            # Create subdirectory structure
-            subdir = base / f"dir_{i}"
-            subdir.mkdir()
-            paths.append(subdir)
-        return paths
+        Returns:
+            List of Path objects
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            num_paths = draw(integers(min_value=min_size, max_value=max_size))
+            paths = []
+            for i in range(num_paths):
+                # Create subdirectory structure
+                subdir = base / f"dir_{i}"
+                subdir.mkdir()
+                paths.append(subdir)
+            return paths
 
+    @composite
+    def _strategy_backup_params(draw) -> dict[str, Any]:
+        """Generate backup spec parameters.
 
-@st.composite
-def strategy_backup_params(draw) -> dict[str, Any]:
-    """Generate backup spec parameters.
+        Args:
+            draw: Hypothesis draw function
 
-    Args:
-        draw: Hypothesis draw function
+        Returns:
+            Dictionary of backup parameters
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir)
+            (source / "file.txt").touch()
+            (source / "subdir").mkdir()
 
-    Returns:
-        Dictionary of backup parameters
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source = Path(tmpdir)
-        (source / "file.txt").touch()
-        (source / "subdir").mkdir()
+            return {
+                "sources": [source],
+                "destination": Path(tmpdir) / "backup",
+                "archive_name": draw(text(min_size=1, max_size=20)),
+                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),
+                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),
+                "level": draw(integers(min_value=1, max_value=9)),
+                "verify": draw(booleans()),
+                "dry_run": True,  # Always dry-run for tests
+            }
 
+    @composite
+    def _strategy_archive_params(draw) -> dict[str, Any]:
+        """Generate archive spec parameters.
+
+        Args:
+            draw: Hypothesis draw function
+
+        Returns:
+            Dictionary of archive parameters
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir)
+            (source / "file.txt").touch()
+
+            return {
+                "sources": [source],
+                "output": Path(tmpdir) / "archive.tar",
+                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),
+                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),
+                "level": draw(integers(min_value=1, max_value=9)),
+                "verify": draw(booleans()),
+                "dry_run": True,
+            }
+
+    @composite
+    def _strategy_restore_params(draw) -> dict[str, Any]:
+        """Generate restore spec parameters.
+
+        Args:
+            draw: Hypothesis draw function
+
+        Returns:
+            Dictionary of restore parameters
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive = Path(tmpdir) / "archive.tar"
+            archive.touch()
+
+            return {
+                "archive": archive,
+                "destination": Path(tmpdir) / "restore",
+                "paths": draw(lists(text(min_size=1, max_size=20), max_size=5)),
+                "overwrite": draw(booleans()),
+                "verify": draw(booleans()),
+                "dry_run": True,
+                "fresh_dir": draw(booleans()),
+            }
+
+    @composite
+    def _strategy_transfer_params(draw) -> dict[str, Any]:
+        """Generate transfer spec parameters.
+
+        Args:
+            draw: Hypothesis draw function
+
+        Returns:
+            Dictionary of transfer parameters
+        """
         return {
-            "sources": [source],
-            "destination": Path(tmpdir) / "backup",
-            "archive_name": draw(st.text(min_size=1, max_size=20)),
-            "excludes": draw(st.lists(st.text(min_size=1, max_size=10), max_size=3)),
-            "algorithm": draw(st.sampled_from(["zstd", "gzip", "lz4"])),
-            "level": draw(st.integers(min_value=1, max_value=9)),
-            "verify": draw(st.booleans()),
-            "dry_run": True,  # Always dry-run for tests
-        }
-
-
-@st.composite
-def strategy_archive_params(draw) -> dict[str, Any]:
-    """Generate archive spec parameters.
-
-    Args:
-        draw: Hypothesis draw function
-
-    Returns:
-        Dictionary of archive parameters
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        source = Path(tmpdir)
-        (source / "file.txt").touch()
-
-        return {
-            "sources": [source],
-            "output": Path(tmpdir) / "archive.tar",
-            "excludes": draw(st.lists(st.text(min_size=1, max_size=10), max_size=3)),
-            "algorithm": draw(st.sampled_from(["zstd", "gzip", "lz4"])),
-            "level": draw(st.integers(min_value=1, max_value=9)),
-            "verify": draw(st.booleans()),
+            "source": Path("/source/file"),
+            "destination": Path("/dest/file"),
+            "direction": draw(sampled_from(["push", "pull"])),
+            "verify": draw(booleans()),
             "dry_run": True,
+            "overwrite": draw(booleans()),
         }
 
+    @composite
+    def _strategy_exclude_patterns(draw) -> list[str]:
+        """Generate exclude patterns.
 
-@st.composite
-def strategy_restore_params(draw) -> dict[str, Any]:
-    """Generate restore spec parameters.
+        Args:
+            draw: Hypothesis draw function
 
-    Args:
-        draw: Hypothesis draw function
+        Returns:
+            List of glob patterns
+        """
+        patterns = ["*.pyc", "__pycache__", "*.log", ".git", "node_modules", "*.bak"]
+        return draw(lists(sampled_from(patterns), max_size=4))
 
-    Returns:
-        Dictionary of restore parameters
-    """
-    with tempfile.TemporaryDirectory() as tmpdir:
-        archive = Path(tmpdir) / "archive.tar"
-        archive.touch()
+    # Aliases without underscore for backward compatibility
+    strategy_paths = _strategy_paths
+    strategy_backup_params = _strategy_backup_params
+    strategy_archive_params = _strategy_archive_params
+    strategy_restore_params = _strategy_restore_params
+    strategy_transfer_params = _strategy_transfer_params
+    strategy_exclude_patterns = _strategy_exclude_patterns
 
-        return {
-            "archive": archive,
-            "destination": Path(tmpdir) / "restore",
-            "paths": draw(st.lists(st.text(min_size=1, max_size=20), max_size=5)),
-            "overwrite": draw(st.booleans()),
-            "verify": draw(st.booleans()),
-            "dry_run": True,
-            "fresh_dir": draw(st.booleans()),
-        }
+else:
+    # Define stubs that raise helpful errors
+    class _NoHypothesisStub:
+        def __getattr__(self, name):
+            raise RuntimeError(f"Hypothesis is required for {name}. Install it with: pip install hypothesis")
 
-
-@st.composite
-def strategy_transfer_params(draw) -> dict[str, Any]:
-    """Generate transfer spec parameters.
-
-    Args:
-        draw: Hypothesis draw function
-
-    Returns:
-        Dictionary of transfer parameters
-    """
-    return {
-        "source": Path("/source/file"),
-        "destination": Path("/dest/file"),
-        "direction": draw(st.sampled_from(["push", "pull"])),
-        "verify": draw(st.booleans()),
-        "dry_run": True,
-        "overwrite": draw(st.booleans()),
-    }
-
-
-@st.composite
-def strategy_exclude_patterns(draw) -> list[str]:
-    """Generate exclude patterns.
-
-    Args:
-        draw: Hypothesis draw function
-
-    Returns:
-        List of glob patterns
-    """
-    patterns = ["*.pyc", "__pycache__", "*.log", ".git", "node_modules", "*.bak"]
-    return draw(st.lists(st.sampled_from(patterns), max_size=4))
+    strategy_paths = _NoHypothesisStub()
+    strategy_backup_params = _NoHypothesisStub()
+    strategy_archive_params = _NoHypothesisStub()
+    strategy_restore_params = _NoHypothesisStub()
+    strategy_transfer_params = _NoHypothesisStub()
+    strategy_exclude_patterns = _NoHypothesisStub()
 
 
 # =============================================================================

@@ -63,13 +63,34 @@ class BackupResult:
         """Get human-readable byte count."""
         return _human_bytes(self.bytes_written)
 
+    @property
+    def archive_path(self) -> Path | None:
+        """Get first archive path (for single archive backups)."""
+        return self.archive_paths[0] if self.archive_paths else None
 
-def _human_bytes(n: int) -> str:
+    # Aliases for TUI compatibility
+    @property
+    def files_count(self) -> int:
+        """Alias for files_processed for TUI compatibility."""
+        return self.files_processed
+
+    @property
+    def bytes_total(self) -> int:
+        """Alias for bytes_written for TUI compatibility."""
+        return self.bytes_written
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        """Alias for warnings for TUI compatibility (errors are stored as warnings)."""
+        return self.warnings
+
+
+def _human_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:
             return f"{n:.2f}{unit}"
-        n /= 1024
+        n = n / 1024
     return f"{n:.2f}PB"
 
 

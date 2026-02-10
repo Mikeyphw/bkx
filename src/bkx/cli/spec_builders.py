@@ -11,13 +11,12 @@ These builders bridge the CLI layer to the core specs layer.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from bkx.core.specs.backup import BackupSpec, CompressionProfile
-from bkx.core.specs.archive import ArchiveCreateSpec
-from bkx.core.specs.transfer import TransferSpec
-from bkx.core.specs.restore import RestoreSpec
 from bkx.core.config import get_config
+from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec
+from bkx.core.specs.backup import BackupSpec, CompressionProfile
+from bkx.core.specs.restore import RestoreSpec
+from bkx.core.specs.transfer import TransferSpec
 
 
 def build_backup_spec(
@@ -231,7 +230,7 @@ def build_archive_browse_spec(
     offset: int = 0,
     sort_by: str = "path",
     sort_order: str = "asc",
-) -> "ArchiveBrowseSpec":
+) -> ArchiveBrowseSpec:
     """Build ArchiveBrowseSpec from CLI inputs.
 
     Args:

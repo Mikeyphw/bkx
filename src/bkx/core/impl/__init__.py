@@ -8,9 +8,9 @@ and can be used when external tools are unavailable.
 """
 
 from .archiver import FallbackArchiver
-from .transfer import FallbackTransfer
 from .hasher import FallbackHasher
 from .tool_detector import FallbackToolDetector
+from .transfer import FallbackTransfer
 
 __all__ = [
     "FallbackArchiver",

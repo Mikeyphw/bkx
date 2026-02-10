@@ -9,10 +9,10 @@ Contract rule:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-import os
 
 
 @dataclass(frozen=True)
@@ -90,16 +90,12 @@ class BkxConfig:
             default_destination=cls._parse_path(os.environ.get("BKX_DESTINATION")),
             archives_dir=cls._parse_path(os.environ.get("BKX_ARCHIVES_DIR")),
             verify_after_operation=cls._parse_bool(os.environ.get("BKX_VERIFY", "true")),
-            preserve_permissions=cls._parse_bool(
-                os.environ.get("BKX_PRESERVE_PERMISSIONS", "true")
-            ),
+            preserve_permissions=cls._parse_bool(os.environ.get("BKX_PRESERVE_PERMISSIONS", "true")),
             compression_algorithm=os.environ.get("BKX_COMPRESSION_ALGORITHM", "zstd"),
             compression_level=int(os.environ.get("BKX_COMPRESSION_LEVEL", "3")),
             fresh_restore_dir=cls._parse_bool(os.environ.get("BKX_FRESH_RESTORE_DIR", "true")),
             confirm_overwrite=cls._parse_bool(os.environ.get("BKX_CONFIRM_OVERWRITE", "true")),
-            require_confirmation=cls._parse_bool(
-                os.environ.get("BKX_REQUIRE_CONFIRMATION", "false")
-            ),
+            require_confirmation=cls._parse_bool(os.environ.get("BKX_REQUIRE_CONFIRMATION", "false")),
             preferred_archiver=os.environ.get("BKX_PREFERRED_ARCHIVER"),
             preferred_compressor=os.environ.get("BKX_PREFERRED_COMPRESSOR"),
             preferred_hasher=os.environ.get("BKX_PREFERRED_HASHER"),

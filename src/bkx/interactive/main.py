@@ -13,34 +13,13 @@ Contract rules:
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-from typing import Optional
-
-from bkx.core.config import get_config
-from bkx.cli.spec_builders import (
-    build_backup_spec,
-    build_archive_spec,
-    build_restore_spec,
-    build_transfer_spec,
-)
-from bkx.cli.render import get_renderer
-from bkx.cli.exit_codes import error_to_exit_code, EXIT_OK
-from bkx.core.errors import BkxError
-from bkx.ui.theme import (
-    themed_message,
-    themed_header,
-    themed_prompt,
-    get_status_message,
-)
 
 # mikomn imports for interactive prompts
 from mikomn.cli_base.interactive import (
     MenuConfig,
     MenuItem,
     ask_confirm,
-    ask_float,
-    ask_int,
     ask_path,
     ask_text,
     banner,
@@ -49,10 +28,19 @@ from mikomn.cli_base.menus import show_menu
 from mikomn.cli_base.ui2.exceptions import NonInteractiveInput, UserCancelled
 from rich.prompt import Prompt
 
+from bkx.cli.exit_codes import EXIT_OK, error_to_exit_code
+from bkx.cli.render import get_renderer
+from bkx.cli.spec_builders import (
+    build_archive_spec,
+    build_backup_spec,
+    build_restore_spec,
+    build_transfer_spec,
+)
+from bkx.core.config import get_config
+from bkx.core.errors import BkxError
 
-def prompt_path(
-    prompt_text: str, must_exist: bool = True, default: Optional[str] = None
-) -> Optional[Path]:
+
+def prompt_path(prompt_text: str, must_exist: bool = True, default: str | None = None) -> Path | None:
     """Prompt for a path with validation.
 
     Returns None if cancelled or non-interactive.
@@ -64,7 +52,7 @@ def prompt_path(
         return None
 
 
-def prompt_text(prompt_text: str, default: Optional[str] = None) -> Optional[str]:
+def prompt_text(prompt_text: str, default: str | None = None) -> str | None:
     """Prompt for text input.
 
     Returns None if cancelled or non-interactive.
@@ -91,7 +79,7 @@ def prompt_select(
     prompt_text: str,
     choices: list[str],
     default: int = 0,
-) -> Optional[str]:
+) -> str | None:
     """Prompt for selection from a list.
 
     Returns None if cancelled/non-interactive.
@@ -105,7 +93,7 @@ def prompt_select(
         return Prompt.ask(text, **kwargs)
 
     try:
-        return show_menu(menu_items, config=cfg, prompt_ask=_prompt_ask)
+        return show_menu(menu_items, config=cfg, prompt_ask=_prompt_ask)  # type: ignore[arg-type]
     except (UserCancelled, NonInteractiveInput):
         return None
 
@@ -144,7 +132,7 @@ def run_backup_interactive() -> int:
     Returns:
         Exit code
     """
-    renderer = get_renderer(json=False)
+    renderer = get_renderer(json_output=False)
     _section_header("Interactive Backup")
 
     # Step 1: Select sources
@@ -254,7 +242,7 @@ def run_archive_interactive() -> int:
     Returns:
         Exit code
     """
-    renderer = get_renderer(json=False)
+    renderer = get_renderer(json_output=False)
     _section_header("Interactive Archive")
 
     # Step 1: Select sources
@@ -344,7 +332,7 @@ def run_restore_interactive() -> int:
     Returns:
         Exit code
     """
-    renderer = get_renderer(json=False)
+    renderer = get_renderer(json_output=False)
     _section_header("Interactive Restore")
 
     # Step 1: Archive path
@@ -427,7 +415,7 @@ def run_transfer_interactive() -> int:
     Returns:
         Exit code
     """
-    renderer = get_renderer(json=False)
+    renderer = get_renderer(json_output=False)
     _section_header("Interactive Transfer")
 
     # Step 1: Direction
@@ -477,12 +465,12 @@ def run_transfer_interactive() -> int:
         from bkx.core.services import get_transfer_service
 
         service = get_transfer_service()
-        result = service.transfer(spec)
+        result = service.push(spec) if direction == "push" else service.pull(spec)
 
         renderer.render_message("", level="info")
         renderer.render_message("Transfer completed!", level="success")
-        renderer.render_message(f"  Source: {result.source_path}", level="info")
-        renderer.render_message(f"  Destination: {result.destination_path}", level="info")
+        renderer.render_message(f"  Source: {result.source}", level="info")
+        renderer.render_message(f"  Destination: {result.destination}", level="info")
 
         return EXIT_OK
 
@@ -501,7 +489,7 @@ def main() -> int:
 
     while True:
         operation = prompt_select(
-            message="What would you like to do?",
+            "What would you like to do?",
             choices=[
                 "Backup",
                 "Archive",
@@ -513,7 +501,7 @@ def main() -> int:
         )
 
         if operation == "Exit" or operation is None:
-            renderer = get_renderer(json=False)
+            renderer = get_renderer(json_output=False)
             renderer.render_message("Goodbye!", level="info")
             return EXIT_OK
 

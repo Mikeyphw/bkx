@@ -26,6 +26,10 @@ class EmptyStatePane(Container):
     class ActionClicked(Message):
         """Action button was clicked."""
 
+        def __init__(self, action_id: str) -> None:
+            super().__init__()
+            self.action_id = action_id
+
     def __init__(
         self,
         title: str = "No items",
@@ -72,7 +76,8 @@ class EmptyStatePane(Container):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press."""
-        if event.button.id.startswith("empty-action-"):
+        button_id = event.button.id
+        if button_id is not None and button_id.startswith("empty-action-"):
             self.post_message(self.ActionClicked(action_id=self._action_id))
 
     def update(

@@ -1,0 +1,102 @@
+/* src/bkx/tui/css/pages/run_history.tcss */
+/* Step 10B: Run History Page Styling */
+
+.bkx-run-history-page {
+    width: 100%;
+    height: 100%;
+}
+
+.bkx-run-history-page .history-filters {
+    height: auto;
+    padding: 1;
+    border-bottom: solid $border;
+    background: $surface-darken-1;
+}
+
+.bkx-run-history-page .filter-label {
+    width: auto;
+    margin-right: 1;
+    color: $text-muted;
+}
+
+.bkx-run-history-page .filter-select {
+    width: 15;
+    margin-right: 2;
+}
+
+.bkx-run-history-page .filter-actions {
+    margin-left: 1;
+}
+
+.bkx-run-history-page .filter-btn {
+    width: auto;
+    margin-left: 1;
+}
+
+.bkx-run-history-page .history-content {
+    height: 1fr;
+    width: 100%;
+}
+
+.bkx-run-history-page .history-list-container {
+    width: 45%;
+    border-right: solid $border;
+    background: $surface;
+}
+
+.bkx-run-history-page .history-details {
+    width: 55%;
+    background: $surface-darken-1;
+}
+
+.bkx-run-history-page .section-header {
+    color: $text-muted;
+    padding: 1;
+    border-bottom: solid $border;
+}
+
+.bkx-run-history-page .history-list {
+    height: 1fr;
+}
+
+.bkx-run-history-page .history-list ListItem {
+    padding: 1 2;
+}
+
+.bkx-run-history-page .history-list ListItem:hover,
+.bkx-run-history-page .history-list ListItem:focus {
+    background: $accent;
+}
+
+.bkx-run-history-page .history-item-title {
+    margin-bottom: 0;
+}
+
+.bkx-run-history-page .history-item-details {
+    color: $text-muted;
+    margin-top: 0;
+}
+
+.bkx-run-history-page .history-details-log {
+    height: 1fr;
+    padding: 1;
+}
+
+/* Compact mode */
+.compact .bkx-run-history-page .history-filters {
+    padding: 0;
+}
+
+.compact .bkx-run-history-page .history-list-container {
+    width: 50%;
+}
+
+.compact .bkx-run-history-page .history-details {
+    width: 50%;
+}
+
+.compact .bkx-run-history-page .history-list-container .section-header,
+.compact .bkx-run-history-page .history-details .section-header {
+    padding: 0 1;
+}
+

@@ -8,16 +8,19 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
+import os
 import tarfile
+import tempfile
 import zipfile
 from pathlib import Path
-import tempfile
 
-from bkx.core.services.restore import RestoreService
-from bkx.core.specs.restore import RestoreSpec
-from bkx.core.results.restore import RestoreResult
+import pytest
+
 from bkx.core.errors import ValidationError
+from bkx.core.results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult, Timing
+from bkx.core.services.restore import RestoreService
+from bkx.core.specs.archive import ArchiveCreateSpec
+from bkx.core.specs.restore import RestoreSpec
 
 
 class RealArchiver:
@@ -34,62 +37,68 @@ class RealArchiver:
     def supported_formats(self) -> tuple[str, ...]:
         return (self._archive_format,)
 
-    def create(self, spec):
-        pass  # Not needed for restore tests
+    def create(
+        self,
+        spec: ArchiveCreateSpec,
+        *,
+        total_size: int | None = None,
+    ) -> ArchiveCreateResult:
+        return ArchiveCreateResult(
+            success=True,
+            dry_run=spec.dry_run,
+            timing=Timing(start_ms=0, end_ms=0),
+        )
 
-    def list(self, archive_path: Path, **kwargs):
-        entries = []
+    def list(
+        self,
+        archive_path: Path,
+        *,
+        filter_pattern: str | None = None,
+        page: int = 0,
+        page_size: int = 100,
+    ) -> tuple[ArchiveEntry, ...]:
+        entries: list[ArchiveEntry] = []
         if str(archive_path).endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
                 for info in zf.infolist():
                     entries.append(
-                        type(
-                            "ArchiveEntry",
-                            (),
-                            {
-                                "path": info.filename,
-                                "is_dir": info.is_dir(),
-                                "size": info.file_size,
-                                "mtime_ns": 0,
-                            },
-                        )()
+                        ArchiveEntry(
+                            path=info.filename,
+                            is_dir=info.is_dir(),
+                            size=info.file_size or 0,
+                            mtime_ns=0,
+                        )
                     )
         else:
             with tarfile.open(archive_path, "r") as tar:
                 for member in tar.getmembers():
                     entries.append(
-                        type(
-                            "ArchiveEntry",
-                            (),
-                            {
-                                "path": member.name,
-                                "is_dir": member.isdir(),
-                                "size": member.size,
-                                "mtime_ns": 0,
-                            },
-                        )()
+                        ArchiveEntry(
+                            path=member.name,
+                            is_dir=member.isdir(),
+                            size=member.size or 0,
+                            mtime_ns=0,
+                        )
                     )
-        return entries
+        return tuple(entries)
 
-    def info(self, path: Path):
-        pass  # Not needed
+    def info(self, archive_path: Path) -> ArchiveInfoResult:
+        return ArchiveInfoResult(
+            success=True,
+            archive_path=archive_path,
+            format=self._archive_format,
+            created_at=0,
+            total_entries=0,
+            total_size=0,
+            uncompressed_size=0,
+            compression_ratio=0.0,
+        )
 
-    def verify(self, archive_path: Path):
-        """Return a proper verification result."""
-        return type(
-            "ArchiveVerifyResult",
-            (),
-            {
-                "success": True,
-                "archive_path": archive_path,
-                "checksums_valid": True,
-                "structure_valid": True,
-                "entries_checked": 1,
-                "entries_failed": 0,
-                "failed_entries": (),
-                "warnings": (),
-            },
-        )()
+    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+        return ArchiveVerifyResult(
+            success=True,
+            archive_path=archive_path,
+        )
 
     def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
         """Extract files from archive, handling partial restore."""
@@ -159,7 +168,7 @@ class TestRestorePick:
 
             archive_path = Path(tmpdir) / "archive.tar"
             with tarfile.open(archive_path, "w") as tar:
-                for root, dirs, fnames in source_dir.walk():
+                for root, dirs, fnames in os.walk(source_dir):
                     for fname in fnames:
                         fpath = Path(root) / fname
                         tar.add(fpath, arcname=str(fpath.relative_to(source_dir.parent)))
@@ -284,8 +293,8 @@ class TestArchiveVerify:
 
     def test_verify_nonexistent_archive(self):
         """Test verifying a nonexistent archive raises NotFoundError."""
-        from bkx.core.impl.archiver import FallbackArchiver
         from bkx.core.errors import NotFoundError
+        from bkx.core.impl.archiver import FallbackArchiver
 
         archiver = FallbackArchiver()
 

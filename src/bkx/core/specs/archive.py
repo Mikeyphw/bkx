@@ -7,9 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
-from .backup import CompressionProfile, DEFAULT_COMPRESSION
+from .backup import DEFAULT_COMPRESSION, CompressionProfile
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import NamedTuple
 
 
@@ -23,7 +22,7 @@ class Timing(NamedTuple):
 class RunListResult:
     """Result of listing runs."""
 
-    runs: tuple["RunSummary", ...]
+    runs: tuple[RunSummary, ...]
     total_count: int
     limit: int
 

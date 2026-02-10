@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-import pytest
 from typer.testing import CliRunner
 
 from bkx.cli.app import app
 from bkx.cli.exit_codes import (
     EXIT_OK,
-    EXIT_GENERIC,
-    EXIT_USAGE,
-    EXIT_NOT_FOUND,
-    EXIT_PERMISSION,
-    EXIT_EXTERNAL,
 )
 
 

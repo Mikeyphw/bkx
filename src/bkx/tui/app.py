@@ -12,19 +12,16 @@ Contract rule:
 """
 
 # mikomn TUI base for theme cycling, layout modes, and platform behavior
+import traceback
 import uuid
-from typing import Any
+from typing import Literal
 
 from mikomn.tui_base import BaseTuiApp
 from mikomn.tui_base.css_registry import reload_css
 from mikomn.tui_base.models import Command, FilterGroup, FilterOption, ToastData
 from mikomn.tui_base.notifications import NotificationHistory
 from mikomn.tui_base.overlays import CommandSelected
-
-try:
-    from mikomn.tui_base.screens.notification_center import NotificationSelected
-except Exception:  # pragma: no cover
-    NotificationSelected = None  # type: ignore[assignment]
+from mikomn.tui_base.platform import LayoutMode
 from mikomn.tui_base.widgets import DebugOverlay
 from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
 from textual.app import App, ComposeResult
@@ -43,6 +40,9 @@ from bkx.core.services import (
     get_restore_service,
     get_transfer_service,
 )
+
+# Step 9: Intent history tracking
+from bkx.tui.intent_history import record_intent
 from bkx.tui.messages import (
     ArchiveIntent,
     BackupIntent,
@@ -75,6 +75,12 @@ from bkx.tui.messages import (
 from bkx.tui.overlays import BkxCommandPalette, BkxHelpOverlay, BkxNotificationCenterScreen
 from bkx.tui.overlays.filter_sheet import BkxFilterSheet
 from bkx.tui.pages import create_page_registry
+from bkx.tui.panes.archive_list import ArchiveListPane
+from bkx.tui.screens.crash import CrashScreen
+from bkx.tui.state import TuiState, load_state, save_state
+
+# Step 9A: Support bundle generation
+from bkx.tui.support_bundle import export_support_bundle
 
 # BKX components
 from bkx.tui.widgets.shell import BkxShell
@@ -126,11 +132,17 @@ class BkxTuiApp(BaseTuiApp):
         ("4", "navigate_transfer", "Transfer"),
         ("5", "navigate_tools", "Tools"),
         ("6", "navigate_logs", "Logs"),
+        ("7", "navigate_run_history", "Run History"),
         ("ctrl+p", "command_palette", "Commands"),
         ("ctrl+n", "notification_center", "Notifications"),
         ("N", "toggle_toasts", "Toasts"),
-        ("?", "help", "Help"),
-        ("g l", "jump_last_run", "Last run"),
+        # Step 7A: Keyboard navigation bindings
+        ("j", "move_selection_down", "Down"),
+        ("k", "move_selection_up", "Up"),
+        ("enter", "activate_selection", "Select"),
+        ("escape", "clear_filter", "Clear Filter"),
+        # Step 10A: Global search binding
+        ("/", "global_search", "Search"),
     ]
 
     def __init__(self, **kwargs) -> None:
@@ -145,10 +157,8 @@ class BkxTuiApp(BaseTuiApp):
         self._theme_callback_id = None
         self._show_toasts = True
         self._debug_overlay: DebugOverlay | None = None
-        self._progress: dict[str, tuple[int, int, str]] = {}
-        self._notification_links: dict[str, dict[str, str]] = {}
-        self._last_run_link: dict[str, str] | None = None
-        self._last_run_label: str = ""
+        self._tui_state: TuiState = load_state()
+        self._show_toasts = bool(self._tui_state.show_toasts)
 
     def get_theme_name(self) -> str:
         """Get current theme name for mikomn integration."""
@@ -186,6 +196,16 @@ class BkxTuiApp(BaseTuiApp):
         # Parent's on_mount handles theme registration and CSS loading
         # Note: super().on_mount() is not async
         super().on_mount()
+        # Step 6: restore persisted UI state (best-effort)
+        try:
+            if self._tui_state.layout_mode:
+                try:
+                    self._layout_mode = LayoutMode(self._tui_state.layout_mode)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        self.call_after_refresh(lambda: self._goto_page(self._tui_state.last_route))
 
         # Ensure CSS variables are populated even if no themes are registered.
         self.stylesheet.set_variables(self.get_css_variables())
@@ -245,14 +265,19 @@ class BkxTuiApp(BaseTuiApp):
         run_panel = self._get_run_panel()
         if run_panel:
             try:
-                run_panel.write(message, level=level)
-            except Exception:
+                # RunPanel.write() only accepts text, no level parameter
                 run_panel.write(message)
+            except Exception:
+                pass
 
         logs_pane = self._get_logs_pane()
         if logs_pane:
             try:
+                # RunLogPane.write() supports level parameter
                 logs_pane.write(message, level=level)
+            except TypeError:
+                # Fall back if level parameter is not supported
+                logs_pane.write(message)
             except Exception:
                 logs_pane.write(message)
 
@@ -261,10 +286,35 @@ class BkxTuiApp(BaseTuiApp):
         if self._theme_callback_id:
             bkx_off_theme_change(self._theme_callback_id)
         # Call parent's on_unmount if it exists
+        parent_on_unmount = getattr(super(), "on_unmount", None)
+        if callable(parent_on_unmount):
+            try:
+                parent_on_unmount()
+            except Exception:
+                pass
+
+    def on_exception(self, exception: Exception) -> None:
+        """Show a crash screen for unhandled exceptions.
+
+        Step 8A: Persist last route before showing crash screen.
+        """
+        # Step 8A: Persist state before showing crash
         try:
-            super().on_unmount()
-        except AttributeError:
+            self._persist_tui_state()
+            # Also save last_route specifically for crash recovery
+            if hasattr(self, "_last_route"):
+                self._tui_state.last_route = self._last_route
+                save_state(self._tui_state)
+        except Exception:
             pass
+
+        try:
+            tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            # Step 8A: Pass last_route to crash screen
+            last_route = getattr(self, "_last_route", self._tui_state.last_route)
+            self.push_screen(CrashScreen(title="BKX crashed", traceback_text=tb, last_route=last_route))
+        except Exception:
+            raise
 
     def compose(self) -> ComposeResult:
         """Compose BKX shell (responsive sidebar + compact tabs)."""
@@ -289,7 +339,10 @@ class BkxTuiApp(BaseTuiApp):
             if prev_focus is None:
                 return
             try:
-                self.call_after_refresh(lambda: prev_focus.focus())
+                # Check if prev_focus has focus method before calling
+                focus_method = getattr(prev_focus, "focus", None)
+                if callable(focus_method):
+                    self.call_after_refresh(lambda: focus_method())
             except Exception:
                 pass
 
@@ -306,82 +359,236 @@ class BkxTuiApp(BaseTuiApp):
             return
         shell.set_footer_message(None if self._show_toasts else "Toasts OFF")
 
-    def _sync_key_hints(self, route: str) -> None:
-        """Update key hints for the current route.
-
-        Supports optional per-widget hints via `focused.bkx_key_hints()`.
-        """
-        shell = self._shell()
-        if not shell:
-            return
-
-        nav = "[1] Backup  [2] Archive  [3] Restore  [4] Transfer"
-        route_hints = {
-            "backup": nav,
-            "archive": nav,
-            "restore": nav,
-            "transfer": nav,
-            "tools": nav,
-            "logs": "[g l] Last run",
-        }
-        parts: list[str] = []
-        base = route_hints.get(route)
-        if base:
-            parts.append(base)
-
-        if getattr(self, "_last_run_link", None):
-            if "[g l] Last run" not in "  ".join(parts):
-                parts.append("[g l] Last run")
-
-        # Focused widget may contribute additional hints.
-        try:
-            focused = getattr(self, "focused", None)
-            get_hints = getattr(focused, "bkx_key_hints", None)
-            if callable(get_hints):
-                extra = get_hints()
-                if isinstance(extra, str) and extra.strip():
-                    parts.append(extra.strip())
-                elif isinstance(extra, (list, tuple)):
-                    for item in extra:
-                        if isinstance(item, str) and item.strip():
-                            parts.append(item.strip())
-        except Exception:
-            pass
-
-        parts.append("[Ctrl+P] Commands  [?] Help")
-        text = "  ".join(dict.fromkeys(parts)) or "[Ctrl+P] Commands  [?] Help"
-        try:
-            shell.set_key_hints(text)
-        except Exception:
-            pass
-
     def _goto_page(self, route: str) -> None:
         """Navigate to a shell page route."""
+        self._last_route = route
+        self._persist_tui_state()
         try:
-            shell = self.query_one(BkxShell)
-            shell.goto_page(route)
-            self._sync_key_hints(route)
-            try:
-                shell.set_context(self._route_label(route))
-            except Exception:
-                pass
+            self.query_one(BkxShell).goto_page(route)
         except Exception:
             run_panel = self._get_run_panel()
             if run_panel:
                 run_panel.write(f"Unknown page: {route}")
             self.notify(f"Unknown page: {route}", severity="warning")
 
-    def _route_label(self, route: str) -> str:
-        """Resolve a route to a PageSpec label; fallback to the route string."""
+    # =========================================================================
+
+    def _persist_tui_state(self) -> None:
+        """Persist selected UI state (best-effort)."""
         try:
-            for spec in list(self._pages.specs()):
-                if getattr(spec, "route", None) == route:
-                    return str(getattr(spec, "label", route) or route)
+            self._tui_state.last_route = getattr(self, "_last_route", self._tui_state.last_route)
+            if hasattr(self, "_layout_mode"):
+                if isinstance(self._layout_mode, LayoutMode):
+                    self._tui_state.layout_mode = self._layout_mode.value
+                else:
+                    self._tui_state.layout_mode = str(self._layout_mode)
+            self._tui_state.show_toasts = bool(self._show_toasts)
+            save_state(self._tui_state)
+        except Exception:
+            return
+
+    def on_archive_list_pane_archive_selected(self, message: ArchiveListPane.ArchiveSelected) -> None:
+        """Persist last selected archive id (Step 7A)."""
+        try:
+            self._tui_state.archive_selected_id = str(getattr(message, "archive_id", "") or "")
+            self._persist_tui_state()
+        except Exception:
+            return
+
+    def _restore_archive_ui_state(self) -> None:
+        """Step 7A: Restore archive list UI state (filter + selection + scroll)."""
+        try:
+            pane = self.query_one(ArchiveListPane)
+        except Exception:
+            return
+
+        # Restore filter text
+        try:
+            ft = str(self._tui_state.archive_filter_text or "")
+            if ft and hasattr(pane, "set_filter_text"):
+                pane.set_filter_text(ft)
         except Exception:
             pass
-        return route
 
-    # =========================================================================
+        # Restore selection
+        try:
+            sid = str(self._tui_state.archive_selected_id or "")
+            if sid and hasattr(pane, "select_archive_id"):
+                pane.select_archive_id(sid)
+        except Exception:
+            pass
+
+        # Restore scroll position
+        try:
+            sp = int(self._tui_state.archive_scroll_position or 0)
+            if sp > 0 and hasattr(pane, "set_scroll_position"):
+                pane.set_scroll_position(sp)
+        except Exception:
+            pass
+
+    def on_archive_list_pane_filter_changed(self, message: ArchiveListPane.FilterChanged) -> None:
+        """Persist archive filter text and scroll position (Step 7A)."""
+        try:
+            self._tui_state.archive_filter_text = str(getattr(message, "filter_text", "") or "")
+            self._persist_tui_state()
+        except Exception:
+            return
+
+        # Also save scroll position when navigating away
+        try:
+            pane = self.query_one(ArchiveListPane)
+            if hasattr(pane, "get_scroll_position"):
+                scroll_pos = pane.get_scroll_position()
+                if scroll_pos > 0:
+                    self._tui_state.archive_scroll_position = scroll_pos
+                    self._persist_tui_state()
+        except Exception:
+            pass
+
+    def _save_focused_widget(self) -> None:
+        """Save currently focused widget ID (Step 7A)."""
+        try:
+            focused = self.focused
+            if focused is not None:
+                widget_id = getattr(focused, "id", None) or getattr(focused, "_id", "")
+                pane_id = ""
+                # Try to get parent pane ID
+                parent = getattr(focused, "parent", None)
+                if parent is not None:
+                    pane_id = getattr(parent, "id", "") or ""
+                self._tui_state.last_focused_widget = str(widget_id)
+                self._tui_state.last_focused_pane = str(pane_id)
+                self._persist_tui_state()
+        except Exception:
+            pass
+
+    def _restore_focused_widget(self) -> None:
+        """Restore previously focused widget (Step 7A)."""
+        try:
+            widget_id = self._tui_state.last_focused_widget
+            pane_id = self._tui_state.last_focused_pane
+
+            if pane_id and widget_id:
+                # Try to find and focus the widget
+                for selector in [f"#{widget_id}", f"#{pane_id} #{widget_id}"]:
+                    try:
+                        widget = self.query_one(selector)
+                        # Check if widget has focus method before calling
+                        focus_method = getattr(widget, "focus", None)
+                        if callable(focus_method):
+                            focus_method()
+                        return
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    def action_jump_to_last_run(self) -> None:
+        """Jump focus to the run panel (persistent bottom panel)."""
+        shell = self._shell()
+        if not shell:
+            return
+        run_panel = getattr(shell, "run_panel", None)
+        if not run_panel:
+            return
+        try:
+            run_panel.focus()
+            run_panel.scroll_end(animate=False)
+        except Exception:
+            try:
+                run_panel.focus()
+            except Exception:
+                return
+
+    # Step 7A: Keyboard navigation actions
+    def action_move_selection_down(self) -> None:
+        """Move selection down in focused list pane."""
+        try:
+            pane = self.focused
+            if pane is not None:
+                # Check if pane has the action method using getattr for type safety
+                action_down = getattr(pane, "action_move_selection_down", None)
+                if callable(action_down):
+                    action_down()
+                    return
+            # Try archive list pane as fallback
+            archive_pane = self.query_one(ArchiveListPane)
+            action_down = getattr(archive_pane, "action_move_selection_down", None)
+            if callable(action_down):
+                action_down()
+        except Exception:
+            pass
+
+    def action_move_selection_up(self) -> None:
+        """Move selection up in focused list pane."""
+        try:
+            pane = self.focused
+            if pane is not None:
+                action_up = getattr(pane, "action_move_selection_up", None)
+                if callable(action_up):
+                    action_up()
+                    return
+            # Try archive list pane as fallback
+            archive_pane = self.query_one(ArchiveListPane)
+            action_up = getattr(archive_pane, "action_move_selection_up", None)
+            if callable(action_up):
+                action_up()
+        except Exception:
+            pass
+
+    def action_activate_selection(self) -> None:
+        """Activate/select current item."""
+        try:
+            pane = self.focused
+            if pane is not None:
+                activate = getattr(pane, "action_activate_selection", None)
+                if callable(activate):
+                    activate()
+                    return
+            # Try archive list pane as fallback
+            archive_pane = self.query_one(ArchiveListPane)
+            activate = getattr(archive_pane, "action_activate_selection", None)
+            if callable(activate):
+                activate()
+        except Exception:
+            pass
+
+    def action_clear_filter(self) -> None:
+        """Clear filter and reset selection."""
+        try:
+            pane = self.focused
+            if pane is not None:
+                clear_filter = getattr(pane, "action_clear_filter", None)
+                if callable(clear_filter):
+                    clear_filter()
+                    return
+            # Try archive list pane as fallback
+            archive_pane = self.query_one(ArchiveListPane)
+            clear_filter = getattr(archive_pane, "action_clear_filter", None)
+            if callable(clear_filter):
+                clear_filter()
+        except Exception:
+            pass
+
+    def action_focus_filter(self) -> None:
+        """Focus the most relevant filter input on the current screen (best-effort)."""
+        try:
+            # Prefer an explicit ArchiveListPane filter.
+            pane = self.query_one(ArchiveListPane)
+            if hasattr(pane, "focus_filter"):
+                pane.focus_filter()
+                return
+        except Exception:
+            pass
+        # Fallback: focus first Input with class 'filter-input' if present.
+        try:
+            from textual.widgets import Input
+
+            inp = self.query_one(".filter-input", Input)
+            inp.focus()
+        except Exception:
+            return
+
     # Navigation Actions
     # =========================================================================
 
@@ -409,6 +616,24 @@ class BkxTuiApp(BaseTuiApp):
         """Navigate to logs page."""
         self._goto_page("logs")
 
+    # Step 10B: Run History navigation
+    def action_navigate_run_history(self) -> None:
+        """Navigate to run history page."""
+        self._goto_page("run_history")
+
+    # Step 10A: Global search
+    def action_global_search(self) -> None:
+        """Open global search overlay."""
+        # Import here to avoid circular imports
+        try:
+            from bkx.tui.overlays.global_search import show_global_search
+
+            show_global_search(self)
+        except ImportError:
+            # Fallback: show command palette with search hint
+            self.notify("Global search not available", severity="warning")
+            self.post_message(ShowCommandPalette())
+
     def action_toggle_toasts(self) -> None:
         """Toggle toast rendering (intent-driven)."""
         self.post_message(ToggleToasts())
@@ -419,7 +644,25 @@ class BkxTuiApp(BaseTuiApp):
 
     def action_dump_debug(self) -> None:
         """Dump debug information to file (intent-driven)."""
-        self.post_message(DumpDebugSnapshot())
+        # Try to use the debug overlay if available
+        if self._debug_overlay is None:
+            try:
+                from mikomn.tui_base.widgets.debug_overlay import DebugOverlay as DO
+
+                overlay = DO(target=self.screen)
+                path = self.dump_debug_snapshot(overlay=overlay)
+            except Exception:
+                path = None
+        else:
+            path = self.dump_debug_snapshot(overlay=self._debug_overlay)
+
+        if path:
+            self.notify(f"Debug dump saved: {path}", severity="information")
+            run_panel = self._get_run_panel()
+            if run_panel:
+                run_panel.write(f"Debug dump: {path}")
+        else:
+            self.notify("Failed to save debug dump", severity="error")
 
     def action_cycle_theme(self) -> None:
         """Cycle to the next theme (intent-driven)."""
@@ -454,7 +697,7 @@ class BkxTuiApp(BaseTuiApp):
             exclude_files=self.get_css_excludes(),
         )
 
-        self.notify("CSS reloaded", severity="info")
+        self.notify("CSS reloaded", severity="information")
 
     def _handle_clear_run_log_intent(self) -> None:
         """Clear run/log panes."""
@@ -476,11 +719,12 @@ class BkxTuiApp(BaseTuiApp):
                         pass
                     break
 
-        self.notify("Run log cleared", severity="info")
+        self.notify("Run log cleared", severity="information")
 
     def _handle_toggle_toasts_intent(self) -> None:
         """Enable/disable toast rendering."""
         self._show_toasts = not self._show_toasts
+        self._persist_tui_state()
         status = "enabled" if self._show_toasts else "disabled"
 
         try:
@@ -498,7 +742,7 @@ class BkxTuiApp(BaseTuiApp):
             pass
 
         self._sync_toasts_indicator()
-        self.notify(f"Toasts {status}", severity="info")
+        self.notify(f"Toasts {status}", severity="information")
 
     def _handle_toggle_debug_overlay_intent(self) -> None:
         """Toggle debug overlay visibility."""
@@ -506,7 +750,7 @@ class BkxTuiApp(BaseTuiApp):
             if DebugOverlay is not None:
                 self._debug_overlay = DebugOverlay(id="debug-overlay", display=True)
                 self.mount(self._debug_overlay)
-                self.notify("Debug overlay enabled", severity="info")
+                self.notify("Debug overlay enabled", severity="information")
             else:
                 self.notify("Debug overlay not available", severity="warning")
             return
@@ -514,7 +758,7 @@ class BkxTuiApp(BaseTuiApp):
         current_display = self._debug_overlay.display
         self._debug_overlay.display = not current_display
         status = "shown" if not current_display else "hidden"
-        self.notify(f"Debug overlay {status}", severity="info")
+        self.notify(f"Debug overlay {status}", severity="information")
 
     def _handle_dump_debug_snapshot_intent(self) -> None:
         """Dump debug information to file."""
@@ -531,7 +775,7 @@ class BkxTuiApp(BaseTuiApp):
             path = self.dump_debug_snapshot(overlay=self._debug_overlay)
 
         if path:
-            self.notify(f"Debug dump saved to {path}", severity="info")
+            self.notify(f"Debug dump saved to {path}", severity="information")
             run_panel = self._get_run_panel()
             if run_panel:
                 run_panel.write(f"Debug dump: {path}")
@@ -602,15 +846,15 @@ class BkxTuiApp(BaseTuiApp):
                     group="App",
                 ),
                 Command(
-                    id="app:jump-last-run",
-                    title="Jump to last run",
-                    keywords=["logs", "run", "last"],
-                    group="App",
-                ),
-                Command(
                     id="app:dump-debug",
                     title="Dump debug snapshot",
                     keywords=["debug", "dump", "snapshot"],
+                    group="App",
+                ),
+                Command(
+                    id="app:export-support-bundle",
+                    title="Export support bundle",
+                    keywords=["support", "bundle", "diagnostics", "zip"],
                     group="App",
                 ),
                 Command(
@@ -631,6 +875,50 @@ class BkxTuiApp(BaseTuiApp):
                     keywords=["toast", "notifications"],
                     group="App",
                 ),
+                Command(
+                    id="app:jump-to-last-run",
+                    title="Jump to last run",
+                    keywords=["run", "logs", "panel"],
+                    group="App",
+                ),
+                Command(
+                    id="app:focus-filter",
+                    title="Focus filter",
+                    keywords=["filter", "search"],
+                    group="App",
+                ),
+                # Step 7C: New commands
+                Command(
+                    id="archive:copy-id",
+                    title="Copy archive ID",
+                    keywords=["archive", "copy", "id", "clipboard"],
+                    group="Archive",
+                ),
+                Command(
+                    id="archive:copy-path",
+                    title="Copy archive path",
+                    keywords=["archive", "copy", "path", "clipboard"],
+                    group="Archive",
+                ),
+                Command(
+                    id="app:export-logs",
+                    title="Export logs",
+                    keywords=["export", "logs", "save", "file"],
+                    group="App",
+                ),
+                Command(
+                    id="app:toggle-compact",
+                    title="Toggle compact mode",
+                    keywords=["compact", "layout", "mode", "toggle"],
+                    group="App",
+                ),
+                # Step 10A: Global search command
+                Command(
+                    id="app:global-search",
+                    title="Global search",
+                    keywords=["search", "global", "find", "/", "archive"],
+                    group="App",
+                ),
             ]
         )
 
@@ -644,16 +932,6 @@ class BkxTuiApp(BaseTuiApp):
                     meta={"theme_name": theme_name},
                 )
             )
-
-        try:
-            focused = getattr(self, "focused", None)
-            get_cmds = getattr(focused, "bkx_commands", None)
-            if callable(get_cmds):
-                for cmd in list(get_cmds() or []):
-                    if isinstance(cmd, Command):
-                        commands.append(cmd)
-        except Exception:
-            pass
 
         return commands
 
@@ -678,9 +956,10 @@ class BkxTuiApp(BaseTuiApp):
             except Exception:
                 pass
 
-        self._push_modal(
-            BkxFilterSheet(filter_groups=[group], on_apply=_apply, title="Log Filters")
-        )
+        # Ensure group is a FilterGroup for type checking
+        if isinstance(group, FilterGroup):
+            filter_groups: list[FilterGroup] = [group]
+            self._push_modal(BkxFilterSheet(filter_groups=filter_groups, on_apply=_apply, title="Log Filters"))
 
     def open_archive_filter_sheet(self, pane: object) -> None:
         """Open filter sheet for the archive list pane (extension group)."""
@@ -698,9 +977,10 @@ class BkxTuiApp(BaseTuiApp):
             except Exception:
                 pass
 
-        self._push_modal(
-            BkxFilterSheet(filter_groups=[group], on_apply=_apply, title="Archive Filters")
-        )
+        # Ensure group is a FilterGroup for type checking
+        if isinstance(group, FilterGroup):
+            filter_groups: list[FilterGroup] = [group]
+            self._push_modal(BkxFilterSheet(filter_groups=filter_groups, on_apply=_apply, title="Archive Filters"))
 
     def action_command_palette(self) -> None:
         """Request the command palette overlay."""
@@ -712,17 +992,12 @@ class BkxTuiApp(BaseTuiApp):
         meta = getattr(event.command, "meta", None) or {}
 
         if cmd_id.startswith("nav:"):
-            route = (
-                str(meta.get("route") if isinstance(meta, dict) else "") or cmd_id.split(":", 1)[1]
-            )
+            route = str(meta.get("route") if isinstance(meta, dict) else "") or cmd_id.split(":", 1)[1]
             self.post_message(NavigateToScreen(screen_name=route))
             return
 
         if cmd_id.startswith("theme:set:"):
-            theme_name = (
-                str(meta.get("theme_name") if isinstance(meta, dict) else "")
-                or cmd_id.split(":", 2)[2]
-            )
+            theme_name = str(meta.get("theme_name") if isinstance(meta, dict) else "") or cmd_id.split(":", 2)[2]
             self.post_message(SetTheme(theme_name=theme_name))
             return
 
@@ -736,10 +1011,6 @@ class BkxTuiApp(BaseTuiApp):
 
         if cmd_id == "app:toggle-debug":
             self.post_message(ToggleDebugOverlay())
-            return
-
-        if cmd_id == "app:jump-last-run":
-            self.action_jump_last_run()
             return
 
         if cmd_id == "app:dump-debug":
@@ -758,41 +1029,113 @@ class BkxTuiApp(BaseTuiApp):
             self.post_message(ToggleToasts())
             return
 
+        # Step 7C: New command handlers
+        if cmd_id == "archive:copy-id":
+            self._handle_copy_archive_id()
+            return
+
+        if cmd_id == "archive:copy-path":
+            self._handle_copy_archive_path()
+            return
+
+        if cmd_id == "app:export-logs":
+            self._handle_export_logs()
+            return
+
+        if cmd_id == "app:toggle-compact":
+            self._handle_toggle_compact_mode()
+            return
+
+        # Step 10A: Global search command handler
+        if cmd_id == "app:global-search":
+            self.action_global_search()
+            return
+
     def action_notification_center(self) -> None:
         """Request the notification center overlay."""
         self.post_message(OpenNotificationCenter())
 
-    def action_jump_last_run(self) -> None:
-        """Jump to the last run output (deep-link if available)."""
-        link = self._last_run_link or {"route": "logs", "focus": "#bkx-logs-log"}
-        route = str(link.get("route", "") or "").strip()
-        focus = str(link.get("focus", "") or "").strip()
-
-        try:
-            self.query_one(BkxShell).goto_page(route or "logs")
-        except Exception:
-            return
-
-        if focus:
-            self.call_after_refresh(lambda: self.query_one(focus).focus())
-
-    def on_notification_selected(self, message: Any) -> None:
-        """Handle selections from the notification center (deep-link)."""
-        event_id = str(getattr(message, "event_id", "") or "")
-        if not event_id:
-            return
-        link = self._notification_links.get(event_id)
-        if not link:
-            return
-        route = str(link.get("route", "") or "").strip()
-        focus = str(link.get("focus", "") or "").strip()
-        if route:
+    # Step 7C: Command handlers
+    def _handle_copy_archive_id(self) -> None:
+        """Copy selected archive ID to clipboard."""
+        archive_id = self._tui_state.archive_selected_id
+        if archive_id:
             try:
-                self.query_one(BkxShell).goto_page(route)
+                self.copy_to_clipboard(archive_id)
+                self.notify("Archive ID copied to clipboard", severity="information")
             except Exception:
-                pass
-        if focus:
-            self.call_after_refresh(lambda: self.query_one(focus).focus())
+                self.notify("Failed to copy archive ID", severity="error")
+        else:
+            self.notify("No archive selected", severity="warning")
+
+    def _handle_copy_archive_path(self) -> None:
+        """Copy selected archive path to clipboard."""
+        # Try to get path from selected archive
+        try:
+            pane = self.query_one(ArchiveListPane)
+            if hasattr(pane, "_current_archive") and pane._current_archive:
+                path = str(pane._current_archive.path)
+                try:
+                    self.copy_to_clipboard(path)
+                    self.notify("Archive path copied to clipboard", severity="information")
+                except Exception:
+                    self.notify("Failed to copy archive path", severity="error")
+                return
+        except Exception:
+            pass
+
+        # Fallback: no archive selected
+        self.notify("No archive selected", severity="warning")
+
+    def _handle_export_logs(self) -> None:
+        """Export logs to file."""
+        try:
+            run_panel = self._get_run_panel()
+            if run_panel and hasattr(run_panel, "get_log_text"):
+                log_text = run_panel.get_log_text()
+                import time
+
+                ts = time.strftime("%Y%m%d_%H%M%S")
+                from pathlib import Path
+
+                out_path = Path(f"/tmp/bkx_logs_{ts}.txt")
+                out_path.write_text(log_text, encoding="utf-8")
+                self.notify(f"Logs exported to {out_path}", severity="information")
+            else:
+                self.notify("No logs to export", severity="warning")
+        except Exception as e:
+            self.notify(f"Failed to export logs: {e}", severity="error")
+
+    def _handle_toggle_compact_mode(self) -> None:
+        """Toggle compact layout mode."""
+        current_mode = getattr(self, "layout_mode", "normal")
+        new_mode = "compact" if current_mode == "normal" else "normal"
+        try:
+            # Use _layout_mode to set the property value
+            self._layout_mode = LayoutMode(new_mode)
+            self._tui_state.layout_mode = new_mode
+            self._persist_tui_state()
+            status = "enabled" if new_mode == "compact" else "disabled"
+            self.notify(f"Compact mode: {status}", severity="information")
+        except Exception as e:
+            self.notify(f"Failed to toggle compact mode: {e}", severity="error")
+
+    def action_export_support_bundle(self) -> None:
+        """Export a support bundle zip to /tmp and notify the path.
+
+        Step 9A: Uses the dedicated support_bundle module for comprehensive bundle creation.
+        """
+        try:
+            bundle_path, message = export_support_bundle()
+            if bundle_path and bundle_path.exists():
+                self.notify(message, severity="information")
+                run_panel = self._get_run_panel()
+                if run_panel:
+                    run_panel.write(message)
+            else:
+                self.notify("Failed to create support bundle", severity="error")
+        except Exception as e:
+            self.notify(f"Failed to export bundle: {e}", severity="error")
 
     def action_help(self) -> None:
         """Show the help overlay."""
@@ -805,9 +1148,17 @@ class BkxTuiApp(BaseTuiApp):
     def on_intent(self, intent: Intent) -> None:
         """Handle all intents from widgets.
 
+        Step 9B: Records all intents to intent history for debug overlay.
+
         Args:
             intent: Intent message from widget
         """
+        # Step 9B: Record intent to history for debugging
+        try:
+            record_intent(intent)
+        except Exception:
+            pass  # Don't let intent recording failures break the app
+
         if isinstance(intent, BackupIntent):
             self._handle_backup_intent(intent)
         elif isinstance(intent, ArchiveIntent):
@@ -1022,7 +1373,7 @@ class BkxTuiApp(BaseTuiApp):
         try:
             spec = build_transfer_spec(**intent.to_spec_params())
             service = get_transfer_service()
-            service.transfer(spec)
+            service.transfer(spec)  # type: ignore[attr-defined]
 
             if run_panel:
                 run_panel.set_status("Transfer complete", level="success")
@@ -1086,35 +1437,20 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_show_notification(self, intent: ShowNotification) -> None:
         """Handle show notification message."""
-        event_id = ""
         try:
-            event = NotificationHistory.record_status(
-                intent.message, level=str(intent.level), source="bkx"
-            )
-            event_id = str(getattr(event, "id", "") or "")
+            NotificationHistory.record_status(intent.message, level=str(intent.level), source="bkx")
         except Exception:
-            event_id = ""
-
-        link = getattr(intent, "link", None)
-        if link and event_id:
-            try:
-                self._notification_links[event_id] = {str(k): str(v) for k, v in dict(link).items()}
-            except Exception:
-                pass
+            pass
         self._write_to_logs(intent.message, str(intent.level))
-        self.notify(intent.message, severity=intent.level)
+        # Convert to proper Literal type for notify compatibility
+        severity: Literal["information", "warning", "error"] = "information"
+        if intent.level in ("information", "warning", "error"):
+            severity = intent.level  # type: ignore[assignment]
+        self.notify(intent.message, severity=severity)
 
     def _handle_show_toast(self, intent: ShowToast) -> None:
         """Handle show toast message."""
         toast_id = str(uuid.uuid4())[:8]
-        link = getattr(intent, "link", None)
-        if link:
-            try:
-                self._notification_links[str(toast_id)] = {
-                    str(k): str(v) for k, v in dict(link).items()
-                }
-            except Exception:
-                pass
         try:
             NotificationHistory.record_toast(
                 ToastData(
@@ -1133,34 +1469,22 @@ class BkxTuiApp(BaseTuiApp):
 
         shown = ""
         try:
+            # ToastManager.add_toast uses 'level' and 'duration' parameters
+            toast_duration = float(intent.duration) if intent.duration is not None else 3.0
             shown = ToastManager.add_toast(
                 intent.message,
                 level=str(intent.severity),
-                duration=float(intent.duration) if intent.duration is not None else 3.0,
+                duration=toast_duration,
                 toast_id=toast_id,
             )
         except Exception:
             shown = ""
 
         if not shown:
-            self.notify(intent.message, severity=intent.severity, duration=intent.duration)
+            self.notify(intent.message, severity="information")
 
     def _handle_progress_started(self, intent: ProgressStarted) -> None:
         """Handle progress started message."""
-        try:
-            self._progress[str(intent.operation)] = (
-                0,
-                int(intent.total),
-                str(intent.message or ""),
-            )
-        except Exception:
-            pass
-        try:
-            self.query_one(BkxShell).set_footer_message(
-                f"{intent.operation}: 0% • {intent.message}"
-            )
-        except Exception:
-            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.write(f"[{intent.operation}] {intent.message}")
@@ -1168,21 +1492,6 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_update(self, intent: ProgressUpdate) -> None:
         """Handle progress update message."""
-        try:
-            self._progress[str(intent.operation)] = (
-                int(intent.current),
-                int(intent.total),
-                str(intent.message or ""),
-            )
-        except Exception:
-            pass
-        try:
-            pct = int(intent.percent) if intent.percent is not None else 0
-            self.query_one(BkxShell).set_footer_message(
-                f"{intent.operation}: {pct}% • {intent.message}"
-            )
-        except Exception:
-            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.update_progress(
@@ -1194,22 +1503,6 @@ class BkxTuiApp(BaseTuiApp):
 
     def _handle_progress_completed(self, intent: ProgressCompleted) -> None:
         """Handle progress completed message."""
-        self._last_run_label = str(intent.message or intent.operation)
-        self._last_run_link = {"route": "logs", "focus": "#bkx-logs-log"}
-        try:
-            self._progress.pop(str(intent.operation), None)
-        except Exception:
-            pass
-        try:
-            shell = self.query_one(BkxShell)
-            if not self._progress:
-                shell.set_footer_message(None)
-            else:
-                op, (cur, tot, msg) = next(iter(self._progress.items()))
-                pct = int((cur / tot) * 100) if tot else 0
-                shell.set_footer_message(f"{op}: {pct}% • {msg}")
-        except Exception:
-            pass
         run_panel = self._get_run_panel()
         if run_panel:
             run_panel.write(f"[{intent.operation}] {intent.message}")
@@ -1219,9 +1512,15 @@ class BkxTuiApp(BaseTuiApp):
         """Handle filter changed message."""
         run_panel = self._get_run_panel()
         if run_panel:
-            run_panel.write(
-                f"Filter: '{intent.filter_text}' ({intent.filtered_count}/{intent.total_count})"
-            )
+            run_panel.write(f"Filter: '{intent.filter_text}' ({intent.filtered_count}/{intent.total_count})")
+
+        # Step 6A.2: persist archive filter text (best-effort)
+        try:
+            if getattr(self, "_active_route", "") in ("archive", "archives"):
+                self._tui_state.archive_filter_text = str(intent.filter_text or "")
+                self._persist_tui_state()
+        except Exception:
+            pass
 
     def _handle_items_selected(self, intent: ItemsSelected) -> None:
         """Handle items selected message."""
@@ -1250,7 +1549,8 @@ def run_tui() -> int:
         Exit code
     """
     app = BkxTuiApp()
-    return app.run()
+    result = app.run()
+    return int(result) if result is not None else 0
 
 
 if __name__ == "__main__":

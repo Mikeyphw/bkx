@@ -7,9 +7,8 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import NamedTuple
 
-from ..ports.tool_detector import ToolInfo, KNOWN_TOOLS, PREFERRED_TOOLS
+from ..ports.tool_detector import KNOWN_TOOLS, PREFERRED_TOOLS, ToolInfo
 
 
 class FallbackToolDetector:

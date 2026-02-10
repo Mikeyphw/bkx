@@ -18,30 +18,27 @@ Exit code discipline:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from bkx.cli.app import app
 from bkx.cli.exit_codes import (
-    error_to_exit_code,
-    EXIT_OK,
+    EXIT_EXTERNAL,
     EXIT_GENERIC,
-    EXIT_USAGE,
     EXIT_NOT_FOUND,
     EXIT_PERMISSION,
-    EXIT_EXTERNAL,
+    EXIT_USAGE,
+    error_to_exit_code,
 )
 from bkx.core.errors import (
     BkxError,
-    ValidationError,
+    ExternalToolError,
     NotFoundError,
     PermissionDeniedError,
-    ExternalToolError,
+    ValidationError,
 )
-
 
 runner = CliRunner()
 
@@ -170,9 +167,7 @@ class TestCLIDryRunMode:
             source = Path(tmpdir)
             output = Path(tmpdir) / "archive.tar"
             # --dry-run is a global flag
-            result = runner.invoke(
-                app, ["--dry-run", "archive", "create", str(source), "-o", str(output)]
-            )
+            result = runner.invoke(app, ["--dry-run", "archive", "create", str(source), "-o", str(output)])
 
             assert result.exit_code == 0
             # Should show plan, not create archive
@@ -207,9 +202,7 @@ class TestCLIDryRunMode:
             archive.write_text("content")
             dest = Path(tmpdir) / "restore"
             # --dry-run is a global flag
-            result = runner.invoke(
-                app, ["--dry-run", "restore", "extract", str(archive), "-d", str(dest)]
-            )
+            result = runner.invoke(app, ["--dry-run", "restore", "extract", str(archive), "-d", str(dest)])
 
             assert result.exit_code == 0
             # Should show plan, not extract

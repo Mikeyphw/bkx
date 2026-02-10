@@ -8,15 +8,11 @@ Contract rule:
 from __future__ import annotations
 
 import json
-import os
-import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 from bkx.core.ports.run_store import RunMetadata, RunStorePort
-
 
 # Default location for run history
 DEFAULT_RUNS_DIR = Path.home() / ".local" / "share" / "bkx" / "runs"
@@ -119,7 +115,7 @@ class JsonRunStore:
             return []
 
         records: list[_RunRecord] = []
-        with open(self._runs_file, "r") as f:
+        with open(self._runs_file) as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -261,7 +257,7 @@ class JsonRunStore:
         if count > 0:
             _ensure_runs_dir()
             # Create empty file
-            with open(self._runs_file, "w") as f:
+            with open(self._runs_file, "w"):
                 pass
 
         return count

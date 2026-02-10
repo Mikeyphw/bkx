@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from mikomn.tui_base.widgets.file_picker import FilterMode
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical
@@ -16,8 +17,7 @@ from textual.widgets import Button, Input, Label, Select, Static
 
 from bkx.tui.messages import ArchiveIntent
 from bkx.tui.panes.archive_list import ArchiveListPane
-from bkx.tui.widgets.file_picker import show_file_picker, show_destination_picker
-from mikomn.tui_base.widgets.file_picker import FilterMode
+from bkx.tui.widgets.file_picker import show_destination_picker, show_file_picker
 
 
 class ArchivePage(Container):
@@ -52,7 +52,7 @@ class ArchivePage(Container):
                 )
                 yield Container(
                     Label("Algorithm:", classes="form-label"),
-                    Select([("zstd","zstd"),("gzip","gzip"),("xz","xz")], prompt="Algorithm", id="algorithm-select"),
+                    Select([("zstd", "zstd"), ("gzip", "gzip"), ("xz", "xz")], prompt="Algorithm", id="algorithm-select"),
                     classes="form-row",
                 )
                 yield Container(
@@ -63,23 +63,32 @@ class ArchivePage(Container):
                 )
 
     @on(Button.Pressed, "#btn-select-sources")
-    async def _pick_sources(self) -> None:
-        selected = await show_file_picker(
+    def _pick_sources(self) -> None:
+        def on_selected(paths: list | None) -> None:
+            if paths:
+                self._sources = [Path(p) for p in paths]
+                self.query_one("#sources-input", Input).value = " ".join(str(p) for p in self._sources)
+
+        show_file_picker(
+            self.app,
             title="Select source files/folders",
-            mode=FilterMode.FILES_AND_DIRS,
+            mode=FilterMode.FILES_ONLY,  # type: ignore[arg-type]  # FILES_AND_DIRS not supported
             multiple=True,
+            on_select=on_selected,
+            on_cancel=None,
         )
-        if not selected:
-            return
-        self._sources = [Path(p) for p in selected]
-        self.query_one("#sources-input", Input).value = " ".join(str(p) for p in self._sources)
 
     @on(Button.Pressed, "#btn-select-output")
-    async def _pick_output_dir(self) -> None:
-        selected = await show_destination_picker(title="Select output directory")
-        if not selected:
-            return
-        self.query_one("#output-input", Input).value = str(selected)
+    def _pick_output_dir(self) -> None:
+        def on_confirm(path: Path) -> None:
+            self.query_one("#output-input", Input).value = str(path)
+
+        show_destination_picker(
+            self.app,
+            title="Select output directory",
+            on_confirm=on_confirm,
+            on_cancel=None,
+        )
 
     @on(Button.Pressed, "#btn-run")
     def _run(self) -> None:
@@ -103,4 +112,3 @@ class ArchivePage(Container):
                 verify=True,
             )
         )
-

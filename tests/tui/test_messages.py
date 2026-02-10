@@ -13,28 +13,27 @@ Contract rule:
 from __future__ import annotations
 
 from pathlib import Path
-import pytest
 
 from bkx.tui.messages import (
-    BackupIntent,
     ArchiveIntent,
-    RestoreIntent,
-    TransferIntent,
-    NavigateToScreen,
-    ShowCommandPalette,
-    CycleTheme,
-    SetBusy,
-    ClearBusy,
-    ShowNotification,
-    UpdateLog,
-    FilesSelected,
-    DirectoriesSelected,
-    ServiceResult,
-    BackupResult,
     ArchiveResult,
+    BackupIntent,
+    BackupResult,
+    ClearBusy,
+    CycleTheme,
+    DirectoriesSelected,
+    FilesSelected,
+    NavigateToScreen,
+    RestoreIntent,
     RestoreResult,
-    TransferResult,
     ServiceError,
+    ServiceResult,
+    SetBusy,
+    ShowCommandPalette,
+    ShowNotification,
+    TransferIntent,
+    TransferResult,
+    UpdateLog,
 )
 
 

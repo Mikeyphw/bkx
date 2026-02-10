@@ -1,0 +1,109 @@
+/* bkx/tui/css/panes/archive_details_drawer.tcss */
+
+/* ==========================================================================
+   Archive Details Drawer - Step 7B
+   ========================================================================== */
+
+.bkx-details-drawer {
+    width: 40;
+    height: 100%;
+    dock: right;
+    border-left: solid $accent;
+    background: $surface;
+}
+
+.bkx-details-drawer .drawer-content {
+    height: 100%;
+    padding: 1;
+}
+
+.bkx-details-drawer .drawer-header {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.bkx-details-drawer .drawer-title {
+    content-align: left;
+    width: auto;
+    text-style: bold;
+    color: $text;
+}
+
+.bkx-details-drawer .drawer-actions {
+    width: auto;
+    margin-left: 1;
+}
+
+.bkx-details-drawer .drawer-btn {
+    width: auto;
+    min-width: 5;
+    padding: 0 1;
+    margin-left: 0;
+    border: none;
+    background: $surface-lighten-1;
+}
+
+.bkx-details-drawer .drawer-btn:hover {
+    background: $surface-lighten-2;
+}
+
+.bkx-details-drawer .drawer-tabs {
+    margin-bottom: 1;
+}
+
+.bkx-details-drawer .tab-content {
+    height: auto;
+}
+
+.bkx-details-drawer .summary-content {
+    height: 100%;
+    border: none;
+    background: transparent;
+}
+
+.bkx-details-drawer .files-tree {
+    height: 100%;
+    border: none;
+}
+
+.bkx-details-drawer .errors-content {
+    height: 100%;
+    border: none;
+    background: transparent;
+}
+
+.bkx-details-drawer .raw-log-content {
+    height: 100%;
+    border: none;
+    background: transparent;
+}
+
+/* ==========================================================================
+   Dark theme adjustments
+   ========================================================================== */
+
+[data-theme="dark"] .bkx-details-drawer {
+    background: $surface-darken-1;
+}
+
+[data-theme="dark"] .bkx-details-drawer .drawer-btn {
+    background: $surface-darken-2;
+}
+
+[data-theme="dark"] .bkx-details-drawer .drawer-btn:hover {
+    background: $surface-darken-3;
+}
+
+/* ==========================================================================
+   Compact mode adjustments
+   ========================================================================== */
+
+.bkx-details-drawer.-compact {
+    width: 30;
+}
+
+.bkx-details-drawer.-compact .drawer-btn {
+    padding: 0;
+    min-width: 3;
+}
+

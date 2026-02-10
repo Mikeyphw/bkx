@@ -8,34 +8,33 @@ Contract rules:
 - All output through renderer, no print() in commands.
 """
 
+# ruff: noqa: B008 - Typer Argument/Option defaults are intentional and safe
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
-from typer import Option, Argument
+from typer import Argument, Option
 
-from bkx.cli.spec_builders import (
-    build_backup_spec,
-    build_archive_spec,
-    build_transfer_spec,
-    build_restore_spec,
-    build_archive_browse_spec,
-)
+from bkx.cli.exit_codes import error_to_exit_code
 from bkx.cli.render import get_renderer, render_result
-from bkx.cli.exit_codes import error_to_exit_code, EXIT_OK
+from bkx.cli.spec_builders import (
+    build_archive_browse_spec,
+    build_archive_spec,
+    build_backup_spec,
+    build_restore_spec,
+    build_transfer_spec,
+)
 from bkx.core.errors import BkxError
 from bkx.core.services import (
-    get_backup_service,
     get_archive_service,
-    get_transfer_service,
+    get_backup_service,
     get_restore_service,
     get_run_service,
+    get_transfer_service,
 )
 from bkx.tui.app import run_tui
-
 
 # Global options state (passed through context)
 _state = {
@@ -63,12 +62,8 @@ def _update_state(ctx: typer.Context) -> None:
 def main_callback(
     ctx: typer.Context,
     json: bool = Option(False, "--json", help="Output results as JSON"),
-    dry_run: bool = Option(
-        False, "--dry-run", "-n", help="Show what would be done without executing"
-    ),
-    progress: str = Option(
-        "auto", "--progress", help="Progress display: auto|plain|off", case_sensitive=False
-    ),
+    dry_run: bool = Option(False, "--dry-run", "-n", help="Show what would be done without executing"),
+    progress: str = Option("auto", "--progress", help="Progress display: auto|plain|off", case_sensitive=False),
     verbose: bool = Option(False, "--verbose", "-v", help="Enable verbose output"),
     trace: bool = Option(False, "--trace", help="Show full stack traces on error"),
 ) -> None:
@@ -78,6 +73,7 @@ def main_callback(
     **Verbs:** create, list, info, push, pull, extract, detect, explain, plan
     """
     _update_state(ctx)
+    _state["json"] = bool(_state["json"])
 
 
 # ============================================================================
@@ -91,12 +87,10 @@ app.add_typer(backup_app, name="backup")
 @backup_app.command("create")
 def backup_create(
     sources: list[Path] = Argument(..., help="Source paths to back up"),
-    destination: Optional[Path] = Option(
-        None, "-d", "--destination", help="Destination path for archive"
-    ),
+    destination: Path | None = Option(None, "-d", "--destination", help="Destination path for archive"),
     exclude: list[str] = Option([], "-e", "--exclude", help="Exclude glob patterns"),
     include: list[str] = Option([], "-i", "--include", help="Include glob patterns"),
-    name: Optional[str] = Option(None, "-n", "--name", help="Archive name"),
+    name: str | None = Option(None, "-n", "--name", help="Archive name"),
     verify: bool = Option(True, "--verify/--no-verify", help="Verify after creation"),
 ) -> None:
     """Create a backup archive from sources.
@@ -123,9 +117,7 @@ def backup_create(
                 "backup",
                 {
                     "sources": [str(s) for s in spec.sources],
-                    "destination": str(spec.effective_destination)
-                    if spec.effective_destination
-                    else None,
+                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
                     "archive_name": spec.archive_name,
                     "excludes": list(spec.excludes),
                     "compression": spec.compression.algorithm,
@@ -150,9 +142,7 @@ def backup_create(
 @backup_app.command("plan")
 def backup_plan(
     sources: list[Path] = Argument(..., help="Source paths to back up"),
-    destination: Optional[Path] = Option(
-        None, "-d", "--destination", help="Destination path for archive"
-    ),
+    destination: Path | None = Option(None, "-d", "--destination", help="Destination path for archive"),
 ) -> None:
     """Preview what a backup would do without executing.
 
@@ -173,9 +163,7 @@ def backup_plan(
             "backup",
             {
                 "sources": [str(s) for s in spec.sources],
-                "destination": str(spec.effective_destination)
-                if spec.effective_destination
-                else None,
+                "destination": str(spec.effective_destination) if spec.effective_destination else None,
                 "archive_name": spec.archive_name,
                 "excludes": list(spec.excludes),
                 "compression": spec.compression.algorithm,
@@ -226,9 +214,7 @@ def archive_create(
                 "archive",
                 {
                     "sources": [str(s) for s in spec.sources],
-                    "output": str(spec.effective_output_path)
-                    if spec.effective_output_path
-                    else None,
+                    "output": str(spec.effective_output_path) if spec.effective_output_path else None,
                     "excludes": list(spec.excludes),
                 },
             )
@@ -379,9 +365,7 @@ def archive_browse(
             renderer.render_message(f"Archive: {result.archive_path}", level="info")
             if result.query:
                 renderer.render_message(f"Query: '{result.query}'", level="info")
-            renderer.render_message(
-                f"Found {result.total_matches} matches ({len(result.entries)} shown):", level="info"
-            )
+            renderer.render_message(f"Found {result.total_matches} matches ({len(result.entries)} shown):", level="info")
             renderer.render_message(
                 f"  Files: {result.files_count} | Dirs: {result.directories_count} | Size: {result.total_size} bytes",
                 level="info",
@@ -435,12 +419,8 @@ def archive_verify(
             else:
                 renderer.render_message(f"❌ Archive verification failed: {archive}", level="error")
 
-            renderer.render_message(
-                f"  Checksums: {'✅ Valid' if result.checksums_valid else '❌ Invalid'}"
-            )
-            renderer.render_message(
-                f"  Structure: {'✅ Valid' if result.structure_valid else '❌ Invalid'}"
-            )
+            renderer.render_message(f"  Checksums: {'✅ Valid' if result.checksums_valid else '❌ Invalid'}")
+            renderer.render_message(f"  Structure: {'✅ Valid' if result.structure_valid else '❌ Invalid'}")
             renderer.render_message(f"  Entries checked: {result.entries_checked}")
 
             if result.entries_failed > 0:
@@ -494,15 +474,13 @@ def transfer_push(
                 {
                     "direction": "push",
                     "source": str(spec.effective_source) if spec.effective_source else None,
-                    "destination": str(spec.effective_destination)
-                    if spec.effective_destination
-                    else None,
+                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
                 },
             )
             return
 
         service = get_transfer_service()
-        result = service.transfer(spec)
+        result = service.push(spec)
         render_result(result, _state["json"])
 
     except BkxError as e:
@@ -539,15 +517,13 @@ def transfer_pull(
                 {
                     "direction": "pull",
                     "source": str(spec.effective_source) if spec.effective_source else None,
-                    "destination": str(spec.effective_destination)
-                    if spec.effective_destination
-                    else None,
+                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
                 },
             )
             return
 
         service = get_transfer_service()
-        result = service.transfer(spec)
+        result = service.pull(spec)
         render_result(result, _state["json"])
 
     except BkxError as e:
@@ -568,14 +544,10 @@ app.add_typer(restore_app, name="restore")
 @restore_app.command("extract")
 def restore_extract(
     archive: Path = Argument(..., help="Archive to restore from"),
-    destination: Optional[Path] = Option(None, "-d", "--destination", help="Destination path"),
-    overwrite: bool = Option(
-        False, "-o", "--overwrite", help="Overwrite existing files (DANGEROUS without --yes)"
-    ),
+    destination: Path | None = Option(None, "-d", "--destination", help="Destination path"),
+    overwrite: bool = Option(False, "-o", "--overwrite", help="Overwrite existing files (DANGEROUS without --yes)"),
     yes: bool = Option(False, "-y", "--yes", help="Skip confirmation and allow overwrite"),
-    no_fresh_dir: bool = Option(
-        False, "--no-fresh-dir", help="Don't create fresh directory (use destination as-is)"
-    ),
+    no_fresh_dir: bool = Option(False, "--no-fresh-dir", help="Don't create fresh directory (use destination as-is)"),
 ) -> None:
     """Restore full archive to destination.
 
@@ -601,9 +573,7 @@ def restore_extract(
                 "restore",
                 {
                     "archive": str(archive),
-                    "destination": str(spec.effective_destination)
-                    if spec.effective_destination
-                    else None,
+                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
                     "fresh_dir": spec.fresh_dir,
                     "requires_confirmation": spec.requires_confirmation,
                 },
@@ -613,13 +583,9 @@ def restore_extract(
         # Check if confirmation is needed
         if spec.requires_confirmation and not yes:
             if not _state["json"]:
-                renderer.render_message(
-                    f"⚠️  Destination '{spec.effective_destination}' exists!", level="warning"
-                )
+                renderer.render_message(f"⚠️  Destination '{spec.effective_destination}' exists!", level="warning")
                 renderer.render_message("  Files may be overwritten.", level="warning")
-                renderer.render_message(
-                    "  Use --yes to confirm or -d to specify a different destination.", level="info"
-                )
+                renderer.render_message("  Use --yes to confirm or -d to specify a different destination.", level="info")
                 sys.exit(1)
 
         service = get_restore_service()
@@ -673,11 +639,8 @@ def tools_explain() -> None:
     Example: bkx tools explain
     """
     from bkx.core.impl.tool_detector import get_tool_detector
-    from bkx.core.ports.archiver import ArchiverPort
-    from bkx.core.ports.hasher import HasherPort
-    from bkx.core.impl.archiver import get_archiver
-    from bkx.core.impl.hasher import get_hasher
 
+    renderer = get_renderer(_state["json"])
     detector = get_tool_detector()
     tools = detector.detect_all(("zstd", "tar", "rsync", "rclone", "sha256sum"))
 
@@ -692,19 +655,13 @@ def tools_explain() -> None:
         if tools.get("zstd", None) and tools["zstd"].available:
             renderer.render_message("  Archiver: zstd (external tool available)", level="success")
         else:
-            renderer.render_message(
-                "  Archiver: fallback implementation (no zstd)", level="warning"
-            )
+            renderer.render_message("  Archiver: fallback implementation (no zstd)", level="warning")
 
         # Hasher
         if tools.get("sha256sum", None) and tools["sha256sum"].available:
-            renderer.render_message(
-                "  Hasher: sha256sum (external tool available)", level="success"
-            )
+            renderer.render_message("  Hasher: sha256sum (external tool available)", level="success")
         else:
-            renderer.render_message(
-                "  Hasher: fallback implementation (no sha256sum)", level="warning"
-            )
+            renderer.render_message("  Hasher: fallback implementation (no sha256sum)", level="warning")
 
 
 # ============================================================================
@@ -759,15 +716,13 @@ def run_list(
                 indent=2,
             )
         else:
-            renderer.render_message(
-                f"Recent runs (showing {len(result.runs)} of {result.total_count}):", level="info"
-            )
+            renderer.render_message(f"Recent runs (showing {len(result.runs)} of {result.total_count}):", level="info")
             for run in result.runs:
-                status_icon = (
-                    "✅" if run.status == "success" else "❌" if run.status == "failed" else "⏳"
-                )
+                status_icon = "✅" if run.status == "success" else "❌" if run.status == "failed" else "⏳"
                 renderer.render_message(
-                    f"  {status_icon} {run.run_id[:8]} | {run.operation:8} | {run.status:7} | {run.source_count} sources | {run.started_at.strftime('%Y-%m-%d %H:%M')}"
+                    f"  {status_icon} {run.run_id[:8]} | {run.operation:8} | "
+                    f"{run.status:7} | {run.source_count} sources | "
+                    f"{run.started_at.strftime('%Y-%m-%d %H:%M')}"
                 )
 
     except BkxError as e:
@@ -800,12 +755,8 @@ def run_show(
                     "operation": result.operation,
                     "status": result.status,
                     "timing": {
-                        "started_at": result.timing.started_at.isoformat()
-                        if result.timing
-                        else None,
-                        "duration_seconds": result.timing.duration_seconds
-                        if result.timing
-                        else None,
+                        "started_at": result.timing.started_at.isoformat() if result.timing else None,
+                        "duration_seconds": result.timing.duration_seconds if result.timing else None,
                     }
                     if result.timing
                     else None,

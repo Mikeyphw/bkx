@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from .backup import Timing
 
@@ -65,6 +64,17 @@ class TransferResult:
         """Check if this was a pull operation."""
         return self.direction == "pull"
 
+    # Aliases for TUI compatibility
+    @property
+    def files_count(self) -> int:
+        """Alias for files_transferred for TUI compatibility."""
+        return self.files_transferred
+
+    @property
+    def bytes_total(self) -> int:
+        """Alias for bytes_transferred for TUI compatibility."""
+        return self.bytes_transferred
+
 
 @dataclass(frozen=True, kw_only=True)
 class TransferProgress:
@@ -84,7 +94,7 @@ class TransferProgress:
         return None
 
 
-def _human_bytes(n: int) -> str:
+def _human_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:

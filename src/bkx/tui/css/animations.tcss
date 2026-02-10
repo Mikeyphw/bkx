@@ -1,0 +1,227 @@
+/* bkx/src/bkx/tui/css/animations.tcss
+   Step 11B: Animations & Transitions
+   TCSS-compatible animation utilities.
+*/
+
+/* ==========================================================================
+   Transition Classes
+   ========================================================================== */
+
+/* Fast transitions (100ms) - for small UI changes */
+/* TCSS doesn't support 'transition' property */
+.bkx-transition-fast {
+    /* animation-duration: 0.1s; - implement via app logic */
+}
+
+/* Normal transitions (200ms) - for most UI changes */
+.bkx-transition-normal {
+    /* animation-duration: 0.2s; - implement via app logic */
+}
+
+/* Slow transitions (300ms) - for modal/overlay changes */
+.bkx-transition-slow {
+    /* animation-duration: 0.3s; - implement via app logic */
+}
+
+/* ==========================================================================
+   Animation Classes
+   ========================================================================== */
+
+/* Fade In */
+.bkx-animate-fade-in {
+    /* animation: bkx-fade-in 0.3s ease-out; */
+}
+
+/* @keyframes bkx-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+} */
+
+/* Fade Out */
+.bkx-animate-fade-out {
+    /* animation: bkx-fade-out 0.2s ease-in; */
+}
+
+/* @keyframes bkx-fade-out {
+    from { opacity: 1; }
+    to { opacity: 0; }
+} */
+
+/* Slide In (from right) */
+.bkx-animate-slide-in-right {
+    /* animation: bkx-slide-in-right 0.3s ease-out; */
+}
+
+/* @keyframes bkx-slide-in-right {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+} */
+
+/* Slide In (from bottom) */
+.bkx-animate-slide-in-bottom {
+    /* animation: bkx-slide-in-bottom 0.3s ease-out; */
+}
+
+/* @keyframes bkx-slide-in-bottom {
+    from { transform: translateY(100%); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+} */
+
+/* Pulse animation for progress indicators */
+.bkx-animate-pulse {
+    /* animation: bkx-pulse 2s ease-in-out infinite; */
+}
+
+/* @keyframes bkx-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+} */
+
+/* Subtle pulse for loading states */
+.bkx-animate-pulse-subtle {
+    /* animation: bkx-pulse-subtle 1.5s ease-in-out infinite; */
+}
+
+/* @keyframes bkx-pulse-subtle {
+    0%, 100% { opacity: 0.8; }
+    50% { opacity: 0.5; }
+} */
+
+/* Loading spinner rotation */
+.bkx-animate-spin {
+    /* animation: bkx-spin 1s linear infinite; */
+}
+
+/* @keyframes bkx-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+} */
+
+/* Success checkmark animation */
+.bkx-animate-success {
+    /* animation: bkx-success 0.4s ease-out; */
+}
+
+/* @keyframes bkx-success {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); opacity: 1; }
+} */
+
+/* Error shake animation */
+.bkx-animate-shake {
+    /* animation: bkx-shake 0.4s ease-in-out; */
+}
+
+/* @keyframes bkx-shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-2); }
+    20%, 40%, 60%, 80% { transform: translateX(2); }
+} */
+
+/* Blink animation for cursor/indicator */
+.bkx-animate-blink {
+    /* animation: bkx-blink 1s step-end infinite; */
+}
+
+/* @keyframes bkx-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+} */
+
+/* ==========================================================================
+   Focus Animations
+   ========================================================================== */
+
+/* Smooth focus transition */
+.bkx-focus-transition:focus {
+    outline: none;
+}
+
+/* ==========================================================================
+   Hover Animations
+   ========================================================================== */
+
+/* Smooth hover lift effect */
+.bkx-hover-lift:hover {
+    /* transform: translateY(-1); - implement via app logic */
+}
+
+/* Button press effect */
+.bkx-press:active {
+    /* transform: scale(0.98); - implement via app logic */
+}
+
+/* ==========================================================================
+   Loading States
+   ========================================================================== */
+
+/* Skeleton loading pattern */
+.bkx-skeleton {
+    background: $surface-darken-2;
+    color: transparent;
+}
+
+/* Shimmer effect for loading */
+.bkx-shimmer {
+    /* Shimmer effect - implement via app logic */
+}
+
+/* ==========================================================================
+   Status Animations
+   ========================================================================== */
+
+/* Success flash */
+.bkx-flash-success {
+    /* Success flash - implement via app logic */
+}
+
+/* Error flash */
+.bkx-flash-error {
+    /* Error flash - implement via app logic */
+}
+
+/* ==========================================================================
+   Duration Modifiers
+   ========================================================================== */
+
+.bkx-duration-100 {
+    /* animation-duration: 0.1s; */
+}
+
+.bkx-duration-200 {
+    /* animation-duration: 0.2s; */
+}
+
+.bkx-duration-300 {
+    /* animation-duration: 0.3s; */
+}
+
+.bkx-duration-500 {
+    /* animation-duration: 0.5s; */
+}
+
+.bkx-duration-1000 {
+    /* animation-duration: 1s; */
+}
+
+/* ==========================================================================
+   Disable Animations (Accessibility)
+   ========================================================================== */
+
+/*
+@media (prefers-reduced-motion: reduce) {
+    .bkx-animate-*,
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+*/
+
+/* Utility class to disable animations */
+.bkx-no-animations {
+    /* Animations disabled */
+}
+

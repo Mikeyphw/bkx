@@ -12,11 +12,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..results.restore import RestoreResult, RestorePreviewResult, Timing
+from ..results.restore import RestorePreviewResult, RestoreResult, Timing
 
 if TYPE_CHECKING:
-    from ..specs.restore import RestoreSpec
     from ..ports.archiver import ArchiverPort
+    from ..specs.restore import RestoreSpec
 
 
 class RestoreService:

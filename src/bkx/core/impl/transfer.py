@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any
 
 from ..ports.transfer import TransferProgress
+from ..results.transfer import Timing, TransferResult
 from ..specs.transfer import TransferSpec
-from ..results.transfer import TransferResult, Timing
 
 
 class FallbackTransfer:
@@ -49,7 +49,7 @@ class FallbackTransfer:
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Push files from local to destination.
 
@@ -76,7 +76,7 @@ class FallbackTransfer:
 
         files_transferred = 0
         bytes_transferred = 0
-        warnings = []
+        warnings: list[str] = []
 
         destination = Path(spec.destination)
 
@@ -119,7 +119,7 @@ class FallbackTransfer:
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Pull files from destination to local.
 
@@ -153,7 +153,7 @@ class FallbackTransfer:
         *,
         delete: bool = False,
         exclude: tuple[str, ...] = (),
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Sync source to destination (mirror semantics).
 
@@ -173,7 +173,7 @@ class FallbackTransfer:
 
         files_transferred = 0
         bytes_transferred = 0
-        warnings = []
+        warnings: list[str] = []
 
         if not source.exists():
             raise FileNotFoundError(f"Source not found: {source}")
@@ -208,7 +208,7 @@ class FallbackTransfer:
         self,
         source: Path,
         destination: Path,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> int:
         """Copy a single file with optional progress reporting."""
         file_size = source.stat().st_size
@@ -217,10 +217,9 @@ class FallbackTransfer:
             if progress_callback:
                 progress_callback(
                     TransferProgress(
-                        current_file=source.name,
-                        bytes_current=bytes_copied,
+                        current_file=source,
+                        bytes_transferred=bytes_copied,
                         total_bytes=file_size,
-                        percent=bytes_copied / file_size if file_size > 0 else 1.0,
                     )
                 )
 
@@ -232,13 +231,13 @@ class FallbackTransfer:
         self,
         source: Path,
         destination: Path,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> tuple[int, int]:
         """Copy a directory with optional progress reporting."""
         files = 0
         bytes_total = 0
 
-        for root, dirs, fnames in os.walk(source):
+        for root, _dirs, fnames in os.walk(source):
             rel_path = Path(root).relative_to(source)
             dest_dir = destination / rel_path
             dest_dir.mkdir(parents=True, exist_ok=True)
@@ -259,7 +258,7 @@ class FallbackTransfer:
         *,
         delete: bool = False,
         exclude: tuple[str, ...] = (),
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> tuple[int, int]:
         """Sync directory with mirror semantics."""
         import fnmatch
@@ -268,13 +267,13 @@ class FallbackTransfer:
         bytes_total = 0
 
         # First, copy/update files
-        for root, dirs, fnames in os.walk(source):
+        for root, _dirs, fnames in os.walk(source):
             rel_path = Path(root).relative_to(source)
             dest_dir = destination / rel_path
             dest_dir.mkdir(parents=True, exist_ok=True)
 
             # Get existing files in destination
-            existing_files = set(f.name for f in dest_dir.iterdir() if f.is_file())
+            existing_files: set[Path] = set(f for f in dest_dir.iterdir() if f.is_file())
 
             for fname in fnames:
                 # Check exclude patterns
@@ -285,7 +284,7 @@ class FallbackTransfer:
                 dest_path = dest_dir / fname
 
                 # Remove from existing set if copied
-                existing_files.discard(fname)
+                existing_files.discard(dest_path)
 
                 # Copy if newer or doesn't exist
                 if not dest_path.exists() or dest_path.stat().st_mtime < fpath.stat().st_mtime:
@@ -296,7 +295,7 @@ class FallbackTransfer:
         # Remove files not in source (if delete=True)
         if delete:
             for fpath in existing_files:
-                (destination / fpath).unlink()
+                fpath.unlink()
 
         return files, bytes_total
 

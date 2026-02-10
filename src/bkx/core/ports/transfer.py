@@ -7,12 +7,12 @@ Contract rule:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
+from ..results.transfer import TransferProgress, TransferResult
 from ..specs.transfer import TransferSpec
-from ..results.transfer import TransferResult, TransferProgress
 
 
 class TransferPort(Protocol):
@@ -41,7 +41,7 @@ class TransferPort(Protocol):
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Transfer files from local to destination.
 
@@ -58,7 +58,7 @@ class TransferPort(Protocol):
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Transfer files from destination to local.
 
@@ -78,7 +78,7 @@ class TransferPort(Protocol):
         *,
         delete: bool = False,
         exclude: tuple[str, ...] = (),
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Sync source to destination (mirror semantics).
 

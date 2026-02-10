@@ -6,20 +6,17 @@ Uses mikomn's StatusCards for displaying settings and status information.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
+from mikomn.tui_base.models import StatusCardData as MikomnStatusCardData
+from mikomn.tui_base.widgets import StatusCards
 from textual.app import ComposeResult
-from textual.containers import Container, Grid, Horizontal, Vertical
+from textual.containers import Container, Grid
 from textual.message import Message
-from textual.widgets import Label, Static
+from textual.widgets import Label
 
-# mikomn TUI base widgets for enhanced UI
-try:
-    from mikomn.tui_base.models import StatusCardData as MikomnStatusCardData
-    from mikomn.tui_base.widgets import StatusCardData, StatusCards
-
-    _HAS_MIKOMN = True
-except ImportError:
-    _HAS_MIKOMN = False
+if TYPE_CHECKING:
+    pass
 
 
 @dataclass
@@ -31,7 +28,7 @@ class StatusCard:
     value: str
     subtitle: str = ""
     icon: str = "📊"
-    status: str = "info"  # "info", "success", "warning", "error"
+    status: str = "information"  # "information", "success", "warning", "error"
 
 
 @dataclass
@@ -43,177 +40,89 @@ class StatusCardConfig:
     columns: int = 2
 
 
-if _HAS_MIKOMN:
+class StatusCardsPane(Container):
+    """Status cards pane using mikomn's StatusCards."""
 
-    class StatusCardsPane(Container):
-        """Status cards pane using mikomn's StatusCards."""
+    DEFAULT_CLASSES = "bkx-status-cards-pane"
 
-        DEFAULT_CLASSES = "bkx-status-cards-pane"
+    def __init__(
+        self,
+        config: StatusCardConfig | None = None,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._config = config or StatusCardConfig()
+        self._status_cards: StatusCards | None = None
+        # Track cards data for updates
+        self._cards_data: dict[str, StatusCard] = {}
+        for card in self._config.cards:
+            self._cards_data[card.id] = card
 
-        def __init__(
-            self,
-            config: StatusCardConfig | None = None,
-            **kwargs,
-        ):
-            super().__init__(**kwargs)
-            self._config = config or StatusCardConfig()
-            self._status_cards: StatusCards | None = None
-
-        def compose(self) -> ComposeResult:
-            cards_data = [
-                MikomnStatusCardData(
-                    id=card.id,
-                    title=card.title,
-                    value=card.value,
-                    subtitle=card.subtitle,
-                    icon=card.icon,
-                    status=card.status,
-                )
-                for card in self._config.cards
-            ]
-            self._status_cards = StatusCards(
-                cards=cards_data,
-                layout=self._config.layout,
-                id="status-cards",
+    def compose(self) -> ComposeResult:
+        cards_data = [
+            MikomnStatusCardData(
+                id=card.id,
+                title=card.title,
+                value=card.value,
+                subtitle=card.subtitle,
+                icon=card.icon,
+                status=self._map_status(card.status),
             )
-            yield self._status_cards
+            for card in self._config.cards
+        ]
+        self._status_cards = StatusCards(
+            cards=cards_data,
+            layout=self._config.layout,
+            id="status-cards",
+        )
+        yield self._status_cards
 
-        def update_card(
-            self,
-            card_id: str,
-            value: str,
-            subtitle: str = "",
-            status: str = "info",
-        ) -> None:
-            """Update a card's value.
+    def _map_status(self, status: str) -> str:
+        """Map status string to mikomn status format."""
+        status_map = {
+            "information": "info",
+            "success": "success",
+            "warning": "warning",
+            "error": "error",
+        }
+        return status_map.get(status, "info")
 
-            Args:
-                card_id: ID of the card to update
-                value: New value
-                subtitle: New subtitle
-                status: New status
-            """
-            if self._status_cards:
-                self._status_cards.update_card(
-                    card_id,
-                    value=value,
-                    subtitle=subtitle,
-                    status=status,
-                )
+    def update_card(
+        self,
+        card_id: str,
+        value: str,
+        subtitle: str = "",
+        status: str = "information",
+    ) -> None:
+        """Update a card's value.
 
-        def get_card(self, card_id: str) -> StatusCard | None:
-            """Get a card by ID."""
-            for card in self._config.cards:
-                if card.id == card_id:
-                    return card
-            return None
+        Args:
+            card_id: ID of the card to update
+            value: New value
+            subtitle: New subtitle
+            status: New status
+        """
+        if self._status_cards and card_id in self._cards_data:
+            card_data = self._cards_data[card_id]
+            # Update local state
+            card_data.value = value
+            card_data.subtitle = subtitle
+            card_data.status = status
 
-else:
-
-    class StatusCardsPane(Container):
-        """Status cards pane with custom implementation."""
-
-        def __init__(
-            self,
-            config: StatusCardConfig | None = None,
-            **kwargs,
-        ):
-            super().__init__(**kwargs)
-            self._config = config or StatusCardConfig()
-            self._card_widgets: dict[str, Container] = {}
-
-        def compose(self) -> ComposeResult:
-            yield Label("📊 Status", classes="cards-header")
-
-            if self._config.layout == "list":
-                yield Grid(classes="cards-list", id="cards-container")
-            else:
-                yield Grid(classes="cards-grid", id="cards-container")
-
-            self._compose_cards()
-
-        def _compose_cards(self) -> None:
-            """Compose card widgets."""
-            container = self.query_one("#cards-container", Grid)
-            container.remove_children()
-            self._card_widgets.clear()
-
-            for card in self._config.cards:
-                card_widget = self._create_card_widget(card)
-                container.append(card_widget)
-                self._card_widgets[card.id] = card_widget
-
-        def _create_card_widget(self, card: StatusCard) -> Container:
-            """Create a card widget."""
-            if self._config.layout == "list":
-                return self._create_list_card(card)
-            return self._create_grid_card(card)
-
-        def _create_grid_card(self, card: StatusCard) -> Container:
-            """Create a grid-style card."""
-            card_container = Container(
-                Static(card.icon, classes="card-icon"),
-                Label(card.title, classes="card-title"),
-                Label(card.value, classes="card-value"),
-                Label(card.subtitle, classes="card-subtitle"),
-                classes=f"status-card {card.status}",
-                id=f"card-{card.id}",
+            # Create mikomn StatusCardData with all fields
+            mikomn_card = MikomnStatusCardData(
+                id=card_id,
+                title=card_data.title,
+                value=value,
+                subtitle=subtitle,
+                icon=card_data.icon,
+                status=self._map_status(status),
             )
-            return card_container
+            self._status_cards.update_card(card_id, mikomn_card)
 
-        def _create_list_card(self, card: StatusCard) -> Container:
-            """Create a list-style card."""
-            card_container = Container(
-                Horizontal(
-                    Static(card.icon, classes="list-icon"),
-                    Vertical(
-                        Label(card.title, classes="list-title"),
-                        Label(card.value, classes="list-value"),
-                        Label(card.subtitle, classes="list-subtitle"),
-                        classes="list-content",
-                    ),
-                    classes="list-card-row",
-                ),
-                classes=f"list-card {card.status}",
-                id=f"card-{card.id}",
-            )
-            return card_container
-
-        def update_card(
-            self,
-            card_id: str,
-            value: str,
-            subtitle: str = "",
-            status: str = "info",
-        ) -> None:
-            """Update a card's value."""
-            # Update config
-            for card in self._config.cards:
-                if card.id == card_id:
-                    card.value = value
-                    if subtitle:
-                        card.subtitle = subtitle
-                    card.status = status
-                    break
-
-            # Update widget
-            card_widget = self.query_one(f"#card-{card_id}", Container)
-            if card_widget:
-                card_widget.remove_class("info", "success", "warning", "error")
-                card_widget.add_class(status)
-                value_label = card_widget.query_one(".card-value, .list-value", Label)
-                if value_label:
-                    value_label.update(value)
-                subtitle_label = card_widget.query_one(".card-subtitle, .list-subtitle", Label)
-                if subtitle_label and subtitle:
-                    subtitle_label.update(subtitle)
-
-        def get_card(self, card_id: str) -> StatusCard | None:
-            """Get a card by ID."""
-            for card in self._config.cards:
-                if card.id == card_id:
-                    return card
-            return None
+    def get_card(self, card_id: str) -> StatusCard | None:
+        """Get a card by ID."""
+        return self._cards_data.get(card_id)
 
 
 class ThemeSettingsPane(Container):
@@ -223,6 +132,14 @@ class ThemeSettingsPane(Container):
 
     class SettingChanged(Message):
         """A setting was changed."""
+
+        setting_key: str
+        setting_value: str
+
+        def __init__(self, setting_key: str, setting_value: str) -> None:
+            super().__init__()
+            self.setting_key = setting_key
+            self.setting_value = setting_value
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -306,11 +223,30 @@ class ToolsDashboardPane(Container):
         card_id: str,
         value: str,
         subtitle: str = "",
-        status: str = "info",
+        status: str = "information",
     ) -> None:
         """Update a status card."""
         status_pane = self.query_one("#status-cards-pane", StatusCardsPane)
         status_pane.update_card(card_id, value, subtitle, status)
+
+    def update_setting(self, key: str, value: str) -> None:
+        """Update a theme/settings value (for compatibility with tools.py).
+
+        Args:
+            key: Setting key ("theme", "compression", "verify", "level")
+            value: New value
+        """
+        # Map setting keys to status card IDs
+        card_mapping: dict[str, tuple[str, str, str]] = {
+            "theme": ("theme", value, "Current color scheme"),
+            "compression": ("compression", value, "Default algorithm"),
+            "verify": ("verification", value, "Verify after ops"),
+            "level": ("level", value, "Compression level"),
+        }
+
+        if key in card_mapping:
+            card_id, card_value, subtitle = card_mapping[key]
+            self.update_status_card(card_id, card_value, subtitle, "info")
 
 
 def create_default_status_cards() -> list[StatusCard]:
@@ -328,7 +264,7 @@ def create_default_status_cards() -> list[StatusCard]:
             value=get_current_theme_name(),
             subtitle="Current color scheme",
             icon="🎨",
-            status="info",
+            status="information",
         ),
         StatusCard(
             id="compression",
@@ -344,7 +280,7 @@ def create_default_status_cards() -> list[StatusCard]:
             value="Enabled",
             subtitle="Verify after operations",
             icon="🔍",
-            status="info",
+            status="information",
         ),
         StatusCard(
             id="level",
@@ -352,7 +288,7 @@ def create_default_status_cards() -> list[StatusCard]:
             value="3",
             subtitle="Compression level",
             icon="📊",
-            status="info",
+            status="information",
         ),
         StatusCard(
             id="archives",
@@ -360,7 +296,7 @@ def create_default_status_cards() -> list[StatusCard]:
             value="0",
             subtitle="Available archives",
             icon="📁",
-            status="info",
+            status="information",
         ),
         StatusCard(
             id="storage",
@@ -368,6 +304,6 @@ def create_default_status_cards() -> list[StatusCard]:
             value="0 MB",
             subtitle="Total size",
             icon="💾",
-            status="info",
+            status="information",
         ),
     ]

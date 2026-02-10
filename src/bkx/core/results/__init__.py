@@ -5,27 +5,27 @@ Contract rule:
 - Results include timings, counts, produced paths, and warnings.
 """
 
-from .backup import BackupResult, BackupStepResult, Timing
 from .archive import (
+    ArchiveBrowseResult,
     ArchiveCreateResult,
-    ArchiveListResult,
     ArchiveEntry,
     ArchiveInfoResult,
+    ArchiveListResult,
     ArchiveVerifyResult,
-    ArchiveBrowseResult,
 )
-from .transfer import TransferResult, TransferProgress
-from .restore import RestoreResult, RestorePreviewResult, RestoreFileInfo
+from .backup import BackupResult, BackupStepResult, Timing
 from .execution_plan import (
     ExecutionPlan,
     ExecutionStep,
     PlanFromSpecResult,
-    generate_backup_plan,
     generate_archive_plan,
-    generate_transfer_plan,
+    generate_backup_plan,
     generate_restore_plan,
+    generate_transfer_plan,
 )
+from .restore import RestoreFileInfo, RestorePreviewResult, RestoreResult
 from .run import RunListResult, RunShowResult, RunSummary
+from .transfer import TransferProgress, TransferResult
 
 __all__ = [
     "Timing",

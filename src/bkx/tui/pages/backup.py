@@ -46,7 +46,7 @@ class BackupPage(Container):
         super().__init__()
         self._sources: list[Path] = []
 
-        self._size_queue: "queue.Queue[tuple[int, int, bool]]" = queue.Queue()
+        self._size_queue: queue.Queue[tuple[int, int, bool]] = queue.Queue()
         self._size_thread: threading.Thread | None = None
         self._scan_token = 0
 
@@ -110,23 +110,32 @@ class BackupPage(Container):
         self.set_interval(0.2, self._drain_size_updates)
 
     @on(Button.Pressed, "#btn-select-sources")
-    async def _pick_sources(self) -> None:
-        selected = await show_file_picker(
+    def _pick_sources(self) -> None:
+        def on_selected(paths: list | None) -> None:
+            if paths:
+                self._sources = [Path(p) for p in paths]
+                self._refresh_sources_view(start_scan=True)
+
+        show_file_picker(
+            self.app,
             title="Select sources",
-            mode=FilterMode.FILES_AND_DIRS,
+            mode=FilterMode.FILES_ONLY,  # type: ignore[arg-type]  # FILES_AND_DIRS not supported
             multiple=True,
+            on_select=on_selected,
+            on_cancel=None,
         )
-        if not selected:
-            return
-        self._sources = [Path(p) for p in selected]
-        self._refresh_sources_view(start_scan=True)
 
     @on(Button.Pressed, "#btn-select-destination")
-    async def _pick_dest(self) -> None:
-        selected = await show_destination_picker(title="Select destination folder")
-        if not selected:
-            return
-        self.query_one("#field-destination", Input).value = str(selected)
+    def _pick_dest(self) -> None:
+        def on_confirm(path: Path) -> None:
+            self.query_one("#field-destination", Input).value = str(path)
+
+        show_destination_picker(
+            self.app,
+            title="Select destination folder",
+            on_confirm=on_confirm,
+            on_cancel=None,
+        )
 
     def _refresh_sources_view(self, *, start_scan: bool) -> None:
         if not self._sources:
@@ -188,9 +197,7 @@ class BackupPage(Container):
 
         total, files, truncated = latest
         approx = " ~approx" if truncated else ""
-        self._sources_header.update(
-            f"{len(self._sources)} sources selected — {_format_bytes(total)} ({files:,} files){approx}"
-        )
+        self._sources_header.update(f"{len(self._sources)} sources selected — {_format_bytes(total)} ({files:,} files){approx}")
 
     @on(Button.Pressed, "#btn-run")
     def _run(self) -> None:

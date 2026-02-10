@@ -6,10 +6,10 @@ These schemas are used for:
 - Documentation of spec structure
 """
 
-from .backup_spec import BACKUP_SPEC_SCHEMA
 from .archive_spec import ARCHIVE_SPEC_SCHEMA
-from .transfer_spec import TRANSFER_SPEC_SCHEMA
+from .backup_spec import BACKUP_SPEC_SCHEMA
 from .restore_spec import RESTORE_SPEC_SCHEMA
+from .transfer_spec import TRANSFER_SPEC_SCHEMA
 
 __all__ = [
     "BACKUP_SPEC_SCHEMA",

@@ -11,6 +11,66 @@
     height: 80%;
 }
 
+/* Step 10A: Global Search Overlay */
+.bkx-global-search {
+    width: 80%;
+    height: auto;
+    max-height: 80%;
+    border: solid $accent;
+    background: $surface;
+}
+
+.bkx-global-search .search-header {
+    height: auto;
+    padding: 1;
+}
+
+.bkx-global-search .search-icon {
+    width: 3;
+    content-align: center middle;
+}
+
+.bkx-global-search .search-input {
+    width: 1fr;
+    border: solid $border;
+    padding: 1;
+}
+
+.bkx-global-search .search-count {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+.bkx-global-search .search-results {
+    height: auto;
+    max-height: 20;
+}
+
+.bkx-global-search .search-help {
+    color: $text-muted;
+    margin-top: 1;
+}
+
+/* Search result items */
+.bkx-search-result {
+    height: auto;
+    padding: 1 2;
+}
+
+.bkx-search-result:hover,
+.bkx-search-result:focus {
+    background: $accent;
+}
+
+.bkx-search-result .result-title {
+    color: $text;
+}
+
+.bkx-search-result .result-subtitle {
+    color: $text-muted;
+    margin-top: 0;
+}
+
 /* Compact terminals: keep overlays usable */
 .compact .bkx-command-palette {
     width: 98%;
@@ -20,5 +80,95 @@
 .compact .bkx-notification-center-screen {
     width: 98%;
     height: 90%;
+}
+
+.compact .bkx-global-search {
+    width: 98%;
+    max-height: 90%;
+}
+
+/* Step 9B: Debug Overlay */
+.bkx-debug-overlay {
+    width: 50%;
+    height: auto;
+    max-height: 80%;
+    border: solid $warning;
+    background: $surface-darken-1;
+}
+
+.bkx-debug-overlay .debug-content {
+    padding: 1;
+}
+
+.bkx-debug-overlay .debug-header {
+    height: auto;
+    margin-bottom: 1;
+}
+
+.bkx-debug-overlay .debug-title {
+    color: $warning;
+    text-style: bold;
+}
+
+.bkx-debug-overlay .debug-hint {
+    color: $text-muted;
+    margin-left: 2;
+}
+
+.bkx-debug-overlay .debug-section-title {
+    color: $accent;
+    text-style: bold;
+    margin-top: 1;
+    margin-bottom: 0;
+}
+
+.bkx-debug-overlay .debug-focus-path {
+    background: $surface-darken-2;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+.bkx-debug-overlay .debug-state {
+    height: auto;
+}
+
+.bkx-debug-overlay .debug-state-item {
+    color: $text;
+}
+
+.bkx-debug-overlay .debug-archive {
+    background: $surface-darken-2;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+.bkx-debug-overlay .debug-filter {
+    background: $surface-darken-2;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+.bkx-debug-overlay .debug-intents {
+    height: 10;
+    background: $surface-darken-2;
+}
+
+.bkx-debug-overlay .debug-progress {
+    background: $surface-darken-2;
+    padding: 0 1;
+    color: $text;
+}
+
+/* Compact debug overlay */
+.bkx-debug-overlay-compact {
+    width: auto;
+    height: auto;
+    border: solid $warning;
+    background: $surface-darken-1;
+    padding: 0 1;
+}
+
+.bkx-debug-overlay-compact .debug-compact-text {
+    color: $text-muted;
 }
 

@@ -8,12 +8,13 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
+import pytest
+
+from bkx.core.errors import NotFoundError, ValidationError
 from bkx.core.specs.restore import RestoreSpec
-from bkx.core.errors import ValidationError, NotFoundError
 
 
 class TestRestoreSpecFreshDir:

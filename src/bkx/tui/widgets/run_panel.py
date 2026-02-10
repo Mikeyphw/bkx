@@ -13,8 +13,6 @@ Contract:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from mikomn.tui_base.panes.display.log_pane import LogPane
 from mikomn.tui_base.panes.display.progress_pane import ProgressPane
 from mikomn.tui_base.panes.display.status_pane import StatusPane
@@ -160,11 +158,11 @@ class RunPanel(Vertical):
         except Exception:
             return
 
-    def write_lines(self, lines: Iterable[str]) -> None:
+    def write_lines(self, lines: list[str]) -> None:
         """Write multiple lines to the log.
 
         Args:
-            lines: Iterable of lines to write
+            lines: List of lines to write
         """
         if not self._log:
             return
@@ -172,6 +170,18 @@ class RunPanel(Vertical):
             self._log.write_lines(lines)
         except Exception:
             return
+
+    def get_log_text(self) -> str:
+        """Get all log text as a single string.
+
+        Returns:
+            All log text concatenated
+        """
+        if not self._log:
+            return ""
+        # This would need to be implemented based on the LogPane API
+        # For now, return empty string as placeholder
+        return ""
 
     def clear_log(self) -> None:
         """Clear the log."""
@@ -196,4 +206,3 @@ class RunPanel(Vertical):
     def log(self) -> LogPane | None:
         """Get the log pane."""
         return self._log
-

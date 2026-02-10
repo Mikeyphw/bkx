@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
-
-from textual.app import ComposeResult
-from textual.containers import Container
-from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
 
 from mikomn.tui_base.widgets.file_picker import (
     FileDirPicker,
     FilterMode,
-    PathsSelected,
-    PickerCancelled,
 )
+from textual.app import ComposeResult
+from textual.containers import Container
+from textual.screen import ModalScreen
+from textual.widgets import Button, Input, Label, Static
 
 
 class DestinationPicker(ModalScreen):
@@ -105,8 +102,9 @@ class DestinationPicker(ModalScreen):
 def show_file_picker(
     app,
     *,
-    allow_multiple: bool = True,
-    filter_mode: FilterMode = FilterMode.NONE,
+    title: str = "Select files",
+    mode: FilterMode = FilterMode.FILES_ONLY,  # type: ignore[assignment]
+    multiple: bool = True,
     start_path: Path | None = None,
     on_select: Callable[[list[Path]], None] | None = None,
     on_cancel: Callable[[], None] | None = None,
@@ -115,15 +113,16 @@ def show_file_picker(
 
     Args:
         app: The Textual app instance
-        allow_multiple: Allow selecting multiple items
-        filter_mode: Filter mode (NONE, FILES_ONLY, DIRS_ONLY)
+        title: Dialog title (not used by mikomn FileDirPicker, for documentation only)
+        mode: Filter mode (NONE, FILES_ONLY, DIRS_ONLY) - note: FILES_AND_DIRS not supported
+        multiple: Allow selecting multiple items (handled by picker mode internally)
         start_path: Starting directory path
         on_select: Callback when files are selected, receives list[Path]
         on_cancel: Callback when picker is cancelled
     """
     picker = FileDirPicker(
         start_path=start_path or Path.cwd(),
-        filter_mode=filter_mode,
+        filter_mode=mode,
     )
 
     def handle_result(paths: list[Path] | None) -> None:
@@ -140,6 +139,7 @@ def show_file_picker(
 def show_destination_picker(
     app,
     *,
+    title: str = "Select destination",  # Note: not used by mikomn, kept for API compatibility
     start_path: Path | None = None,
     suggest_name: str | None = None,
     on_confirm: Callable[[Path], None] | None = None,
@@ -149,6 +149,7 @@ def show_destination_picker(
 
     Args:
         app: The Textual app instance
+        title: Dialog title (kept for API compatibility, not used by mikomn)
         start_path: Starting directory path
         suggest_name: Suggested filename
         on_confirm: Callback when destination is confirmed, receives Path

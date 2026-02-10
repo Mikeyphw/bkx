@@ -8,17 +8,17 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
 import tempfile
-import json
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from bkx.core.impl.run_store import JsonRunStore, _RunRecord
-from bkx.core.ports.run_store import RunMetadata, RunStorePort
-from bkx.core.services.run import RunService
-from bkx.core.results.run import RunListResult, RunShowResult
+import pytest
+
 from bkx.core.errors import NotFoundError
+from bkx.core.impl.run_store import JsonRunStore
+from bkx.core.ports.run_store import RunMetadata, RunStorePort
+from bkx.core.results.run import RunListResult, RunShowResult
+from bkx.core.services.run import RunService
 
 
 class MockRunStore(RunStorePort):

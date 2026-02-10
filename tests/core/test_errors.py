@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
-
 from bkx.core.errors import (
     BkxError,
-    ValidationError,
+    ExternalToolError,
     NotFoundError,
     PermissionDeniedError,
-    ExternalToolError,
+    ValidationError,
 )
 
 
@@ -92,35 +90,35 @@ class TestErrorToExitCode:
 
     def test_validation_error_maps_to_usage(self):
         """ValidationError should map to exit code 2."""
-        from bkx.cli.exit_codes import error_to_exit_code, EXIT_USAGE
+        from bkx.cli.exit_codes import EXIT_USAGE, error_to_exit_code
 
         error = ValidationError(msg="invalid")
         assert error_to_exit_code(error) == EXIT_USAGE
 
     def test_not_found_error_maps_to_not_found(self):
         """NotFoundError should map to exit code 3."""
-        from bkx.cli.exit_codes import error_to_exit_code, EXIT_NOT_FOUND
+        from bkx.cli.exit_codes import EXIT_NOT_FOUND, error_to_exit_code
 
         error = NotFoundError(msg="not found")
         assert error_to_exit_code(error) == EXIT_NOT_FOUND
 
     def test_permission_denied_maps_to_permission(self):
         """PermissionDeniedError should map to exit code 4."""
-        from bkx.cli.exit_codes import error_to_exit_code, EXIT_PERMISSION
+        from bkx.cli.exit_codes import EXIT_PERMISSION, error_to_exit_code
 
         error = PermissionDeniedError(msg="denied")
         assert error_to_exit_code(error) == EXIT_PERMISSION
 
     def test_external_tool_maps_to_external(self):
         """ExternalToolError should map to exit code 5."""
-        from bkx.cli.exit_codes import error_to_exit_code, EXIT_EXTERNAL
+        from bkx.cli.exit_codes import EXIT_EXTERNAL, error_to_exit_code
 
         error = ExternalToolError(msg="tool failed", tool_name="test")
         assert error_to_exit_code(error) == EXIT_EXTERNAL
 
     def test_unknown_bkx_error_maps_to_generic(self):
         """Unknown BkxError should map to exit code 1."""
-        from bkx.cli.exit_codes import error_to_exit_code, EXIT_GENERIC
+        from bkx.cli.exit_codes import EXIT_GENERIC, error_to_exit_code
 
         error = BkxError(msg="unknown error")
         assert error_to_exit_code(error) == EXIT_GENERIC

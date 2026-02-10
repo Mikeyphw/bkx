@@ -6,9 +6,10 @@ Fallback implementation using zlib for hash operations.
 from __future__ import annotations
 
 import hashlib
-import time
+import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
+from typing import Any
 
 from ..ports.hasher import HashAlgorithm, HashResult
 from ..results.hashing import HashingResult
@@ -29,6 +30,16 @@ class FallbackHasher:
     def name(self) -> str:
         """Human-readable name of this hasher."""
         return self._name
+
+    @property
+    def algorithm(self) -> str:
+        """Hash algorithm identifier (for protocol compatibility)."""
+        return "sha256"  # Default, can be overridden
+
+    @property
+    def digest_length(self) -> int:
+        """Length of digest in bytes (for protocol compatibility)."""
+        return 32  # SHA256 digest length
 
     @property
     def supported_algorithms(self) -> tuple[str, ...]:
@@ -73,7 +84,7 @@ class FallbackHasher:
         paths: tuple[Path, ...],
         algorithm: HashAlgorithm = "sha256",
         *,
-        progress_callback: callable[[Path, int, int], None] | None = None,
+        progress_callback: Callable[[Path, int, int], Any] | None = None,
     ) -> dict[Path, HashResult]:
         """Compute hashes for multiple files.
 
@@ -122,26 +133,24 @@ class FallbackHasher:
         Returns:
             Hashing result with all file hashes.
         """
-        start_ms = int(time.time() * 1000)
-
         algo = self._get_algo(algorithm)
         dir_hasher = algo()
 
         file_hashes: dict[Path, HashResult] = {}
         total_bytes = 0
 
-        paths_to_process = [path] if path.is_file() else []
+        paths_to_process: list[Path] = [path] if path.is_file() else []
 
         if path.is_dir():
             if recursive:
-                for root, _, fnames in path.walk():
+                for root, _, fnames in os.walk(path):
                     for fname in fnames:
                         fpath = Path(root) / fname
                         paths_to_process.append(fpath)
             else:
-                for fname in path.iterdir():
-                    if fname.is_file():
-                        paths_to_process.append(fname)
+                for fname in path.iterdir():  # type: ignore[assignment]
+                    if fname.is_file():  # type: ignore[attr-defined]
+                        paths_to_process.append(fname)  # type: ignore[arg-type]
 
         for fpath in paths_to_process:
             result = self.hash_file(fpath, algorithm)
@@ -176,6 +185,62 @@ class FallbackHasher:
             raise ValueError(f"Unsupported algorithm: {algorithm}")
 
         return algos[algorithm]
+
+    def hash_bytes(self, data: bytes) -> str:
+        """Compute hash of bytes.
+
+        Args:
+            data: Bytes to hash.
+
+        Returns:
+            Hex digest string.
+        """
+        algo = self._get_algo("sha256")
+        hasher: hashlib._Hash = algo()
+        hasher.update(data)
+        return hasher.hexdigest()
+
+    def verify(
+        self,
+        path: Path,
+        expected: str,
+        *,
+        chunk_size: int = 64 * 1024,
+    ) -> bool:
+        """Verify file matches expected hash.
+
+        Args:
+            path: Path to file.
+            expected: Expected hex digest.
+            chunk_size: Bytes per read chunk.
+
+        Returns:
+            True if matches, False otherwise.
+        """
+        result = self.hash_file(path)
+        checksum = result.checksum
+        return bool(checksum == expected)
+
+    def hash_stream(
+        self,
+        stream: bytes,
+        *,
+        chunk_size: int = 64 * 1024,
+    ) -> str:
+        """Compute hash from a stream.
+
+        Args:
+            stream: Bytes iterator/stream.
+            chunk_size: Bytes per chunk.
+
+        Returns:
+            Hex digest string.
+        """
+        algo = self._get_algo("sha256")
+        hasher: hashlib._Hash = algo()
+        for chunk in iter(lambda: stream[:chunk_size], b""):
+            hasher.update(chunk)
+        return hasher.hexdigest()
 
 
 def get_hasher() -> FallbackHasher:

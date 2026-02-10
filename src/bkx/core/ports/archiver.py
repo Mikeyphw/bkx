@@ -7,18 +7,17 @@ Contract rule:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from ..specs.archive import ArchiveCreateSpec
 from ..results.archive import (
     ArchiveCreateResult,
     ArchiveEntry,
     ArchiveInfoResult,
     ArchiveVerifyResult,
 )
+from ..specs.archive import ArchiveCreateSpec
 from ..specs.restore import RestoreSpec
 
 

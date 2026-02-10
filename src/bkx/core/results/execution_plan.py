@@ -5,9 +5,9 @@ Returns structured data about what would happen without executing.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from .backup import Timing
 
@@ -120,7 +120,7 @@ def generate_backup_plan(
             total_files += 1
             total_bytes += source.stat().st_size
         elif source.is_dir():
-            for root, _, fnames in source.walk():
+            for root, _, fnames in os.walk(source):
                 for fname in fnames:
                     fpath = Path(root) / fname
                     total_files += 1
@@ -221,7 +221,7 @@ def generate_archive_plan(
             total_files += 1
             total_bytes += source.stat().st_size
         elif source.is_dir():
-            for root, _, fnames in source.walk():
+            for root, _, fnames in os.walk(source):
                 for fname in fnames:
                     fpath = Path(root) / fname
                     total_files += 1
@@ -287,7 +287,7 @@ def generate_transfer_plan(
         if source.is_file():
             total_bytes += source.stat().st_size
         elif source.is_dir():
-            for root, _, fnames in source.walk():
+            for root, _, fnames in os.walk(source):
                 for fname in fnames:
                     fpath = Path(root) / fname
                     total_bytes += fpath.stat().st_size
@@ -363,7 +363,7 @@ def generate_restore_plan(
     )
 
 
-def _human_bytes(n: int) -> str:
+def _human_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     if n == 0:
         return "0 B"

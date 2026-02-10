@@ -7,10 +7,8 @@ Contract rule:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Protocol
 
 

@@ -6,6 +6,7 @@ Step 4B:
 Wrapper around mikomn FilterSheet providing a stable BKX class for styling.
 """
 
+# ruff: noqa: E402 - mikomn imports must come after docstring
 from mikomn.tui_base.overlays import FilterSheet
 
 

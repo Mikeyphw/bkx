@@ -13,9 +13,8 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Optional
 
-from mikomn.cli_base.interactive.models import PickOptions, PickerType, SelectionMode
+from mikomn.cli_base.interactive.models import PickerType, PickOptions, SelectionMode
 from mikomn.cli_base.interactive.prompts import ask_path, ask_text
 from mikomn.cli_base.pickers import FilePicker
 from mikomn.cli_base.pickers.adapters import FzfAdapter, YaziAdapter
@@ -39,7 +38,7 @@ def pick_files(
     title: str = "Select files",
     allow_multi: bool = True,
     must_exist: bool = True,
-    base_dir: Optional[Path] = None,
+    base_dir: Path | None = None,
 ) -> list[Path]:
     """Pick file paths.
 
@@ -76,7 +75,7 @@ def pick_directories(
     title: str = "Select directories",
     allow_multi: bool = True,
     must_exist: bool = True,
-    base_dir: Optional[Path] = None,
+    base_dir: Path | None = None,
 ) -> list[Path]:
     """Pick directory paths.
 
@@ -111,8 +110,8 @@ def pick_directories(
 def pick_file(
     title: str = "Select a file",
     must_exist: bool = True,
-    base_dir: Optional[Path] = None,
-) -> Optional[Path]:
+    base_dir: Path | None = None,
+) -> Path | None:
     """Pick a single file path."""
     results = pick_files(title=title, allow_multi=False, must_exist=must_exist, base_dir=base_dir)
     return results[0] if results else None
@@ -121,20 +120,18 @@ def pick_file(
 def pick_directory(
     title: str = "Select a directory",
     must_exist: bool = True,
-    base_dir: Optional[Path] = None,
-) -> Optional[Path]:
+    base_dir: Path | None = None,
+) -> Path | None:
     """Pick a single directory path."""
-    results = pick_directories(
-        title=title, allow_multi=False, must_exist=must_exist, base_dir=base_dir
-    )
+    results = pick_directories(title=title, allow_multi=False, must_exist=must_exist, base_dir=base_dir)
     return results[0] if results else None
 
 
 def prompt_for_path(
     title: str,
-    default: Optional[Path] = None,
+    default: Path | None = None,
     must_exist: bool = True,
-) -> Optional[Path]:
+) -> Path | None:
     """Prompt for a path (supports must_exist=False)."""
     try:
         return ask_path(title, default=default, must_exist=must_exist)

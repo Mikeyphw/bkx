@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from .backup import Timing
 
@@ -78,7 +77,7 @@ class ArchiveListResult:
     archive_path: Path
 
     # Listing
-    entries: tuple["ArchiveEntry", ...] = field(default_factory=tuple)
+    entries: tuple[ArchiveEntry, ...] = field(default_factory=tuple)
 
     # Pagination
     total_entries: int = 0
@@ -130,6 +129,32 @@ class ArchiveInfoResult:
 
     # Warnings
     warnings: tuple[str, ...] = field(default_factory=tuple)
+
+    # Aliases for CLI compatibility
+    @property
+    def path(self) -> Path:
+        """Alias for archive_path (CLI compatibility)."""
+        return self.archive_path
+
+    @property
+    def files_count(self) -> int:
+        """Alias for total_entries (CLI compatibility)."""
+        return self.total_entries
+
+    @property
+    def bytes_total(self) -> int:
+        """Alias for total_size (CLI compatibility)."""
+        return self.total_size
+
+    @property
+    def created(self) -> int:
+        """Alias for created_at (CLI compatibility)."""
+        return self.created_at
+
+    @property
+    def compression_algorithm(self) -> str:
+        """Alias for format (CLI compatibility)."""
+        return self.format
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -183,7 +208,7 @@ class ArchiveBrowseResult:
     files_count: int = 0
 
 
-def _human_bytes(n: int) -> str:
+def _human_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:

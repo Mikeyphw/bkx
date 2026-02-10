@@ -7,17 +7,16 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from bkx.core.results.execution_plan import (
     ExecutionPlan,
     ExecutionStep,
-    generate_backup_plan,
     generate_archive_plan,
-    generate_transfer_plan,
+    generate_backup_plan,
     generate_restore_plan,
+    generate_transfer_plan,
 )
 
 

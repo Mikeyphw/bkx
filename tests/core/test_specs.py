@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import pytest
 from pathlib import Path
 
-from bkx.core.specs.backup import BackupSpec
 from bkx.core.specs.archive import ArchiveCreateSpec
-from bkx.core.specs.transfer import TransferSpec
+from bkx.core.specs.backup import BackupSpec
 from bkx.core.specs.restore import RestoreSpec
+from bkx.core.specs.transfer import TransferSpec
 
 
 class TestBackupSpec:

@@ -8,27 +8,101 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
+from typing import Any
 
-from bkx.core.services.backup import BackupService
-from bkx.core.services.archive import ArchiveService
-from bkx.core.services.transfer import TransferService
-from bkx.core.specs.backup import BackupSpec
-from bkx.core.specs.archive import ArchiveCreateSpec
-from bkx.core.specs.transfer import TransferSpec
-from bkx.core.results.archive import ArchiveCreateResult, ArchiveEntry, Timing
-from bkx.core.results.transfer import TransferResult
+import pytest
+
+from bkx.core.errors import NotFoundError, ValidationError
+from bkx.core.ports.hasher import HashAlgorithm
+from bkx.core.ports.tool_detector import ToolInfo
+from bkx.core.results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult, Timing
 from bkx.core.results.hashing import HashResult
-from bkx.core.errors import ValidationError, NotFoundError
+from bkx.core.results.transfer import TransferResult
+from bkx.core.services.archive import ArchiveService
+from bkx.core.services.backup import BackupService
+from bkx.core.services.transfer import TransferService
+from bkx.core.specs.archive import ArchiveCreateSpec
+from bkx.core.specs.backup import BackupSpec
+from bkx.core.specs.restore import RestoreSpec
+from bkx.core.specs.transfer import TransferSpec
+
+
+class FakeHasher:
+    """Fake hasher for testing."""
+
+    @property
+    def algorithm(self) -> HashAlgorithm:
+        return "sha256"
+
+    @property
+    def digest_length(self) -> int:
+        return 64
+
+    @property
+    def name(self) -> str:
+        return "fake-hasher"
+
+    @property
+    def supported_algorithms(self) -> tuple[HashAlgorithm, ...]:
+        return ("md5", "sha256")
+
+    def hash_file(
+        self,
+        path: Path,
+        algorithm: HashAlgorithm = "sha256",
+        *,
+        chunk_size: int = 8192,
+    ) -> HashResult:
+        return HashResult(
+            algorithm=algorithm,
+            checksum="abc123" * 10,
+            bytes_hashed=1024,
+        )
+
+    def hash_files(
+        self,
+        paths: tuple[Path, ...],
+        algorithm: HashAlgorithm = "sha256",
+        *,
+        progress_callback: Any | None = None,
+    ) -> dict[Path, HashResult]:
+        return {p: self.hash_file(p, algorithm) for p in paths}
+
+    def hash_bytes(self, data: bytes) -> str:
+        """Compute hash of bytes.
+
+        Returns:
+            Hex digest string.
+        """
+        return "abc123" * 10
+
+    def verify(
+        self,
+        path: Path,
+        expected: str,
+        *,
+        chunk_size: int = 64 * 1024,
+    ) -> bool:
+        return True
+
+    def hash_stream(
+        self,
+        stream: bytes,
+        *,
+        chunk_size: int = 64 * 1024,
+    ) -> str:
+        """Compute hash from a stream.
+
+        Returns:
+            Hex digest string.
+        """
+        return "abc123" * 10
 
 
 class FakeArchiver:
     """Fake archiver for testing."""
-
-    def __init__(self, success: bool = True):
-        self._success = success
 
     @property
     def name(self) -> str:
@@ -38,20 +112,18 @@ class FakeArchiver:
     def supported_formats(self) -> tuple[str, ...]:
         return ("tar", "zip")
 
-    def create(self, spec: ArchiveCreateSpec) -> ArchiveCreateResult:
+    def create(
+        self,
+        spec: ArchiveCreateSpec,
+        *,
+        total_size: int | None = None,
+    ) -> ArchiveCreateResult:
         if spec.dry_run:
             return ArchiveCreateResult(
                 success=True,
                 dry_run=True,
                 timing=Timing(start_ms=0, end_ms=0),
                 warnings=("Dry run",),
-            )
-        if not self._success:
-            return ArchiveCreateResult(
-                success=False,
-                dry_run=False,
-                timing=Timing(start_ms=0, end_ms=0),
-                warnings=("Fake failure",),
             )
         return ArchiveCreateResult(
             success=True,
@@ -62,44 +134,47 @@ class FakeArchiver:
             archive_path=spec.output_path or Path("/fake/archive.tar"),
         )
 
-    def list(self, path: Path, **kwargs) -> tuple[ArchiveEntry, ...]:
+    def extract(
+        self,
+        spec: RestoreSpec,
+    ) -> tuple[Path, ...]:
+        """Extract files from archive."""
+        return ()
+
+    def list(
+        self,
+        archive_path: Path,
+        *,
+        filter_pattern: str | None = None,
+        page: int = 0,
+        page_size: int = 100,
+    ) -> tuple[ArchiveEntry, ...]:
         return (
             ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
             ArchiveEntry(path="dir/", is_dir=True, size=0, mtime_ns=0),
         )
 
-    def info(self, path: Path):
-        return type(
-            "ArchiveInfoResult",
-            (),
-            {
-                "success": True,
-                "path": path,
-                "format": "tar",
-                "total_entries": 5,
-                "total_size": 1024,
-            },
-        )()
+    def info(self, archive_path: Path) -> ArchiveInfoResult:
+        return ArchiveInfoResult(
+            success=True,
+            archive_path=archive_path,
+            format="tar",
+            created_at=0,
+            total_entries=5,
+            total_size=1024,
+            uncompressed_size=2048,
+            compression_ratio=0.5,
+        )
 
-    def verify(self, path: Path):
-        return type(
-            "ArchiveVerifyResult",
-            (),
-            {
-                "success": True,
-                "path": path,
-                "checksums_valid": True,
-                "structure_valid": True,
-                "entries_checked": 5,
-            },
-        )()
+    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+        return ArchiveVerifyResult(
+            success=True,
+            archive_path=archive_path,
+        )
 
 
 class FakeTransfer:
     """Fake transfer for testing."""
-
-    def __init__(self, success: bool = True):
-        self._success = success
 
     @property
     def name(self) -> str:
@@ -113,55 +188,41 @@ class FakeTransfer:
     def supports_pull(self) -> bool:
         return True
 
-    def push(self, spec: TransferSpec, **kwargs) -> TransferResult:
-        if spec.dry_run:
-            return TransferResult(
-                success=True,
-                dry_run=True,
-                direction="push",
-                timing=Timing(start_ms=0, end_ms=0),
-                warnings=("Dry run",),
-            )
-        if not self._success:
-            return TransferResult(
-                success=False,
-                dry_run=False,
-                direction="push",
-                timing=Timing(start_ms=0, end_ms=0),
-                errors=("Fake failure",),
-            )
+    def push(
+        self,
+        spec: TransferSpec,
+        *,
+        progress_callback: Any | None = None,
+    ) -> TransferResult:
         return TransferResult(
             success=True,
             dry_run=False,
             direction="push",
             timing=Timing(start_ms=0, end_ms=0),
-            files_transferred=1,
-            bytes_transferred=1024,
-            source=spec.sources[0] if spec.sources else None,
-            destination=spec.destination,
         )
 
-    def pull(self, spec: TransferSpec, **kwargs) -> TransferResult:
-        if spec.dry_run:
-            return TransferResult(
-                success=True,
-                dry_run=True,
-                direction="pull",
-                timing=Timing(start_ms=0, end_ms=0),
-                warnings=("Dry run",),
-            )
+    def pull(
+        self,
+        spec: TransferSpec,
+        *,
+        progress_callback: Any | None = None,
+    ) -> TransferResult:
         return TransferResult(
             success=True,
             dry_run=False,
             direction="pull",
             timing=Timing(start_ms=0, end_ms=0),
-            files_transferred=1,
-            bytes_transferred=1024,
-            source=spec.sources[0] if spec.sources else None,
-            destination=spec.destination,
         )
 
-    def sync(self, **kwargs) -> TransferResult:
+    def sync(
+        self,
+        source: Path,
+        destination: Path,
+        *,
+        delete: bool = False,
+        exclude: tuple[str, ...] = (),
+        progress_callback: Any | None = None,
+    ) -> TransferResult:
         return TransferResult(
             success=True,
             dry_run=False,
@@ -170,59 +231,26 @@ class FakeTransfer:
         )
 
 
-class FakeHasher:
-    """Fake hasher for testing."""
-
-    @property
-    def name(self) -> str:
-        return "fake-hasher"
-
-    @property
-    def supported_algorithms(self) -> tuple[str, ...]:
-        return ("md5", "sha256")
-
-    def hash_file(self, path: Path, algorithm: str = "sha256") -> HashResult:
-        return HashResult(
-            algorithm=algorithm,
-            checksum="abc123" * 10,
-            bytes_hashed=1024,
-        )
-
-    def hash_files(self, paths, **kwargs):
-        return {p: self.hash_file(p) for p in paths}
-
-    def hash_directory(self, path: Path, **kwargs):
-        return type(
-            "DirHashResult",
-            (),
-            {
-                "success": True,
-                "file_count": 5,
-                "directory_checksum": "dir123",
-            },
-        )()
-
-
 class FakeToolDetector:
     """Fake tool detector for testing."""
 
-    def detect(self, name: str):
-        return type(
-            "ToolInfo",
-            (),
-            {
-                "name": name,
-                "available": False,
-                "path": None,
-                "version": None,
-            },
-        )()
+    def get_preferred(self, tool_category: str) -> str | None:
+        return None
 
-    def detect_all(self, names):
-        return {n: self.detect(n) for n in names}
+    def detect(self, tool_name: str) -> ToolInfo:
+        return ToolInfo(
+            name=tool_name,
+            available=False,
+            path=None,
+            version=None,
+            capabilities=(),
+        )
 
-    def list_available(self):
-        return {}
+    def detect_all(self, tool_names: tuple[str, ...]) -> dict[str, ToolInfo]:
+        return {n: self.detect(n) for n in tool_names}
+
+    def list_available(self) -> tuple[str, ...]:
+        return ()
 
 
 class TestBackupService:
@@ -278,28 +306,27 @@ class TestBackupService:
             assert result.success is True
             assert result.dry_run is True
 
-    def test_backup_archiver_failure(self):
-        """Test backup handles archiver failure."""
+    def test_backup_nonexistent_source(self):
+        """Test backup fails with nonexistent source."""
         service = BackupService(
-            archiver=FakeArchiver(success=False),
+            archiver=FakeArchiver(),
             transfer=FakeTransfer(),
             hasher=FakeHasher(),
             tool_detector=FakeToolDetector(),
         )
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir) / "source"
-            source.mkdir()
+            source = Path(tmpdir) / "nonexistent_source"
 
             spec = BackupSpec(
                 sources=(source,),
                 destination=Path(tmpdir),
                 archive_name="test",
-            ).normalize()
+            )
 
-            result = service.create(spec)
-
-            assert result.success is False
+            # Should raise NotFoundError during normalization
+            with pytest.raises(NotFoundError):
+                spec.normalize()
 
 
 class TestArchiveService:
@@ -359,7 +386,6 @@ class TestArchiveService:
 
     def test_archive_not_found(self):
         """Test archive not found error."""
-        from bkx.core.errors import NotFoundError
 
         service = ArchiveService(archiver=FakeArchiver())
 
@@ -443,7 +469,6 @@ class TestTransferService:
 
     def test_transfer_wrong_direction(self):
         """Test transfer with wrong direction raises error."""
-        from bkx.core.errors import ValidationError
 
         service = TransferService(
             transfer=FakeTransfer(),

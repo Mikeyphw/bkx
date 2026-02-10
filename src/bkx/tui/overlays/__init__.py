@@ -9,10 +9,11 @@ These wrappers provide:
 - Small focus/UX tweaks (e.g. focus search on open)
 """
 
+# ruff: noqa: E402 - Module imports are at top but ruff may flag them due to docstring
 from bkx.tui.overlays.command_palette import BkxCommandPalette
-from bkx.tui.overlays.notifications import BkxNotificationCenterScreen
-from bkx.tui.overlays.help_overlay import BkxHelpOverlay
 from bkx.tui.overlays.filter_sheet import BkxFilterSheet
+from bkx.tui.overlays.help_overlay import BkxHelpOverlay
+from bkx.tui.overlays.notifications import BkxNotificationCenterScreen
 
 __all__ = [
     "BkxCommandPalette",
@@ -20,4 +21,3 @@ __all__ = [
     "BkxHelpOverlay",
     "BkxFilterSheet",
 ]
-

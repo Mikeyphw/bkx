@@ -9,15 +9,16 @@ Contract rule:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from ..results.transfer import TransferResult, TransferProgress, Timing
+from ..results.transfer import Timing, TransferProgress, TransferResult
 
 if TYPE_CHECKING:
-    from ..specs.transfer import TransferSpec
-    from ..ports.transfer import TransferPort
     from ..ports.hasher import HasherPort
+    from ..ports.transfer import TransferPort
+    from ..specs.transfer import TransferSpec
 
 
 class TransferService:
@@ -48,7 +49,7 @@ class TransferService:
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Push files from local to destination.
 
@@ -62,7 +63,6 @@ class TransferService:
         Raises:
             ValidationError: If spec is invalid.
         """
-        import time
 
         if spec.direction != "push":
             from ..errors import ValidationError
@@ -76,9 +76,7 @@ class TransferService:
             return self._dry_run(spec, "push")
 
         if not self._transfer.supports_push:
-            raise NotImplementedError(
-                f"Transfer method '{self._transfer.name}' does not support push"
-            )
+            raise NotImplementedError(f"Transfer method '{self._transfer.name}' does not support push")
 
         return self._transfer.push(spec, progress_callback=progress_callback)
 
@@ -86,7 +84,7 @@ class TransferService:
         self,
         spec: TransferSpec,
         *,
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Pull files from destination to local.
 
@@ -100,7 +98,6 @@ class TransferService:
         Raises:
             ValidationError: If spec is invalid.
         """
-        import time
 
         if spec.direction != "pull":
             from ..errors import ValidationError
@@ -114,9 +111,7 @@ class TransferService:
             return self._dry_run(spec, "pull")
 
         if not self._transfer.supports_pull:
-            raise NotImplementedError(
-                f"Transfer method '{self._transfer.name}' does not support pull"
-            )
+            raise NotImplementedError(f"Transfer method '{self._transfer.name}' does not support pull")
 
         return self._transfer.pull(spec, progress_callback=progress_callback)
 
@@ -127,7 +122,7 @@ class TransferService:
         *,
         delete: bool = False,
         exclude: tuple[str, ...] = (),
-        progress_callback: callable[[TransferProgress], None] | None = None,
+        progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
         """Sync source to destination (mirror semantics).
 

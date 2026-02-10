@@ -12,15 +12,17 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..results.backup import BackupResult, BackupStepResult, Timing
+from ..results.archive import ArchiveCreateResult
+from ..results.backup import BackupResult, Timing
+from ..results.transfer import TransferResult
 from ..specs.archive import ArchiveCreateSpec
 
 if TYPE_CHECKING:
-    from ..specs.backup import BackupSpec
     from ..ports.archiver import ArchiverPort
-    from ..ports.transfer import TransferPort
     from ..ports.hasher import HasherPort
     from ..ports.tool_detector import ToolDetectorPort
+    from ..ports.transfer import TransferPort
+    from ..specs.backup import BackupSpec
 
 
 class BackupService:
@@ -97,12 +99,8 @@ class BackupService:
                 success=False,
                 dry_run=False,
                 timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-                files_processed=archive_result.files_archived
-                if hasattr(archive_result, "files_archived")
-                else 0,
-                bytes_written=archive_result.bytes_written
-                if hasattr(archive_result, "bytes_written")
-                else 0,
+                files_processed=archive_result.files_archived if hasattr(archive_result, "files_archived") else 0,
+                bytes_written=archive_result.bytes_written if hasattr(archive_result, "bytes_written") else 0,
                 archives_created=1,
                 archive_paths=(archive_result.archive_path,)
                 if hasattr(archive_result, "archive_path") and archive_result.archive_path
@@ -114,11 +112,7 @@ class BackupService:
         # Step 3: Verify if requested
         verify_passed = None
         if spec.verify:
-            archive_path = (
-                archive_result.archive_path
-                if hasattr(archive_result, "archive_path") and archive_result.archive_path
-                else None
-            )
+            archive_path = archive_result.archive_path if hasattr(archive_result, "archive_path") and archive_result.archive_path else None
             if archive_path:
                 verify_passed = self._verify_backup(archive_path)
                 step_results["verify"] = verify_passed
@@ -127,23 +121,16 @@ class BackupService:
             success=True,
             dry_run=False,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-            files_processed=archive_result.files_archived
-            if hasattr(archive_result, "files_archived")
-            else 0,
-            bytes_written=archive_result.bytes_written
-            if hasattr(archive_result, "bytes_written")
-            else 0,
+            files_processed=archive_result.files_archived if hasattr(archive_result, "files_archived") else 0,
+            bytes_written=archive_result.bytes_written if hasattr(archive_result, "bytes_written") else 0,
             archives_created=1,
-            archive_paths=(archive_result.archive_path,)
-            if hasattr(archive_result, "archive_path") and archive_result.archive_path
-            else (),
+            archive_paths=(archive_result.archive_path,) if hasattr(archive_result, "archive_path") and archive_result.archive_path else (),
             verification_passed=verify_passed,
             step_results=step_results,
         )
 
-    def _create_archive(self, spec: BackupSpec) -> "ArchiveCreateResult":
+    def _create_archive(self, spec: BackupSpec) -> ArchiveCreateResult:
         """Create archive from sources."""
-        from ..results.archive import ArchiveCreateResult
 
         # Build archive spec from backup spec
         archive_spec = ArchiveCreateSpec(
@@ -165,16 +152,17 @@ class BackupService:
     def _transfer_archive(
         self,
         spec: BackupSpec,
-        archive_result: "ArchiveCreateResult",
-    ) -> "TransferResult":
+        archive_result: ArchiveCreateResult,
+    ) -> TransferResult:
         """Transfer archive to destination."""
         from ..specs.transfer import TransferSpec
 
         # Only transfer if destination is set and different from archive location
         if not spec.destination:
             # No transfer needed - archive is already in place
-            from ..results.transfer import TransferResult, Timing
             import time
+
+            from ..results.transfer import Timing, TransferResult
 
             return TransferResult(
                 success=True,
@@ -187,8 +175,9 @@ class BackupService:
         # Build transfer spec
         archive_path = archive_result.archive_path
         if not archive_path:
-            from ..results.transfer import TransferResult, Timing
             import time
+
+            from ..results.transfer import Timing, TransferResult
 
             return TransferResult(
                 success=False,

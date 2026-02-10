@@ -7,9 +7,9 @@ BKX wrapper around mikomn's NotificationCenterScreen.
 Adds stable classes and attempts to focus the search input on mount.
 """
 
-from textual.widgets import Input
-
+# ruff: noqa: E402 - mikomn and textual imports must come after docstring
 from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
+from textual.widgets import Input
 
 
 class BkxNotificationCenterScreen(NotificationCenterScreen):
@@ -26,4 +26,3 @@ class BkxNotificationCenterScreen(NotificationCenterScreen):
                 break
             except Exception:
                 continue
-

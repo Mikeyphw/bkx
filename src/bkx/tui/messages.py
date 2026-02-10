@@ -257,7 +257,6 @@ class ShowNotification(Intent):
 
     message: str
     level: str = "info"  # "info", "success", "warning", "error"
-    link: dict[str, str] | None = None  # Optional deep-link: {"route": "...", "focus": "..."}
 
 
 @dataclass
@@ -368,7 +367,6 @@ class ShowToast(Intent):
     message: str
     severity: str = "info"  # "info", "success", "warning", "error"
     duration: float = 3.0  # Seconds to display
-    link: dict[str, str] | None = None  # Optional deep-link: {"route": "...", "focus": "..."}
 
 
 # =============================================================================

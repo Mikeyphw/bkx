@@ -14,19 +14,17 @@ Contract rule:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import Mock, patch
-import pytest
 
 from bkx.tui.messages import (
-    BackupIntent,
     ArchiveIntent,
-    RestoreIntent,
-    TransferIntent,
-    NavigateToScreen,
-    SetBusy,
+    BackupIntent,
     ClearBusy,
-    UpdateLog,
+    NavigateToScreen,
+    RestoreIntent,
+    SetBusy,
     ShowNotification,
+    TransferIntent,
+    UpdateLog,
 )
 
 
@@ -237,6 +235,4 @@ class TestIntentHandlerProtocol:
         ]
 
         for intent in intents:
-            assert isinstance(intent, Message), (
-                f"{type(intent).__name__} should be a Message subclass"
-            )
+            assert isinstance(intent, Message), f"{type(intent).__name__} should be a Message subclass"

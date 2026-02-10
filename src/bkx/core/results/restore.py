@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
 
 from .backup import Timing
 
@@ -53,6 +52,22 @@ class RestoreResult:
         """Get human-readable byte count."""
         return _human_bytes(self.bytes_restored)
 
+    @property
+    def destination_path(self) -> Path | None:
+        """Get first restored path (destination for restore)."""
+        return self.restored_paths[0] if self.restored_paths else None
+
+    @property
+    def destination(self) -> Path | None:
+        """Alias for destination_path (CLI compatibility)."""
+        return self.destination_path
+
+    # Alias for TUI compatibility
+    @property
+    def files_count(self) -> int:
+        """Alias for files_restored for TUI compatibility."""
+        return self.files_restored
+
 
 @dataclass(frozen=True, kw_only=True)
 class RestorePreviewResult:
@@ -67,7 +82,7 @@ class RestorePreviewResult:
     # What would be restored
     total_files: int = 0
     total_size: int = 0
-    files: tuple["RestoreFileInfo", ...] = field(default_factory=tuple)
+    files: tuple[RestoreFileInfo, ...] = field(default_factory=tuple)
 
     # Would overwrite
     existing_files: int = 0
@@ -87,7 +102,7 @@ class RestoreFileInfo:
     is_partial: bool = False  # Would restore only part of file
 
 
-def _human_bytes(n: int) -> str:
+def _human_bytes(n: float) -> str:
     """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if n < 1024:

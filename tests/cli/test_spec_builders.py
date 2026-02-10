@@ -8,15 +8,14 @@ Contract rule:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from bkx.cli.spec_builders import (
-    build_backup_spec,
     build_archive_spec,
-    build_transfer_spec,
+    build_backup_spec,
     build_restore_spec,
+    build_transfer_spec,
 )
 
 

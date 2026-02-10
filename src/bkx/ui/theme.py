@@ -15,15 +15,26 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from mikomn import (
     get_current_theme as _get_current_theme,
+)
+from mikomn import (
     get_theme_names as _get_theme_names,
+)
+from mikomn import (
     load_theme,
+)
+from mikomn import (
     off_theme_change as _off_theme_change,
+)
+from mikomn import (
     on_theme_change as _on_theme_change,
+)
+from mikomn import (
     register_theme_dir as _register_theme_dir,
 )
 from mikomn.themes.core import generate_rich_styles, set_current_theme
@@ -180,6 +191,7 @@ def reload_theme() -> None:
 # Palette accessors (bkx-friendly names)
 # ---------------------------------------------------------------------------
 
+
 def primary_color() -> str:
     pal = get_palette()
     return pal.get("accent_primary", pal.get("accent", "#3B82F6"))
@@ -234,6 +246,7 @@ def foreground_muted_color() -> str:
 # Rich style helpers
 # ---------------------------------------------------------------------------
 
+
 def success_style() -> str:
     return f"bold {get_rich_styles().get('success', success_color())}"
 
@@ -261,6 +274,7 @@ def accent_style() -> str:
 # ---------------------------------------------------------------------------
 # Theme change callbacks (bridged)
 # ---------------------------------------------------------------------------
+
 
 def _bridge_theme_change(theme_name: str, palette: dict[str, str]) -> None:
     for cb in list(_on_theme_change_callbacks):
@@ -305,6 +319,7 @@ def off_theme_change(callback: Callable[..., None]) -> None:
 # Custom theme directories
 # ---------------------------------------------------------------------------
 
+
 def register_theme_dir(directory: str) -> bool:
     """Register a custom theme directory with mikomn."""
     global _custom_theme_dirs
@@ -332,6 +347,7 @@ def load_custom_theme_dirs() -> None:
 # ---------------------------------------------------------------------------
 # Theme persistence
 # ---------------------------------------------------------------------------
+
 
 def _get_config_dir() -> Path:
     config_home = os.environ.get("XDG_CONFIG_HOME", "")
@@ -367,7 +383,7 @@ def save_theme_preference(theme_name: str) -> bool:
     return True
 
 
-def load_theme_preference() -> Optional[str]:
+def load_theme_preference() -> str | None:
     config_file = _get_theme_config_file()
     if not config_file.exists():
         return None
@@ -382,6 +398,7 @@ def load_theme_preference() -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Themed message helpers (Rich markup)
 # ---------------------------------------------------------------------------
+
 
 def get_status_message(level: str = "info") -> tuple[str, str]:
     icon_map = {"info": "ℹ️", "success": "✅", "warning": "⚠️", "error": "❌"}

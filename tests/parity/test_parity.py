@@ -15,35 +15,33 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from bkx.cli.app import app
 from bkx.cli.spec_builders import (
-    build_backup_spec,
     build_archive_spec,
-    build_transfer_spec,
+    build_backup_spec,
     build_restore_spec,
+    build_transfer_spec,
 )
-from bkx.core.specs.backup import BackupSpec
-from bkx.core.specs.archive import ArchiveCreateSpec
-from bkx.core.specs.transfer import TransferSpec
-from bkx.core.specs.restore import RestoreSpec
 from bkx.core.parity import (
     compute_spec_hash,
     spec_to_dict,
-    verify_parity,
     validate_spec_against_schema,
+    verify_parity,
 )
 from bkx.core.schemas import (
-    BACKUP_SPEC_SCHEMA,
     ARCHIVE_SPEC_SCHEMA,
-    TRANSFER_SPEC_SCHEMA,
+    BACKUP_SPEC_SCHEMA,
     RESTORE_SPEC_SCHEMA,
+    TRANSFER_SPEC_SCHEMA,
 )
+from bkx.core.specs.archive import ArchiveCreateSpec
+from bkx.core.specs.backup import BackupSpec
+from bkx.core.specs.transfer import TransferSpec
 
 runner = CliRunner()
 

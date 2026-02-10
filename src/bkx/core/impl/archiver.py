@@ -8,15 +8,9 @@ from __future__ import annotations
 
 import os
 import tarfile
-import zlib
 from dataclasses import dataclass
-from io import BytesIO
 from pathlib import Path
-from typing import IO
 
-from ..ports.archiver import ArchiveFormat, TAR, ZIP
-from ..specs.archive import ArchiveCreateSpec
-from ..specs.restore import RestoreSpec
 from ..results.archive import (
     ArchiveCreateResult,
     ArchiveEntry,
@@ -24,6 +18,8 @@ from ..results.archive import (
     ArchiveVerifyResult,
 )
 from ..results.backup import Timing
+from ..specs.archive import ArchiveCreateSpec
+from ..specs.restore import RestoreSpec
 
 
 class FallbackArchiver:
@@ -64,7 +60,6 @@ class FallbackArchiver:
             Result with metrics and archive path.
         """
         import time
-        from pathlib import Path
 
         start_ms = int(time.time() * 1000)
 
@@ -72,10 +67,6 @@ class FallbackArchiver:
             raise ValueError("output_path is required")
 
         output_path = spec.output_path
-        files_archived = 0
-        bytes_written = 0
-        original_size = 0
-        warnings = []
 
         # Determine format from extension
         if str(output_path).endswith(".zip"):
@@ -97,7 +88,7 @@ class FallbackArchiver:
     def _create_tar(
         self,
         spec: ArchiveCreateSpec,
-    ) -> "CreateResult":
+    ) -> CreateResult:
         """Create a tar archive."""
         output_path = spec.output_path
         if output_path is None:
@@ -115,7 +106,7 @@ class FallbackArchiver:
                     size = source.stat().st_size
                     original_size += size
                 elif source.is_dir():
-                    for root, dirs, fnames in os.walk(source):
+                    for root, _dirs, fnames in os.walk(source):
                         for fname in fnames:
                             fpath = Path(root) / fname
                             tar.add(fpath, arcname=str(fpath.relative_to(source.parent)))
@@ -130,7 +121,7 @@ class FallbackArchiver:
     def _create_zip(
         self,
         spec: ArchiveCreateSpec,
-    ) -> "CreateResult":
+    ) -> CreateResult:
         """Create a zip archive."""
         import zipfile
 
@@ -150,7 +141,7 @@ class FallbackArchiver:
                     size = source.stat().st_size
                     original_size += size
                 elif source.is_dir():
-                    for root, dirs, fnames in os.walk(source):
+                    for root, _dirs, fnames in os.walk(source):
                         for fname in fnames:
                             fpath = Path(root) / fname
                             zf.write(fpath, arcname=str(fpath.relative_to(source.parent)))
@@ -181,7 +172,7 @@ class FallbackArchiver:
         Returns:
             List of archive entries.
         """
-        entries = []
+        entries: list[ArchiveEntry] = []
 
         if str(archive_path).endswith(".zip"):
             entries = self._list_zip(archive_path)
@@ -200,7 +191,7 @@ class FallbackArchiver:
 
         return tuple(entries[start:end])
 
-    def _list_tar(self, archive_path: Path) -> list[ArchiveEntry]:
+    def _list_tar(self, archive_path: Path) -> list[ArchiveEntry]:  # type: ignore[valid-type]
         """List tar archive contents."""
         entries = []
 
@@ -217,7 +208,7 @@ class FallbackArchiver:
 
         return entries
 
-    def _list_zip(self, archive_path: Path) -> list[ArchiveEntry]:
+    def _list_zip(self, archive_path: Path) -> list[ArchiveEntry]:  # type: ignore[valid-type]
         """List zip archive contents."""
         import zipfile
 
@@ -245,7 +236,6 @@ class FallbackArchiver:
         Returns:
             Archive metadata.
         """
-        import time
 
         entries = self.list(archive_path)
         total_size = archive_path.stat().st_size
@@ -285,7 +275,7 @@ class FallbackArchiver:
                 details={"path": str(archive_path)},
             )
 
-        warnings = []
+        warnings: list[str] = []
 
         if str(archive_path).endswith(".zip"):
             raw_result = self._verify_zip(archive_path)

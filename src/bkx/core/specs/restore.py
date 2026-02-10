@@ -5,9 +5,9 @@ Defines the normalized intent for restore operations.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-import time
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,7 +71,7 @@ class RestoreSpec:
             archive_name = self.archive.stem
             timestamp = int(time.time())
             fresh_path = Path(f"restored_{archive_name}_{timestamp}")
-            destination = fresh_path
+            destination: Path | None = fresh_path
         else:
             destination = self.destination or default_destination
 

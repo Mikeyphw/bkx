@@ -7,11 +7,10 @@ Contract rule:
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Protocol
-
+from typing import Any, Literal, Protocol
 
 # Type alias for hash algorithm identifiers
 HashAlgorithm = Literal["md5", "sha256", "sha512", "xxh128", "xxh64"]
@@ -49,25 +48,41 @@ class HasherPort(Protocol):
         """Length of digest in bytes."""
         ...
 
-    def hash_file(self, path: Path) -> str:
+    def hash_file(
+        self,
+        path: Path,
+        algorithm: HashAlgorithm = "sha256",
+        *,
+        chunk_size: int = 8192,
+    ) -> HashResult:
         """Compute hash of a single file.
 
         Args:
             path: Path to file.
+            algorithm: Hash algorithm to use.
+            chunk_size: Size of chunks to read.
 
         Returns:
-            Hex digest string.
+            HashResult with checksum and metadata.
         """
         ...
 
-    def hash_files(self, paths: tuple[Path, ...]) -> dict[Path, str]:
+    def hash_files(
+        self,
+        paths: tuple[Path, ...],
+        algorithm: HashAlgorithm = "sha256",
+        *,
+        progress_callback: Callable[[Path, int, int], Any] | None = None,
+    ) -> dict[Path, HashResult]:
         """Compute hashes of multiple files.
 
         Args:
             paths: Paths to files.
+            algorithm: Hash algorithm to use.
+            progress_callback: Optional callback (path, current, total).
 
         Returns:
-            Dict mapping path to hex digest.
+            Dict mapping path to HashResult.
         """
         ...
 

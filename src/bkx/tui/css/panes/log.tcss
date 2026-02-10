@@ -1,39 +1,10 @@
-/* RunLogPane styles */
+/* Run log styles (mikonm LogPane wrapper used by RunPanel). */
 
-.bkx-run-log-pane {
-    height: 15;
-    dock: bottom;
-    background: $surface;
-    border: solid $secondary;
-}
-
-.bkx-run-log-pane RichLog {
+.bkx-run-log {
     height: 1fr;
-    dock: bottom;
+    min-height: 6;
 }
 
-.log-header {
-    height: 2;
-    dock: top;
-    background: $surface-darken-1;
+.bkx-run-log #log-content {
+    height: 1fr;
 }
-
-
-.log-title {
-    color: $foreground;
-    text-style: bold;
-    padding: 0 1;
-}
-
-
-.log-controls {
-    height: 2;
-    dock: top;
-    background: $surface-darken-1;
-}
-
-.log-controls Button {
-    margin: 0 1;
-    min-width: 8;
-}
-

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
 import tempfile
-import os
+from pathlib import Path
 
-from bkx.core.impl.tool_detector import FallbackToolDetector
 from bkx.core.impl.archiver import FallbackArchiver
-from bkx.core.impl.transfer import FallbackTransfer
 from bkx.core.impl.hasher import FallbackHasher
+from bkx.core.impl.tool_detector import FallbackToolDetector
+from bkx.core.impl.transfer import FallbackTransfer
 
 
 class TestFallbackToolDetector:

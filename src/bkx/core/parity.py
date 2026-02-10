@@ -24,8 +24,6 @@ def _normalize_for_json(value: Any) -> Any:
     Handles Path objects, tuples, NamedTuples, dataclass Field objects, and other non-JSON types.
     """
     import dataclasses
-    from pathlib import Path
-
     from dataclasses import Field
 
     # Handle dataclass Field objects (extract the actual value)
@@ -45,8 +43,9 @@ def _normalize_for_json(value: Any) -> Any:
     if isinstance(value, tuple):
         # Check if it's a NamedTuple (has _fields attribute)
         if hasattr(value, "_fields"):
-            # Convert NamedTuple to dict with field names as keys
-            return {field: _normalize_for_json(getattr(value, field)) for field in value._fields}
+            # Safely access _fields after checking hasattr
+            field_names: tuple[str, ...] = getattr(value, "_fields", ())
+            return {field: _normalize_for_json(getattr(value, field)) for field in field_names}
         else:
             return [_normalize_for_json(item) for item in value]
 
@@ -171,9 +170,7 @@ def verify_parity(*specs: Any, ignore_fields: tuple[str, ...] = ()) -> tuple[boo
 
     for i, spec_hash in enumerate(hashes[1:], start=1):
         if spec_hash != first_hash:
-            differences.append(
-                f"Spec {i} hash differs: {spec_hash[:16]}... vs {first_hash[:16]}..."
-            )
+            differences.append(f"Spec {i} hash differs: {spec_hash[:16]}... vs {first_hash[:16]}...")
 
     return len(differences) == 0, differences
 
@@ -223,13 +220,9 @@ def validate_spec_against_schema(spec: dict, schema: dict) -> tuple[bool, list[s
                         nested_value = value[nested_field]
                         nested_type = nested_schema.get("type")
                         if nested_type == "string" and not isinstance(nested_value, str):
-                            errors.append(
-                                f"Field '{field}.{nested_field}' should be string, got {type(nested_value).__name__}"
-                            )
+                            errors.append(f"Field '{field}.{nested_field}' should be string, got {type(nested_value).__name__}")
                         elif nested_type == "integer" and not isinstance(nested_value, int):
-                            errors.append(
-                                f"Field '{field}.{nested_field}' should be integer, got {type(nested_value).__name__}"
-                            )
+                            errors.append(f"Field '{field}.{nested_field}' should be integer, got {type(nested_value).__name__}")
 
     return len(errors) == 0, errors
 

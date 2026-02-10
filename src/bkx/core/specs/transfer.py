@@ -46,7 +46,7 @@ class TransferSpec:
         Raises:
             ValidationError: If validation fails.
         """
-        from bkx.core.errors import NotFoundError, ValidationError
+        from bkx.core.errors import ValidationError
 
         # Validate direction
         if self.direction not in ("push", "pull"):

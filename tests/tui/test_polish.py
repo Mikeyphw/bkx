@@ -16,43 +16,38 @@ from __future__ import annotations
 
 from pathlib import Path
 from unittest.mock import Mock, patch
-import pytest
 
 from bkx.tui.messages import (
-    ShowToast,
-    ProgressUpdate,
-    ProgressStarted,
-    ProgressCompleted,
+    ClearEmptyState,
     FilterChanged,
     ItemsSelected,
-    RequestEmptyState,
-    ClearEmptyState,
-    StatusCardUpdated,
-    PreviewRequest,
     PreviewContent,
+    PreviewRequest,
+    ProgressCompleted,
+    ProgressStarted,
+    ProgressUpdate,
+    RequestEmptyState,
+    ShowToast,
+    StatusCardUpdated,
 )
 from bkx.tui.panes.archive_list import (
+    ArchiveListItem,
     ArchiveListPane,
     ArchivePreviewPane,
-    ArchiveListItem,
     create_archive_list_items,
 )
+from bkx.tui.panes.empty_state import (
+    EmptyStateManager,
+    EmptyStatePane,
+    EmptyStatePresets,
+)
 from bkx.tui.panes.progress import (
-    ProgressPane,
-    StatusBarPane,
     TransferProgressPane,
 )
 from bkx.tui.panes.status_cards import (
-    StatusCardsPane,
     StatusCard,
     StatusCardConfig,
-    ThemeSettingsPane,
     create_default_status_cards,
-)
-from bkx.tui.panes.empty_state import (
-    EmptyStatePane,
-    EmptyStatePresets,
-    EmptyStateManager,
 )
 
 
@@ -442,7 +437,6 @@ class TestIntegrationScenarios:
         # Create progress update messages
         started = ProgressStarted(operation="backup", total=100, message="Starting backup")
         update1 = ProgressUpdate(operation="backup", current=25, percent=0.25)
-        update2 = ProgressUpdate(operation="backup", current=50, percent=0.50)
         completed = ProgressCompleted(operation="backup", message="Backup complete")
 
         assert started.total == 100

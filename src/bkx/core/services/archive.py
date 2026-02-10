@@ -13,18 +13,17 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..results.archive import (
-    ArchiveCreateResult,
-    ArchiveListResult,
-    ArchiveEntry,
-    ArchiveInfoResult,
-    ArchiveVerifyResult,
     ArchiveBrowseResult,
+    ArchiveCreateResult,
+    ArchiveInfoResult,
+    ArchiveListResult,
+    ArchiveVerifyResult,
     Timing,
 )
 
 if TYPE_CHECKING:
-    from ..specs.archive import ArchiveCreateSpec, ArchiveBrowseSpec
     from ..ports.archiver import ArchiverPort
+    from ..specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec
 
 
 class ArchiveService:
@@ -177,7 +176,6 @@ class ArchiveService:
 
         # Filter by query (path contains)
         if spec.query:
-            query_lower = spec.query.lower()
             filtered = [e for e in filtered if spec.query in e.path.lower()]
 
         # Filter by file type

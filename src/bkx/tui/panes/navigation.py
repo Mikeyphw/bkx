@@ -57,8 +57,8 @@ class NavigationPane(Container):
             screen_name: Name of screen to navigate to
         """
         list_view = self.query_one(ListView)
-        for index, item in enumerate(list_view):
+        for index, item in enumerate(list_view):  # type: ignore[arg-type]
             if isinstance(item, NavListItem) and item.value == screen_name:
                 list_view.focus()
-                list_view.selected = index
+                list_view.selected = index  # type: ignore[attr-defined]
                 break

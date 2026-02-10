@@ -53,18 +53,31 @@ class TransferPage(Container):
         )
 
     @on(Button.Pressed, "#btn-pick-source")
-    async def _pick_source(self) -> None:
-        selected = await show_file_picker(title="Select source", mode=FilterMode.FILES_AND_DIRS, multiple=False)
-        if not selected:
-            return
-        self.query_one("#field-source", Input).value = str(selected[0])
+    def _pick_source(self) -> None:
+        def on_selected(paths: list | None) -> None:
+            if paths:
+                self.query_one("#field-source", Input).value = str(paths[0])
+
+        show_file_picker(
+            self.app,
+            title="Select source",
+            mode=FilterMode.FILES_ONLY,  # type: ignore[arg-type]
+            multiple=False,
+            on_select=on_selected,
+            on_cancel=None,
+        )
 
     @on(Button.Pressed, "#btn-pick-dest")
-    async def _pick_dest(self) -> None:
-        selected = await show_destination_picker(title="Select destination folder")
-        if not selected:
-            return
-        self.query_one("#field-destination", Input).value = str(selected)
+    def _pick_dest(self) -> None:
+        def on_confirm(path: Path) -> None:
+            self.query_one("#field-destination", Input).value = str(path)
+
+        show_destination_picker(
+            self.app,
+            title="Select destination folder",
+            on_confirm=on_confirm,
+            on_cancel=None,
+        )
 
     @on(Button.Pressed, "#btn-run")
     def _run(self) -> None:

@@ -89,6 +89,4 @@ class StatusFooterPane(Container):
 
     def on_update_status(self, event) -> None:
         """Handle external status update messages."""
-        self.update_status(
-            text=event.message, is_busy=event.is_busy if hasattr(event, "is_busy") else False
-        )
+        self.update_status(text=event.message, is_busy=event.is_busy if hasattr(event, "is_busy") else False)

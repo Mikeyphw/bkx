@@ -5,12 +5,11 @@ Tests config loading from defaults, env vars, and config files.
 
 from __future__ import annotations
 
-import pytest
-from pathlib import Path
-import tempfile
 import os
+import tempfile
+from pathlib import Path
 
-from bkx.core.config import BkxConfig, get_config, reset_config, reload_config
+from bkx.core.config import BkxConfig, get_config, reload_config, reset_config
 
 
 class TestBkxConfigDefaults:

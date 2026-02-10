@@ -64,7 +64,7 @@ class BackupSpec:
         Raises:
             ValidationError: If validation fails.
         """
-        from bkx.core.errors import ValidationError
+        from bkx.core.errors import NotFoundError, ValidationError
 
         # Validate sources exist
         if not self.sources:
@@ -105,9 +105,7 @@ class BackupSpec:
             verify=self.verify,
             dry_run=self.dry_run,
             _resolved_destination=destination,
-            _archive_path=destination / f"{archive_name}.bakery"
-            if archive_name and destination
-            else None,
+            _archive_path=destination / f"{archive_name}.bakery" if archive_name and destination else None,
         )
 
         return normalized

@@ -8,7 +8,7 @@ Adds stable classes and attempts to focus the search input on mount.
 """
 
 # ruff: noqa: E402 - mikomn and textual imports must come after docstring
-from mikomn.tui_base.screens.notification_center import NotificationCenterScreen
+from mikomn_tui.base.screens.notification_center import NotificationCenterScreen
 from textual.widgets import Input
 
 

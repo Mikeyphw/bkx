@@ -14,11 +14,11 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from mikomn.cli_base.interactive.models import PickerType, PickOptions, SelectionMode
-from mikomn.cli_base.interactive.prompts import ask_path, ask_text
-from mikomn.cli_base.pickers import FilePicker
-from mikomn.cli_base.pickers.adapters import FzfAdapter, YaziAdapter
-from mikomn.cli_base.ui2.exceptions import NonInteractiveInput, UserCancelled
+from mikomn_cli.base.interactive.models import PickerType, PickOptions, SelectionMode
+from mikomn_cli.base.interactive.prompts import ask_path, ask_text
+from mikomn_cli.base.pickers import FilePicker
+from mikomn_cli.base.pickers.adapters import FzfAdapter, YaziAdapter
+from mikomn_cli.base.ui2.exceptions import NonInteractiveInput, UserCancelled
 
 
 def _preferred_picker() -> PickerType:

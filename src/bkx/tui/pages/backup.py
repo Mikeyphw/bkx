@@ -14,8 +14,8 @@ import queue
 import threading
 from pathlib import Path
 
-from mikomn.tui_base.panes.input.form_pane import FormPane
-from mikomn.tui_base.widgets.file_picker import FilterMode
+from mikomn_tui.base.panes.input.form_pane import FormPane
+from mikomn_tui.base.widgets.file_picker import FilterMode
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, Vertical

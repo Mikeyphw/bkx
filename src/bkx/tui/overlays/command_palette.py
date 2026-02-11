@@ -8,7 +8,7 @@ Provides a stable BKX class for styling and leaves internal structure intact.
 """
 
 # ruff: noqa: E402 - mikomn imports must come after docstring
-from mikomn.tui_base.overlays import CommandPalette
+from mikomn_tui.base.overlays import CommandPalette
 
 
 class BkxCommandPalette(CommandPalette):

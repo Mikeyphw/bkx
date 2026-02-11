@@ -13,11 +13,11 @@ Contract:
 
 from __future__ import annotations
 
-from mikomn.tui_base.panes.display.log_pane import LogPane
-from mikomn.tui_base.panes.display.progress_pane import ProgressPane
-from mikomn.tui_base.panes.display.status_pane import StatusPane
-from mikomn.tui_base.widgets.progress import GlobalProgressBar
-from mikomn.tui_base.widgets.status import StatusMessage
+from mikomn_tui.base.panes.display.log_pane import LogPane
+from mikomn_tui.base.panes.display.progress_pane import ProgressPane
+from mikomn_tui.base.panes.display.status_pane import StatusPane
+from mikomn_tui.base.widgets.progress import GlobalProgressBar
+from mikomn_tui.base.widgets.status import StatusMessage
 from textual.app import ComposeResult
 from textual.containers import Vertical
 

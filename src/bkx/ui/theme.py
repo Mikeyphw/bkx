@@ -37,7 +37,7 @@ from mikomn import (
 from mikomn import (
     register_theme_dir as _register_theme_dir,
 )
-from mikomn.themes.core import generate_rich_styles, set_current_theme
+from mikomn_core.themes.core import generate_rich_styles, set_current_theme
 
 DEFAULT_THEME = "sweet-dracula"
 

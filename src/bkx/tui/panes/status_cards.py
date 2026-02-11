@@ -8,8 +8,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from mikomn.tui_base.models import StatusCardData as MikomnStatusCardData
-from mikomn.tui_base.widgets import StatusCards
+from mikomn_tui.base.models import StatusCardData as MikomnStatusCardData
+from mikomn_tui.base.widgets import StatusCards
 from textual.app import ComposeResult
 from textual.containers import Container, Grid
 from textual.message import Message

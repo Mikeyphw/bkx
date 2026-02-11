@@ -7,8 +7,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mikomn.tui_base.models import FilterGroup, FilterOption
-from mikomn.tui_base.panes.common.filterable_list_pane import FilterableListPane
+from mikomn_tui.base.models import FilterGroup, FilterOption
+from mikomn_tui.base.panes.common.filterable_list_pane import FilterableListPane
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.message import Message

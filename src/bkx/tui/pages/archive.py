@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mikomn.tui_base.widgets.file_picker import FilterMode
+from mikomn_tui.base.widgets.file_picker import FilterMode
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical

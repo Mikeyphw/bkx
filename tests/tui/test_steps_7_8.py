@@ -400,7 +400,7 @@ class TestCommandPaletteCompletenessStep7C:
 
     def test_command_palette_commands_exist(self) -> None:
         """Test that new commands are available."""
-        from mikomn.tui_base.models import Command
+        from mikomn_tui.base.models import Command
 
         # These are the new commands added in Step 7C
         expected_commands = [

@@ -5,9 +5,9 @@ Uses mikomn's GlobalProgressBar and StatusBar for progress tracking.
 
 from __future__ import annotations
 
-from mikomn.tui_base.panes.display.progress_pane import ProgressPane as MikomnProgressPane
-from mikomn.tui_base.widgets import StatusBar
-from mikomn.tui_base.widgets.status import StatusMessage
+from mikomn_tui.base.panes.display.progress_pane import ProgressPane as MikomnProgressPane
+from mikomn_tui.base.widgets import StatusBar
+from mikomn_tui.base.widgets.status import StatusMessage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.message import Message

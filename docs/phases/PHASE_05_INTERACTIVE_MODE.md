@@ -23,7 +23,7 @@ Utilizes [mikomn](src/mikomn) for Rich-based interactive prompts, menus, and pic
 ### Theme-Aware Prompts
 Use mikomn's prompt helpers for consistent styling:
 ```python
-from mikomn.cli_base.interactive import (
+from mikomn_cli.base.interactive import (
     ask_text, ask_confirm, ask_int, ask_float, ask_path,
     banner, accent, primary, foreground,
 )
@@ -36,7 +36,7 @@ banner("=== Interactive Backup ===")
 
 ### Noun→Verb Menu with show_menu
 ```python
-from mikomn.cli_base.interactive import MenuItem, MenuConfig, show_menu
+from mikomn_cli.base.interactive import MenuItem, MenuConfig, show_menu
 
 items = [
     MenuItem(value="backup", label="Backup", description="Create backup archives"),
@@ -48,7 +48,7 @@ result = show_menu(items, config=config)
 
 ### Static Rich Menu for Flags
 ```python
-from mikomn.cli_base.menus import select_flags, make_flag_option
+from mikomn_cli.base.menus import select_flags, make_flag_option
 
 flags = [
     make_flag_option("--algorithm", "Compression algorithm", default="zstd"),
@@ -59,7 +59,7 @@ values = select_flags(flags)
 
 ### Yazi Picker Integration
 ```python
-from mikomn.cli_base.pickers import FilePicker, PickOptions, PickerType, YaziAdapter
+from mikomn_cli.base.pickers import FilePicker, PickOptions, PickerType, YaziAdapter
 
 picker = FilePicker(
     PickOptions(title="Select sources", mode=SelectionMode.MULTIPLE),
@@ -71,7 +71,7 @@ paths = picker.pick(PickerType.YAZI)
 
 ### Retry Loop for Validation
 ```python
-from mikomn.cli_base.interactive import retry_loop
+from mikomn_cli.base.interactive import retry_loop
 
 result = retry_loop(
     attempt=validate_input,

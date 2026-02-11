@@ -12,8 +12,8 @@ Leverage mikomn schemas for stable JSON serialization and testing.
 ### Spec Hashing Strategy
 Use mikomn's command schema pattern for stable Spec serialization:
 ```python
-from mikomn.tui_base.models import Command
-from mikomn.tui_base.configs import ConfigRegistry
+from mikomn_tui.base.models import Command
+from mikomn_tui.base.configs import ConfigRegistry
 
 # Stable JSON serialization with sorted keys
 def compute_spec_hash(spec: dict) -> str:
@@ -38,7 +38,7 @@ def verify_parity(cli_spec: dict, interactive_spec: dict, tui_spec: dict) -> boo
 ### Schema Snapshots
 Use mikomn ConfigRegistry for schema validation:
 ```python
-from mikomn.tui_base.configs import ConfigRegistry
+from mikomn_tui.base.configs import ConfigRegistry
 from pathlib import Path
 
 # Load and validate spec against schema
@@ -52,7 +52,7 @@ validated = ConfigRegistry.load_commands(config_path, schema_path=config_path)
 ### Command Model for Intent
 Use mikomn's Command model for consistent intent representation:
 ```python
-from mikomn.tui_base.models import Command
+from mikomn_tui.base.models import Command
 
 # Define spec intent using Command model
 backup_command = Command(

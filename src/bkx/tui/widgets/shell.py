@@ -11,13 +11,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from mikomn.tui_base.containers.side_panes import SidePanes
-from mikomn.tui_base.containers.sidebar_region import SidebarRegion
-from mikomn.tui_base.layouts.header_body_footer import HeaderBodyFooterLayout
-from mikomn.tui_base.utils.page_registry import PageRegistry
-from mikomn.tui_base.widgets.footer import AppFooter, FooterTab, TabSelected
-from mikomn.tui_base.widgets.header import AppHeader
-from mikomn.tui_base.widgets.sidebar import Sidebar, SidebarItem
+from mikomn_tui.base.containers.side_panes import SidePanes
+from mikomn_tui.base.containers.sidebar_region import SidebarRegion
+from mikomn_tui.base.layouts.header_body_footer import HeaderBodyFooterLayout
+from mikomn_tui.base.utils.page_registry import PageRegistry
+from mikomn_tui.base.widgets.footer import AppFooter, FooterTab, TabSelected
+from mikomn_tui.base.widgets.header import AppHeader
+from mikomn_tui.base.widgets.sidebar import Sidebar, SidebarItem
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container

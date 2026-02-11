@@ -16,14 +16,14 @@ import traceback
 import uuid
 from typing import Literal
 
-from mikomn.tui_base import BaseTuiApp
-from mikomn.tui_base.css_registry import reload_css
-from mikomn.tui_base.models import Command, FilterGroup, FilterOption, ToastData
-from mikomn.tui_base.notifications import NotificationHistory
-from mikomn.tui_base.overlays import CommandSelected
-from mikomn.tui_base.platform import LayoutMode
-from mikomn.tui_base.widgets import DebugOverlay
-from mikomn.tui_base.widgets.toast import ToastContainer, ToastManager
+from mikomn_tui.base import BaseTuiApp
+from mikomn_tui.base.css_registry import reload_css
+from mikomn_tui.base.models import Command, FilterGroup, FilterOption, ToastData
+from mikomn_tui.base.notifications import NotificationHistory
+from mikomn_tui.base.overlays import CommandSelected
+from mikomn_tui.base.platform import LayoutMode
+from mikomn_tui.base.widgets import DebugOverlay
+from mikomn_tui.base.widgets.toast import ToastContainer, ToastManager
 from textual.app import App, ComposeResult
 
 # Theme integration
@@ -647,7 +647,7 @@ class BkxTuiApp(BaseTuiApp):
         # Try to use the debug overlay if available
         if self._debug_overlay is None:
             try:
-                from mikomn.tui_base.widgets.debug_overlay import DebugOverlay as DO
+                from mikomn_tui.base.widgets.debug_overlay import DebugOverlay as DO
 
                 overlay = DO(target=self.screen)
                 path = self.dump_debug_snapshot(overlay=overlay)
@@ -764,7 +764,7 @@ class BkxTuiApp(BaseTuiApp):
         """Dump debug information to file."""
         if self._debug_overlay is None:
             if DebugOverlay is not None:
-                from mikomn.tui_base.widgets.debug_overlay import DebugOverlay as TempOverlay
+                from mikomn_tui.base.widgets.debug_overlay import DebugOverlay as TempOverlay
 
                 overlay = TempOverlay()
                 path = self.dump_debug_snapshot(overlay=overlay)

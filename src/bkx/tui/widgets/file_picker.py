@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from mikomn.tui_base.widgets.file_picker import (
+from mikomn_tui.base.widgets.file_picker import (
     FileDirPicker,
     FilterMode,
 )

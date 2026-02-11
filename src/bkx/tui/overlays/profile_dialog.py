@@ -5,7 +5,7 @@ Dialog for creating and editing profiles.
 
 from __future__ import annotations
 
-from mikomn.tui_base import BaseModalScreen
+from mikomn_tui.base import BaseModalScreen
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message

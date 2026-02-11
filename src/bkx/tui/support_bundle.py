@@ -134,7 +134,7 @@ def get_run_logs(max_lines: int = 500) -> str:
 def get_notification_history(max_entries: int = 200) -> list[dict[str, Any]]:
     """Get notification history."""
     try:
-        from mikomn.tui_base.notifications import NotificationHistory
+        from mikomn_tui.base.notifications import NotificationHistory
 
         entries = NotificationHistory.events()
         try:

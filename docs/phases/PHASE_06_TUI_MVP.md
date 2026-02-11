@@ -13,7 +13,7 @@ Utilizes [mikomn](src/mikomn) TUI base framework for Textual integration.
 ### Base App
 Use `BaseTuiApp` for theme cycling, layout modes, and command palette:
 ```python
-from mikomn.tui_base import BaseTuiApp
+from mikomn_tui.base import BaseTuiApp
 
 class BkxApp(BaseTuiApp):
     TITLE = "BKX"
@@ -25,7 +25,7 @@ class BkxApp(BaseTuiApp):
 
 ### Layout Components
 ```python
-from mikomn.tui_base.panes import (
+from mikomn_tui.base.panes import (
     HeaderPane,      # Top bar with title
     SidebarPane,     # Navigation sidebar
     ListPane,        # Scrollable list
@@ -37,7 +37,7 @@ from mikomn.tui_base.panes import (
 
 ### Widgets
 ```python
-from mikomn.tui_base.widgets import (
+from mikomn_tui.base.widgets import (
     AppHeader, AppFooter,
     FileDirPicker,   # Multi-select file/dir picker
     Breadcrumb,      # Path display
@@ -49,8 +49,8 @@ from mikomn.tui_base.widgets import (
 
 ### Command Palette
 ```python
-from mikomn.tui_base import CommandPalette, Command, CommandSelected
-from mikomn.tui_base.overlays import ConfirmModal
+from mikomn_tui.base import CommandPalette, Command, CommandSelected
+from mikomn_tui.base.overlays import ConfirmModal
 
 # Define commands
 commands = [
@@ -65,7 +65,7 @@ def action_show_command_palette(self):
 
 ### Run Log Panel
 ```python
-from mikomn.tui_base.panes import LogPane
+from mikomn_tui.base.panes import LogPane
 
 log_pane = LogPane(title="Run Logs", max_lines=1000)
 log_pane.write("Starting backup...")
@@ -75,7 +75,7 @@ log_pane.clear()
 
 ### Confirm Modals
 ```python
-from mikomn.tui_base.overlays import ConfirmModal
+from mikomn_tui.base.overlays import ConfirmModal
 
 def confirm_destructive(self):
     self.push_screen(ConfirmModal(

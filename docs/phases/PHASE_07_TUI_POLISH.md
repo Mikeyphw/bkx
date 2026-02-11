@@ -12,8 +12,8 @@ Build upon mikomn TUI base widgets for polished UI.
 ### Archive Browse/Search UI
 Use FilterableListPane for searchable archive lists:
 ```python
-from mikomn.tui_base.panes import FilterableListPane
-from mikomn.tui_base.panes import PreviewPane
+from mikomn_tui.base.panes import FilterableListPane
+from mikomn_tui.base.panes import PreviewPane
 
 archives_pane = FilterableListPane[str](
     title="Archives",
@@ -32,8 +32,8 @@ archives_pane.set_items([
 ### Restore Pick Subset UI
 Combine FilterableListPane with PreviewPane for file selection:
 ```python
-from mikomn.tui_base.panes import FilterableListPane, PreviewPane
-from mikomn.tui_base.widgets import FileDirPicker
+from mikomn_tui.base.panes import FilterableListPane, PreviewPane
+from mikomn_tui.base.widgets import FileDirPicker
 
 class RestoreSubsetPane(ScrollablePaneBase):
     """Pane for selecting files to restore from archive."""
@@ -54,7 +54,7 @@ class RestoreSubsetPane(ScrollablePaneBase):
 ### Transfer Progress UI
 Use GlobalProgressBar and StatusBar for progress tracking:
 ```python
-from mikomn.tui_base.widgets import GlobalProgressBar, StatusBar, StatusMessage
+from mikomn_tui.base.widgets import GlobalProgressBar, StatusBar, StatusMessage
 
 progress_bar = GlobalProgressBar()
 status_bar = StatusBar()
@@ -73,8 +73,8 @@ status_bar.display_status(StatusMessage(
 ### Tools/Settings UI
 Use StatusCards/Dashboard for settings display:
 ```python
-from mikomn.tui_base.widgets import StatusCards, StatusCardData, Dashboard
-from mikomn.tui_base.models import StatusCardData
+from mikomn_tui.base.widgets import StatusCards, StatusCardData, Dashboard
+from mikomn_tui.base.models import StatusCardData
 
 cards = StatusCards(
     cards=[
@@ -102,7 +102,7 @@ cards = StatusCards(
 ### Toast Notifications
 Use ToastManager for transient notifications:
 ```python
-from mikomn.tui_base.widgets import Toast, ToastManager
+from mikomn_tui.base.widgets import Toast, ToastManager
 
 toast = ToastManager()
 toast.show(Toast(

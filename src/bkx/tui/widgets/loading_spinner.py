@@ -106,16 +106,16 @@ class ProgressDots(Container):
 
     def on_mount(self) -> None:
         """Start animation on mount."""
-        self._animate()
+        self._animate_dots()
 
-    def _animate(self) -> None:
+    def _animate_dots(self) -> None:  # type: ignore[override]
         """Animate the dots."""
         try:
             text = self.query_one("#dots-text", Label)
             dots = ["   ", ".  ", ".. ", "...", ".. ", ".  "]
             text.update(f"[dim]{self._message}{dots[self._state % len(dots)]}[/]")
             self._state = (self._state + 1) % len(dots)
-            self.set_timer(0.3, self._animate)
+            self.set_timer(0.3, self._animate_dots)
         except Exception:
             pass
 

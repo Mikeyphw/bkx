@@ -78,10 +78,19 @@ class DestinationPicker(ModalScreen):
         )
 
     def _on_destination_selected(self, paths: list[Path] | None) -> None:
-        if paths:
-            path = paths[0]
-            self.query_one("#destination-path", Input).value = str(path)
-            self._start_path = path
+        if paths is None:
+            return
+
+        if not paths:
+            self.app.notify(
+                "No destination selected. Select a folder and confirm (Space → Confirm).",
+                severity="warning",
+            )
+            return
+
+        path = paths[0]
+        self.query_one("#destination-path", Input).value = str(path)
+        self._start_path = path
 
     def _confirm_destination(self) -> None:
         input_widget = self.query_one("#destination-path", Input)

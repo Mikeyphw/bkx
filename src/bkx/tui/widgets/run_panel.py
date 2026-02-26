@@ -203,6 +203,6 @@ class RunPanel(Vertical):
         return self._status
 
     @property
-    def log(self) -> LogPane | None:
+    def log_pane(self) -> LogPane | None:  # type: ignore[override]
         """Get the log pane."""
         return self._log

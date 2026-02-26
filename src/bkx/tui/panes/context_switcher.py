@@ -203,7 +203,7 @@ class CompactContextBar(Container):
 
         return Path(path).name or path
 
-    def refresh(self) -> None:
+    def refresh_profile(self) -> None:  # type: ignore[override]
         """Refresh the display."""
         profile = get_profile_manager().get_current_profile()
         text = f"👤 {profile.name} | 📁 {self._format_path(profile.source_dir)} | 📂 {self._format_path(profile.destination_dir)}"

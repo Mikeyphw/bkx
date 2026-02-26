@@ -434,8 +434,8 @@ class TestSchemaValidation:
 # =============================================================================
 
 try:
-    from hypothesis import given, settings
-    from hypothesis import strategies as st
+    from hypothesis import given, settings  # type: ignore[import]
+    from hypothesis import strategies as st  # type: ignore[import]
 
     class TestParityPropertyBased:
         """Property-based tests for parity across interfaces."""

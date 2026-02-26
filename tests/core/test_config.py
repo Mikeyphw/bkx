@@ -135,6 +135,7 @@ class TestBkxConfigMerge:
         with tempfile.TemporaryDirectory() as tmpdir:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
+            config_file: Path | None = None
             try:
                 # Create config file
                 config_file = Path(tmpdir) / ".bkx.yaml"
@@ -153,7 +154,8 @@ compression_level: 5
                 assert config.compression_level == 5
             finally:
                 os.environ.pop("BKX_COMPRESSION_ALGORITHM", None)
-                config_file.unlink(missing_ok=True)
+                if config_file is not None:
+                    config_file.unlink(missing_ok=True)
                 os.chdir(old_cwd)
 
 

@@ -39,8 +39,8 @@ from bkx.core.parity import (
 
 if _HAS_HYPOTHESIS:
 
-    @composite
-    def _strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_paths(draw, min_size: int = 1, max_size: int = 5) -> list[Path]:  # type: ignore[no-redef]
         """Generate a list of valid paths.
 
         Args:
@@ -53,7 +53,7 @@ if _HAS_HYPOTHESIS:
         """
         with tempfile.TemporaryDirectory() as tmpdir:
             base = Path(tmpdir)
-            num_paths = draw(integers(min_value=min_size, max_value=max_size))
+            num_paths = draw(integers(min_value=min_size, max_value=max_size))  # type: ignore[no-redef]
             paths = []
             for i in range(num_paths):
                 # Create subdirectory structure
@@ -62,8 +62,8 @@ if _HAS_HYPOTHESIS:
                 paths.append(subdir)
             return paths
 
-    @composite
-    def _strategy_backup_params(draw) -> dict[str, Any]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_backup_params(draw) -> dict[str, Any]:  # type: ignore[no-redef]
         """Generate backup spec parameters.
 
         Args:
@@ -80,16 +80,16 @@ if _HAS_HYPOTHESIS:
             return {
                 "sources": [source],
                 "destination": Path(tmpdir) / "backup",
-                "archive_name": draw(text(min_size=1, max_size=20)),
-                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),
-                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),
-                "level": draw(integers(min_value=1, max_value=9)),
-                "verify": draw(booleans()),
+                "archive_name": draw(text(min_size=1, max_size=20)),  # type: ignore[no-redef]
+                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),  # type: ignore[no-redef]
+                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),  # type: ignore[no-redef]
+                "level": draw(integers(min_value=1, max_value=9)),  # type: ignore[no-redef]
+                "verify": draw(booleans()),  # type: ignore[no-redef]
                 "dry_run": True,  # Always dry-run for tests
             }
 
-    @composite
-    def _strategy_archive_params(draw) -> dict[str, Any]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_archive_params(draw) -> dict[str, Any]:  # type: ignore[no-redef]
         """Generate archive spec parameters.
 
         Args:
@@ -105,15 +105,15 @@ if _HAS_HYPOTHESIS:
             return {
                 "sources": [source],
                 "output": Path(tmpdir) / "archive.tar",
-                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),
-                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),
-                "level": draw(integers(min_value=1, max_value=9)),
-                "verify": draw(booleans()),
+                "excludes": draw(lists(text(min_size=1, max_size=10), max_size=3)),  # type: ignore[no-redef]
+                "algorithm": draw(sampled_from(["zstd", "gzip", "lz4"])),  # type: ignore[no-redef]
+                "level": draw(integers(min_value=1, max_value=9)),  # type: ignore[no-redef]
+                "verify": draw(booleans()),  # type: ignore[no-redef]
                 "dry_run": True,
             }
 
-    @composite
-    def _strategy_restore_params(draw) -> dict[str, Any]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_restore_params(draw) -> dict[str, Any]:  # type: ignore[no-redef]
         """Generate restore spec parameters.
 
         Args:
@@ -129,15 +129,15 @@ if _HAS_HYPOTHESIS:
             return {
                 "archive": archive,
                 "destination": Path(tmpdir) / "restore",
-                "paths": draw(lists(text(min_size=1, max_size=20), max_size=5)),
-                "overwrite": draw(booleans()),
-                "verify": draw(booleans()),
+                "paths": draw(lists(text(min_size=1, max_size=20), max_size=5)),  # type: ignore[no-redef]
+                "overwrite": draw(booleans()),  # type: ignore[no-redef]
+                "verify": draw(booleans()),  # type: ignore[no-redef]
                 "dry_run": True,
-                "fresh_dir": draw(booleans()),
+                "fresh_dir": draw(booleans()),  # type: ignore[no-redef]
             }
 
-    @composite
-    def _strategy_transfer_params(draw) -> dict[str, Any]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_transfer_params(draw) -> dict[str, Any]:  # type: ignore[no-redef]
         """Generate transfer spec parameters.
 
         Args:
@@ -149,14 +149,14 @@ if _HAS_HYPOTHESIS:
         return {
             "source": Path("/source/file"),
             "destination": Path("/dest/file"),
-            "direction": draw(sampled_from(["push", "pull"])),
-            "verify": draw(booleans()),
+            "direction": draw(sampled_from(["push", "pull"])),  # type: ignore[no-redef]
+            "verify": draw(booleans()),  # type: ignore[no-redef]
             "dry_run": True,
-            "overwrite": draw(booleans()),
+            "overwrite": draw(booleans()),  # type: ignore[no-redef]
         }
 
-    @composite
-    def _strategy_exclude_patterns(draw) -> list[str]:
+    @composite  # type: ignore[no-redef]
+    def _strategy_exclude_patterns(draw) -> list[str]:  # type: ignore[no-redef]
         """Generate exclude patterns.
 
         Args:
@@ -166,7 +166,7 @@ if _HAS_HYPOTHESIS:
             List of glob patterns
         """
         patterns = ["*.pyc", "__pycache__", "*.log", ".git", "node_modules", "*.bak"]
-        return draw(lists(sampled_from(patterns), max_size=4))
+        return draw(lists(sampled_from(patterns), max_size=4))  # type: ignore[no-redef]
 
     # Aliases without underscore for backward compatibility
     strategy_paths = _strategy_paths

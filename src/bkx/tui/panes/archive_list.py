@@ -6,6 +6,7 @@ Uses mikomn's FilterableListPane.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from mikomn_tui.base.models import FilterGroup, FilterOption
 from mikomn_tui.base.panes.common.filterable_list_pane import FilterableListPane
@@ -13,6 +14,9 @@ from textual.app import ComposeResult
 from textual.containers import Container
 from textual.message import Message
 from textual.widgets import Label, RichLog
+
+if TYPE_CHECKING:
+    from mikomn_tui.base.panes.common.filterable_list_pane import FilterableListPane as BaseFilterableListPane
 
 
 class ArchiveListItem:
@@ -62,7 +66,7 @@ class ArchiveListPane(FilterableListPane[ArchiveListItem]):
         ("f", "filters", "Filters"),
     ]
 
-    class FilterChanged(Message):
+    class FilterChanged(Message):  # type: ignore[reportIncompatibleVariableOverride]
         """Filter text changed."""
 
         def __init__(self, filter_text: str, filtered_count: int, total_count: int) -> None:
@@ -117,12 +121,12 @@ class ArchiveListPane(FilterableListPane[ArchiveListItem]):
     # Persistence helpers (best-effort, no dependency on internal mikomn API)
     # -------------------------------------------------------------------------
 
-    def set_filter_text(self, filter_text: str) -> None:
+    def set_filter_text(self, text: str) -> None:  # type: ignore[override]
         """Set the filter text if the base class supports it."""
         fn = getattr(super(), "set_filter_text", None)
         if callable(fn):
             try:
-                fn(filter_text)
+                fn(text)
             except Exception:
                 pass
 

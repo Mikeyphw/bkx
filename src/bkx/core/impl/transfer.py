@@ -266,6 +266,9 @@ class FallbackTransfer:
         files = 0
         bytes_total = 0
 
+        # Track existing files in destination for potential deletion
+        existing_files: set[Path] = set()
+
         # First, copy/update files
         for root, _dirs, fnames in os.walk(source):
             rel_path = Path(root).relative_to(source)
@@ -273,7 +276,7 @@ class FallbackTransfer:
             dest_dir.mkdir(parents=True, exist_ok=True)
 
             # Get existing files in destination
-            existing_files: set[Path] = set(f for f in dest_dir.iterdir() if f.is_file())
+            existing_files.update(f for f in dest_dir.iterdir() if f.is_file())
 
             for fname in fnames:
                 # Check exclude patterns

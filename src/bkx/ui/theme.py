@@ -19,22 +19,22 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mikomn import (
+from mikomn_core import (
     get_current_theme as _get_current_theme,
 )
-from mikomn import (
+from mikomn_core import (
     get_theme_names as _get_theme_names,
 )
-from mikomn import (
+from mikomn_core import (
     load_theme,
 )
-from mikomn import (
+from mikomn_core import (
     off_theme_change as _off_theme_change,
 )
-from mikomn import (
+from mikomn_core import (
     on_theme_change as _on_theme_change,
 )
-from mikomn import (
+from mikomn_core import (
     register_theme_dir as _register_theme_dir,
 )
 from mikomn_core.themes.core import generate_rich_styles, set_current_theme

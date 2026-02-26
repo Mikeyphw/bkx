@@ -191,10 +191,9 @@ class BkxTuiApp(BaseTuiApp):
             except Exception:
                 pass
 
-    async def on_mount(self) -> None:
+    def on_mount(self) -> None:
         """Called when app is mounted."""
         # Parent's on_mount handles theme registration and CSS loading
-        # Note: super().on_mount() is not async
         super().on_mount()
         # Step 6: restore persisted UI state (best-effort)
         try:
@@ -293,7 +292,7 @@ class BkxTuiApp(BaseTuiApp):
             except Exception:
                 pass
 
-    def on_exception(self, exception: Exception) -> None:
+    def on_exception(self, error: Exception) -> None:  # type: ignore[override]
         """Show a crash screen for unhandled exceptions.
 
         Step 8A: Persist last route before showing crash screen.
@@ -309,7 +308,7 @@ class BkxTuiApp(BaseTuiApp):
             pass
 
         try:
-            tb = "".join(traceback.format_exception(type(exception), exception, exception.__traceback__))
+            tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
             # Step 8A: Pass last_route to crash screen
             last_route = getattr(self, "_last_route", self._tui_state.last_route)
             self.push_screen(CrashScreen(title="BKX crashed", traceback_text=tb, last_route=last_route))

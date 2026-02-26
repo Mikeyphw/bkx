@@ -253,7 +253,7 @@ class ArchiveDetailsDrawer(Container):
         self._is_collapsed = True
         self.styles.display = "none"
 
-    def expand(self) -> None:
+    def expand(self) -> None:  # type: ignore[override]
         """Expand the drawer."""
         self._is_collapsed = False
         self.styles.display = "block"

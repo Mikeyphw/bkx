@@ -98,6 +98,27 @@
     margin: 1 0 0 0;
 }
 
+/* Destination picker modal: ensure path input has usable width */
+.destination-picker {
+    width: 86%;
+    max-width: 120;
+    height: auto;
+    padding: 1 2;
+}
+
+.destination-picker .form-row,
+.destination-picker .button-row {
+    width: 1fr;
+}
+
+.destination-picker .form-input {
+    min-width: 40;
+}
+
+.compact .destination-picker {
+    width: 98%;
+}
+
 /* Archive split layout */
 .archive-split {
     layout: horizontal;

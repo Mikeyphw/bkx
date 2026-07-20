@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 # mikomn imports for interactive prompts
-from mikomn_cli.base.interactive import (
+from mikomn.cli.base.interactive import (
     MenuConfig,
     MenuItem,
     ask_confirm,
@@ -24,8 +24,8 @@ from mikomn_cli.base.interactive import (
     ask_text,
     banner,
 )
-from mikomn_cli.base.menus import show_menu
-from mikomn_cli.base.ui2.exceptions import NonInteractiveInput, UserCancelled
+from mikomn.cli.base.menus import show_menu
+from mikomn.cli.base.ui2.exceptions import NonInteractiveInput, UserCancelled
 from rich.prompt import Prompt
 
 from bkx.cli.exit_codes import EXIT_OK, error_to_exit_code

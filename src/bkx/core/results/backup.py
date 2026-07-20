@@ -51,7 +51,7 @@ class BackupResult:
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
     # Step results (for debugging/audit)
-    step_results: dict[str, bool] = field(default_factory=dict)
+    step_results: dict[str, bool | str] = field(default_factory=dict)
 
     @property
     def duration_ms(self) -> int:

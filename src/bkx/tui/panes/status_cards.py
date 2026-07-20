@@ -8,12 +8,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from mikomn_tui.base.models import StatusCardData as MikomnStatusCardData
-from mikomn_tui.base.widgets import StatusCards
 from textual.app import ComposeResult
 from textual.containers import Container, Grid
 from textual.message import Message
 from textual.widgets import Label
+
+from bkx.tui.legacy import StatusCardData as MikomnStatusCardData
+from bkx.tui.legacy import StatusCards
 
 if TYPE_CHECKING:
     pass

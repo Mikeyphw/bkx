@@ -1,25 +1,23 @@
 from __future__ import annotations
 
-"""bkx.tui.overlays.notifications
-
-Step 4A:
-BKX wrapper around mikomn's NotificationCenterScreen.
-Adds stable classes and attempts to focus the search input on mount.
-"""
-
-# ruff: noqa: E402 - mikomn and textual imports must come after docstring
-from mikomn_tui.base.screens.notification_center import NotificationCenterScreen
-from textual.widgets import Input
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import Input, Static
 
 
-class BkxNotificationCenterScreen(NotificationCenterScreen):
-    """BKX-styled notification center."""
+class BkxNotificationCenterScreen(ModalScreen):
+    """Legacy Textual notification center placeholder."""
 
     DEFAULT_CLASSES = "notification-center-screen bkx-notification-center-screen"
 
+    def __init__(self, *, title: str = "Notifications", **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.title = title
+
+    def compose(self) -> ComposeResult:
+        yield Static(self.title, classes="notification-center-title")
+
     def on_mount(self) -> None:
-        super().on_mount()
-        # Best-effort: focus the search input if present.
         for selector in ("#search-input", "#search", ".search-input"):
             try:
                 self.query_one(selector, Input).focus()

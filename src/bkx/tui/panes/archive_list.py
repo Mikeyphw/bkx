@@ -8,15 +8,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from mikomn_tui.base.models import FilterGroup, FilterOption
-from mikomn_tui.base.panes.common.filterable_list_pane import FilterableListPane
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.message import Message
 from textual.widgets import Label, RichLog
 
+from bkx.tui.legacy import FilterableListPane, FilterGroup, FilterOption
+
 if TYPE_CHECKING:
-    from mikomn_tui.base.panes.common.filterable_list_pane import FilterableListPane as BaseFilterableListPane
+    pass
 
 
 class ArchiveListItem:

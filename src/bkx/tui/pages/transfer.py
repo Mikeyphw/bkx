@@ -9,13 +9,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mikomn_tui.base.panes.input.form_pane import FormPane
-from mikomn_tui.base.widgets.file_picker import FilterMode
 from textual import on
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.widgets import Button, Input, Select, Static
 
+from bkx.tui.legacy import FilterMode, FormPane
 from bkx.tui.messages import TransferIntent
 from bkx.tui.widgets.file_picker import show_destination_picker, show_file_picker
 

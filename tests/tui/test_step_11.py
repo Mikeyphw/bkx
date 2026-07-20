@@ -16,11 +16,7 @@ import pytest
 
 def get_tui_css_dir():
     """Get the path to the TUI CSS directory."""
-    # Get absolute path from the test file location
-    test_file = Path(__file__).resolve()
-    # Navigate: tests/tui/test_step_11.py -> tests/tui -> tests -> bkx
-    bkx_root = test_file.parent.parent.parent.parent  # goes to bkx root
-    return bkx_root / "src" / "bkx" / "tui" / "css"
+    return Path(__file__).resolve().parent.parent.parent / "src" / "bkx" / "tui" / "css"
 
 
 def get_tui_css_path(filename: str) -> Path:

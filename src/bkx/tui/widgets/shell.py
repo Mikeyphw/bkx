@@ -1,33 +1,23 @@
-"""bkx/src/bkx/tui/widgets/shell.py
+"""Legacy Textual shell widget.
 
-Hybrid shell layout:
-- Desktop/expanded: sidebar + page + always-visible run panel
-- Compact/termux: footer tabs + page + always-visible run panel (sidebar hidden)
-
-Uses mikomn widgets/layouts to maximize reuse.
+The active TUI runtime is built from ``mikomn.tui.TuiApp`` in ``bkx.tui.app``.
+This shell remains only for older widget-level tests and historical pages.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from mikomn_tui.base.containers.side_panes import SidePanes
-from mikomn_tui.base.containers.sidebar_region import SidebarRegion
-from mikomn_tui.base.layouts.header_body_footer import HeaderBodyFooterLayout
-from mikomn_tui.base.utils.page_registry import PageRegistry
-from mikomn_tui.base.widgets.footer import AppFooter, FooterTab, TabSelected
-from mikomn_tui.base.widgets.header import AppHeader
-from mikomn_tui.base.widgets.sidebar import Sidebar, SidebarItem
-from textual import on
 from textual.app import ComposeResult
-from textual.containers import Container
-from textual.widgets import ContentSwitcher
+from textual.containers import Container, Horizontal, Vertical
+from textual.widgets import ContentSwitcher, Footer, Header, Static
 
+from bkx.tui.legacy import PageRegistry
 from bkx.tui.widgets.run_panel import RunPanel
 
 
 class BkxShell(Container):
-    """Persistent shell widget."""
+    """Persistent legacy shell widget."""
 
     DEFAULT_CLASSES = "bkx-shell"
 
@@ -35,70 +25,26 @@ class BkxShell(Container):
         super().__init__()
         self._pages = pages
         self._switcher: ContentSwitcher | None = None
-        self._sidebar: Sidebar | None = None
-        self._footer: AppFooter | None = None
         self._run_panel: RunPanel | None = None
         self._page_cache: dict[str, Any] = {}
+        self._footer_message: str | None = None
 
     def compose(self) -> ComposeResult:
-        yield HeaderBodyFooterLayout(classes="bkx-shell-layout")
+        yield Header(show_clock=True)
+        with Horizontal(classes="bkx-shell-panes"):
+            yield Static("BKX", id="bkx-sidebar", classes="bkx-sidebar")
+            with Vertical(classes="bkx-content-region"):
+                self._switcher = ContentSwitcher(classes="bkx-switcher")
+                yield self._switcher
+            self._run_panel = RunPanel(classes="bkx-run-panel-region")
+            yield self._run_panel
+        yield Footer()
 
     def on_mount(self) -> None:
-        self._mount_shell_widgets()
-
-    def _mount_shell_widgets(self) -> None:
-        try:
-            header_slot = self.query_one("#header")
-            body_slot = self.query_one("#body")
-            footer_slot = self.query_one("#footer")
-        except Exception:
-            self.call_after_refresh(self._mount_shell_widgets)
-            return
-
-        footer_slot.add_class("bkx-footer")
-
-        header_slot.mount(AppHeader(title="BKX", subtitle="backup tool", classes="bkx-header"))
-
-        specs = list(self._pages.specs())
-        sidebar_items = [SidebarItem(id=s.route, label=s.label, icon=s.icon or "•", key=s.key, disabled=bool(s.disabled)) for s in specs]
-        self._sidebar = Sidebar(items=sidebar_items, title="BKX", id="bkx-sidebar", classes="bkx-sidebar")
-
-        sidebar_region = SidebarRegion(classes="bkx-sidebar-region")
-        sidebar_region.mount_sidebar(self._sidebar)
-
-        self._switcher = ContentSwitcher(classes="bkx-switcher")
-        content_region = Container(self._switcher, classes="bkx-content-region")
-
-        self._run_panel = RunPanel(classes="bkx-run-panel-region")
-        run_region = Container(self._run_panel, classes="bkx-run-panel-region")
-
-        panes = SidePanes(classes="bkx-shell-panes", orientation="auto")
-        # Mount panes to body_slot BEFORE mounting children to panes
-        body_slot.mount(panes)
-        panes.mount(sidebar_region)
-        panes.mount(content_region)
-        panes.mount(run_region)
-
-        footer_tabs = [
-            FooterTab(key=s.key or "", label=s.label, action=f"goto:{s.route}", icon=s.icon, id=s.route) for s in specs if not s.disabled
-        ]
-        self._footer = AppFooter(tabs=footer_tabs, classes="bkx-footer-tabs")
-        footer_slot.mount(self._footer)
-
-        for s in specs:
-            if not s.disabled:
-                self.goto_page(s.route)
+        for spec in self._pages.specs():
+            if not spec.disabled:
+                self.goto_page(spec.route)
                 break
-
-    @on(Sidebar.Selected)
-    def _on_sidebar_selected(self, event: Sidebar.Selected) -> None:
-        self.goto_page(event.item_id)
-
-    @on(TabSelected)
-    def _on_tab_selected(self, event: TabSelected) -> None:
-        action = (event.action or "").strip()
-        if action.startswith("goto:"):
-            self.goto_page(action.split(":", 1)[1])
 
     def goto_page(self, route: str) -> None:
         if not self._switcher:
@@ -106,43 +52,20 @@ class BkxShell(Container):
         spec = self._pages.get(route)
         if not spec:
             return
-
         if route not in self._page_cache:
             widget = spec.factory()
-            widget.id = route  # Set id BEFORE mounting
+            widget.id = route
             self._page_cache[route] = widget
             self._switcher.mount(widget)
 
-        # Defer setting current to after all mounting completes
         def _set_current() -> None:
-            self._switcher.current = route  # type: ignore[union-attr]
+            if self._switcher:
+                self._switcher.current = route
 
         self.call_after_refresh(_set_current)
 
-        if self._sidebar:
-            try:
-                self._sidebar.set_active(route)
-            except Exception:
-                pass
-
-        if self._footer:
-            try:
-                enabled = [s.route for s in self._pages.specs() if not s.disabled]
-                self._footer.set_active_tab(enabled.index(route))
-            except Exception:
-                pass
-
     def set_footer_message(self, message: str | None) -> None:
-        """Set/clear a footer message (center text) if supported by AppFooter."""
-        if not self._footer:
-            return
-        try:
-            set_message = getattr(self._footer, "set_message", None)
-            if callable(set_message):
-                set_message(message)
-                return
-        except Exception:
-            pass
+        self._footer_message = message
 
     @property
     def run_panel(self) -> RunPanel | None:

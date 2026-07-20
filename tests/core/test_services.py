@@ -22,6 +22,7 @@ from bkx.core.results.hashing import HashResult
 from bkx.core.results.transfer import TransferResult
 from bkx.core.services.archive import ArchiveService
 from bkx.core.services.backup import BackupService
+from bkx.core.services.restore import RestoreService
 from bkx.core.services.transfer import TransferService
 from bkx.core.specs.archive import ArchiveCreateSpec
 from bkx.core.specs.backup import BackupSpec
@@ -280,6 +281,8 @@ class TestBackupService:
 
             assert result.success is True
             assert result.archives_created >= 0
+            assert result.verification_passed is True
+            assert result.step_results["checksum"] == "abc123" * 10
 
     def test_backup_dry_run(self):
         """Test backup dry run."""
@@ -308,13 +311,6 @@ class TestBackupService:
 
     def test_backup_nonexistent_source(self):
         """Test backup fails with nonexistent source."""
-        service = BackupService(
-            archiver=FakeArchiver(),
-            transfer=FakeTransfer(),
-            hasher=FakeHasher(),
-            tool_detector=FakeToolDetector(),
-        )
-
         with tempfile.TemporaryDirectory() as tmpdir:
             source = Path(tmpdir) / "nonexistent_source"
 
@@ -392,6 +388,103 @@ class TestArchiveService:
         with tempfile.TemporaryDirectory() as tmpdir:
             with pytest.raises(NotFoundError):
                 service.list(Path(tmpdir) / "nonexistent.tar")
+
+
+class TestRestoreService:
+    """Tests for RestoreService."""
+
+    def test_restore_preview_returns_file_info(self):
+        """Test restore preview returns structured file info."""
+        service = RestoreService(archiver=FakeArchiver())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / "archive.tar"
+            archive_path.write_text("")
+            destination = Path(tmpdir) / "restore"
+
+            spec = RestoreSpec(
+                archive=archive_path,
+                destination=destination,
+                verify=False,
+            ).normalize()
+
+            result = service.preview(spec)
+
+            assert result.success is True
+            assert result.archive_path == archive_path
+            assert result.total_files == 2
+            assert result.total_size == 100
+            assert result.files[0].archive_path == "file1.txt"
+            assert result.files[0].disk_path == destination / "file1.txt"
+
+    def test_restore_preview_matches_requested_file_exactly(self):
+        """Test restore preview does not use substring matching for files."""
+
+        class NestedFileArchiver(FakeArchiver):
+            def list(
+                self,
+                archive_path: Path,
+                *,
+                filter_pattern: str | None = None,
+                page: int = 0,
+                page_size: int = 100,
+            ) -> tuple[ArchiveEntry, ...]:
+                return (
+                    ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
+                    ArchiveEntry(path="dir/file1.txt", is_dir=False, size=200, mtime_ns=0),
+                )
+
+        service = RestoreService(archiver=NestedFileArchiver())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / "archive.tar"
+            archive_path.write_text("")
+
+            spec = RestoreSpec(
+                archive=archive_path,
+                paths=("file1.txt",),
+                verify=False,
+            ).normalize()
+
+            result = service.preview(spec)
+
+            assert result.total_files == 1
+            assert result.files[0].archive_path == "file1.txt"
+
+    def test_restore_preview_matches_requested_directory_prefix(self):
+        """Test restore preview includes children for explicit directory selections."""
+
+        class DirectoryArchiver(FakeArchiver):
+            def list(
+                self,
+                archive_path: Path,
+                *,
+                filter_pattern: str | None = None,
+                page: int = 0,
+                page_size: int = 100,
+            ) -> tuple[ArchiveEntry, ...]:
+                return (
+                    ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
+                    ArchiveEntry(path="dir/file2.txt", is_dir=False, size=200, mtime_ns=0),
+                    ArchiveEntry(path="dir/nested/file3.txt", is_dir=False, size=300, mtime_ns=0),
+                )
+
+        service = RestoreService(archiver=DirectoryArchiver())
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir) / "archive.tar"
+            archive_path.write_text("")
+
+            spec = RestoreSpec(
+                archive=archive_path,
+                paths=("dir/",),
+                verify=False,
+            ).normalize()
+
+            result = service.preview(spec)
+
+            assert result.total_files == 2
+            assert {file.archive_path for file in result.files} == {"dir/file2.txt", "dir/nested/file3.txt"}
 
 
 class TestTransferService:

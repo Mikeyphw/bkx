@@ -168,7 +168,7 @@ class TestRestorePick:
 
             archive_path = Path(tmpdir) / "archive.tar"
             with tarfile.open(archive_path, "w") as tar:
-                for root, dirs, fnames in os.walk(source_dir):
+                for root, _dirs, fnames in os.walk(source_dir):
                     for fname in fnames:
                         fpath = Path(root) / fname
                         tar.add(fpath, arcname=str(fpath.relative_to(source_dir.parent)))

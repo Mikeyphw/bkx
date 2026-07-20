@@ -12,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..results.restore import RestorePreviewResult, RestoreResult, Timing
+from ..results.restore import RestoreFileInfo, RestorePreviewResult, RestoreResult, Timing
 
 if TYPE_CHECKING:
     from ..ports.archiver import ArchiverPort
@@ -96,7 +96,7 @@ class RestoreService:
 
         # Filter to requested paths if partial restore
         if spec.paths:
-            entries = tuple(e for e in entries if any(p in e.path for p in spec.paths))
+            entries = tuple(e for e in entries if any(_archive_path_matches(e.path, requested) for requested in spec.paths))
 
         total_size = sum(e.size for e in entries)
 
@@ -162,6 +162,19 @@ class RestoreService:
         )
 
 
-# Import RestoreFileInfo at module level for type checking
-if TYPE_CHECKING:
-    from ..results.restore import RestoreFileInfo
+def _archive_path_matches(entry_path: str, requested_path: str) -> bool:
+    """Return true when an archive entry matches a requested file or directory path."""
+    entry = _normalize_archive_path(entry_path)
+    requested = _normalize_archive_path(requested_path)
+    if not requested:
+        return False
+    if entry == requested:
+        return True
+    return requested_path.endswith("/") and entry.startswith(f"{requested}/")
+
+
+def _normalize_archive_path(path: str) -> str:
+    normalized = path.replace("\\", "/").strip("/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized

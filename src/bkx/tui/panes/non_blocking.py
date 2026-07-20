@@ -94,7 +94,7 @@ class ThrottledProgressCallback:
         self._on_progress = on_progress
         self._throttle_interval = throttle_interval
         self._state = ProgressState()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._last_update = 0.0
         self._enabled = threading.Event()
         self._enabled.set()

@@ -98,11 +98,13 @@ class ProgressDots(Container):
 
     def __init__(self, message: str = "...", **kwargs) -> None:
         super().__init__(**kwargs)
-        self._message = message
+        self._label = "" if message == "..." else message
+        self._message = "..."
         self._state = 0
 
     def compose(self) -> ComposeResult:
-        yield Label(f"[dim]{self._message}[/]", classes="bkx-dots-text", id="dots-text")
+        prefix = f"{self._label} " if self._label else ""
+        yield Label(f"[dim]{prefix}{self._message}[/]", classes="bkx-dots-text", id="dots-text")
 
     def on_mount(self) -> None:
         """Start animation on mount."""
@@ -113,7 +115,8 @@ class ProgressDots(Container):
         try:
             text = self.query_one("#dots-text", Label)
             dots = ["   ", ".  ", ".. ", "...", ".. ", ".  "]
-            text.update(f"[dim]{self._message}{dots[self._state % len(dots)]}[/]")
+            prefix = f"{self._label} " if self._label else ""
+            text.update(f"[dim]{prefix}{dots[self._state % len(dots)]}[/]")
             self._state = (self._state + 1) % len(dots)
             self.set_timer(0.3, self._animate_dots)
         except Exception:

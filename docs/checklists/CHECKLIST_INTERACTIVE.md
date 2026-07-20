@@ -38,5 +38,5 @@
 | Yazi integration | ✅ Complete | `YaziAdapter` |
 | FZF integration | ✅ Complete | `FzfAdapter` |
 | Banner headers | ✅ Complete | `banner()` function |
-| TUI integration | ✅ Complete | `src/bkx/tui/app.py` extends `BaseTuiApp` |
+| TUI integration | ✅ Complete | `src/bkx/tui/app.py` extends `TuiApp` |
 

@@ -400,7 +400,7 @@ class TestCommandPaletteCompletenessStep7C:
 
     def test_command_palette_commands_exist(self) -> None:
         """Test that new commands are available."""
-        from mikomn_tui.base.models import Command
+        from mikomn.tui.actions import ActionSpec
 
         # These are the new commands added in Step 7C
         expected_commands = [
@@ -412,14 +412,15 @@ class TestCommandPaletteCompletenessStep7C:
 
         # Verify command structure
         for cmd_id, title in expected_commands:
-            cmd = Command(
+            cmd = ActionSpec(
                 id=cmd_id,
                 title=title,
-                keywords=[],
-                group="Test",
+                handler=lambda _ctx: None,
+                category="Test",
             )
             assert cmd.id == cmd_id
             assert cmd.title == title
+            assert cmd.category == "Test"
 
 
 class TestIntegrationScenarios:

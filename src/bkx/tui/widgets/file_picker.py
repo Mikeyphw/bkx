@@ -5,14 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from mikomn_tui.base.widgets.file_picker import (
-    FileDirPicker,
-    FilterMode,
-)
 from textual.app import ComposeResult
 from textual.containers import Container
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Static
+
+from bkx.tui.legacy import FileDirPicker, FilterMode
 
 
 class DestinationPicker(ModalScreen):

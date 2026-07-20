@@ -5,16 +5,16 @@ Dialog for creating and editing profiles.
 
 from __future__ import annotations
 
-from mikomn_tui.base import BaseModalScreen
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
 from bkx.tui.profiles import BkxProfile, get_profile_manager
 
 
-class ProfileDialog(BaseModalScreen):
+class ProfileDialog(ModalScreen):
     """Dialog for creating and editing profiles.
 
     Features:

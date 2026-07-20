@@ -133,26 +133,9 @@ def get_run_logs(max_lines: int = 500) -> str:
 
 def get_notification_history(max_entries: int = 200) -> list[dict[str, Any]]:
     """Get notification history."""
-    try:
-        from mikomn_tui.base.notifications import NotificationHistory
-
-        entries = NotificationHistory.events()
-        try:
-            recent = list(entries)[-max_entries:]
-            return [
-                {
-                    "timestamp": getattr(e, "timestamp", ""),
-                    "message": getattr(e, "message", ""),
-                    "level": getattr(e, "level", "info"),
-                    "source": getattr(e, "source", "bkx"),
-                }
-                for e in recent
-            ]
-        except Exception:
-            pass
-    except Exception:
-        pass
-
+    # The current mikomn.tui notification service is context-scoped. Support
+    # bundles are often created outside a running TUI context, so this remains
+    # best-effort and returns an empty history when no context is available.
     return []
 
 

@@ -16,7 +16,7 @@ Use mikomn for:
 
 ## TUI
 Use mikomn for:
-- BaseTuiApp and layout scaffolds
+- TuiApp and layout scaffolds
 - command palette overlay
 - shared panes/widgets when applicable
 

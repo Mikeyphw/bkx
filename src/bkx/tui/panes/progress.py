@@ -5,13 +5,13 @@ Uses mikomn's GlobalProgressBar and StatusBar for progress tracking.
 
 from __future__ import annotations
 
-from mikomn_tui.base.panes.display.progress_pane import ProgressPane as MikomnProgressPane
-from mikomn_tui.base.widgets import StatusBar
-from mikomn_tui.base.widgets.status import StatusMessage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
 from textual.message import Message
 from textual.widgets import Label, Static
+
+from bkx.tui.legacy import ProgressPane as MikomnProgressPane
+from bkx.tui.legacy import StatusBar, StatusMessage
 
 
 class ProgressPane(MikomnProgressPane):
@@ -272,6 +272,9 @@ class TransferProgressPane(Container):
         # Update UI
         percent = (bytes_transferred / self._total_bytes * 100) if self._total_bytes > 0 else 0
         self._fill.styles.width = f"{percent}%"
+        update_styles = getattr(self._fill, "update_styles", None)
+        if callable(update_styles):
+            update_styles()
 
         # Speed
         speed_str = self._format_speed(self._speed)

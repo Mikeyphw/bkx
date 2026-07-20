@@ -260,12 +260,15 @@ class ArchiveDetailsDrawer(Container):
 
     def toggle(self) -> None:
         """Toggle drawer collapsed/expanded state."""
+        toggle_btn = getattr(self, "_toggle_btn", None)
         if self._is_collapsed:
             self.expand()
-            self._toggle_btn.label = "▼"
+            if toggle_btn is not None:
+                toggle_btn.label = "▼"
         else:
             self.collapse()
-            self._toggle_btn.label = "▶"
+            if toggle_btn is not None:
+                toggle_btn.label = "▶"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""

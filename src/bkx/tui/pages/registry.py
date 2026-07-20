@@ -10,8 +10,7 @@ Uses mikomn PageRegistry/PageSpec for:
 
 from __future__ import annotations
 
-from mikomn_tui.base.utils.page_registry import PageRegistry, PageSpec
-
+from bkx.tui.legacy import PageRegistry, PageSpec
 from bkx.tui.pages.archive import ArchivePage
 from bkx.tui.pages.backup import BackupPage
 from bkx.tui.pages.logs import LogsPage

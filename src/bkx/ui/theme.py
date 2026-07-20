@@ -19,25 +19,28 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from mikomn_core import (
+from mikomn import (
     get_current_theme as _get_current_theme,
 )
-from mikomn_core import (
+from mikomn import (
+    get_palette as _get_palette,
+)
+from mikomn import (
     get_theme_names as _get_theme_names,
 )
-from mikomn_core import (
+from mikomn import (
     load_theme,
 )
-from mikomn_core import (
+from mikomn import (
     off_theme_change as _off_theme_change,
 )
-from mikomn_core import (
+from mikomn import (
     on_theme_change as _on_theme_change,
 )
-from mikomn_core import (
+from mikomn import (
     register_theme_dir as _register_theme_dir,
 )
-from mikomn_core.themes.core import generate_rich_styles, set_current_theme
+from mikomn.themes.core import generate_rich_styles, set_current_theme
 
 DEFAULT_THEME = "sweet-dracula"
 
@@ -95,11 +98,11 @@ def get_active_theme() -> dict[str, Any]:
     """Return the active theme dict (as loaded by mikomn)."""
     global _theme_cache, _rich_styles_cache
     if not _theme_cache:
-        # Prefer mikomn's global current theme (if any).
+        # Prefer mikomn's global current theme name (v0.3+).
         try:
             cur = _get_current_theme()
-            if isinstance(cur, dict) and cur.get("name"):
-                _theme_cache = cur
+            if isinstance(cur, str) and cur:
+                _theme_cache = _load_theme_or_empty(cur)
             else:
                 _theme_cache = _load_theme_or_empty(_current_theme)
         except Exception:
@@ -111,8 +114,11 @@ def get_active_theme() -> dict[str, Any]:
 
 def get_palette() -> dict[str, str]:
     """Return the active palette mapping token -> hex color."""
-    theme = get_active_theme()
-    pal = theme.get("palette", {})
+    try:
+        pal = _get_palette(_current_theme) or {}
+    except Exception:
+        theme = get_active_theme()
+        pal = theme.get("palette", {})
     return pal if isinstance(pal, dict) else {}
 
 

@@ -46,9 +46,11 @@ class TuiState:
     last_focused_widget: str = ""
     last_focused_pane: str = ""
     restore_selection_on_navigate: bool = True
+    form_values: dict[str, dict[str, Any]] | None = None
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> TuiState:
+        form_values = data.get("form_values")
         return cls(
             last_route=str(data.get("last_route", cls.last_route)),
             layout_mode=str(data.get("layout_mode", cls.layout_mode)),
@@ -60,6 +62,7 @@ class TuiState:
             last_focused_widget=str(data.get("last_focused_widget", cls.last_focused_widget)),
             last_focused_pane=str(data.get("last_focused_pane", cls.last_focused_pane)),
             restore_selection_on_navigate=bool(data.get("restore_selection_on_navigate", cls.restore_selection_on_navigate)),
+            form_values=form_values if isinstance(form_values, dict) else None,
         )
 
 

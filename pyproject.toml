@@ -1,26 +1,26 @@
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "bkx"
 version = "0.0.1"
 description = "Contract-controlled CLI-first backup/archive tool (skeleton)"
 readme = "README.md"
-license = "MIT"
-authors = ["You <you@example.com>"]
+license = { text = "MIT" }
+authors = [{ name = "You", email = "you@example.com" }]
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.12",
+    "rich>=14.2.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.11"
-typer = ">=0.12"
-rich = ">=14.2.0"
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 interactive = [
-    "mikomn",
+    "mikomn[cli]>=0.3.0",
 ]
 tui = [
-    "mikomn",
+    "mikomn[cli,tui]>=0.3.0",
     "textual",
 ]
 dev = [
@@ -30,8 +30,14 @@ dev = [
     "pytest-cov",
 ]
 
-[tool.poetry.scripts]
+[project.scripts]
 bkx = "bkx.cli.app:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.ruff]
 line-length = 140
@@ -49,4 +55,3 @@ typeCheckingMode = "basic"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-

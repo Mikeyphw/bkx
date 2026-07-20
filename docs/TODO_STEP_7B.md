@@ -16,7 +16,7 @@ diff --git a/src/bkx/tui/app.py b/src/bkx/tui/app.py
 index 1234567..abcdefg 100644
 --- a/src/bkx/tui/app.py
 +++ b/src/bkx/tui/app.py
-@@ -214,6 +214,8 @@ class BkxTuiApp(BaseTuiApp):
+@@ -214,6 +214,8 @@ class BkxTuiApp(TuiApp):
  
      def _goto_page(self, route: str) -> None:
          """Navigate to a shell page route."""

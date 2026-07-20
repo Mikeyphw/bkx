@@ -114,8 +114,9 @@ class BackupService:
         if spec.verify:
             archive_path = archive_result.archive_path if hasattr(archive_result, "archive_path") and archive_result.archive_path else None
             if archive_path:
-                verify_passed = self._verify_backup(archive_path)
+                verify_passed, checksum = self._verify_backup(archive_path)
                 step_results["verify"] = verify_passed
+                step_results["checksum"] = checksum
 
         return BackupResult(
             success=True,
@@ -198,14 +199,10 @@ class BackupService:
         # Transfer the archive
         return self._transfer.push(transfer_spec)
 
-    def _verify_backup(self, archive_path: Path) -> bool:
+    def _verify_backup(self, archive_path: Path) -> tuple[bool, str]:
         """Verify backup integrity using hasher."""
-        # Compute checksum of the archive
         hash_result = self._hasher.hash_file(archive_path)
-
-        # For now, just verify we could compute the hash
-        # In a full implementation, we'd compare against a stored checksum
-        return hash_result.checksum != ""
+        return hash_result.checksum != "", hash_result.checksum
 
     def _execute_dry_run(self, spec: BackupSpec) -> BackupResult:
         """Execute dry run showing what would happen."""

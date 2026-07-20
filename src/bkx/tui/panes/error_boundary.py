@@ -180,11 +180,14 @@ class PaneErrorBoundary(Container):
         self._state.clear_error()
 
         # Hide error container
-        self._error_container.display = False
+        error_container = getattr(self, "_error_container", None)
+        if error_container is None:
+            return
+        error_container.display = False
 
         # Show children again
         for child in self.query("*"):
-            if child != self._error_container:
+            if child != error_container:
                 try:
                     child.display = True
                 except Exception:

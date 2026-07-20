@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-"""bkx.tui.overlays.command_palette
-
-Step 4A:
-Thin wrapper over mikomn's CommandPalette.
-Provides a stable BKX class for styling and leaves internal structure intact.
-"""
-
-# ruff: noqa: E402 - mikomn imports must come after docstring
-from mikomn_tui.base.overlays import CommandPalette
+from textual.app import ComposeResult
+from textual.screen import ModalScreen
+from textual.widgets import Static
 
 
-class BkxCommandPalette(CommandPalette):
-    """BKX-styled CommandPalette."""
+class BkxCommandPalette(ModalScreen):
+    """Legacy Textual command palette placeholder.
+
+    Runtime command entries are now provided by ``mikomn.tui`` action specs.
+    """
 
     DEFAULT_CLASSES = "command-palette bkx-command-palette"
+
+    def __init__(self, commands: list[object] | None = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.commands = list(commands or [])
+
+    def compose(self) -> ComposeResult:
+        yield Static("Commands", classes="command-palette-title")

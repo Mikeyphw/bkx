@@ -68,7 +68,7 @@ def reload_css(app, *, extra_paths: Iterable[str] | None = None) -> None:
 def load_bkx_css(app) -> None:
     """Load BKX-specific CSS after parent CSS is loaded.
 
-    This is called after mikomn's BaseTuiApp.on_mount() to add
+    This is called by legacy Textual paths to add
     BKX-specific styles on top of the base styles.
 
     Args:
@@ -98,4 +98,3 @@ __all__ = [
     "load_bkx_css",
     "reload_bkx_css",
 ]
-

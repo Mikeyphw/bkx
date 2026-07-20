@@ -5,10 +5,10 @@
 - [x] Installed only via extras (`pip install .[tui]`)
 
 ## mikomn Integration
-- [x] Uses BaseTuiApp as app scaffold (`src/bkx/tui/app.py`)
-- [x] Theme cycling works via 't' key (inherited from BaseTuiApp)
-- [x] Command palette accessible via Ctrl+P (inherited from BaseTuiApp)
-- [x] Platform layout adapts to terminal size (inherited from BaseTuiApp)
+- [x] Uses TuiApp as app scaffold (`src/bkx/tui/app.py`)
+- [x] Theme cycling works via 't' key (inherited from TuiApp)
+- [x] Command palette accessible via Ctrl+P (inherited from TuiApp)
+- [x] Platform layout adapts to terminal size (inherited from TuiApp)
 - [x] Uses mikomn panes - Custom implementations (NavigationPane, RunLogPane, StatusFooterPane)
 - [x] Uses mikomn widgets - Built-in Textual widgets with mikomn styling
 
@@ -33,7 +33,7 @@
 
 | Component | Status | Location |
 |-----------|--------|----------|
-| App Scaffold | ✅ Complete | `src/bkx/tui/app.py` extends `BaseTuiApp` |
+| App Scaffold | ✅ Complete | `src/bkx/tui/app.py` extends `TuiApp` |
 | Theme Integration | ✅ Complete | `cycle_theme()`, TCSS generation |
 | Key Bindings | ✅ Complete | b/a/r/t/l navigation keys |
 | Message Schema | ✅ Complete | `src/bkx/tui/messages.py` |

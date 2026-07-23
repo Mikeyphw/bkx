@@ -415,7 +415,7 @@ async def _export_support_bundle(ctx: AppContext) -> None:
 
 
 def _register_screens(app: TuiApp) -> None:
-    app.screen("/", title="Backup", category="Main", description="Default BKX screen")(_backup_page)
+    app.screen("/", title="Backup", category="Main", description="Default BKX screen", hidden=True)(_backup_page)
     factories = {
         "/backup": _backup_page,
         "/archive": _archive_page,
@@ -463,6 +463,12 @@ def build_bkx_tui_app(*, state: TuiState | None = None) -> TuiApp:
     _register_screens(app)
     _register_actions(app)
 
+    @app.on_form_change
+    def persist_form(ctx: AppContext, route: str, values: dict[str, Any]) -> None:
+        form_name = _form_name_for_route(route)
+        if form_name is not None:
+            _set_form_values(ctx, form_name, values)
+
     @app.on_shutdown
     def persist(ctx: AppContext) -> None:
         if isinstance(ctx.state, TuiState):
@@ -470,7 +476,7 @@ def build_bkx_tui_app(*, state: TuiState | None = None) -> TuiApp:
                 ctx.state.last_route = ctx.nav.current.strip("/") or "backup"
                 save_state(ctx.state)
             except Exception:
-                pass
+                return
 
     return app
 
@@ -505,138 +511,14 @@ def _field_value(field: Any) -> str:
 
 
 def _run_bkx_textual_shell(app: TuiApp) -> None:
-    try:
-        from mikomn.tui.shell.base import render_component_text
-        from textual.app import App, ComposeResult
-        from textual.containers import Container, Vertical
-        from textual.screen import ModalScreen
-        from textual.widgets import Button, Footer, Header, Input, Static
-    except ModuleNotFoundError:
-        app.run()
-        return
+    """Run BKX through Mikomn's canonical interactive renderer.
 
-    ctx = app.context()
+    BKX no longer maintains a parallel text-only Textual shell. Its declarative
+    forms, tables, route navigation, action bars, dialogs, and command palette
+    are rendered by the shared Mikomn runtime.
+    """
 
-    class FormEditScreen(ModalScreen[dict[str, str] | None]):
-        def __init__(self, form_name: str, fields: list[Any]) -> None:
-            super().__init__()
-            self.form_name = form_name
-            self.fields = fields
-            self.inputs: dict[str, Input] = {}
-
-        def compose(self) -> ComposeResult:
-            with Vertical(classes="bkx-form-edit"):
-                yield Static(f"Edit {self.form_name}", classes="bkx-form-edit-title")
-                for field in self.fields:
-                    name = str(getattr(field, "name", "value"))
-                    widget = Input(value=_field_value(field), placeholder=_field_label(field), id=f"edit-{name}")
-                    self.inputs[name] = widget
-                    yield Static(_field_label(field), classes="bkx-form-label")
-                    yield widget
-                with Container(classes="bkx-form-actions"):
-                    yield Button("Save", id="save", variant="primary")
-                    yield Button("Cancel", id="cancel")
-
-        def on_button_pressed(self, event: Button.Pressed) -> None:
-            if event.button.id == "save":
-                self.dismiss({name: widget.value for name, widget in self.inputs.items()})
-            elif event.button.id == "cancel":
-                self.dismiss(None)
-
-    class BkxRuntimeApp(App):
-        TITLE = "BKX"
-        SUB_TITLE = "Backup TUI"
-        BINDINGS = [
-            ("1", "route('/backup')", "Backup"),
-            ("2", "route('/archive')", "Archive"),
-            ("3", "route('/restore')", "Restore"),
-            ("4", "route('/transfer')", "Transfer"),
-            ("5", "route('/tools')", "Tools"),
-            ("6", "route('/logs')", "Logs"),
-            ("7", "route('/run-history')", "History"),
-            ("e", "edit_form", "Edit"),
-            ("r", "run_primary", "Run"),
-            ("t", "invoke('theme.next')", "Theme"),
-            ("?", "route('/help')", "Help"),
-            ("d", "route('/diagnostics')", "Diagnostics"),
-            ("q", "quit", "Quit"),
-        ]
-
-        def compose(self) -> ComposeResult:
-            yield Header(show_clock=True)
-            yield Static("", id="bkx-nav", classes="bkx-nav")
-            yield Static("", id="bkx-content", classes="bkx-content")
-            yield Static("", id="bkx-status", classes="bkx-status")
-            yield Footer()
-
-        def on_mount(self) -> None:
-            last_route = "/" + _state(ctx).last_route.strip("/")
-            if last_route in ctx.routes:
-                ctx.nav.replace(last_route)
-            self._refresh()
-
-        def _nav_text(self) -> str:
-            specs = [spec for spec in ctx.routes.visible() if spec.route != "/"]
-            parts = []
-            for index, spec in enumerate(specs[:7], start=1):
-                marker = "*" if spec.route == ctx.nav.current else " "
-                parts.append(f"{marker}{index}:{spec.title}")
-            return "  ".join(parts)
-
-        def _refresh(self, message: str = "") -> None:
-            self.query_one("#bkx-nav", Static).update(self._nav_text())
-            self.query_one("#bkx-content", Static).update(render_component_text(ctx.app.render_current()))
-            hints = "1-7 navigate  e edit form  r run  t theme  ? help  d diagnostics  q quit"
-            self.query_one("#bkx-status", Static).update(message or hints)
-
-        def action_route(self, route: str) -> None:
-            ctx.nav.go(route)
-            if isinstance(ctx.state, TuiState):
-                ctx.state.last_route = route.strip("/") or "backup"
-                save_state(ctx.state)
-            self._refresh()
-
-        async def action_invoke(self, action_id: str) -> None:
-            try:
-                await ctx.actions.invoke(action_id, ctx)
-                self._refresh(f"Ran {action_id}")
-            except Exception as exc:
-                self._refresh(f"Action failed: {exc}")
-
-        async def action_run_primary(self) -> None:
-            action_id = {
-                "/": "backup.create",
-                "/backup": "backup.create",
-                "/archive": "archive.create",
-                "/restore": "restore.extract",
-                "/transfer": "transfer.run",
-                "/diagnostics": "diagnostics.export",
-            }.get(ctx.nav.current)
-            if action_id is None:
-                self._refresh("No primary action for this route")
-                return
-            await self.action_invoke(action_id)
-
-        def action_edit_form(self) -> None:
-            form_name = _form_name_for_route(ctx.nav.current)
-            if form_name is None:
-                self._refresh("No editable form on this route")
-                return
-            fields = list(_iter_form_fields(ctx.app.render_current()))
-            if not fields:
-                self._refresh("No editable fields on this route")
-                return
-
-            def handle(values: dict[str, str] | None) -> None:
-                if values is None:
-                    self._refresh("Edit cancelled")
-                    return
-                _set_form_values(ctx, form_name, values)
-                self._refresh(f"Saved {form_name} inputs")
-
-            self.push_screen(FormEditScreen(form_name, fields), handle)
-
-    BkxRuntimeApp().run()
+    app.run()
 
 
 def run_tui() -> int:

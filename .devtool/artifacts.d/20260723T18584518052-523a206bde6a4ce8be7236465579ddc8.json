@@ -1,0 +1,79 @@
+{
+  "applied_at": "2026-07-23T18:58:45.180522Z",
+  "artifact": "/home/mike/Downloads/bkx_shared_interactive_tui_overlay.zip",
+  "artifact_name": "bkx_shared_interactive_tui_overlay.zip",
+  "type": "overlay",
+  "sha256": "d18bb4975d407f05ea1aa96a7f5a664a6ef824babeecb3a81f3eb3894c92150f",
+  "status": "rolled-back",
+  "validation_status": "failed",
+  "commit_message": "Use Mikomn interactive TUI runtime",
+  "commit_hash": "",
+  "file_count": 2,
+  "change_counts": {
+    "modify": 2
+  },
+  "manifest": {
+    "schema_version": 2,
+    "type": "overlay",
+    "name": "bkx shared interactive tui overlay",
+    "description": "Removes BKX current text-only compatibility shell and delegates its declarative forms, actions, routes, tables, and state persistence to Mikomn shared interactive Textual renderer.",
+    "repository": {
+      "name": "bkx"
+    },
+    "target": "bkx",
+    "inventory": {
+      "format": 1,
+      "entries": [
+        {
+          "path": "src/bkx/tui/app.py",
+          "action": "modify",
+          "sha256": "5a290d81f579b2bcb000f4e42d6c0c473bde4aee837db5b9194e728794f8ed2f",
+          "size": 19627,
+          "source_sha256": "459ad272c53c7bd18508d0f3598970ba8f426c21853de1b7a20c43a64298143e"
+        },
+        {
+          "path": "tests/tui/test_model_app_contract.py",
+          "action": "modify",
+          "sha256": "2a5ef896fd7cb7d3621dcac3c242c93f0972d34d28e78ee2dfd260c1e01b28f7",
+          "size": 3839,
+          "source_sha256": "2e879b4bd05bb1fcd1d1d7a8f7ac062bd640348907004dc2e19bd8e7ba8d480c"
+        }
+      ]
+    },
+    "apply": {
+      "atomic": true,
+      "conflict_policy": "fail",
+      "path_policy": "repository-relative",
+      "requires_clean_worktree": false,
+      "commit": {
+        "enabled": true,
+        "strategy": "single",
+        "message": "Use Mikomn interactive TUI runtime"
+      }
+    },
+    "validation": {
+      "required": true,
+      "restore": false,
+      "build": false,
+      "test": true,
+      "rollback_on_failure": true,
+      "script": {
+        "path": ".devtool-artifact/validate.sh",
+        "runner": "bash",
+        "sha256": "9ca8c7682646aa775ac77c8d2b008f6e4cfef9a600a01d1a32cb6cd096eb299b",
+        "timeout_seconds": 900
+      },
+      "expected": {
+        "restore": "skipped",
+        "build": "skipped",
+        "tests": "passed",
+        "maximum_warnings": 0
+      }
+    },
+    "notes": [
+      "No CLI or core backup behavior changes.",
+      "The plain-text renderer remains available only as a fallback and diagnostics formatter."
+    ]
+  },
+  "history_id": "523a206bde6a4ce8be7236465579ddc8"
+}

@@ -1,0 +1,15 @@
+{
+  "applied_at": "2026-07-23T17:42:25.742635Z",
+  "artifact": "/home/mike/Downloads/bkx_shared_interactive_tui_overlay.zip",
+  "artifact_name": "bkx_shared_interactive_tui_overlay.zip",
+  "type": "overlay",
+  "sha256": "",
+  "status": "failed",
+  "validation_status": "ok",
+  "commit_message": "",
+  "commit_hash": "",
+  "file_count": 0,
+  "change_counts": {},
+  "manifest": {},
+  "history_id": "f2eeaf5eafc8412bb27a38b446e2bc9c"
+}

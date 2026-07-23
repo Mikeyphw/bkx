@@ -79,3 +79,36 @@ def test_app_registers_navigation_and_primary_actions() -> None:
     assert "transfer.run" in action_ids
     assert "nav.backup" in action_ids
     assert "diagnostics.export" in action_ids
+
+
+def test_shared_renderer_commits_form_edits_to_bkx_state(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+    state = TuiState(last_route="backup")
+    app = build_bkx_tui_app(state=state)
+
+    asyncio.run(app.commit_form_values("/backup", {"sources": "/srv/data", "verify": False}))
+
+    assert state.form_values is not None
+    assert state.form_values["backup"] == {"sources": "/srv/data", "verify": False}
+    assert (tmp_path / "bkx" / "tui_state.json").exists()
+
+
+def test_bkx_delegates_to_mikomn_runtime_without_parallel_shell() -> None:
+    import inspect
+
+    from bkx.tui.app import _run_bkx_textual_shell
+
+    source = inspect.getsource(_run_bkx_textual_shell)
+    assert "app.run()" in source
+    assert "from textual" not in source
+    assert "render_component_text" not in source
+
+
+def test_root_alias_is_hidden_from_shared_navigation() -> None:
+    app = build_bkx_tui_app(state=TuiState())
+    visible_routes = {spec.route for spec in app.context().routes.visible()}
+
+    assert "/" not in visible_routes
+    assert "/backup" in visible_routes

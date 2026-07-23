@@ -1,0 +1,80 @@
+{
+  "applied_at": "2026-07-23T20:37:59.998315Z",
+  "artifact": "/storage/emulated/0/Download/bkx_shared_interactive_tui_172612_overlay.zip",
+  "artifact_name": "bkx_shared_interactive_tui_172612_overlay.zip",
+  "type": "overlay",
+  "sha256": "157ffd031f645e8ad5c91f5c9c7fc57f97c4f72a467e8eef82c64ba7ec126593",
+  "status": "ok",
+  "validation_status": "not-run",
+  "commit_message": "Guard BKX shared interactive TUI runtime",
+  "commit_hash": "",
+  "file_count": 2,
+  "change_counts": {
+    "add": 1,
+    "modify": 1
+  },
+  "manifest": {
+    "schema_version": 2,
+    "type": "overlay",
+    "name": "bkx shared interactive tui 172612 overlay",
+    "description": "Rebases BKX on the patched Mikomn interactive RenderNode-to-Textual runtime and adds a guard contract for the shared renderer dependency.",
+    "repository": {
+      "name": "bkx"
+    },
+    "target": "bkx",
+    "inventory": {
+      "format": 1,
+      "entries": [
+        {
+          "path": "src/bkx/tui/app.py",
+          "action": "modify",
+          "sha256": "63dafdc32802e5c2d4f8b77f4314940b764854338a73356117588e0a3bea6bfd",
+          "size": 19657,
+          "source_sha256": "5a290d81f579b2bcb000f4e42d6c0c473bde4aee837db5b9194e728794f8ed2f"
+        },
+        {
+          "path": "tests/tui/test_shared_interactive_renderer_contract.py",
+          "action": "add",
+          "sha256": "3701a5d94b5f4b636e4da4f27538a7a7228d42be6ec90c93cdd02e57c278c1f2",
+          "size": 1447
+        }
+      ]
+    },
+    "apply": {
+      "atomic": true,
+      "conflict_policy": "fail",
+      "path_policy": "repository-relative",
+      "requires_clean_worktree": false,
+      "commit": {
+        "enabled": true,
+        "strategy": "single",
+        "message": "Guard BKX shared interactive TUI runtime"
+      }
+    },
+    "validation": {
+      "required": true,
+      "restore": false,
+      "build": false,
+      "test": true,
+      "rollback_on_failure": true,
+      "script": {
+        "path": ".devtool-artifact/validate.sh",
+        "runner": "bash",
+        "sha256": "a22bc87dd258bf43f51509a215de97363ba4b10281a0b0bb45fe16eec3d74263",
+        "timeout_seconds": 900
+      },
+      "expected": {
+        "restore": "skipped",
+        "build": "skipped",
+        "tests": "passed",
+        "maximum_warnings": 0
+      }
+    },
+    "notes": [
+      "Mikomn must already contain src/mikomn/tui/shell/interactive.py and base.create_textual_app must delegate to it.",
+      "No core backup/archive/restore/transfer behavior changes.",
+      "The text renderer remains available only for diagnostics and test fallback output."
+    ]
+  },
+  "history_id": "6be7bbd255dd444f8886ee66412fafb1"
+}

@@ -513,9 +513,9 @@ def _field_value(field: Any) -> str:
 def _run_bkx_textual_shell(app: TuiApp) -> None:
     """Run BKX through Mikomn's canonical interactive renderer.
 
-    BKX no longer maintains a parallel text-only Textual shell. Its declarative
-    forms, tables, route navigation, action bars, dialogs, and command palette
-    are rendered by the shared Mikomn runtime.
+    BKX owns the domain routes, actions, and state persistence. Mikomn owns the
+    RenderNode-to-widget Textual runtime, so this function deliberately delegates
+    to ``app.run()`` instead of rebuilding a BKX-local Static text shell.
     """
 
     app.run()

@@ -1,0 +1,59 @@
+[project]
+kind = "python"
+python = "python3"
+run_command = "bkx --help"
+
+[execution]
+environment = "auto"
+chroot_name = "androidos"
+device_serial = ""
+
+[toolchain]
+manager = "auto"
+
+[targets.bkx]
+type = "python"
+root = "."
+
+[python]
+manager = "venv"
+test_framework = "pytest"
+groups = []
+extras = ["dev", "tui"]
+validator_dependencies = [
+  "build",
+  "-r",
+  "scripts/validator-local-deps.txt",
+  "pytest>=8",
+  "pytest-cov>=4",
+  "typer>=0.12",
+  "rich>=14.2.0",
+  "textual>=7.1",
+  "hypothesis>=6",
+  "PyYAML>=6",
+  "ruff",
+  "pyright"
+]
+locked = false
+offline = false
+install_project = true
+isolation = true
+source_import_isolation = false
+cli_contract = true
+disable_network = false
+fresh_dist = true
+clean_categories = ["artifacts", "caches"]
+lint = ["ruff"]
+
+[python.package]
+verify_all_wheels = false
+rebuild_sdist = false
+import_smoke = true
+verify_cli = true
+install_dependencies = false
+import_modules = ["bkx"]
+console_scripts = ["bkx"]
+
+[python.coverage]
+minimum_total = 0
+minimum_changed_lines = 0

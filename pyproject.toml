@@ -16,18 +16,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-interactive = [
-    "mikomn[cli]>=0.3.0",
-]
+interactive = []
 tui = [
-    "mikomn[cli,tui]>=0.3.0",
     "textual",
 ]
 dev = [
     "ruff",
     "pyright",
-    "pytest",
-    "pytest-cov",
 ]
 
 [project.scripts]

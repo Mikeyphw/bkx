@@ -1,0 +1,3 @@
+# Set MIKOMN_ROOT to the local mikomn checkout on this machine.
+# pip expands ${MIKOMN_ROOT} when reading requirements files.
+mikomn[cli,tui] @ file://${MIKOMN_ROOT}

@@ -11,6 +11,7 @@ Contract rules:
 # ruff: noqa: B008 - Typer Argument/Option defaults are intentional and safe
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version as package_version
 import sys
 from pathlib import Path
 
@@ -58,7 +59,14 @@ def _update_state(ctx: typer.Context) -> None:
     _state["trace"] = ctx.params.get("trace", False)
 
 
-@app.callback(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
+def _bkx_version() -> str:
+    try:
+        return package_version("bkx")
+    except PackageNotFoundError:
+        return "0.0.1"
+
+
+@app.callback(invoke_without_command=True, context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def main_callback(
     ctx: typer.Context,
     json: bool = Option(False, "--json", help="Output results as JSON"),
@@ -66,6 +74,7 @@ def main_callback(
     progress: str = Option("auto", "--progress", help="Progress display: auto|plain|off", case_sensitive=False),
     verbose: bool = Option(False, "--verbose", "-v", help="Enable verbose output"),
     trace: bool = Option(False, "--trace", help="Show full stack traces on error"),
+    version: bool = Option(False, "--version", help="Show version and exit"),
 ) -> None:
     """BKX - Contract-controlled CLI-first backup/archive tool.
 
@@ -74,6 +83,12 @@ def main_callback(
     """
     _update_state(ctx)
     _state["json"] = bool(_state["json"])
+    if version:
+        typer.echo(f"bkx {_bkx_version()}")
+        raise typer.Exit()
+    if ctx.invoked_subcommand is None and not ctx.args:
+        typer.echo(ctx.get_help())
+        raise typer.Exit()
 
 
 # ============================================================================

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="2" failures="0" skipped="0" tests="2" time="0.548" timestamp="2026-07-23T21:46:23.212852+00:00" hostname="localhost"><testcase classname="" name="tests.core.test_config" time="0.000"><error message="collection failure">ImportError while importing test module '/data/data/com.termux/files/home/Code/bkx/tests/core/test_config.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../usr/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/core/test_config.py:12: in &lt;module&gt;
+    from bkx.core.config import BkxConfig, get_config, reload_config, reset_config
+E   ModuleNotFoundError: No module named 'bkx'</error></testcase><testcase classname="" name="tests.core.test_config_yaml_fallback_contract" time="0.000"><error message="collection failure">ImportError while importing test module '/data/data/com.termux/files/home/Code/bkx/tests/core/test_config_yaml_fallback_contract.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+../../../usr/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests/core/test_config_yaml_fallback_contract.py:7: in &lt;module&gt;
+    from bkx.core.config import BkxConfig, reset_config
+E   ModuleNotFoundError: No module named 'bkx'</error></testcase></testsuite></testsuites>

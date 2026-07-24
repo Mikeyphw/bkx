@@ -1,0 +1,72 @@
+# run all hooks with:
+# pre-commit run --hook-stage manual --all
+ci:
+  skip:
+    # pre-commit.ci doesn't have Rust installed
+    - cargo-fmt
+    - cargo-deny
+
+repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt  # rustup component add rustfmt
+        name: cargo fmt
+        entry: cargo fmt --all --
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-deny  # cargo install --locked cargo-deny
+        name: cargo deny
+        entry: cargo deny --all-features check --
+        language: system
+        pass_filenames: false
+
+      - id: cargo-check
+        name: cargo check
+        entry: cargo check --all-features --all-targets --
+        language: system
+        pass_filenames: false
+        types: [rust]
+        stages: [manual]  # because it's slow
+
+      - id: cargo-clippy  # rustup component add clippy
+        name: cargo clippy
+        entry: cargo clippy --tests --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        types: [rust]
+        stages: [manual]  # because it's slow
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-toml
+      - id: end-of-file-fixer
+        exclude: |
+          (?x)(
+              (^sysconfig/)|
+              (.*\.stdout)
+          )
+      - id: trailing-whitespace
+        exclude: |
+          (?x)(
+              (^sysconfig/)|
+              (.*\.stdout)
+          )
+      - id: mixed-line-ending
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17
+    hooks:
+      - id: ruff-format
+      - id: ruff
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v2.1.0
+    hooks:
+      - id: mypy
+        entry: mypy maturin/
+        pass_filenames: false
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.2
+    hooks:
+    - id: codespell

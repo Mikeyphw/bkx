@@ -1,0 +1,63 @@
+# Workaround to bootstrap maturin on non-manylinux platforms
+[build-system]
+requires = [
+    "setuptools>=77.0.0",
+    "tomli>=1.1.0 ; python_version<'3.11'",
+    "setuptools-rust>=1.11.0",
+]
+backend-path = ["maturin"]
+build-backend = "bootstrap"
+
+[project]
+name = "maturin"
+description = "Build and publish crates with pyo3, cffi and uniffi bindings as well as rust binaries as python packages"
+authors = [{ name = "konstin", email = "konstin@mailbox.org" }]
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.7"
+license = "MIT OR Apache-2.0"
+license-files = [
+    "license-mit",
+    "license-apache",
+]
+classifiers = [
+    "Topic :: Software Development :: Build Tools",
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+    "Programming Language :: Python :: Implementation :: GraalPy",
+]
+dependencies = ["tomli>=1.1.0 ; python_version<'3.11'"]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+zig = ["ziglang>=0.10.0"]
+patchelf = ["patchelf"]
+
+[project.urls]
+"Source Code" = "https://github.com/PyO3/maturin"
+Issues = "https://github.com/PyO3/maturin/issues"
+Documentation = "https://maturin.rs"
+Changelog = "https://maturin.rs/changelog.html"
+
+[tool.setuptools]
+packages = ["maturin"]
+
+[tool.maturin]
+bindings = "bin"
+
+[tool.black]
+target-version = ['py37']
+extend-exclude = '''
+# Ignore cargo-generate templates
+^/src/templates
+'''
+
+[tool.ruff]
+line-length = 120
+target-version = "py37"
+
+[tool.mypy]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+warn_no_return = true
+ignore_missing_imports = true

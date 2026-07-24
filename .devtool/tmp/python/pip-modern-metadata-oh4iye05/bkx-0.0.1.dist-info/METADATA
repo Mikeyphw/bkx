@@ -1,0 +1,33 @@
+Metadata-Version: 2.4
+Name: bkx
+Version: 0.0.1
+Summary: Contract-controlled CLI-first backup/archive tool (skeleton)
+Author-email: You <you@example.com>
+License: MIT
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: typer>=0.12
+Requires-Dist: rich>=14.2.0
+Provides-Extra: interactive
+Provides-Extra: tui
+Requires-Dist: textual; extra == "tui"
+Provides-Extra: dev
+Requires-Dist: ruff; extra == "dev"
+Requires-Dist: pyright; extra == "dev"
+Dynamic: license-file
+
+# BKX (Contract-Controlled Skeleton)
+
+This repository is an **empty implementation skeleton** that matches the phase guides in `bkx_contract_guide.zip`.
+
+## What exists
+- Contract-compliant module layout (core + required CLI + optional interactive/TUI)
+- Config placeholders for ruff/pyright/pytest
+- CI workflow placeholder
+
+## What does NOT exist
+- No business logic or real commands yet (follow the phase docs to implement)
+
+## Next step
+Start at `PHASE_00` in the docs bundle and implement layer-by-layer.

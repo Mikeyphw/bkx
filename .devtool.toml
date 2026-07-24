@@ -16,7 +16,7 @@ type = "python"
 root = "."
 
 [python]
-manager = "venv"
+manager = ""
 test_framework = "pytest"
 groups = []
 extras = ["dev", "tui"]
@@ -53,7 +53,3 @@ verify_cli = true
 install_dependencies = false
 import_modules = ["bkx"]
 console_scripts = ["bkx"]
-
-[python.coverage]
-minimum_total = 0
-minimum_changed_lines = 0

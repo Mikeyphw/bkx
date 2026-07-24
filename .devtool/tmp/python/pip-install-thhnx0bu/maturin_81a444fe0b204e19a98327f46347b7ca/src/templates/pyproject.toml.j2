@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>={{ version_major }}.{{ version_minor }},<{{ version_major + 1 }}.0"]
+build-backend = "maturin"
+
+[project]
+name = "{{ name }}"
+requires-python = ">=3.8"
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+{% if bindings == "cffi" -%}
+dependencies = ["cffi; platform_python_implementation != 'PyPy'"]
+{% endif -%}
+dynamic = ["version"]
+{% if mixed_non_src -%}
+[project.optional-dependencies]
+tests = [
+    "pytest",
+]
+{% endif -%}
+
+{% if bindings in ["bin", "cffi"] or mixed_non_src -%}
+[tool.maturin]
+{% if bindings == "cffi" or bindings == "bin" -%}
+bindings = "{{ bindings }}"
+{% endif -%}
+{% if mixed_non_src -%}
+python-source = "python"
+{% endif -%}
+exclude = [
+    "**/__pycache__",
+    "**/*.pyc",
+    "**/*.pyo"
+]
+{% endif -%}

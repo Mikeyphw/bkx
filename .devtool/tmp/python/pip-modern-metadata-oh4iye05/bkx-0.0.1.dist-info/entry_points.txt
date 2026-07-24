@@ -1,0 +1,2 @@
+[console_scripts]
+bkx = bkx.cli.app:main

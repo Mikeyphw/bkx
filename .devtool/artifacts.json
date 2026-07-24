@@ -966,6 +966,1053 @@
         ]
       },
       "history_id": "6be7bbd255dd444f8886ee66412fafb1"
+    },
+    {
+      "applied_at": "2026-07-23T20:51:57.471319Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "80f063b24d4a4db7b8eba2271e40e627"
+    },
+    {
+      "applied_at": "2026-07-23T20:57:39.708687Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "91724242038649c5bb269c90e0377857"
+    },
+    {
+      "applied_at": "2026-07-23T21:00:36.122958Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "f8e3ad2edf874788acb7b46a16806ddf"
+    },
+    {
+      "applied_at": "2026-07-23T21:09:42.245741Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "5a44b21d727947f6b169704fa8dcf4f6"
+    },
+    {
+      "applied_at": "2026-07-23T21:10:21.535486Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "1056c651bfcd482f80e19ce8b39213e4"
+    },
+    {
+      "applied_at": "2026-07-23T21:46:25.444788Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+      "type": "overlay",
+      "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix overlay",
+        "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": false,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "skipped",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "114bd780f87b4df19269988efb6bece5"
+    },
+    {
+      "applied_at": "2026-07-23T22:41:21.613427Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "4ce9258b9a5e42209e56962f95d8a383"
+    },
+    {
+      "applied_at": "2026-07-23T22:43:22.513269Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "aa5c4ddab53f4bc599f331e49f984e5f"
+    },
+    {
+      "applied_at": "2026-07-23T23:14:48.380897Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "a3eac0789bf542cb9af809410b13ec20"
+    },
+    {
+      "applied_at": "2026-07-23T23:15:48.514950Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "dab76ae296ab4eaaae83e8c0c72fbb51"
+    },
+    {
+      "applied_at": "2026-07-23T23:16:28.710068Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "c113696c7df04ae6aeeb99f5f57518a4"
+    },
+    {
+      "applied_at": "2026-07-23T23:36:27.939857Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "aa6aedd0676d4a3094b13ba1e06e4276"
+    },
+    {
+      "applied_at": "2026-07-23T23:37:53.189893Z",
+      "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_restore_overlay.zip",
+      "artifact_name": "bkx_config_precedence_fix_restore_overlay.zip",
+      "type": "overlay",
+      "sha256": "f41f1f3c43b705c6996a0b9a6d762722449cea9add1c7db23bedafad4704f570",
+      "status": "rolled-back",
+      "validation_status": "failed",
+      "commit_message": "Fix BKX config file precedence",
+      "commit_hash": "",
+      "file_count": 2,
+      "change_counts": {
+        "add": 1,
+        "modify": 1
+      },
+      "manifest": {
+        "schema_version": 2,
+        "type": "overlay",
+        "name": "bkx config precedence fix restore overlay",
+        "description": "Fixes BKX config precedence and lets Devtool restore/install the Python package before selected pytest validation.",
+        "repository": {
+          "name": "bkx"
+        },
+        "target": "bkx",
+        "inventory": {
+          "format": 1,
+          "entries": [
+            {
+              "path": "src/bkx/core/config.py",
+              "action": "modify",
+              "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+              "size": 13827,
+              "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+            },
+            {
+              "path": "tests/core/test_config_yaml_fallback_contract.py",
+              "action": "add",
+              "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+              "size": 1683
+            }
+          ]
+        },
+        "apply": {
+          "atomic": true,
+          "conflict_policy": "fail",
+          "path_policy": "repository-relative",
+          "requires_clean_worktree": false,
+          "commit": {
+            "enabled": true,
+            "strategy": "single",
+            "message": "Fix BKX config file precedence"
+          }
+        },
+        "validation": {
+          "required": true,
+          "restore": true,
+          "build": false,
+          "test": true,
+          "rollback_on_failure": true,
+          "script": {
+            "path": ".devtool-artifact/validate.sh",
+            "runner": "bash",
+            "sha256": "255cf8ac63830482e183e703ee862159d1870abb83a82e0f62759d6dc18afd49",
+            "timeout_seconds": 900
+          },
+          "expected": {
+            "restore": "passed",
+            "build": "skipped",
+            "tests": "passed",
+            "maximum_warnings": 0
+          }
+        },
+        "notes": [
+          "This revision enables the Devtool restore phase so the src-layout bkx package is installed before Devtool-selected pytest collection.",
+          "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+          "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+          "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+        ]
+      },
+      "history_id": "cfe4502fa2e746c7862e14a9ac1509c8"
     }
   ]
 }

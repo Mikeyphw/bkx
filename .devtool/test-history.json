@@ -1,0 +1,6 @@
+{
+  "failed": [
+    "tests.core.test_config",
+    "tests.core.test_config_yaml_fallback_contract"
+  ]
+}

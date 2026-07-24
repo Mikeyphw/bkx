@@ -1,0 +1,6 @@
+#!/data/data/com.termux/files/home/.local/share/devtool/python/venvs/bkx-f97d7d275cf5a39c/bkx/bin/python
+import sys
+from wheel._commands import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())

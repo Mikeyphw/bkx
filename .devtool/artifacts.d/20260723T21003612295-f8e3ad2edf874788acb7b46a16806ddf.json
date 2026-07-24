@@ -1,0 +1,80 @@
+{
+  "applied_at": "2026-07-23T21:00:36.122958Z",
+  "artifact": "/storage/emulated/0/Download/bkx_config_precedence_fix_overlay.zip",
+  "artifact_name": "bkx_config_precedence_fix_overlay.zip",
+  "type": "overlay",
+  "sha256": "23aff907eef712c3513f524c8ce0e6054c201060fc49b1f03198076d333dd93c",
+  "status": "rolled-back",
+  "validation_status": "failed",
+  "commit_message": "Fix BKX config file precedence",
+  "commit_hash": "",
+  "file_count": 2,
+  "change_counts": {
+    "add": 1,
+    "modify": 1
+  },
+  "manifest": {
+    "schema_version": 2,
+    "type": "overlay",
+    "name": "bkx config precedence fix overlay",
+    "description": "Fixes BKX config layering so local config files reliably override environment variables, including lean environments without PyYAML.",
+    "repository": {
+      "name": "bkx"
+    },
+    "target": "bkx",
+    "inventory": {
+      "format": 1,
+      "entries": [
+        {
+          "path": "src/bkx/core/config.py",
+          "action": "modify",
+          "sha256": "18f091372d74342b6dc79e6580cf19dfcf29950cd6182c978c0c0bfdbe57d46b",
+          "size": 13827,
+          "source_sha256": "72164fe51f7a8abedb183acfab995f9a25b4a6b0dc48ea7c52470700d3628ee4"
+        },
+        {
+          "path": "tests/core/test_config_yaml_fallback_contract.py",
+          "action": "add",
+          "sha256": "82854b11f3c232b1cc63d95160b789e325f6f4d4aae3796b900dc4ace2c8a063",
+          "size": 1683
+        }
+      ]
+    },
+    "apply": {
+      "atomic": true,
+      "conflict_policy": "fail",
+      "path_policy": "repository-relative",
+      "requires_clean_worktree": false,
+      "commit": {
+        "enabled": true,
+        "strategy": "single",
+        "message": "Fix BKX config file precedence"
+      }
+    },
+    "validation": {
+      "required": true,
+      "restore": false,
+      "build": false,
+      "test": true,
+      "rollback_on_failure": true,
+      "script": {
+        "path": ".devtool-artifact/validate.sh",
+        "runner": "bash",
+        "sha256": "69fad7a727c4c5c69ff23666abbc030adbd5a3edcc5d6becacd0a7e40800c397",
+        "timeout_seconds": 900
+      },
+      "expected": {
+        "restore": "skipped",
+        "build": "skipped",
+        "tests": "passed",
+        "maximum_warnings": 0
+      }
+    },
+    "notes": [
+      "This is a follow-up for repos where bkx_shared_interactive_tui_172612_overlay.zip already applied.",
+      "No TUI behavior changes; this fixes a pre-existing core config loader bug exposed by full validation.",
+      "The fallback parser intentionally supports BKX's scalar key/value config surface, not full YAML."
+    ]
+  },
+  "history_id": "f8e3ad2edf874788acb7b46a16806ddf"
+}

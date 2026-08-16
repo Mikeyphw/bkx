@@ -22,10 +22,13 @@ from .execution_plan import (
     generate_backup_plan,
     generate_restore_plan,
     generate_transfer_plan,
+    plan_for_spec,
+    execution_plan_to_dict,
 )
 from .restore import RestoreFileInfo, RestorePreviewResult, RestoreResult
 from .run import RunListResult, RunShowResult, RunSummary
 from .transfer import TransferProgress, TransferResult
+from .tools import ToolDetectionResult, ToolExplainResult
 
 __all__ = [
     "Timing",
@@ -49,7 +52,11 @@ __all__ = [
     "generate_archive_plan",
     "generate_transfer_plan",
     "generate_restore_plan",
+    "plan_for_spec",
+    "execution_plan_to_dict",
     "RunListResult",
     "RunShowResult",
     "RunSummary",
+    "ToolDetectionResult",
+    "ToolExplainResult",
 ]

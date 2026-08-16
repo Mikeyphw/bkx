@@ -1,57 +1,9 @@
-"""RestoreSpec JSON Schema definition."""
+"""Runtime restore Spec schema loaded from the packaged JSON snapshot."""
 
-RESTORE_SPEC_SCHEMA = {
-    "$schema": "http://json-schema.org/draft-07/schema#",
-    "title": "RestoreSpec",
-    "description": "Normalized specification for archive restore operations.",
-    "type": "object",
-    "required": ["archive"],
-    "properties": {
-        "archive": {
-            "type": "string",
-            "description": "Path to archive to restore",
-        },
-        "destination": {
-            "type": "string",
-            "nullable": True,
-            "description": "Destination path for restore",
-        },
-        "paths": {
-            "type": "array",
-            "items": {"type": "string"},
-            "default": [],
-            "description": "Specific paths to restore (empty = all)",
-        },
-        "excludes": {
-            "type": "array",
-            "items": {"type": "string"},
-            "default": [],
-            "description": "Glob patterns to exclude",
-        },
-        "overwrite": {
-            "type": "boolean",
-            "default": False,
-            "description": "Overwrite existing files",
-        },
-        "verify": {
-            "type": "boolean",
-            "default": True,
-            "description": "Verify archive integrity before restore",
-        },
-        "dry_run": {
-            "type": "boolean",
-            "default": False,
-            "description": "Just show plan, don't execute",
-        },
-        "fresh_dir": {
-            "type": "boolean",
-            "default": False,
-            "description": "Create fresh directory for restore",
-        },
-        "confirm_overwrite": {
-            "type": "boolean",
-            "default": True,
-            "description": "Require confirmation for overwrite",
-        },
-    },
-}
+from __future__ import annotations
+
+import json
+from importlib.resources import files
+
+_RESTORE_RESOURCE = files(__package__).joinpath("restore_spec.json")
+RESTORE_SPEC_SCHEMA = json.loads(_RESTORE_RESOURCE.read_text(encoding="utf-8"))

@@ -1,7 +1,4 @@
-"""TransferResult - structured result for transfer operations.
-
-Returns structured data, never strings.
-"""
+"""Truthful immutable transfer Result contracts."""
 
 from __future__ import annotations
 
@@ -9,95 +6,77 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backup import Timing
+from .common import require_nonnegative
+
+TransferLocation = Path | str
 
 
 @dataclass(frozen=True, kw_only=True)
 class TransferResult:
-    """Structured result from a transfer operation.
-
-    Contains all metrics and artifacts produced by the operation.
-    """
-
-    # Overall status
     success: bool
+    direction: str
+    timing: Timing = field(compare=False)
     dry_run: bool = False
-    direction: str  # "push" or "pull"
-
-    # Timing
-    timing: Timing
-
-    # Metrics
     files_transferred: int = 0
     bytes_transferred: int = 0
-
-    # Paths (optional - set if available)
-    source: Path | None = None
-    destination: Path | None = None
-
-    # Verification
+    source: TransferLocation | None = None
+    destination: TransferLocation | None = None
     verification_passed: bool | None = None
     checksum_verified: bool | None = None
-
-    # Warnings
     warnings: tuple[str, ...] = field(default_factory=tuple)
-
-    # Errors (partial failures)
     errors: tuple[str, ...] = field(default_factory=tuple)
 
-    @property
-    def duration_ms(self) -> int:
-        """Get total duration in milliseconds."""
-        return self.timing.duration_ms
+    def __post_init__(self) -> None:
+        if self.direction not in {"push", "pull", "sync", "none"}:
+            raise ValueError(f"invalid transfer result direction: {self.direction}")
+        require_nonnegative(files_transferred=self.files_transferred, bytes_transferred=self.bytes_transferred)
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.success and self.errors:
+            raise ValueError("successful TransferResult cannot contain errors")
+        if not self.success and (self.verification_passed is True or self.checksum_verified is True):
+            raise ValueError("failed transfer cannot claim successful verification")
 
     @property
-    def human_bytes_transferred(self) -> str:
-        """Get human-readable byte count."""
-        return _human_bytes(self.bytes_transferred)
-
+    def duration_ms(self) -> int: return self.timing.duration_ms
     @property
-    def is_push(self) -> bool:
-        """Check if this was a push operation."""
-        return self.direction == "push"
-
+    def human_bytes_transferred(self) -> str: return _human_bytes(self.bytes_transferred)
     @property
-    def is_pull(self) -> bool:
-        """Check if this was a pull operation."""
-        return self.direction == "pull"
-
-    # Aliases for TUI compatibility
+    def is_push(self) -> bool: return self.direction == "push"
     @property
-    def files_count(self) -> int:
-        """Alias for files_transferred for TUI compatibility."""
-        return self.files_transferred
-
+    def is_pull(self) -> bool: return self.direction == "pull"
     @property
-    def bytes_total(self) -> int:
-        """Alias for bytes_transferred for TUI compatibility."""
-        return self.bytes_transferred
+    def files_count(self) -> int: return self.files_transferred
+    @property
+    def bytes_total(self) -> int: return self.bytes_transferred
 
 
 @dataclass(frozen=True, kw_only=True)
 class TransferProgress:
-    """Progress update during transfer."""
-
     current_file: Path | None = None
     files_transferred: int = 0
     bytes_transferred: int = 0
     total_files: int | None = None
     total_bytes: int | None = None
 
+    def __post_init__(self) -> None:
+        require_nonnegative(files_transferred=self.files_transferred, bytes_transferred=self.bytes_transferred)
+        if self.total_files is not None:
+            require_nonnegative(total_files=self.total_files)
+        if self.total_bytes is not None:
+            require_nonnegative(total_bytes=self.total_bytes)
+
     @property
     def percent_complete(self) -> float | None:
-        """Calculate percentage complete."""
-        if self.total_bytes and self.total_bytes > 0:
-            return (self.bytes_transferred / self.total_bytes) * 100
+        if self.total_bytes is not None and self.total_bytes > 0:
+            return max(0.0, min(100.0, (self.bytes_transferred / self.total_bytes) * 100.0))
+        if self.total_files is not None and self.total_files > 0:
+            return max(0.0, min(100.0, (self.files_transferred / self.total_files) * 100.0))
         return None
 
 
 def _human_bytes(n: float) -> str:
-    """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024:
-            return f"{n:.2f}{unit}"
+        if n < 1024: return f"{n:.2f}{unit}"
         n /= 1024
     return f"{n:.2f}PB"

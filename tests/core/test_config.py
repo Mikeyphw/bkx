@@ -20,15 +20,11 @@ class TestBkxConfigDefaults:
         config = BkxConfig()
 
         assert config.verify_after_operation is True
-        assert config.preserve_permissions is True
         assert config.compression_algorithm == "zstd"
         assert config.compression_level == 3
         assert config.fresh_restore_dir is True
-        assert config.confirm_overwrite is True
-        assert config.require_confirmation is False
         assert config.run_history_enabled is True
         assert config.run_history_limit == 50
-        assert config.verbose is False
         assert config.trace is False
 
     def test_default_destination_is_none(self):
@@ -130,8 +126,8 @@ class TestBkxConfigMerge:
                 os.environ.pop("BKX_COMPRESSION_ALGORITHM", None)
                 os.chdir(old_cwd)
 
-    def test_file_overrides_env(self):
-        """Test that config file overrides env vars."""
+    def test_env_overrides_file(self):
+        """Environment variables override config-file values."""
         with tempfile.TemporaryDirectory() as tmpdir:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
@@ -149,8 +145,8 @@ compression_level: 5
                 reset_config()  # Clear cached config
                 config = BkxConfig.load()
 
-                # Config file should override env
-                assert config.compression_algorithm == "bzip2"
+                # Contract precedence is CLI > env > file > defaults.
+                assert config.compression_algorithm == "zstd"
                 assert config.compression_level == 5
             finally:
                 os.environ.pop("BKX_COMPRESSION_ALGORITHM", None)
@@ -215,14 +211,14 @@ class TestGetConfig:
         config1 = get_config()
 
         # Modify env and reload
-        os.environ["BKX_VERBOSE"] = "true"
+        os.environ["BKX_TRACE"] = "true"
         try:
             config2 = reload_config()
 
-            assert config2.verbose is True
+            assert config2.trace is True
             assert config2 is not config1
         finally:
-            os.environ.pop("BKX_VERBOSE", None)
+            os.environ.pop("BKX_TRACE", None)
             reset_config()
 
 

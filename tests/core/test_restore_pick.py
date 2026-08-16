@@ -19,7 +19,7 @@ import pytest
 from bkx.core.errors import ValidationError
 from bkx.core.results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult, Timing
 from bkx.core.services.restore import RestoreService
-from bkx.core.specs.archive import ArchiveCreateSpec
+from bkx.core.specs.archive import ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from bkx.core.specs.restore import RestoreSpec
 
 
@@ -41,7 +41,7 @@ class RealArchiver:
         self,
         spec: ArchiveCreateSpec,
         *,
-        total_size: int | None = None,
+        progress_callback=None,
     ) -> ArchiveCreateResult:
         return ArchiveCreateResult(
             success=True,
@@ -49,14 +49,8 @@ class RealArchiver:
             timing=Timing(start_ms=0, end_ms=0),
         )
 
-    def list(
-        self,
-        archive_path: Path,
-        *,
-        filter_pattern: str | None = None,
-        page: int = 0,
-        page_size: int = 100,
-    ) -> tuple[ArchiveEntry, ...]:
+    def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
+        archive_path = spec.archive_path
         entries: list[ArchiveEntry] = []
         if str(archive_path).endswith(".zip"):
             with zipfile.ZipFile(archive_path, "r") as zf:
@@ -82,10 +76,10 @@ class RealArchiver:
                     )
         return tuple(entries)
 
-    def info(self, archive_path: Path) -> ArchiveInfoResult:
+    def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
         return ArchiveInfoResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
             format=self._archive_format,
             created_at=0,
             total_entries=0,
@@ -94,10 +88,10 @@ class RealArchiver:
             compression_ratio=0.0,
         )
 
-    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
         return ArchiveVerifyResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
         )
 
     def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
@@ -263,7 +257,7 @@ class TestArchiveVerify:
             with tarfile.open(archive_path, "w") as tar:
                 tar.add(source_dir / "file.txt", arcname="file.txt")
 
-            result = archiver.verify(archive_path)
+            result = archiver.verify(ArchiveVerifySpec(archive_path=archive_path).normalize())
 
             assert result.success is True
             assert result.checksums_valid is True
@@ -285,7 +279,7 @@ class TestArchiveVerify:
             with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 zf.write(source_dir / "file.txt", arcname="file.txt")
 
-            result = archiver.verify(archive_path)
+            result = archiver.verify(ArchiveVerifySpec(archive_path=archive_path).normalize())
 
             assert result.success is True
             assert result.checksums_valid is True
@@ -299,4 +293,4 @@ class TestArchiveVerify:
         archiver = FallbackArchiver()
 
         with pytest.raises(NotFoundError):
-            archiver.verify(Path("/nonexistent/archive.tar"))
+            archiver.verify(ArchiveVerifySpec(archive_path=Path("/nonexistent/archive.tar")).normalize())

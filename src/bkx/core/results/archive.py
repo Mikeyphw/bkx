@@ -1,7 +1,4 @@
-"""ArchiveResult - structured result for archive operations.
-
-Returns structured data, never strings.
-"""
+"""Truthful immutable archive Result contracts."""
 
 from __future__ import annotations
 
@@ -9,209 +6,182 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backup import Timing
+from .common import require_nonnegative
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveCreateResult:
-    """Structured result from archive creation.
-
-    Contains all metrics and artifacts produced by the operation.
-    """
-
-    # Overall status
     success: bool
     dry_run: bool
-
-    # Timing
-    timing: Timing
-
-    # Metrics
+    timing: Timing = field(compare=False)
     files_archived: int = 0
     bytes_written: int = 0
-    original_size: int = 0  # Uncompressed size
-
-    # Paths produced
+    original_size: int = 0
     archive_path: Path | None = None
     split_parts: tuple[Path, ...] = field(default_factory=tuple)
-
-    # Verification
     verification_passed: bool | None = None
-
-    # Compression stats
-    compression_ratio: float | None = None  # compressed_size / original_size
-
-    # Warnings
+    compression_ratio: float | None = None
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    errors: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        require_nonnegative(files_archived=self.files_archived, bytes_written=self.bytes_written, original_size=self.original_size)
+        if self.compression_ratio is not None:
+            require_nonnegative(compression_ratio=self.compression_ratio)
+        object.__setattr__(self, "split_parts", tuple(self.split_parts))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.success and self.errors:
+            raise ValueError("successful ArchiveCreateResult cannot contain errors")
+        if not self.success and self.verification_passed is True:
+            raise ValueError("failed archive creation cannot claim successful verification")
 
     @property
-    def duration_ms(self) -> int:
-        """Get total duration in milliseconds."""
-        return self.timing.duration_ms
-
+    def duration_ms(self) -> int: return self.timing.duration_ms
     @property
-    def human_bytes_written(self) -> str:
-        """Get human-readable byte count."""
-        return _human_bytes(self.bytes_written)
-
+    def human_bytes_written(self) -> str: return _human_bytes(self.bytes_written)
     @property
-    def output_path(self) -> Path | None:
-        """Alias for archive_path (CLI compatibility)."""
-        return self.archive_path
-
+    def output_path(self) -> Path | None: return self.archive_path
     @property
-    def bytes_total(self) -> int:
-        """Alias for bytes_written (CLI compatibility)."""
-        return self.bytes_written
-
+    def bytes_total(self) -> int: return self.bytes_written
     @property
-    def files_count(self) -> int:
-        """Alias for files_archived (CLI compatibility)."""
-        return self.files_archived
-
-
-@dataclass(frozen=True, kw_only=True)
-class ArchiveListResult:
-    """Result from listing archive contents."""
-
-    success: bool
-    archive_path: Path
-
-    # Listing
-    entries: tuple[ArchiveEntry, ...] = field(default_factory=tuple)
-
-    # Pagination
-    total_entries: int = 0
-    page: int = 0
-    page_size: int = 100
-
-    # Filtering
-    filter_pattern: str | None = None
-
-    @property
-    def total_size(self) -> int:
-        """Calculate total size of all entries."""
-        return sum(e.size for e in self.entries)
+    def files_count(self) -> int: return self.files_archived
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveEntry:
-    """Single entry in an archive."""
-
-    path: str  # Relative path within archive
+    path: str
     is_dir: bool
     size: int
-    mtime_ns: int  # Modification time in nanoseconds
+    mtime_ns: int
+
+    def __post_init__(self) -> None:
+        require_nonnegative(size=self.size, mtime_ns=self.mtime_ns)
+        if not self.path:
+            raise ValueError("archive entry path must not be empty")
 
     @property
-    def human_size(self) -> str:
-        """Get human-readable size."""
-        return _human_bytes(self.size)
+    def human_size(self) -> str: return _human_bytes(self.size)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArchiveListResult:
+    success: bool
+    archive_path: Path
+    entries: tuple[ArchiveEntry, ...] = field(default_factory=tuple)
+    total_entries: int = 0
+    page: int = 0
+    page_size: int = 100
+    filter_pattern: str | None = None
+    warnings: tuple[str, ...] = field(default_factory=tuple)
+    errors: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        require_nonnegative(total_entries=self.total_entries, page=self.page)
+        if self.page_size <= 0:
+            raise ValueError("page_size must be positive")
+        object.__setattr__(self, "entries", tuple(self.entries))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.total_entries < len(self.entries):
+            raise ValueError("total_entries cannot be smaller than returned entries")
+        if self.success and self.errors:
+            raise ValueError("successful ArchiveListResult cannot contain errors")
+
+    @property
+    def total_size(self) -> int: return sum(e.size for e in self.entries)
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveInfoResult:
-    """Result from getting archive metadata."""
-
     success: bool
     archive_path: Path
-
-    # Archive metadata
-    format: str  # e.g., "tar+zstd"
-    created_at: int  # Epoch seconds
-
-    # Content stats
+    format: str
+    created_at: int
     total_entries: int
     total_size: int
     uncompressed_size: int
-
-    # Compression
     compression_ratio: float
-
-    # Warnings
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    errors: tuple[str, ...] = field(default_factory=tuple)
 
-    # Aliases for CLI compatibility
-    @property
-    def path(self) -> Path:
-        """Alias for archive_path (CLI compatibility)."""
-        return self.archive_path
-
-    @property
-    def files_count(self) -> int:
-        """Alias for total_entries (CLI compatibility)."""
-        return self.total_entries
+    def __post_init__(self) -> None:
+        require_nonnegative(created_at=self.created_at, total_entries=self.total_entries, total_size=self.total_size, uncompressed_size=self.uncompressed_size, compression_ratio=self.compression_ratio)
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.success and self.errors:
+            raise ValueError("successful ArchiveInfoResult cannot contain errors")
 
     @property
-    def bytes_total(self) -> int:
-        """Alias for total_size (CLI compatibility)."""
-        return self.total_size
-
+    def path(self) -> Path: return self.archive_path
     @property
-    def created(self) -> int:
-        """Alias for created_at (CLI compatibility)."""
-        return self.created_at
-
+    def files_count(self) -> int: return self.total_entries
     @property
-    def compression_algorithm(self) -> str:
-        """Alias for format (CLI compatibility)."""
-        return self.format
+    def bytes_total(self) -> int: return self.total_size
+    @property
+    def created(self) -> int: return self.created_at
+    @property
+    def compression_algorithm(self) -> str: return self.format
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveVerifyResult:
-    """Result from verifying archive integrity."""
-
     success: bool
     archive_path: Path
-
-    # Verification results
-    checksums_valid: bool = True
-    structure_valid: bool = True
-
-    # Details
+    checksums_valid: bool | None = None
+    structure_valid: bool | None = None
     entries_checked: int = 0
     entries_failed: int = 0
     failed_entries: tuple[str, ...] = field(default_factory=tuple)
-
-    # Warnings
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    errors: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        require_nonnegative(entries_checked=self.entries_checked, entries_failed=self.entries_failed)
+        object.__setattr__(self, "failed_entries", tuple(self.failed_entries))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.entries_failed > self.entries_checked:
+            raise ValueError("entries_failed cannot exceed entries_checked")
+        if self.entries_failed != len(self.failed_entries):
+            raise ValueError("entries_failed must match failed_entries")
+        if self.success and (self.checksums_valid is False or self.structure_valid is False or self.errors):
+            raise ValueError("successful verification cannot contain failed checks/errors")
+        if not self.success and self.checksums_valid is True and self.structure_valid is True and not self.errors and self.entries_failed == 0:
+            raise ValueError("failed verification must describe a failed check or error")
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveBrowseResult:
-    """Result from browsing an archive with filters."""
-
     success: bool
     archive_path: Path
-
-    # Query info
     query: str | None = None
     file_type: str | None = None
     min_size: int | None = None
     max_size: int | None = None
-
-    # Results
     entries: tuple[ArchiveEntry, ...] = field(default_factory=tuple)
     total_matches: int = 0
-
-    # Pagination
     limit: int = 50
     offset: int = 0
-
-    # Sorting
     sort_by: str = "path"
     sort_order: str = "asc"
-
-    # Statistics
     total_size: int = 0
     directories_count: int = 0
     files_count: int = 0
 
+    def __post_init__(self) -> None:
+        require_nonnegative(total_matches=self.total_matches, offset=self.offset, total_size=self.total_size, directories_count=self.directories_count, files_count=self.files_count)
+        if self.limit <= 0:
+            raise ValueError("limit must be positive")
+        object.__setattr__(self, "entries", tuple(self.entries))
+        if self.total_matches < len(self.entries):
+            raise ValueError("total_matches cannot be smaller than returned entries")
+        if self.directories_count + self.files_count != len(self.entries):
+            raise ValueError("browse file/directory counts must match returned entries")
+
 
 def _human_bytes(n: float) -> str:
-    """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024:
-            return f"{n:.2f}{unit}"
+        if n < 1024: return f"{n:.2f}{unit}"
         n /= 1024
     return f"{n:.2f}PB"

@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import Any
+from typing import BinaryIO, Any
 
 from ..ports.hasher import HashAlgorithm, HashResult
 from ..results.hashing import HashingResult
@@ -223,24 +223,31 @@ class FallbackHasher:
 
     def hash_stream(
         self,
-        stream: bytes,
+        stream: Iterable[bytes] | BinaryIO,
         *,
         chunk_size: int = 64 * 1024,
     ) -> str:
-        """Compute hash from a stream.
-
-        Args:
-            stream: Bytes iterator/stream.
-            chunk_size: Bytes per chunk.
-
-        Returns:
-            Hex digest string.
-        """
+        """Compute SHA-256 from a binary stream or bytes-chunk iterable."""
+        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+            raise ValueError("chunk_size must be a positive integer")
         algo = self._get_algo("sha256")
         hasher: hashlib._Hash = algo()
-        for chunk in iter(lambda: stream[:chunk_size], b""):
-            hasher.update(chunk)
+        read = getattr(stream, "read", None)
+        if callable(read):
+            while True:
+                chunk = read(chunk_size)
+                if not chunk:
+                    break
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise TypeError("binary stream read() must return bytes-like chunks")
+                hasher.update(bytes(chunk))
+        else:
+            for chunk in stream:
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise TypeError("hash stream iterable must yield bytes-like chunks")
+                hasher.update(bytes(chunk))
         return hasher.hexdigest()
+
 
 
 def get_hasher() -> FallbackHasher:

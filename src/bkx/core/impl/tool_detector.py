@@ -18,9 +18,10 @@ class FallbackToolDetector:
     tool detectors are available.
     """
 
-    def __init__(self) -> None:
-        """Initialize the detector."""
+    def __init__(self, preferences: dict[str, str | None] | None = None) -> None:
+        """Initialize the detector with optional configured category preferences."""
         self._cache: dict[str, ToolInfo] = {}
+        self._preferences = dict(preferences or {})
 
     def detect(self, tool_name: str) -> ToolInfo:
         """Detect if a specific tool is available.
@@ -93,7 +94,14 @@ class FallbackToolDetector:
         Returns:
             Name of preferred tool, or None if unavailable.
         """
-        preferred = PREFERRED_TOOLS.get(tool_category, ())
+        aliases = {"hasher": "hashing", "compressor": "compression"}
+        category = aliases.get(tool_category, tool_category)
+        configured = self._preferences.get(category)
+        if configured:
+            if self.detect(configured).available:
+                return configured
+            return None
+        preferred = PREFERRED_TOOLS.get(category, ())
         for tool_name in preferred:
             if self.detect(tool_name).available:
                 return tool_name
@@ -175,9 +183,7 @@ class FallbackToolDetector:
 
 
 def get_tool_detector() -> FallbackToolDetector:
-    """Get the default tool detector implementation.
+    """Get the default detector with live BKX configuration preferences."""
+    from ..config import get_config
 
-    Returns:
-        FallbackToolDetector instance
-    """
-    return FallbackToolDetector()
+    return FallbackToolDetector(preferences=get_config().get_tool_preferences())

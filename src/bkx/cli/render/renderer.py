@@ -86,7 +86,7 @@ class JSONRenderer(Renderer):
             "bytes_total": result.bytes_written,
             "duration_seconds": result.duration_ms / 1000,
             "verification_passed": result.verification_passed,
-            "checksum": result.step_results.get("checksum"),
+            "checksum": result.checksums.get("archive"),
         }
         json.dump(output, sys.stdout, indent=2)
         sys.stdout.write("\n")
@@ -161,8 +161,8 @@ class TextRenderer(Renderer):
             sys.stdout.write(f"   Duration: {result.duration_ms / 1000:.2f}s\n")
             if result.verification_passed:
                 sys.stdout.write(f"   [{success_color()}]Verification: ✅ Passed[/]\n")
-            if result.step_results.get("checksum"):
-                sys.stdout.write(f"   Checksum: {result.step_results['checksum']}\n")
+            if result.checksums.get("archive"):
+                sys.stdout.write(f"   Checksum: {result.checksums['archive']}\n")
         else:
             sys.stdout.write(f"[{error_color()}]❌ Backup failed[/]\n")
             if result.errors:

@@ -12,7 +12,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..errors import expected_error_boundary
 from ..results.restore import RestoreFileInfo, RestorePreviewResult, RestoreResult, Timing
+from ..specs.archive import ArchiveListSpec, ArchiveVerifySpec
 
 if TYPE_CHECKING:
     from ..ports.archiver import ArchiverPort
@@ -61,7 +63,8 @@ class RestoreService:
 
         # Verify archive integrity if requested
         if spec.verify:
-            verify_result = self._archiver.verify(spec.archive)
+            with expected_error_boundary("verifying archive before restore", resource=str(spec.archive), backend=self._archiver.name):
+                verify_result = self._archiver.verify(ArchiveVerifySpec(archive_path=spec.archive).normalize())
             if not verify_result.success:
                 from ..errors import ExternalToolError
 
@@ -71,15 +74,18 @@ class RestoreService:
                 )
 
         # Extract files
-        restored_paths = self._archiver.extract(spec)
+        with expected_error_boundary("extracting archive", resource=str(spec.archive), backend=self._archiver.name):
+            restored_paths = self._archiver.extract(spec)
 
         return RestoreResult(
             success=True,
             dry_run=False,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
             archive_path=spec.archive,
+            destination_path=spec.effective_destination,
             restored_paths=restored_paths,
             files_restored=len(restored_paths),
+            verification_passed=True if spec.verify else None,
         )
 
     def preview(self, spec: RestoreSpec) -> RestorePreviewResult:
@@ -92,7 +98,8 @@ class RestoreService:
             RestorePreviewResult showing what would happen.
         """
         # List archive contents
-        entries = self._archiver.list(spec.archive)
+        with expected_error_boundary("previewing archive restore", resource=str(spec.archive), backend=self._archiver.name):
+            entries = self._archiver.list(ArchiveListSpec(archive_path=spec.archive, page=0, page_size=1000).normalize())
 
         # Filter to requested paths if partial restore
         if spec.paths:
@@ -158,6 +165,7 @@ class RestoreService:
             dry_run=True,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
             archive_path=spec.archive,
+            destination_path=spec.effective_destination,
             warnings=("Dry run - files not extracted",),
         )
 

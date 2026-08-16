@@ -1,21 +1,23 @@
-"""Normalized Specs.
+"""Canonical normalized Specs used at every interface/service boundary."""
 
-Contract rule:
-- Interfaces build Specs.
-- Services accept Specs.
-- Specs are deterministic and hashable (parity tests later).
-"""
-
-from .archive import ArchiveCreateSpec
+from .archive import ArchiveBrowseSpec, ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from .backup import DEFAULT_COMPRESSION, BackupSpec, CompressionProfile
 from .restore import RestoreSpec
-from .transfer import TransferSpec
+from .tools import ToolDetectSpec, ToolExplainSpec
+from .transfer import TransferSpec, TransferSyncSpec
 
 __all__ = [
     "BackupSpec",
     "CompressionProfile",
     "DEFAULT_COMPRESSION",
     "ArchiveCreateSpec",
+    "ArchiveListSpec",
+    "ArchiveInfoSpec",
+    "ArchiveVerifySpec",
+    "ArchiveBrowseSpec",
     "TransferSpec",
+    "TransferSyncSpec",
     "RestoreSpec",
+    "ToolDetectSpec",
+    "ToolExplainSpec",
 ]

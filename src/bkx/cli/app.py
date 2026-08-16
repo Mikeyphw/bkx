@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from importlib.metadata import PackageNotFoundError, version as package_version
 import sys
+import traceback
 from pathlib import Path
 
 import typer
@@ -22,20 +23,26 @@ from bkx.cli.exit_codes import error_to_exit_code
 from bkx.cli.render import get_renderer, render_result
 from bkx.cli.spec_builders import (
     build_archive_browse_spec,
+    build_archive_info_spec,
+    build_archive_list_spec,
     build_archive_spec,
+    build_archive_verify_spec,
     build_backup_spec,
     build_restore_spec,
     build_transfer_spec,
 )
-from bkx.core.errors import BkxError
+from bkx.core.config import get_config
+from bkx.core.errors import BkxError, OptionalFeatureError
 from bkx.core.services import (
     get_archive_service,
     get_backup_service,
     get_restore_service,
     get_run_service,
     get_transfer_service,
+    get_tool_service,
 )
-from bkx.tui.app import run_tui
+from bkx.core.results.execution_plan import execution_plan_to_dict, plan_for_spec
+from bkx.core.specs.tools import ToolDetectSpec, ToolExplainSpec
 
 # Global options state (passed through context)
 _state = {
@@ -50,13 +57,37 @@ _state = {
 app = typer.Typer(no_args_is_help=True, add_completion=False, rich_markup_mode="markdown")
 
 
-def _update_state(ctx: typer.Context) -> None:
-    """Update global state from context."""
-    _state["json"] = ctx.params.get("json", False)
-    _state["dry_run"] = ctx.params.get("dry_run", False)
-    _state["progress"] = ctx.params.get("progress", "auto")
-    _state["verbose"] = ctx.params.get("verbose", False)
-    _state["trace"] = ctx.params.get("trace", False)
+def _handle_bkx_error(renderer, error: BkxError) -> None:
+    """Render a typed error and terminate with the same public code in trace mode."""
+    if _state["trace"]:
+        traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+    else:
+        renderer.render_error(str(error), error.details)
+    raise typer.Exit(error_to_exit_code(error))
+
+
+def _render_service_result(result) -> None:
+    """Render a Result and never report a failed Result as process success."""
+    render_result(result, _state["json"])
+    if getattr(result, "success", True) is False:
+        raise typer.Exit(1)
+
+
+def _optional_tui_runner():
+    """Load the TUI only when requested, with an actionable typed failure."""
+    try:
+        from bkx.tui.app import run_tui
+    except ModuleNotFoundError as exc:
+        dependency = exc.name or "optional TUI dependency"
+        raise OptionalFeatureError(
+            msg=f"BKX TUI is unavailable because '{dependency}' is not installed. Install 'bkx[tui]'.",
+            tool_name=dependency,
+            feature="tui",
+            extra="tui",
+            dependency=dependency,
+            details={"feature": "tui", "extra": "bkx[tui]", "dependency": dependency},
+        ) from exc
+    return run_tui
 
 
 def _bkx_version() -> str:
@@ -73,7 +104,7 @@ def main_callback(
     dry_run: bool = Option(False, "--dry-run", "-n", help="Show what would be done without executing"),
     progress: str = Option("auto", "--progress", help="Progress display: auto|plain|off", case_sensitive=False),
     verbose: bool = Option(False, "--verbose", "-v", help="Enable verbose output"),
-    trace: bool = Option(False, "--trace", help="Show full stack traces on error"),
+    trace: bool | None = Option(None, "--trace/--no-trace", help="Show full stack traces on error"),
     version: bool = Option(False, "--version", help="Show version and exit"),
 ) -> None:
     """BKX - Contract-controlled CLI-first backup/archive tool.
@@ -81,8 +112,17 @@ def main_callback(
     **Nouns:** backup, archive, transfer, restore, tools
     **Verbs:** create, list, info, push, pull, extract, detect, explain, plan
     """
-    _update_state(ctx)
-    _state["json"] = bool(_state["json"])
+    _state["json"] = bool(json)
+    _state["dry_run"] = bool(dry_run)
+    _state["progress"] = progress
+    _state["trace"] = bool(trace) if trace is not None else False
+    renderer = get_renderer(_state["json"])
+    try:
+        config = get_config()
+    except BkxError as error:
+        _handle_bkx_error(renderer, error)
+    _state["verbose"] = bool(verbose)
+    _state["trace"] = bool(trace) if trace is not None else config.trace
     if version:
         typer.echo(f"bkx {_bkx_version()}")
         raise typer.Exit()
@@ -106,7 +146,7 @@ def backup_create(
     exclude: list[str] = Option([], "-e", "--exclude", help="Exclude glob patterns"),
     include: list[str] = Option([], "-i", "--include", help="Include glob patterns"),
     name: str | None = Option(None, "-n", "--name", help="Archive name"),
-    verify: bool = Option(True, "--verify/--no-verify", help="Verify after creation"),
+    verify: bool | None = Option(None, "--verify/--no-verify", help="Verify after creation"),
 ) -> None:
     """Create a backup archive from sources.
 
@@ -128,16 +168,7 @@ def backup_create(
 
         # Render plan if dry-run
         if _state["dry_run"]:
-            renderer.render_plan(
-                "backup",
-                {
-                    "sources": [str(s) for s in spec.sources],
-                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
-                    "archive_name": spec.archive_name,
-                    "excludes": list(spec.excludes),
-                    "compression": spec.compression.algorithm,
-                },
-            )
+            renderer.render_plan("backup", execution_plan_to_dict(plan_for_spec(spec, command="backup create")))
             return
 
         # Execute service
@@ -145,13 +176,10 @@ def backup_create(
         result = service.create(spec)
 
         # Render result
-        render_result(result, _state["json"])
+        _render_service_result(result)
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @backup_app.command("plan")
@@ -174,22 +202,10 @@ def backup_plan(
         )
 
         # Render plan
-        renderer.render_plan(
-            "backup",
-            {
-                "sources": [str(s) for s in spec.sources],
-                "destination": str(spec.effective_destination) if spec.effective_destination else None,
-                "archive_name": spec.archive_name,
-                "excludes": list(spec.excludes),
-                "compression": spec.compression.algorithm,
-            },
-        )
+        renderer.render_plan("backup", execution_plan_to_dict(plan_for_spec(spec, command="backup plan")))
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 # ============================================================================
@@ -205,7 +221,7 @@ def archive_create(
     sources: list[Path] = Argument(..., help="Source paths to archive"),
     output: Path = Option(..., "-o", "--output", help="Output archive path"),
     exclude: list[str] = Option([], "-e", "--exclude", help="Exclude glob patterns"),
-    verify: bool = Option(True, "--verify/--no-verify", help="Verify after creation"),
+    verify: bool | None = Option(None, "--verify/--no-verify", help="Verify after creation"),
 ) -> None:
     """Create an archive file from sources.
 
@@ -225,14 +241,7 @@ def archive_create(
 
         # Render plan if dry-run
         if _state["dry_run"]:
-            renderer.render_plan(
-                "archive",
-                {
-                    "sources": [str(s) for s in spec.sources],
-                    "output": str(spec.effective_output_path) if spec.effective_output_path else None,
-                    "excludes": list(spec.excludes),
-                },
-            )
+            renderer.render_plan("archive", execution_plan_to_dict(plan_for_spec(spec, command="archive create")))
             return
 
         # Execute service
@@ -240,13 +249,10 @@ def archive_create(
         result = service.create(spec)
 
         # Render result
-        render_result(result, _state["json"])
+        _render_service_result(result)
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @archive_app.command("list")
@@ -261,7 +267,7 @@ def archive_list(
 
     try:
         service = get_archive_service()
-        result = service.list(archive)
+        result = service.list(build_archive_list_spec(archive))
 
         # Render as message list
         for entry in result.entries:
@@ -271,10 +277,7 @@ def archive_list(
                 renderer.render_message(f"📄 {entry.path}", level="info")
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @archive_app.command("info")
@@ -289,7 +292,7 @@ def archive_info(
 
     try:
         service = get_archive_service()
-        result = service.info(archive)
+        result = service.info(build_archive_info_spec(archive))
 
         if _state["json"]:
             import json
@@ -313,10 +316,7 @@ def archive_info(
                 renderer.render_message(f"Created: {result.created}")
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @archive_app.command("browse")
@@ -392,10 +392,7 @@ def archive_browse(
                     renderer.render_message(f"  📄 {entry.path} ({entry.size} bytes)")
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @archive_app.command("verify")
@@ -410,7 +407,7 @@ def archive_verify(
 
     try:
         service = get_archive_service()
-        result = service.verify(archive)
+        result = service.verify(build_archive_verify_spec(archive))
 
         if _state["json"]:
             import json
@@ -447,11 +444,11 @@ def archive_verify(
                 for warning in result.warnings:
                     renderer.render_message(f"  ⚠️ {warning}", level="warning")
 
+        if not result.success:
+            raise typer.Exit(1)
+
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 # ============================================================================
@@ -464,9 +461,9 @@ app.add_typer(transfer_app, name="transfer")
 
 @transfer_app.command("push")
 def transfer_push(
-    source: Path = Argument(..., help="Source path to transfer"),
-    destination: Path = Argument(..., help="Destination path"),
-    verify: bool = Option(True, "--verify/--no-verify", help="Verify after transfer"),
+    source: str = Argument(..., help="Source path to transfer"),
+    destination: str = Argument(..., help="Destination path or URI"),
+    verify: bool | None = Option(None, "--verify/--no-verify", help="Verify after transfer"),
 ) -> None:
     """Push artifacts to a destination.
 
@@ -484,32 +481,22 @@ def transfer_push(
         )
 
         if _state["dry_run"]:
-            renderer.render_plan(
-                "transfer",
-                {
-                    "direction": "push",
-                    "source": str(spec.effective_source) if spec.effective_source else None,
-                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
-                },
-            )
+            renderer.render_plan("transfer", execution_plan_to_dict(plan_for_spec(spec, command="transfer push")))
             return
 
         service = get_transfer_service()
         result = service.push(spec)
-        render_result(result, _state["json"])
+        _render_service_result(result)
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @transfer_app.command("pull")
 def transfer_pull(
-    source: Path = Argument(..., help="Source path to transfer from"),
-    destination: Path = Argument(..., help="Local destination path"),
-    verify: bool = Option(True, "--verify/--no-verify", help="Verify after transfer"),
+    source: str = Argument(..., help="Source path or URI to transfer from"),
+    destination: str = Argument(..., help="Local destination path"),
+    verify: bool | None = Option(None, "--verify/--no-verify", help="Verify after transfer"),
 ) -> None:
     """Pull artifacts to local.
 
@@ -527,25 +514,15 @@ def transfer_pull(
         )
 
         if _state["dry_run"]:
-            renderer.render_plan(
-                "transfer",
-                {
-                    "direction": "pull",
-                    "source": str(spec.effective_source) if spec.effective_source else None,
-                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
-                },
-            )
+            renderer.render_plan("transfer", execution_plan_to_dict(plan_for_spec(spec, command="transfer pull")))
             return
 
         service = get_transfer_service()
         result = service.pull(spec)
-        render_result(result, _state["json"])
+        _render_service_result(result)
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 # ============================================================================
@@ -562,7 +539,7 @@ def restore_extract(
     destination: Path | None = Option(None, "-d", "--destination", help="Destination path"),
     overwrite: bool = Option(False, "-o", "--overwrite", help="Overwrite existing files (DANGEROUS without --yes)"),
     yes: bool = Option(False, "-y", "--yes", help="Skip confirmation and allow overwrite"),
-    no_fresh_dir: bool = Option(False, "--no-fresh-dir", help="Don't create fresh directory (use destination as-is)"),
+    fresh_dir: bool | None = Option(None, "--fresh-dir/--no-fresh-dir", help="Create a fresh restore directory"),
 ) -> None:
     """Restore full archive to destination.
 
@@ -578,21 +555,13 @@ def restore_extract(
             archive=archive,
             destination=destination,
             dry_run=_state["dry_run"],
-            fresh_dir=not no_fresh_dir,
-            confirm_overwrite=not yes,
+            fresh_dir=fresh_dir,
+            confirm_overwrite=False if yes else None,
             overwrite=overwrite,
         )
 
         if _state["dry_run"]:
-            renderer.render_plan(
-                "restore",
-                {
-                    "archive": str(archive),
-                    "destination": str(spec.effective_destination) if spec.effective_destination else None,
-                    "fresh_dir": spec.fresh_dir,
-                    "requires_confirmation": spec.requires_confirmation,
-                },
-            )
+            renderer.render_plan("restore", execution_plan_to_dict(plan_for_spec(spec, command="restore extract")))
             return
 
         # Check if confirmation is needed
@@ -605,13 +574,10 @@ def restore_extract(
 
         service = get_restore_service()
         result = service.extract(spec)
-        render_result(result, _state["json"])
+        _render_service_result(result)
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 # ============================================================================
@@ -624,59 +590,34 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("detect")
 def tools_detect() -> None:
-    """Detect available optional tools.
-
-    Example: bkx tools detect
-    """
+    """Detect available optional tools."""
     renderer = get_renderer(_state["json"])
-
-    from bkx.core.impl.tool_detector import get_tool_detector
-    from bkx.core.ports.tool_detector import ToolDetectorPort
-
-    detector: ToolDetectorPort = get_tool_detector()
-    tools = detector.detect_all(("zstd", "tar", "rsync", "rclone", "sha256sum"))
-
+    result = get_tool_service().detect(ToolDetectSpec())
     if _state["json"]:
         import json
-
-        json.dump({"tools": {k: v.__dict__ for k, v in tools.items()}}, sys.stdout, indent=2)
+        json.dump({"tools": {name: {"name": info.name, "path": str(info.path) if info.path else None, "version": info.version, "available": info.available, "capabilities": list(info.capabilities)} for name, info in result.tools.items()}}, sys.stdout, indent=2)
     else:
         renderer.render_message("Available tools:", level="info")
-        for name, info in tools.items():
+        for name, info in result.tools.items():
             status = "✅" if info.available else "❌"
             renderer.render_message(f"  {status} {name}: {info.version or 'not found'}")
 
 
 @tools_app.command("explain")
 def tools_explain() -> None:
-    """Explain which tools will be used and why.
-
-    Example: bkx tools explain
-    """
-    from bkx.core.impl.tool_detector import get_tool_detector
-
+    """Explain configured/detected tool preferences."""
     renderer = get_renderer(_state["json"])
-    detector = get_tool_detector()
-    tools = detector.detect_all(("zstd", "tar", "rsync", "rclone", "sha256sum"))
-
+    result = get_tool_service().explain(ToolExplainSpec())
     if _state["json"]:
         import json
-
-        json.dump({"tools": tools}, sys.stdout, indent=2)
+        json.dump({"preferred": dict(result.preferred)}, sys.stdout, indent=2)
     else:
-        renderer.render_message("Tool selection rationale:", level="info")
-
-        # Archiver
-        if tools.get("zstd", None) and tools["zstd"].available:
-            renderer.render_message("  Archiver: zstd (external tool available)", level="success")
-        else:
-            renderer.render_message("  Archiver: fallback implementation (no zstd)", level="warning")
-
-        # Hasher
-        if tools.get("sha256sum", None) and tools["sha256sum"].available:
-            renderer.render_message("  Hasher: sha256sum (external tool available)", level="success")
-        else:
-            renderer.render_message("  Hasher: fallback implementation (no sha256sum)", level="warning")
+        renderer.render_message("Tool preference resolution:", level="info")
+        for category, tool in result.preferred.items():
+            if tool:
+                renderer.render_message(f"  {category}: {tool}", level="success")
+            else:
+                renderer.render_message(f"  {category}: fallback/default", level="warning")
 
 
 # ============================================================================
@@ -741,10 +682,7 @@ def run_list(
                 )
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 @run_app.command("show")
@@ -811,10 +749,7 @@ def run_show(
                 renderer.render_message(f"  Error: {result.error_message}", level="error")
 
     except BkxError as e:
-        if _state["trace"]:
-            raise
-        renderer.render_error(str(e), e.details)
-        sys.exit(error_to_exit_code(e))
+        _handle_bkx_error(renderer, e)
 
 
 # ============================================================================
@@ -832,7 +767,11 @@ def tui_command() -> None:
 
     Example: bkx tui
     """
-    run_tui()
+    renderer = get_renderer(_state["json"])
+    try:
+        _optional_tui_runner()()
+    except BkxError as e:
+        _handle_bkx_error(renderer, e)
 
 
 def main() -> None:

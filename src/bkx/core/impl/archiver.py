@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import tarfile
 from dataclasses import dataclass
+from collections.abc import Callable
+from typing import Any
 from pathlib import Path
 
 from ..results.archive import (
@@ -18,7 +20,7 @@ from ..results.archive import (
     ArchiveVerifyResult,
 )
 from ..results.backup import Timing
-from ..specs.archive import ArchiveCreateSpec
+from ..specs.archive import ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from ..specs.restore import RestoreSpec
 
 
@@ -48,13 +50,13 @@ class FallbackArchiver:
         self,
         spec: ArchiveCreateSpec,
         *,
-        total_size: int | None = None,
+        progress_callback: Callable[[int, int], Any] | None = None,
     ) -> ArchiveCreateResult:
         """Create an archive from sources.
 
         Args:
             spec: Normalized archive creation spec.
-            total_size: Optional total size for progress reporting.
+            progress_callback: Optional callback receiving (files_archived, bytes_written).
 
         Returns:
             Result with metrics and archive path.
@@ -74,7 +76,7 @@ class FallbackArchiver:
         else:
             result = self._create_tar(spec)
 
-        return ArchiveCreateResult(
+        created = ArchiveCreateResult(
             success=True,
             dry_run=False,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
@@ -84,6 +86,9 @@ class FallbackArchiver:
             archive_path=output_path,
             verification_passed=None,
         )
+        if progress_callback is not None:
+            progress_callback(created.files_archived, created.bytes_written)
+        return created
 
     def _create_tar(
         self,
@@ -153,41 +158,31 @@ class FallbackArchiver:
 
         return CreateResult(files=files, bytes=bytes_written, original_size=original_size)
 
-    def list(
-        self,
-        archive_path: Path,
-        *,
-        filter_pattern: str | None = None,
-        page: int = 0,
-        page_size: int = 100,
-    ) -> tuple[ArchiveEntry, ...]:
+    def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
         """List contents of an archive.
 
         Args:
-            archive_path: Path to archive.
-            filter_pattern: Optional glob pattern to filter.
-            page: Page number for pagination.
-            page_size: Entries per page.
+            spec: Normalized archive-list specification.
 
         Returns:
             List of archive entries.
         """
         entries: list[ArchiveEntry] = []
 
-        if str(archive_path).endswith(".zip"):
-            entries = self._list_zip(archive_path)
+        if str(spec.archive_path).endswith(".zip"):
+            entries = self._list_zip(spec.archive_path)
         else:
-            entries = self._list_tar(archive_path)
+            entries = self._list_tar(spec.archive_path)
 
         # Apply filter if provided
-        if filter_pattern:
+        if spec.filter_pattern:
             import fnmatch
 
-            entries = [e for e in entries if fnmatch.fnmatch(e.path, filter_pattern)]
+            entries = [e for e in entries if fnmatch.fnmatch(e.path, spec.filter_pattern)]
 
         # Paginate
-        start = page * page_size
-        end = start + page_size
+        start = spec.page * spec.page_size
+        end = start + spec.page_size
 
         return tuple(entries[start:end])
 
@@ -227,18 +222,18 @@ class FallbackArchiver:
 
         return entries
 
-    def info(self, archive_path: Path) -> ArchiveInfoResult:
+    def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
         """Get metadata about an archive.
 
         Args:
-            archive_path: Path to archive.
+            spec.archive_path: Path to archive.
 
         Returns:
             Archive metadata.
         """
 
-        entries = self.list(archive_path)
-        total_size = archive_path.stat().st_size
+        entries = self.list(ArchiveListSpec(archive_path=spec.archive_path, page=0, page_size=1000))
+        total_size = spec.archive_path.stat().st_size
         total_entries = len(entries)
 
         # Calculate uncompressed size
@@ -249,38 +244,38 @@ class FallbackArchiver:
 
         return ArchiveInfoResult(
             success=True,
-            archive_path=archive_path,
-            format="zip" if str(archive_path).endswith(".zip") else "tar",
-            created_at=int(archive_path.stat().st_mtime),
+            archive_path=spec.archive_path,
+            format="zip" if str(spec.archive_path).endswith(".zip") else "tar",
+            created_at=int(spec.archive_path.stat().st_mtime),
             total_entries=total_entries,
             total_size=total_size,
             uncompressed_size=uncompressed_size,
             compression_ratio=compression_ratio,
         )
 
-    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
         """Verify archive integrity.
 
         Args:
-            archive_path: Path to archive.
+            spec.archive_path: Path to archive.
 
         Returns:
             Verification result.
         """
-        if not archive_path.exists():
+        if not spec.archive_path.exists():
             from ..errors import NotFoundError
 
             raise NotFoundError(
-                msg=f"Archive not found: {archive_path}",
-                details={"path": str(archive_path)},
+                msg=f"Archive not found: {spec.archive_path}",
+                details={"path": str(spec.archive_path)},
             )
 
         warnings: list[str] = []
 
-        if str(archive_path).endswith(".zip"):
-            raw_result = self._verify_zip(archive_path)
+        if str(spec.archive_path).endswith(".zip"):
+            raw_result = self._verify_zip(spec.archive_path)
         else:
-            raw_result = self._verify_tar(archive_path)
+            raw_result = self._verify_tar(spec.archive_path)
 
         # Create new result with all warnings
         result = ArchiveVerifyResult(
@@ -301,10 +296,12 @@ class FallbackArchiver:
         checksums_valid = True
         structure_valid = True
         failed_entries = []
+        entries_checked = 0
 
         try:
             with tarfile.open(archive_path, "r") as tar:
                 for member in tar.getmembers():
+                    entries_checked += 1
                     try:
                         # Try to read a small amount to verify
                         f = tar.extractfile(member)
@@ -322,7 +319,7 @@ class FallbackArchiver:
             archive_path=archive_path,
             checksums_valid=checksums_valid,
             structure_valid=structure_valid,
-            entries_checked=len(failed_entries),
+            entries_checked=entries_checked,
             entries_failed=len(failed_entries),
             failed_entries=tuple(failed_entries),
         )

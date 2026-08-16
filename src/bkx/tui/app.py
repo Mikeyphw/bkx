@@ -378,8 +378,8 @@ async def _transfer_action(ctx: AppContext) -> None:
     values = _form_values(ctx, "transfer")
 
     def run():
-        source = _coerce_path(values.get("source"))
-        destination = _coerce_path(values.get("destination"))
+        source = _coerce_transfer_location(values.get("source"))
+        destination = _coerce_transfer_location(values.get("destination"))
         if source is None or destination is None:
             raise BkxError("Source and destination are required")
         spec = build_transfer_spec(

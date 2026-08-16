@@ -1,70 +1,217 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bkx.local/schemas/archive-spec.json",
   "title": "ArchiveCreateSpec",
-  "description": "Normalized specification for archive creation.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "sources",
-    "output_path"
+    "output_path",
+    "excludes",
+    "includes",
+    "split_size",
+    "compression",
+    "verify",
+    "dry_run"
   ],
   "properties": {
     "sources": {
       "type": "array",
+      "minItems": 1,
       "items": {
-        "type": "string"
-      },
-      "description": "Source paths to archive"
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
+      }
     },
     "output_path": {
       "type": "string",
-      "description": "Output file path for the archive"
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
     },
     "excludes": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
       },
-      "default": [],
-      "description": "Glob patterns to exclude"
+      "default": []
     },
     "includes": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
       },
-      "default": [],
-      "description": "Glob patterns to include"
+      "default": []
     },
     "split_size": {
-      "type": "integer",
-      "nullable": true,
-      "description": "Chunk size for split archives (bytes)"
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1
     },
     "compression": {
-      "type": "object",
-      "required": ["algorithm"],
-      "properties": {
-        "algorithm": {
-          "type": "string",
-          "enum": ["zstd", "gzip", "lz4", "xz", "bzip2", "none"],
-          "description": "Compression algorithm"
-        },
-        "level": {
-          "type": "integer",
-          "description": "Compression level"
-        }
-      }
+      "$ref": "#/$defs/compression"
     },
     "verify": {
       "type": "boolean",
-      "default": true,
-      "description": "Verify archive after creation"
+      "default": true
     },
     "dry_run": {
       "type": "boolean",
-      "default": false,
-      "description": "Just show plan, don't execute"
+      "default": false
+    }
+  },
+  "$defs": {
+    "compression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "algorithm",
+        "level"
+      ],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": [
+            "zstd",
+            "gzip",
+            "lz4",
+            "xz",
+            "bzip2",
+            "none"
+          ]
+        },
+        "level": {
+          "type": "integer"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "zstd"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 1,
+                "maximum": 22
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "gzip"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 1,
+                "maximum": 9
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "lz4"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 0,
+                "maximum": 16
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "xz"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 0,
+                "maximum": 9
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "bzip2"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 1,
+                "maximum": 9
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "minimum": 0,
+                "maximum": 22
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }
-

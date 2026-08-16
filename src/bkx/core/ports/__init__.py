@@ -5,7 +5,7 @@ Contract rule:
 - Must have a fallback implementation in core/impl/.
 """
 
-from .archiver import TAR, TAR_GZIP, TAR_ZSTD, ZIP, ArchiveFormat, ArchiverPort
+from .archiver import SUPPORTED_ARCHIVE_FORMATS, TAR, ZIP, ArchiveFormat, ArchiverPort
 from .hasher import MD5, SHA256, SHA512, XXH3, HasherPort
 from .run_store import RunMetadata, RunStorePort
 from .tool_detector import KNOWN_TOOLS, PREFERRED_TOOLS, ToolDetectorPort, ToolInfo
@@ -14,10 +14,9 @@ from .transfer import TransferPort
 __all__ = [
     "ArchiverPort",
     "ArchiveFormat",
-    "TAR_ZSTD",
-    "TAR_GZIP",
     "TAR",
     "ZIP",
+    "SUPPORTED_ARCHIVE_FORMATS",
     "TransferPort",
     "HasherPort",
     "SHA256",

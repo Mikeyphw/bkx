@@ -1,50 +1,59 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bkx.local/schemas/transfer-spec.json",
   "title": "TransferSpec",
-  "description": "Normalized specification for file transfer operations.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "sources",
     "destination",
-    "direction"
+    "direction",
+    "verify",
+    "checksum",
+    "dry_run",
+    "overwrite"
   ],
   "properties": {
     "sources": {
       "type": "array",
+      "minItems": 1,
       "items": {
-        "type": "string"
-      },
-      "description": "Source paths to transfer"
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
+      }
     },
     "destination": {
       "type": "string",
-      "description": "Destination path"
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
     },
     "direction": {
       "type": "string",
-      "enum": ["push", "pull"],
-      "description": "Transfer direction (push to remote, pull from remote)"
+      "enum": [
+        "push",
+        "pull"
+      ]
     },
     "verify": {
       "type": "boolean",
-      "default": true,
-      "description": "Verify after transfer"
+      "default": true
     },
     "checksum": {
-      "type": "string",
-      "nullable": true,
-      "description": "Expected checksum for verification"
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
     },
     "dry_run": {
       "type": "boolean",
-      "default": false,
-      "description": "Just show plan, don't execute"
+      "default": false
     },
     "overwrite": {
       "type": "boolean",
-      "default": false,
-      "description": "Overwrite existing files"
+      "default": false
     }
   }
 }
-

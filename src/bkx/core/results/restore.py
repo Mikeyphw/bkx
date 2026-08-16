@@ -1,7 +1,4 @@
-"""RestoreResult - structured result for restore operations.
-
-Returns structured data, never strings.
-"""
+"""Truthful immutable restore Result contracts."""
 
 from __future__ import annotations
 
@@ -9,103 +6,77 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .backup import Timing
+from .common import require_nonnegative
 
 
 @dataclass(frozen=True, kw_only=True)
 class RestoreResult:
-    """Structured result from a restore operation.
-
-    Contains all metrics and artifacts produced by the operation.
-    """
-
-    # Overall status
     success: bool
     dry_run: bool
-
-    # Timing
-    timing: Timing
-
-    # Metrics
+    timing: Timing = field(compare=False)
     files_restored: int = 0
     bytes_restored: int = 0
-
-    # Paths
     archive_path: Path | None = None
+    destination_path: Path | None = None
     restored_paths: tuple[Path, ...] = field(default_factory=tuple)
-
-    # Verification
     verification_passed: bool | None = None
-
-    # Warnings
     warnings: tuple[str, ...] = field(default_factory=tuple)
-
-    # Errors (partial failures)
     errors: tuple[str, ...] = field(default_factory=tuple)
 
-    @property
-    def duration_ms(self) -> int:
-        """Get total duration in milliseconds."""
-        return self.timing.duration_ms
+    def __post_init__(self) -> None:
+        require_nonnegative(files_restored=self.files_restored, bytes_restored=self.bytes_restored)
+        object.__setattr__(self, "restored_paths", tuple(self.restored_paths))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        object.__setattr__(self, "errors", tuple(self.errors))
+        if self.success and self.errors:
+            raise ValueError("successful RestoreResult cannot contain errors")
+        if not self.success and self.verification_passed is True:
+            raise ValueError("failed restore cannot claim successful verification")
 
     @property
-    def human_bytes_restored(self) -> str:
-        """Get human-readable byte count."""
-        return _human_bytes(self.bytes_restored)
-
+    def duration_ms(self) -> int: return self.timing.duration_ms
     @property
-    def destination_path(self) -> Path | None:
-        """Get first restored path (destination for restore)."""
-        return self.restored_paths[0] if self.restored_paths else None
-
+    def human_bytes_restored(self) -> str: return _human_bytes(self.bytes_restored)
     @property
-    def destination(self) -> Path | None:
-        """Alias for destination_path (CLI compatibility)."""
-        return self.destination_path
-
-    # Alias for TUI compatibility
+    def destination(self) -> Path | None: return self.destination_path
     @property
-    def files_count(self) -> int:
-        """Alias for files_restored for TUI compatibility."""
-        return self.files_restored
+    def files_count(self) -> int: return self.files_restored
 
 
 @dataclass(frozen=True, kw_only=True)
 class RestorePreviewResult:
-    """Result from previewing a restore operation.
-
-    Shows what would happen without executing.
-    """
-
     success: bool
     archive_path: Path
-
-    # What would be restored
     total_files: int = 0
     total_size: int = 0
     files: tuple[RestoreFileInfo, ...] = field(default_factory=tuple)
-
-    # Would overwrite
     existing_files: int = 0
-
-    # Warnings about restore
     warnings: tuple[str, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        require_nonnegative(total_files=self.total_files, total_size=self.total_size, existing_files=self.existing_files)
+        object.__setattr__(self, "files", tuple(self.files))
+        object.__setattr__(self, "warnings", tuple(self.warnings))
+        if self.total_files != len(self.files):
+            raise ValueError("total_files must match preview files")
 
 
 @dataclass(frozen=True, kw_only=True)
 class RestoreFileInfo:
-    """Information about a file to be restored."""
-
-    archive_path: str  # Path within archive
-    disk_path: Path  # Destination on disk
+    archive_path: str
+    disk_path: Path
     size: int
     mtime_ns: int
-    is_partial: bool = False  # Would restore only part of file
+    is_partial: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.archive_path:
+            raise ValueError("archive_path must not be empty")
+        require_nonnegative(size=self.size, mtime_ns=self.mtime_ns)
 
 
 def _human_bytes(n: float) -> str:
-    """Format bytes as human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024:
-            return f"{n:.2f}{unit}"
+        if n < 1024: return f"{n:.2f}{unit}"
         n /= 1024
     return f"{n:.2f}PB"

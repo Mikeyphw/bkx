@@ -7,10 +7,10 @@ Contract rule:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, BinaryIO, Literal, Protocol
 
 # Type alias for hash algorithm identifiers
 HashAlgorithm = Literal["md5", "sha256", "sha512", "xxh128", "xxh64"]
@@ -118,7 +118,7 @@ class HasherPort(Protocol):
 
     def hash_stream(
         self,
-        stream: bytes,
+        stream: Iterable[bytes] | BinaryIO,
         *,
         chunk_size: int = 64 * 1024,
     ) -> str:

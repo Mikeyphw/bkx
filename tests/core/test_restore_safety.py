@@ -79,19 +79,17 @@ class TestRestoreSpecConfirmOverwrite:
     """Tests for confirm_overwrite safety feature."""
 
     def test_overwrite_with_confirm_raises_error(self):
-        """Test that overwrite=True with confirm_overwrite=True raises ValidationError."""
+        """Test that invalid overwrite/confirmation policy fails at construction."""
         with tempfile.TemporaryDirectory() as tmpdir:
             archive = Path(tmpdir) / "test.archive"
             archive.write_text("test")
 
-            spec = RestoreSpec(
-                archive=archive,
-                overwrite=True,
-                confirm_overwrite=True,
-            )
-
             with pytest.raises(ValidationError) as exc_info:
-                spec.normalize()
+                RestoreSpec(
+                    archive=archive,
+                    overwrite=True,
+                    confirm_overwrite=True,
+                )
 
             assert "overwrite" in str(exc_info.value).lower()
             assert "confirm" in str(exc_info.value).lower()

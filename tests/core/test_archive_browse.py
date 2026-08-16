@@ -16,7 +16,7 @@ import pytest
 from bkx.core.errors import NotFoundError, ValidationError
 from bkx.core.results.archive import ArchiveCreateResult, ArchiveInfoResult, ArchiveVerifyResult, Timing
 from bkx.core.services.archive import ArchiveService
-from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec
+from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from bkx.core.specs.restore import RestoreSpec
 
 
@@ -38,7 +38,7 @@ class MockArchiver:
         self,
         spec: ArchiveCreateSpec,
         *,
-        total_size: int | None = None,
+        progress_callback=None,
     ) -> ArchiveCreateResult:
         return ArchiveCreateResult(
             success=True,
@@ -46,13 +46,13 @@ class MockArchiver:
             timing=Timing(start_ms=0, end_ms=0),
         )
 
-    def list(self, archive_path: Path, **kwargs) -> tuple:
+    def list(self, spec: ArchiveListSpec) -> tuple:
         return self._entries
 
-    def info(self, archive_path: Path) -> ArchiveInfoResult:
+    def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
         return ArchiveInfoResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
             format="tar",
             created_at=0,
             total_entries=0,
@@ -61,10 +61,10 @@ class MockArchiver:
             compression_ratio=0.0,
         )
 
-    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
         return ArchiveVerifyResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
         )
 
     def extract(self, spec: RestoreSpec) -> tuple:
@@ -122,13 +122,11 @@ class TestArchiveBrowseSpec:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
 
-            spec = ArchiveBrowseSpec(
-                archive_path=archive,
-                limit=0,  # Invalid: must be >= 1
-            )
-
             with pytest.raises(ValidationError):
-                spec.normalize()
+                ArchiveBrowseSpec(
+                    archive_path=archive,
+                    limit=0,  # Invalid: rejected at Spec construction
+                )
 
     def test_invalid_sort_by_raises_validation_error(self):
         """Test that invalid sort_by raises ValidationError."""
@@ -136,13 +134,11 @@ class TestArchiveBrowseSpec:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
 
-            spec = ArchiveBrowseSpec(
-                archive_path=archive,
-                sort_by="invalid",  # Invalid
-            )
-
             with pytest.raises(ValidationError):
-                spec.normalize()
+                ArchiveBrowseSpec(
+                    archive_path=archive,
+                    sort_by="invalid",  # Invalid: rejected at Spec construction
+                )
 
     def test_invalid_file_type_raises_validation_error(self):
         """Test that invalid file_type raises ValidationError."""
@@ -150,13 +146,11 @@ class TestArchiveBrowseSpec:
             archive = Path(tmpdir) / "archive.tar"
             archive.write_text("")
 
-            spec = ArchiveBrowseSpec(
-                archive_path=archive,
-                file_type="invalid",  # Invalid
-            )
-
             with pytest.raises(ValidationError):
-                spec.normalize()
+                ArchiveBrowseSpec(
+                    archive_path=archive,
+                    file_type="invalid",  # Invalid: rejected at Spec construction
+                )
 
 
 class TestArchiveBrowseService:

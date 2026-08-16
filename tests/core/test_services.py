@@ -24,10 +24,10 @@ from bkx.core.services.archive import ArchiveService
 from bkx.core.services.backup import BackupService
 from bkx.core.services.restore import RestoreService
 from bkx.core.services.transfer import TransferService
-from bkx.core.specs.archive import ArchiveCreateSpec
+from bkx.core.specs.archive import ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from bkx.core.specs.backup import BackupSpec
 from bkx.core.specs.restore import RestoreSpec
-from bkx.core.specs.transfer import TransferSpec
+from bkx.core.specs.transfer import TransferSpec, TransferSyncSpec
 
 
 class FakeHasher:
@@ -117,7 +117,7 @@ class FakeArchiver:
         self,
         spec: ArchiveCreateSpec,
         *,
-        total_size: int | None = None,
+        progress_callback: Any | None = None,
     ) -> ArchiveCreateResult:
         if spec.dry_run:
             return ArchiveCreateResult(
@@ -142,23 +142,16 @@ class FakeArchiver:
         """Extract files from archive."""
         return ()
 
-    def list(
-        self,
-        archive_path: Path,
-        *,
-        filter_pattern: str | None = None,
-        page: int = 0,
-        page_size: int = 100,
-    ) -> tuple[ArchiveEntry, ...]:
+    def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
         return (
             ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
             ArchiveEntry(path="dir/", is_dir=True, size=0, mtime_ns=0),
         )
 
-    def info(self, archive_path: Path) -> ArchiveInfoResult:
+    def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
         return ArchiveInfoResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
             format="tar",
             created_at=0,
             total_entries=5,
@@ -167,10 +160,10 @@ class FakeArchiver:
             compression_ratio=0.5,
         )
 
-    def verify(self, archive_path: Path) -> ArchiveVerifyResult:
+    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
         return ArchiveVerifyResult(
             success=True,
-            archive_path=archive_path,
+            archive_path=spec.archive_path,
         )
 
 
@@ -217,17 +210,16 @@ class FakeTransfer:
 
     def sync(
         self,
-        source: Path,
-        destination: Path,
+        spec: TransferSyncSpec,
         *,
-        delete: bool = False,
-        exclude: tuple[str, ...] = (),
         progress_callback: Any | None = None,
     ) -> TransferResult:
         return TransferResult(
             success=True,
-            dry_run=False,
-            direction="push",
+            dry_run=spec.dry_run,
+            direction="sync",
+            source=spec.source,
+            destination=spec.destination,
             timing=Timing(start_ms=0, end_ms=0),
         )
 
@@ -282,7 +274,7 @@ class TestBackupService:
             assert result.success is True
             assert result.archives_created >= 0
             assert result.verification_passed is True
-            assert result.step_results["checksum"] == "abc123" * 10
+            assert result.checksums["archive"] == "abc123" * 10
 
     def test_backup_dry_run(self):
         """Test backup dry run."""
@@ -375,7 +367,7 @@ class TestArchiveService:
             archive_path = Path(tmpdir) / "archive.tar"
             # Create the archive file so it exists
             archive_path.write_text("")
-            result = service.list(archive_path)
+            result = service.list(ArchiveListSpec(archive_path=archive_path))
 
             assert result.success is True
             assert len(result.entries) == 2
@@ -387,7 +379,7 @@ class TestArchiveService:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             with pytest.raises(NotFoundError):
-                service.list(Path(tmpdir) / "nonexistent.tar")
+                service.list(ArchiveListSpec(archive_path=Path(tmpdir) / "nonexistent.tar"))
 
 
 class TestRestoreService:
@@ -421,14 +413,7 @@ class TestRestoreService:
         """Test restore preview does not use substring matching for files."""
 
         class NestedFileArchiver(FakeArchiver):
-            def list(
-                self,
-                archive_path: Path,
-                *,
-                filter_pattern: str | None = None,
-                page: int = 0,
-                page_size: int = 100,
-            ) -> tuple[ArchiveEntry, ...]:
+            def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
                 return (
                     ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
                     ArchiveEntry(path="dir/file1.txt", is_dir=False, size=200, mtime_ns=0),
@@ -455,14 +440,7 @@ class TestRestoreService:
         """Test restore preview includes children for explicit directory selections."""
 
         class DirectoryArchiver(FakeArchiver):
-            def list(
-                self,
-                archive_path: Path,
-                *,
-                filter_pattern: str | None = None,
-                page: int = 0,
-                page_size: int = 100,
-            ) -> tuple[ArchiveEntry, ...]:
+            def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
                 return (
                     ArchiveEntry(path="file1.txt", is_dir=False, size=100, mtime_ns=0),
                     ArchiveEntry(path="dir/file2.txt", is_dir=False, size=200, mtime_ns=0),

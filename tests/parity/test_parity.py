@@ -57,7 +57,8 @@ class TestCLIToSpecParity:
     def test_backup_cli_args_map_to_spec(self):
         """Verify CLI backup arguments produce correct Spec."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             spec = build_backup_spec(
@@ -80,7 +81,8 @@ class TestCLIToSpecParity:
     def test_archive_cli_args_map_to_spec(self):
         """Verify CLI archive arguments produce correct Spec."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             spec = build_archive_spec(
@@ -162,7 +164,8 @@ class TestCrossInterfaceParity:
     def test_backup_spec_hash_deterministic(self):
         """Verify backup spec produces consistent hash."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             spec = build_backup_spec(
@@ -183,7 +186,8 @@ class TestCrossInterfaceParity:
     def test_backup_cli_tui_parity(self):
         """Verify CLI and TUI produce identical backup specs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             # CLI-style input (via spec builder)
@@ -218,7 +222,8 @@ class TestCrossInterfaceParity:
     def test_archive_cli_tui_parity(self):
         """Verify CLI and TUI produce identical archive specs."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             cli_spec = build_archive_spec(
@@ -309,7 +314,8 @@ class TestSpecDeterminism:
     def test_backup_spec_normalization_is_deterministic(self):
         """Test that backup spec normalization produces consistent results."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
 
             # Normalize multiple times
             spec1 = BackupSpec(sources=(source,)).normalize()
@@ -322,7 +328,8 @@ class TestSpecDeterminism:
     def test_archive_spec_normalization_is_deterministic(self):
         """Test that archive spec normalization produces consistent results."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             spec1 = ArchiveCreateSpec(sources=(source,), output_path=output).normalize()
@@ -360,7 +367,8 @@ class TestSchemaValidation:
     def test_backup_spec_validates_against_schema(self):
         """Verify backup spec passes schema validation."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             spec = build_backup_spec(
@@ -379,7 +387,8 @@ class TestSchemaValidation:
     def test_archive_spec_validates_against_schema(self):
         """Verify archive spec passes schema validation."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             spec = build_archive_spec(
@@ -457,7 +466,8 @@ try:
         def test_backup_parity_property_based(self, sources, algorithm, level):
             """Same inputs across interfaces produce same spec hash."""
             with tempfile.TemporaryDirectory() as tmpdir:
-                source = Path(tmpdir)
+                source = Path(tmpdir) / "source"
+                source.mkdir()
                 dest = Path(tmpdir) / "backup"
 
                 # Create actual directories for sources (sanitized names)
@@ -583,7 +593,8 @@ class TestDryRunParity:
     def test_backup_plan_is_dry_run(self):
         """Verify backup plan command produces dry-run spec."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             spec = build_backup_spec(
@@ -597,7 +608,8 @@ class TestDryRunParity:
     def test_archive_dry_run_spec(self):
         """Verify archive create with dry-run produces dry-run spec."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             spec = build_archive_spec(
@@ -648,7 +660,8 @@ class TestTUIIntentParity:
         from bkx.tui.messages import BackupIntent
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             dest = Path(tmpdir) / "backup"
 
             # Create intent (simulating TUI input)
@@ -687,7 +700,8 @@ class TestTUIIntentParity:
         from bkx.tui.messages import ArchiveIntent
 
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
+            source = Path(tmpdir) / "source"
+            source.mkdir()
             output = Path(tmpdir) / "archive.tar"
 
             intent = ArchiveIntent(

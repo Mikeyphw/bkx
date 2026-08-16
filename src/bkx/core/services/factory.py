@@ -13,11 +13,13 @@ from ..impl.hasher import get_hasher
 from ..impl.run_store import get_run_store
 from ..impl.tool_detector import get_tool_detector
 from ..impl.transfer import get_transfer
+from ..config import get_config
 from .archive import ArchiveService
 from .backup import BackupService
 from .restore import RestoreService
 from .run import RunService
 from .transfer import TransferService
+from .tools import ToolService
 
 
 def get_backup_service() -> BackupService:
@@ -52,10 +54,17 @@ def get_restore_service() -> RestoreService:
     )
 
 
+
+def get_tool_service() -> ToolService:
+    """Get the service that owns optional-tool inspection."""
+    return ToolService(detector=get_tool_detector())
+
 def get_run_service() -> RunService:
-    """Get a RunService with default port implementation."""
+    """Get a RunService honoring live run-history configuration."""
+    config = get_config()
     return RunService(
-        run_store=get_run_store(),
+        run_store=get_run_store(enabled=config.run_history_enabled),
+        max_list_limit=config.run_history_limit,
     )
 
 
@@ -65,9 +74,11 @@ __all__ = [
     "get_transfer_service",
     "get_restore_service",
     "get_run_service",
+    "get_tool_service",
     "BackupService",
     "ArchiveService",
     "TransferService",
     "RestoreService",
     "RunService",
+    "ToolService",
 ]

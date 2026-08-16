@@ -1,101 +1,105 @@
-"""BackupSpec and normalization.
-
-Defines the normalized intent for backup operations.
-"""
+"""BackupSpec and canonical normalization."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import NamedTuple
+
+from bkx.core.errors import ValidationError
+
+from .common import (
+    canonical_local_path,
+    deterministic_name,
+    normalize_archive_name,
+    normalize_source_paths,
+    reject_output_inside_sources,
+    validate_pattern_sets,
+    validate_split_size,
+)
+
+_COMPRESSION_LEVELS: dict[str, tuple[int, int]] = {
+    "zstd": (1, 22),
+    "gzip": (1, 9),
+    "lz4": (0, 16),
+    "xz": (0, 9),
+    "bzip2": (1, 9),
+    "none": (0, 22),
+}
 
 
-class CompressionProfile(NamedTuple):
-    """Compression configuration for archives."""
+@dataclass(frozen=True)
+class CompressionProfile:
+    """Validated compression intent."""
 
-    algorithm: str  # e.g., "zstd", "gzip", "none"
-    level: int = 3  # compression level 1-22 for zstd, 1-9 for gzip
+    algorithm: str
+    level: int = 3
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.algorithm, str):
+            raise ValidationError(msg="Compression algorithm must be a string")
+        algorithm = self.algorithm.strip().lower()
+        if algorithm not in _COMPRESSION_LEVELS:
+            raise ValidationError(msg="Unsupported compression algorithm", details={"algorithm": self.algorithm, "valid": sorted(_COMPRESSION_LEVELS)})
+        if isinstance(self.level, bool) or not isinstance(self.level, int):
+            raise ValidationError(msg="Compression level must be an integer", details={"level": self.level})
+        minimum, maximum = _COMPRESSION_LEVELS[algorithm]
+        if not minimum <= self.level <= maximum:
+            raise ValidationError(
+                msg=f"Compression level for {algorithm} must be between {minimum} and {maximum}",
+                details={"algorithm": algorithm, "level": self.level, "minimum": minimum, "maximum": maximum},
+            )
+        object.__setattr__(self, "algorithm", algorithm)
 
 
-# Default profiles
 DEFAULT_COMPRESSION = CompressionProfile(algorithm="zstd", level=3)
 
 
 @dataclass(frozen=True, kw_only=True)
 class BackupSpec:
-    """Normalized specification for a backup operation.
+    """Normalized specification for a backup operation."""
 
-    This is the deterministic input to BackupService.
-    All validation and normalization happens in normalize().
-    """
-
-    # Required fields
-    sources: tuple[Path, ...]  # What to back up
-
-    # Optional fields with defaults
-    destination: Path | None = None  # Where to store (computed if not set)
-    archive_name: str | None = None  # Explicit archive name
-    excludes: tuple[str, ...] = field(default_factory=tuple)  # Glob patterns to exclude
-    includes: tuple[str, ...] = field(default_factory=tuple)  # Glob patterns to include
-    split_size: int | None = None  # Split archives into chunks (bytes)
+    sources: tuple[Path, ...]
+    destination: Path | None = None
+    archive_name: str | None = None
+    excludes: tuple[str, ...] = field(default_factory=tuple)
+    includes: tuple[str, ...] = field(default_factory=tuple)
+    split_size: int | None = None
     compression: CompressionProfile = DEFAULT_COMPRESSION
-    verify: bool = True  # Verify after creation
-    dry_run: bool = False  # Just show plan, don't execute
+    verify: bool = True
+    dry_run: bool = False
+    _resolved_destination: Path | None = field(default=None, compare=False, repr=False)
+    _archive_path: Path | None = field(default=None, compare=False, repr=False)
 
-    # Internal derived fields (set by normalize)
-    _resolved_destination: Path | None = field(default=None, compare=False)
-    _archive_path: Path | None = field(default=None, compare=False)
-
-    def normalize(
-        self,
-        *,
-        default_destination: Path | None = None,
-        auto_name: bool = True,
-    ) -> BackupSpec:
-        """Normalize and validate the spec.
-
-        Args:
-            default_destination: Fallback destination if not specified.
-            auto_name: Whether to auto-generate archive name.
-
-        Returns:
-            Validated and normalized BackupSpec.
-
-        Raises:
-            ValidationError: If validation fails.
-        """
-        from bkx.core.errors import NotFoundError, ValidationError
-
-        # Validate sources exist
-        if not self.sources:
+    def __post_init__(self) -> None:
+        if not isinstance(self.sources, tuple) or not self.sources:
             raise ValidationError(msg="At least one source path is required")
+        if any(not isinstance(src, Path) for src in self.sources):
+            raise ValidationError(msg="Backup sources must be Path objects")
+        if self.destination is not None and not isinstance(self.destination, Path):
+            raise ValidationError(msg="Backup destination must be a Path")
+        if self.archive_name is not None:
+            object.__setattr__(self, "archive_name", normalize_archive_name(self.archive_name))
+        includes, excludes = validate_pattern_sets(self.includes, self.excludes)
+        object.__setattr__(self, "includes", includes)
+        object.__setattr__(self, "excludes", excludes)
+        object.__setattr__(self, "split_size", validate_split_size(self.split_size))
+        if not isinstance(self.compression, CompressionProfile):
+            raise ValidationError(msg="compression must be a CompressionProfile")
+        if not isinstance(self.verify, bool) or not isinstance(self.dry_run, bool):
+            raise ValidationError(msg="verify and dry_run must be booleans")
 
-        for src in self.sources:
-            if not src.exists():
-                raise NotFoundError(
-                    msg=f"Source path does not exist: {src}",
-                    details={"path": str(src)},
-                )
-            if not src.is_dir() and not src.is_file():
-                raise ValidationError(
-                    msg=f"Source path is not valid: {src}",
-                    details={"path": str(src)},
-                )
-
-        # Validate excludes/includes don't overlap
-        # (simplified check - in production would parse glob patterns)
-
-        # Resolve destination
-        destination = self.destination or default_destination
-
-        # Auto-generate archive name if needed
+    def normalize(self, *, default_destination: Path | None = None, auto_name: bool = True) -> BackupSpec:
+        sources = normalize_source_paths(self.sources)
+        destination_raw = self.destination if self.destination is not None else default_destination
+        destination = canonical_local_path(destination_raw) if destination_raw is not None else None
         archive_name = self.archive_name
-        if auto_name and not archive_name and destination:
-            archive_name = self._generate_archive_name()
-
-        # Create normalized copy with derived fields
-        normalized = BackupSpec(
-            sources=self.sources,
+        if auto_name and archive_name is None:
+            archive_name = deterministic_name(sources[0].name or "backup", *(str(src) for src in sources))
+        archive_path = destination / f"{archive_name}.bakery" if destination is not None and archive_name is not None else None
+        if archive_path is not None:
+            reject_output_inside_sources(archive_path, sources)
+        return BackupSpec(
+            sources=sources,
             destination=destination,
             archive_name=archive_name,
             excludes=self.excludes,
@@ -105,27 +109,13 @@ class BackupSpec:
             verify=self.verify,
             dry_run=self.dry_run,
             _resolved_destination=destination,
-            _archive_path=destination / f"{archive_name}.bakery" if archive_name and destination else None,
+            _archive_path=archive_path,
         )
-
-        return normalized
-
-    def _generate_archive_name(self) -> str:
-        """Generate archive name from sources and timestamp."""
-        import time
-
-        timestamp = int(time.time())
-        # Use first source basename as prefix
-        prefix = self.sources[0].name if self.sources else "backup"
-        safe_prefix = "".join(c if c.isalnum() or c in "-_" else "_" for c in prefix)
-        return f"{safe_prefix}_{timestamp}"
 
     @property
     def effective_destination(self) -> Path | None:
-        """Get the resolved destination path."""
-        return self._resolved_destination
+        return self._resolved_destination if self._resolved_destination is not None else self.destination
 
     @property
     def archive_path(self) -> Path | None:
-        """Get the full archive path if available."""
         return self._archive_path

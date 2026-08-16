@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ..errors import expected_error_boundary
 from ..results.archive import ArchiveCreateResult
 from ..results.backup import BackupResult, Timing
 from ..results.transfer import TransferResult
@@ -87,6 +88,7 @@ class BackupService:
                 dry_run=False,
                 timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
                 warnings=archive_result.warnings if hasattr(archive_result, "warnings") else (),
+                errors=archive_result.errors if hasattr(archive_result, "errors") and archive_result.errors else ("Archive creation failed",),
                 step_results=step_results,
             )
 
@@ -107,6 +109,7 @@ class BackupService:
                 else (),
                 step_results=step_results,
                 warnings=transfer_result.warnings if hasattr(transfer_result, "warnings") else (),
+                errors=transfer_result.errors if transfer_result.errors else ("Archive transfer failed",),
             )
 
         # Step 3: Verify if requested
@@ -116,7 +119,11 @@ class BackupService:
             if archive_path:
                 verify_passed, checksum = self._verify_backup(archive_path)
                 step_results["verify"] = verify_passed
-                step_results["checksum"] = checksum
+                checksums = {"archive": checksum}
+            else:
+                checksums = {}
+        else:
+            checksums = {}
 
         return BackupResult(
             success=True,
@@ -128,6 +135,7 @@ class BackupService:
             archive_paths=(archive_result.archive_path,) if hasattr(archive_result, "archive_path") and archive_result.archive_path else (),
             verification_passed=verify_passed,
             step_results=step_results,
+            checksums=checksums,
         )
 
     def _create_archive(self, spec: BackupSpec) -> ArchiveCreateResult:
@@ -146,7 +154,8 @@ class BackupService:
         archive_spec = archive_spec.normalize()
 
         # Create archive
-        result = self._archiver.create(archive_spec)
+        with expected_error_boundary("creating backup archive", resource=str(archive_spec.output_path) if archive_spec.output_path else None, backend=self._archiver.name):
+            result = self._archiver.create(archive_spec)
 
         return result
 
@@ -197,11 +206,13 @@ class BackupService:
         transfer_spec = transfer_spec.normalize()
 
         # Transfer the archive
-        return self._transfer.push(transfer_spec)
+        with expected_error_boundary("transferring backup archive", resource=str(archive_path), backend=self._transfer.name):
+            return self._transfer.push(transfer_spec)
 
     def _verify_backup(self, archive_path: Path) -> tuple[bool, str]:
         """Verify backup integrity using hasher."""
-        hash_result = self._hasher.hash_file(archive_path)
+        with expected_error_boundary("hashing backup archive", resource=str(archive_path), backend=self._hasher.name):
+            hash_result = self._hasher.hash_file(archive_path)
         return hash_result.checksum != "", hash_result.checksum
 
     def _execute_dry_run(self, spec: BackupSpec) -> BackupResult:

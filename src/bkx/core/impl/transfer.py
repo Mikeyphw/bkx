@@ -14,7 +14,7 @@ from typing import Any
 
 from ..ports.transfer import TransferProgress
 from ..results.transfer import Timing, TransferResult
-from ..specs.transfer import TransferSpec
+from ..specs.transfer import TransferSpec, TransferSyncSpec
 
 
 class FallbackTransfer:
@@ -78,9 +78,13 @@ class FallbackTransfer:
         bytes_transferred = 0
         warnings: list[str] = []
 
-        destination = Path(spec.destination)
+        if not isinstance(spec.destination, Path):
+            raise NotImplementedError("python-shutil transfer does not support URI destinations")
+        destination = spec.destination
 
         for source in spec.sources:
+            if not isinstance(source, Path):
+                raise NotImplementedError("python-shutil transfer does not support URI sources")
             if source.is_file():
                 # Determine the destination path
                 if destination.is_dir():
@@ -142,63 +146,64 @@ class FallbackTransfer:
                 warnings=("Dry run - files not transferred",),
             )
 
-        # For fallback, pull is the same as push but from remote to local
-        # In a real implementation, this would handle remote sources
-        return self.push(spec, progress_callback=progress_callback)
+        if not isinstance(spec.destination, Path) or any(not isinstance(source, Path) for source in spec.sources):
+            raise NotImplementedError("python-shutil transfer supports only local pull sources/destinations")
+        local_spec = TransferSpec(
+            sources=spec.sources,
+            destination=spec.destination,
+            direction="push",
+            verify=spec.verify,
+            checksum=spec.checksum,
+            dry_run=False,
+            overwrite=spec.overwrite,
+        )
+        copied = self.push(local_spec, progress_callback=progress_callback)
+        return TransferResult(
+            success=copied.success,
+            direction="pull",
+            timing=copied.timing,
+            source=spec.effective_source,
+            destination=spec.destination,
+            files_transferred=copied.files_transferred,
+            bytes_transferred=copied.bytes_transferred,
+            verification_passed=copied.verification_passed,
+            checksum_verified=copied.checksum_verified,
+            warnings=copied.warnings,
+            errors=copied.errors,
+        )
 
     def sync(
         self,
-        source: Path,
-        destination: Path,
+        spec: TransferSyncSpec,
         *,
-        delete: bool = False,
-        exclude: tuple[str, ...] = (),
         progress_callback: Callable[[TransferProgress], Any] | None = None,
     ) -> TransferResult:
-        """Sync source to destination (mirror semantics).
-
-        Args:
-            source: Source path.
-            destination: Destination path.
-            delete: Remove files not in source.
-            exclude: Patterns to exclude.
-            progress_callback: Optional callback for progress updates.
-
-        Returns:
-            Result with metrics.
-        """
+        """Sync a normalized local mirror Spec."""
         import time
 
         start_ms = int(time.time() * 1000)
-
+        source = spec.source
+        destination = spec.destination
         files_transferred = 0
         bytes_transferred = 0
         warnings: list[str] = []
 
-        if not source.exists():
-            raise FileNotFoundError(f"Source not found: {source}")
-
         destination.mkdir(parents=True, exist_ok=True)
-
         if source.is_file():
-            bytes = self._copy_with_progress(source, destination / source.name, progress_callback)
+            copied = self._copy_with_progress(source, destination / source.name, progress_callback)
             files_transferred = 1
-            bytes_transferred = bytes
+            bytes_transferred = copied
         elif source.is_dir():
-            files, bytes = self._sync_dir(
-                source,
-                destination,
-                delete=delete,
-                exclude=exclude,
-                progress_callback=progress_callback,
+            files_transferred, bytes_transferred = self._sync_dir(
+                source, destination, delete=spec.delete, exclude=spec.excludes, progress_callback=progress_callback
             )
-            files_transferred = files
-            bytes_transferred = bytes
 
         return TransferResult(
             success=True,
             direction="sync",
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
+            source=source,
+            destination=destination,
             files_transferred=files_transferred,
             bytes_transferred=bytes_transferred,
             warnings=tuple(warnings),

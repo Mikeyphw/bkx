@@ -13,7 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from bkx.core.config import get_config
-from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec
+from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
 from bkx.core.specs.backup import BackupSpec, CompressionProfile
 from bkx.core.specs.restore import RestoreSpec
 from bkx.core.specs.transfer import TransferSpec
@@ -51,9 +51,9 @@ def build_backup_spec(
     """
     # Get defaults from config
     config = get_config()
-    _algorithm = algorithm if algorithm is not None else config.compression_algorithm
-    _level = level if level is not None else config.compression_level
-    _verify = verify if verify is not None else config.verify_after_operation
+    _algorithm = config.resolve("compression_algorithm", cli_value=algorithm).value if algorithm is not None else config.compression_algorithm
+    _level = config.resolve("compression_level", cli_value=level).value if level is not None else config.compression_level
+    _verify = config.resolve("verify_after_operation", cli_value=verify).value if verify is not None else config.verify_after_operation
 
     spec = BackupSpec(
         sources=tuple(sources),
@@ -68,7 +68,7 @@ def build_backup_spec(
     )
 
     # Normalize with auto-naming
-    return spec.normalize(default_destination=destination, auto_name=True)
+    return spec.normalize(default_destination=config.default_destination, auto_name=True)
 
 
 def build_archive_spec(
@@ -101,9 +101,9 @@ def build_archive_spec(
     """
     # Get defaults from config
     config = get_config()
-    _algorithm = algorithm if algorithm is not None else config.compression_algorithm
-    _level = level if level is not None else config.compression_level
-    _verify = verify if verify is not None else config.verify_after_operation
+    _algorithm = config.resolve("compression_algorithm", cli_value=algorithm).value if algorithm is not None else config.compression_algorithm
+    _level = config.resolve("compression_level", cli_value=level).value if level is not None else config.compression_level
+    _verify = config.resolve("verify_after_operation", cli_value=verify).value if verify is not None else config.verify_after_operation
 
     spec = ArchiveCreateSpec(
         sources=tuple(sources),
@@ -120,11 +120,11 @@ def build_archive_spec(
 
 
 def build_transfer_spec(
-    source: Path,
-    destination: Path,
+    source: Path | str,
+    destination: Path | str,
     *,
     direction: str = "push",
-    verify: bool = True,
+    verify: bool | None = None,
     checksum: str | None = None,
     dry_run: bool = False,
     overwrite: bool = False,
@@ -143,11 +143,13 @@ def build_transfer_spec(
     Returns:
         Normalized TransferSpec ready for service
     """
+    config = get_config()
+    _verify = verify if verify is not None else config.verify_after_operation
     spec = TransferSpec(
         sources=(source,),
         destination=destination,
         direction=direction,
-        verify=verify,
+        verify=_verify,
         checksum=checksum,
         dry_run=dry_run,
         overwrite=overwrite,
@@ -179,9 +181,9 @@ def build_restore_spec(
         verify: Whether to verify archive integrity before restore
         dry_run: Whether this is a dry run
         fresh_dir: Whether to create fresh directory by default, defaults to config
-        confirm_overwrite: Whether to require confirmation for overwrite, defaults to config
-                        Note: if overwrite=True is set, confirm_overwrite defaults to False
-                        to maintain backward compatibility.
+        confirm_overwrite: Whether to require confirmation for overwrite. If omitted,
+                        confirmation remains enabled unless overwrite=True was explicitly set
+                        for backward compatibility.
 
     Returns:
         Normalized RestoreSpec ready for service
@@ -191,14 +193,13 @@ def build_restore_spec(
     _fresh_dir = fresh_dir if fresh_dir is not None else config.fresh_restore_dir
     _verify = verify if verify is not None else config.verify_after_operation
 
-    # Handle confirm_overwrite: if overwrite=True is explicitly set,
-    # default confirm_overwrite to False (backward compat)
-    # Otherwise use config value
+    # Keep the safety default local to RestoreSpec. This is not a public config
+    # knob because the current restore engine does not consume it independently.
     if confirm_overwrite is None:
         if overwrite is True:
             _confirm_overwrite = False
         else:
-            _confirm_overwrite = config.confirm_overwrite
+            _confirm_overwrite = True
     else:
         _confirm_overwrite = confirm_overwrite
 
@@ -216,7 +217,7 @@ def build_restore_spec(
         confirm_overwrite=_confirm_overwrite,
     )
 
-    return spec.normalize(default_destination=destination)
+    return spec.normalize(default_destination=config.default_destination)
 
 
 def build_archive_browse_spec(
@@ -262,3 +263,15 @@ def build_archive_browse_spec(
     )
 
     return spec.normalize()
+
+
+def build_archive_list_spec(archive: Path, *, filter_pattern: str | None = None, page: int = 0, page_size: int = 100) -> ArchiveListSpec:
+    return ArchiveListSpec(archive_path=archive, filter_pattern=filter_pattern, page=page, page_size=page_size).normalize()
+
+
+def build_archive_info_spec(archive: Path) -> ArchiveInfoSpec:
+    return ArchiveInfoSpec(archive_path=archive).normalize()
+
+
+def build_archive_verify_spec(archive: Path) -> ArchiveVerifySpec:
+    return ArchiveVerifySpec(archive_path=archive).normalize()

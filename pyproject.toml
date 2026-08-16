@@ -13,12 +13,17 @@ requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",
     "rich>=14.2.0",
+    "PyYAML>=6",
+    "jsonschema>=4.23",
 ]
 
 [project.optional-dependencies]
-interactive = []
+interactive = [
+    "mikomn[cli]",
+]
 tui = [
-    "textual",
+    "textual>=7.1",
+    "mikomn[tui]",
 ]
 dev = [
     "ruff",
@@ -33,6 +38,10 @@ package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"bkx.core.schemas" = ["*.json"]
+"bkx.tui.css" = ["*.tcss", "**/*.tcss"]
 
 [tool.ruff]
 line-length = 140

@@ -16,10 +16,12 @@ from .factory import (
     get_restore_service,
     get_run_service,
     get_transfer_service,
+    get_tool_service,
 )
 from .restore import RestoreService
 from .run import RunService
 from .transfer import TransferService
+from .tools import ToolService
 
 __all__ = [
     "BackupService",
@@ -27,9 +29,11 @@ __all__ = [
     "TransferService",
     "RestoreService",
     "RunService",
+    "ToolService",
     "get_backup_service",
     "get_archive_service",
     "get_transfer_service",
     "get_restore_service",
     "get_run_service",
+    "get_tool_service",
 ]

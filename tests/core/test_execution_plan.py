@@ -226,7 +226,7 @@ class TestGenerateRestorePlan:
             )
 
             assert plan.command == "restore extract"
-            assert plan.step_count == 1  # restore only
+            assert plan.step_count == 2  # verify + restore
 
     def test_restore_plan_partial(self):
         """Test partial restore plan."""
@@ -242,7 +242,8 @@ class TestGenerateRestorePlan:
             )
 
             assert plan.command == "restore pick"
-            assert plan.step_count == 1
+            assert plan.step_count == 2
+            assert plan.steps[-1].files_affected == 2
 
 
 class TestHumanReadableOutput:

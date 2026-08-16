@@ -34,6 +34,7 @@ class RunService:
         self,
         *,
         run_store: RunStorePort,
+        max_list_limit: int | None = None,
     ) -> None:
         """Initialize service with required ports.
 
@@ -41,6 +42,7 @@ class RunService:
             run_store: Port for run storage operations.
         """
         self._run_store = run_store
+        self._max_list_limit = max_list_limit
 
     def list(
         self,
@@ -57,7 +59,12 @@ class RunService:
         Returns:
             RunListResult with run summaries.
         """
-        runs = self._run_store.list_runs(limit=limit, operation=operation)
+        if limit <= 0:
+            from ..errors import ValidationError
+
+            raise ValidationError(msg="Run list limit must be greater than zero", details={"limit": limit})
+        effective_limit = min(limit, self._max_list_limit) if self._max_list_limit is not None else limit
+        runs = self._run_store.list_runs(limit=effective_limit, operation=operation)
 
         summaries = tuple(
             RunSummary(
@@ -74,7 +81,7 @@ class RunService:
         return RunListResult(
             runs=summaries,
             total_count=len(runs),
-            limit=limit,
+            limit=effective_limit,
         )
 
     def show(self, run_id: str) -> RunShowResult:

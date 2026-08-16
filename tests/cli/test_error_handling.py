@@ -164,8 +164,10 @@ class TestCLIDryRunMode:
     def test_archive_create_dry_run_flag(self):
         """Test archive create with --dry-run flag."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            output = Path(tmpdir) / "archive.tar"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            output = root / "archive.tar"
             # --dry-run is a global flag
             result = runner.invoke(app, ["--dry-run", "archive", "create", str(source), "-o", str(output)])
 

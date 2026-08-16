@@ -1,62 +1,59 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bkx.local/schemas/restore-spec.json",
   "title": "RestoreSpec",
-  "description": "Normalized specification for archive restore operations.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
-    "archive"
+    "archive",
+    "destination",
+    "paths",
+    "overwrite",
+    "verify",
+    "dry_run",
+    "fresh_dir",
+    "confirm_overwrite"
   ],
   "properties": {
     "archive": {
       "type": "string",
-      "description": "Path to archive to restore"
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$"
     },
     "destination": {
-      "type": "string",
-      "nullable": true,
-      "description": "Destination path for restore"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "paths": {
       "type": "array",
       "items": {
-        "type": "string"
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\u0000)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))\\S(?:.*\\S)?/?$"
       },
-      "default": [],
-      "description": "Specific paths to restore (empty = all)"
-    },
-    "excludes": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": [],
-      "description": "Glob patterns to exclude"
+      "default": []
     },
     "overwrite": {
       "type": "boolean",
-      "default": false,
-      "description": "Overwrite existing files"
+      "default": false
     },
     "verify": {
       "type": "boolean",
-      "default": true,
-      "description": "Verify archive integrity before restore"
+      "default": true
     },
     "dry_run": {
       "type": "boolean",
-      "default": false,
-      "description": "Just show plan, don't execute"
+      "default": false
     },
     "fresh_dir": {
       "type": "boolean",
-      "default": false,
-      "description": "Create fresh directory for restore"
+      "default": true
     },
     "confirm_overwrite": {
       "type": "boolean",
-      "default": true,
-      "description": "Require confirmation for overwrite"
+      "default": true
     }
   }
 }
-

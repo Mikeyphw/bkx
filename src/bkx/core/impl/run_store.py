@@ -263,12 +263,42 @@ class JsonRunStore:
         return count
 
 
+
+class DisabledRunStore:
+    """No-op run store used when run history is disabled by configuration."""
+
+    def record_start(self, run_id, operation, source_paths, destination_path, archive_path, spec_snapshot=None):
+        return RunMetadata(
+            run_id=run_id, started_at=_now(), completed_at=None, operation=operation, status="started",
+            source_paths=source_paths, destination_path=destination_path, archive_path=archive_path,
+            files_count=None, bytes_processed=None, error_message=None, spec_snapshot=spec_snapshot,
+        )
+
+    def record_completion(self, run_id, status, files_count=None, bytes_processed=None, error_message=None):
+        now = _now()
+        return RunMetadata(
+            run_id=run_id, started_at=now, completed_at=now, operation="unknown", status=status,
+            source_paths=(), destination_path=None, archive_path=None, files_count=files_count,
+            bytes_processed=bytes_processed, error_message=error_message, spec_snapshot=None,
+        )
+
+    def list_runs(self, limit=20, operation=None):
+        return ()
+
+    def get_run(self, run_id):
+        return None
+
+    def clear_all(self):
+        return 0
+
 # Global instance for convenience
 _default_store: RunStorePort | None = None
 
 
-def get_run_store() -> RunStorePort:
-    """Get the default run store instance."""
+def get_run_store(*, enabled: bool = True) -> RunStorePort:
+    """Get the default run store, honoring the live run-history enable setting."""
+    if not enabled:
+        return DisabledRunStore()
     global _default_store
     if _default_store is None:
         _default_store = JsonRunStore()

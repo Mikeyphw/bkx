@@ -9,6 +9,7 @@ from bkx.core.impl.archiver import FallbackArchiver
 from bkx.core.impl.hasher import FallbackHasher
 from bkx.core.impl.tool_detector import FallbackToolDetector
 from bkx.core.impl.transfer import FallbackTransfer
+from bkx.core.specs.archive import ArchiveListSpec
 
 
 class TestFallbackToolDetector:
@@ -108,7 +109,7 @@ class TestFallbackArchiver:
             archiver.create(create_spec)
 
             # List contents
-            entries = archiver.list(archive_path)
+            entries = archiver.list(ArchiveListSpec(archive_path=archive_path).normalize())
 
             assert len(entries) >= 1
             # Check entry has required fields

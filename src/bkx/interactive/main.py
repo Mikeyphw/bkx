@@ -431,13 +431,15 @@ def run_transfer_interactive() -> int:
     source_text = prompt_text("Source path", default=None)
     if source_text is None:
         return EXIT_OK
-    source = Path(source_text.strip())
+    source_raw = source_text.strip()
+    source = source_raw if "://" in source_raw else Path(source_raw)
 
     # Step 3: Destination
     dest_text = prompt_text("Destination path", default=None)
     if dest_text is None:
         return EXIT_OK
-    destination = Path(dest_text.strip())
+    destination_raw = dest_text.strip()
+    destination = destination_raw if "://" in destination_raw else Path(destination_raw)
 
     # Step 4: Verify
     verify = prompt_confirm("Verify after transfer?", default=True)

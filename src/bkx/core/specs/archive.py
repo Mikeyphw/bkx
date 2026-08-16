@@ -1,76 +1,61 @@
-"""ArchiveCreateSpec and normalization.
-
-Defines the normalized intent for archive creation.
-"""
+"""Archive Specs and canonical normalization."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from bkx.core.errors import NotFoundError, ValidationError
+
 from .backup import DEFAULT_COMPRESSION, CompressionProfile
+from .common import (
+    canonical_local_path,
+    deterministic_name,
+    normalize_patterns,
+    normalize_source_paths,
+    reject_output_inside_sources,
+    validate_pattern_sets,
+    validate_split_size,
+)
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveCreateSpec:
-    """Normalized specification for creating an archive.
-
-    This is the deterministic input to ArchiveService.create().
-    """
-
-    # Required fields
-    sources: tuple[Path, ...]  # What to archive
-
-    # Optional fields with defaults
-    output_path: Path | None = None  # Explicit output path
-    excludes: tuple[str, ...] = field(default_factory=tuple)  # Glob patterns to exclude
-    includes: tuple[str, ...] = field(default_factory=tuple)  # Glob patterns to include
-    split_size: int | None = None  # Split archives into chunks (bytes)
+    sources: tuple[Path, ...]
+    output_path: Path | None = None
+    excludes: tuple[str, ...] = field(default_factory=tuple)
+    includes: tuple[str, ...] = field(default_factory=tuple)
+    split_size: int | None = None
     compression: CompressionProfile = DEFAULT_COMPRESSION
-    verify: bool = True  # Verify after creation
-    dry_run: bool = False  # Just show plan, don't execute
+    verify: bool = True
+    dry_run: bool = False
+    _resolved_output: Path | None = field(default=None, compare=False, repr=False)
 
-    # Internal derived fields
-    _resolved_output: Path | None = field(default=None, compare=False)
+    def __post_init__(self) -> None:
+        if not isinstance(self.sources, tuple) or not self.sources or any(not isinstance(src, Path) for src in self.sources):
+            raise ValidationError(msg="Archive sources must be a non-empty tuple of Path objects")
+        if self.output_path is not None and not isinstance(self.output_path, Path):
+            raise ValidationError(msg="Archive output_path must be a Path or None")
+        includes, excludes = validate_pattern_sets(self.includes, self.excludes)
+        object.__setattr__(self, "includes", includes)
+        object.__setattr__(self, "excludes", excludes)
+        object.__setattr__(self, "split_size", validate_split_size(self.split_size))
+        if not isinstance(self.compression, CompressionProfile):
+            raise ValidationError(msg="compression must be a CompressionProfile")
+        if not isinstance(self.verify, bool) or not isinstance(self.dry_run, bool):
+            raise ValidationError(msg="verify and dry_run must be booleans")
 
-    def normalize(
-        self,
-        *,
-        default_tmp_dir: Path | None = None,
-        auto_name: bool = True,
-    ) -> ArchiveCreateSpec:
-        """Normalize and validate the spec.
-
-        Args:
-            default_tmp_dir: Temp directory for intermediate files.
-            auto_name: Whether to auto-generate output name.
-
-        Returns:
-            Validated and normalized ArchiveCreateSpec.
-
-        Raises:
-            ValidationError: If validation fails.
-        """
-        from bkx.core.errors import NotFoundError, ValidationError
-
-        # Validate sources exist
-        if not self.sources:
-            raise ValidationError(msg="At least one source path is required")
-
-        for src in self.sources:
-            if not src.exists():
-                raise NotFoundError(
-                    msg=f"Source path does not exist: {src}",
-                    details={"path": str(src)},
-                )
-
-        # Resolve output path
-        output_path = self.output_path
-        if auto_name and not output_path:
-            output_path = self._generate_output_path()
-
+    def normalize(self, *, default_tmp_dir: Path | None = None, auto_name: bool = True) -> ArchiveCreateSpec:
+        del default_tmp_dir
+        sources = normalize_source_paths(self.sources)
+        output_path = canonical_local_path(self.output_path) if self.output_path is not None else None
+        if output_path is None and auto_name:
+            name = deterministic_name(sources[0].name or "archive", *(str(src) for src in sources))
+            output_path = canonical_local_path(Path(f"{name}.archive"))
+        if output_path is not None:
+            reject_output_inside_sources(output_path, sources)
         return ArchiveCreateSpec(
-            sources=self.sources,
+            sources=sources,
             output_path=output_path,
             excludes=self.excludes,
             includes=self.includes,
@@ -81,91 +66,105 @@ class ArchiveCreateSpec:
             _resolved_output=output_path,
         )
 
-    def _generate_output_path(self) -> Path:
-        """Generate output path from sources and timestamp."""
-        import time
-        from pathlib import Path
-
-        timestamp = int(time.time())
-        prefix = self.sources[0].name if self.sources else "archive"
-        safe_prefix = "".join(c if c.isalnum() or c in "-_" else "_" for c in prefix)
-        return Path(f"{safe_prefix}_{timestamp}.archive")
-
     @property
     def effective_output_path(self) -> Path | None:
-        """Get the resolved output path."""
-        return self._resolved_output
+        return self._resolved_output if self._resolved_output is not None else self.output_path
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArchiveListSpec:
+    archive_path: Path
+    filter_pattern: str | None = None
+    page: int = 0
+    page_size: int = 100
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.archive_path, Path):
+            raise ValidationError(msg="archive_path must be a Path")
+        if isinstance(self.page, bool) or not isinstance(self.page, int) or self.page < 0:
+            raise ValidationError(msg="page must be a non-negative integer", details={"page": self.page})
+        if isinstance(self.page_size, bool) or not isinstance(self.page_size, int) or not 1 <= self.page_size <= 1000:
+            raise ValidationError(msg="page_size must be between 1 and 1000", details={"page_size": self.page_size})
+        if self.filter_pattern is not None:
+            patterns = normalize_patterns((self.filter_pattern,), field_name="filter_pattern")
+            object.__setattr__(self, "filter_pattern", patterns[0])
+
+    def normalize(self) -> ArchiveListSpec:
+        path = canonical_local_path(self.archive_path)
+        if not path.exists():
+            raise NotFoundError(msg=f"Archive not found: {path}", details={"path": str(path)})
+        return ArchiveListSpec(archive_path=path, filter_pattern=self.filter_pattern, page=self.page, page_size=self.page_size)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArchiveInfoSpec:
+    archive_path: Path
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.archive_path, Path):
+            raise ValidationError(msg="archive_path must be a Path")
+
+    def normalize(self) -> ArchiveInfoSpec:
+        path = canonical_local_path(self.archive_path)
+        if not path.exists():
+            raise NotFoundError(msg=f"Archive not found: {path}", details={"path": str(path)})
+        return ArchiveInfoSpec(archive_path=path)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ArchiveVerifySpec:
+    archive_path: Path
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.archive_path, Path):
+            raise ValidationError(msg="archive_path must be a Path")
+
+    def normalize(self) -> ArchiveVerifySpec:
+        path = canonical_local_path(self.archive_path)
+        if not path.exists():
+            raise NotFoundError(msg=f"Archive not found: {path}", details={"path": str(path)})
+        return ArchiveVerifySpec(archive_path=path)
 
 
 @dataclass(frozen=True, kw_only=True)
 class ArchiveBrowseSpec:
-    """Normalized specification for browsing an archive.
+    archive_path: Path
+    query: str | None = None
+    file_type: str | None = None
+    min_size: int | None = None
+    max_size: int | None = None
+    limit: int = 50
+    offset: int = 0
+    sort_by: str = "path"
+    sort_order: str = "asc"
 
-    This is the deterministic input to ArchiveService.browse().
-    """
-
-    # Required fields
-    archive_path: Path  # Archive to browse
-
-    # Optional fields with defaults
-    query: str | None = None  # Search query (matches path)
-    file_type: str | None = None  # Filter by type: "file", "dir"
-    min_size: int | None = None  # Minimum file size (bytes)
-    max_size: int | None = None  # Maximum file size (bytes)
-    limit: int = 50  # Maximum results to return
-    offset: int = 0  # Offset for pagination
-    sort_by: str = "path"  # Sort field: "path", "size", "mtime"
-    sort_order: str = "asc"  # Sort order: "asc", "desc"
+    def __post_init__(self) -> None:
+        if not isinstance(self.archive_path, Path):
+            raise ValidationError(msg="archive_path must be a Path")
+        if self.file_type is not None and self.file_type not in {"file", "dir"}:
+            raise ValidationError(msg="file_type must be 'file' or 'dir'", details={"file_type": self.file_type})
+        for name, value in (("min_size", self.min_size), ("max_size", self.max_size)):
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise ValidationError(msg=f"{name} must be a non-negative integer", details={name: value})
+        if self.min_size is not None and self.max_size is not None and self.min_size > self.max_size:
+            raise ValidationError(msg="min_size cannot exceed max_size")
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int) or not 1 <= self.limit <= 1000:
+            raise ValidationError(msg="limit must be between 1 and 1000", details={"limit": self.limit})
+        if isinstance(self.offset, bool) or not isinstance(self.offset, int) or self.offset < 0:
+            raise ValidationError(msg="offset must be non-negative", details={"offset": self.offset})
+        if self.sort_by not in {"path", "size", "mtime"}:
+            raise ValidationError(msg="sort_by must be path, size, or mtime", details={"sort_by": self.sort_by})
+        if self.sort_order not in {"asc", "desc"}:
+            raise ValidationError(msg="sort_order must be asc or desc", details={"sort_order": self.sort_order})
+        if self.query is not None and not isinstance(self.query, str):
+            raise ValidationError(msg="query must be a string or None")
 
     def normalize(self) -> ArchiveBrowseSpec:
-        """Normalize and validate the spec.
-
-        Returns:
-            Validated and normalized ArchiveBrowseSpec.
-
-        Raises:
-            ValidationError: If validation fails.
-        """
-        from bkx.core.errors import NotFoundError, ValidationError
-
-        # Validate archive exists
-        if not self.archive_path.exists():
-            raise NotFoundError(
-                msg=f"Archive not found: {self.archive_path}",
-                details={"path": str(self.archive_path)},
-            )
-
-        # Validate limit
-        if self.limit < 1 or self.limit > 1000:
-            raise ValidationError(
-                msg="Limit must be between 1 and 1000",
-                details={"limit": self.limit},
-            )
-
-        # Validate sort options
-        valid_sort_by = ("path", "size", "mtime")
-        if self.sort_by not in valid_sort_by:
-            raise ValidationError(
-                msg=f"sort_by must be one of {valid_sort_by}",
-                details={"sort_by": self.sort_by},
-            )
-
-        valid_sort_order = ("asc", "desc")
-        if self.sort_order not in valid_sort_order:
-            raise ValidationError(
-                msg=f"sort_order must be one of {valid_sort_order}",
-                details={"sort_order": self.sort_order},
-            )
-
-        # Validate file_type
-        if self.file_type is not None and self.file_type not in ("file", "dir"):
-            raise ValidationError(
-                msg="file_type must be 'file' or 'dir'",
-                details={"file_type": self.file_type},
-            )
-
+        path = canonical_local_path(self.archive_path)
+        if not path.exists():
+            raise NotFoundError(msg=f"Archive not found: {path}", details={"path": str(path)})
         return ArchiveBrowseSpec(
-            archive_path=self.archive_path,
+            archive_path=path,
             query=self.query,
             file_type=self.file_type,
             min_size=self.min_size,

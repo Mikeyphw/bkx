@@ -35,8 +35,10 @@ class TestBuildBackupSpec:
     def test_with_destination(self):
         """Test backup spec with destination."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            dest = Path(tmpdir) / "backup"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            dest = root / "backup"
             spec = build_backup_spec(sources=[source], destination=dest)
 
             assert spec.destination == dest
@@ -99,8 +101,10 @@ class TestBuildArchiveSpec:
     def test_required_output(self):
         """Test archive spec requires output path."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            output = Path(tmpdir) / "archive.tar"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            output = root / "archive.tar"
             spec = build_archive_spec(sources=[source], output=output)
 
             assert spec.output_path == output
@@ -109,8 +113,10 @@ class TestBuildArchiveSpec:
     def test_with_excludes(self):
         """Test archive spec with excludes."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            output = Path(tmpdir) / "archive.tar"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            output = root / "archive.tar"
             spec = build_archive_spec(
                 sources=[source],
                 output=output,
@@ -122,8 +128,10 @@ class TestBuildArchiveSpec:
     def test_compression_settings(self):
         """Test archive spec compression settings."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            output = Path(tmpdir) / "archive.tar.zst"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            output = root / "archive.tar.zst"
             spec = build_archive_spec(
                 sources=[source],
                 output=output,
@@ -137,8 +145,10 @@ class TestBuildArchiveSpec:
     def test_dry_run(self):
         """Test archive spec dry run."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            source = Path(tmpdir)
-            output = Path(tmpdir) / "archive.tar"
+            root = Path(tmpdir)
+            source = root / "source"
+            source.mkdir()
+            output = root / "archive.tar"
             spec = build_archive_spec(
                 sources=[source],
                 output=output,

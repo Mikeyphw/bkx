@@ -65,6 +65,9 @@ class RunService:
             raise ValidationError(msg="Run list limit must be greater than zero", details={"limit": limit})
         effective_limit = min(limit, self._max_list_limit) if self._max_list_limit is not None else limit
         runs = self._run_store.list_runs(limit=effective_limit, operation=operation)
+        count_runs = getattr(self._run_store, "count_runs", None)
+        total_candidate = count_runs(operation=operation) if callable(count_runs) else None
+        total_count = total_candidate if isinstance(total_candidate, int) else len(runs)
 
         summaries = tuple(
             RunSummary(
@@ -80,7 +83,7 @@ class RunService:
 
         return RunListResult(
             runs=summaries,
-            total_count=len(runs),
+            total_count=total_count,
             limit=effective_limit,
         )
 

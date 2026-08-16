@@ -22,6 +22,11 @@ from .transfer import TransferService
 from .tools import ToolService
 
 
+def _history_store():
+    config = get_config()
+    return get_run_store(enabled=config.run_history_enabled, max_records=config.run_history_limit)
+
+
 def get_backup_service() -> BackupService:
     """Get a BackupService with default port implementations."""
     return BackupService(
@@ -29,6 +34,7 @@ def get_backup_service() -> BackupService:
         transfer=get_transfer(),
         hasher=get_hasher(),
         tool_detector=get_tool_detector(),
+        run_store=_history_store(),
     )
 
 
@@ -36,6 +42,7 @@ def get_archive_service() -> ArchiveService:
     """Get an ArchiveService with default port implementation."""
     return ArchiveService(
         archiver=get_archiver(),
+        run_store=_history_store(),
     )
 
 
@@ -44,6 +51,7 @@ def get_transfer_service() -> TransferService:
     return TransferService(
         transfer=get_transfer(),
         hasher=get_hasher(),
+        run_store=_history_store(),
     )
 
 
@@ -51,6 +59,7 @@ def get_restore_service() -> RestoreService:
     """Get a RestoreService with default port implementation."""
     return RestoreService(
         archiver=get_archiver(),
+        run_store=_history_store(),
     )
 
 
@@ -63,7 +72,7 @@ def get_run_service() -> RunService:
     """Get a RunService honoring live run-history configuration."""
     config = get_config()
     return RunService(
-        run_store=get_run_store(enabled=config.run_history_enabled),
+        run_store=get_run_store(enabled=config.run_history_enabled, max_records=config.run_history_limit),
         max_list_limit=config.run_history_limit,
     )
 

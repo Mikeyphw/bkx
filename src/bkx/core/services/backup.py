@@ -17,12 +17,14 @@ from ..results.archive import ArchiveCreateResult
 from ..results.backup import BackupResult, Timing
 from ..results.transfer import TransferResult
 from ..specs.archive import ArchiveCreateSpec
+from .run_tracking import snapshot_spec, track_run
 
 if TYPE_CHECKING:
     from ..ports.archiver import ArchiverPort
     from ..ports.hasher import HasherPort
     from ..ports.tool_detector import ToolDetectorPort
     from ..ports.transfer import TransferPort
+    from ..ports.run_store import RunStorePort
     from ..specs.backup import BackupSpec
 
 
@@ -42,6 +44,7 @@ class BackupService:
         transfer: TransferPort,
         hasher: HasherPort,
         tool_detector: ToolDetectorPort,
+        run_store: RunStorePort | None = None,
     ) -> None:
         """Initialize service with required ports.
 
@@ -55,8 +58,23 @@ class BackupService:
         self._transfer = transfer
         self._hasher = hasher
         self._tool_detector = tool_detector
+        self._run_store = run_store
 
     def create(self, spec: BackupSpec) -> BackupResult:
+        """Execute a full backup operation and record run history when configured."""
+        return track_run(
+            self._run_store,
+            operation="backup",
+            source_paths=tuple(str(source) for source in spec.sources),
+            destination_path=str(spec.destination) if spec.destination else None,
+            archive_path=str(spec.archive_path) if spec.archive_path else None,
+            spec_snapshot=snapshot_spec(spec),
+            execute=lambda: self._create_untracked(spec),
+            files_count=lambda result: result.files_processed,
+            bytes_processed=lambda result: result.bytes_written,
+        )
+
+    def _create_untracked(self, spec: BackupSpec) -> BackupResult:
         """Execute a full backup operation.
 
         Args:

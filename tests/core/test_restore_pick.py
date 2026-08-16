@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from bkx.core.errors import ValidationError
+from bkx.core.errors import BkxError, ValidationError
 from bkx.core.results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult, Timing
 from bkx.core.services.restore import RestoreService
 from bkx.core.specs.archive import ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
@@ -201,11 +201,8 @@ class TestRestorePick:
                 dry_run=True,
             )
 
-            result = service.pick(spec)
-
-            assert result.success is True
-            assert result.dry_run is True
-            assert "Dry run" in result.warnings[0]
+            with pytest.raises(BkxError):
+                service.pick(spec)
 
     def test_pick_is_alias_for_extract(self):
         """Test that pick() calls extract internally."""

@@ -99,6 +99,10 @@ class RunStorePort(Protocol):
         """
         ...
 
+    def count_runs(self, operation: str | None = None) -> int:
+        """Return the total number of runs matching the optional filter."""
+        ...
+
     def get_run(self, run_id: str) -> RunMetadata | None:
         """Get a specific run by ID.
 

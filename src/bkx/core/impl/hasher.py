@@ -1,50 +1,58 @@
-"""FallbackHasher - pure Python hash computation.
-
-Fallback implementation using zlib for hash operations.
-"""
+"""Pure Python and command-backed hash computation."""
 
 from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
+import tempfile
+import time
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import BinaryIO, Any
+from typing import Any, BinaryIO
+
+from bkx.core.errors import ExternalToolError, NotFoundError, ValidationError, expected_error_boundary
 
 from ..ports.hasher import HashAlgorithm, HashResult
 from ..results.hashing import HashingResult
+from .tool_detector import get_tool_detector
+from .traversal import build_source_manifest
+
+_HASHLIB_ALGOS: dict[str, Any] = {
+    "md5": hashlib.md5,
+    "sha256": hashlib.sha256,
+    "sha512": hashlib.sha512,
+}
+_COMMAND_ALGORITHMS: dict[str, str] = {
+    "md5sum": "md5",
+    "sha256sum": "sha256",
+    "sha512sum": "sha512",
+    "xxh64": "xxh64",
+    "xxh128": "xxh128",
+}
 
 
 class FallbackHasher:
-    """Pure Python hasher using zlib.
+    """Pure Python hasher with deterministic source-tree semantics."""
 
-    This is the fallback when external tools like xxh128 are unavailable.
-    Supports MD5, SHA256, and SHA512.
-    """
-
-    def __init__(self) -> None:
-        """Initialize the hasher."""
-        self._name = "python-zlib"
+    def __init__(self, *, name: str = "python-zlib") -> None:
+        self._name = name
 
     @property
     def name(self) -> str:
-        """Human-readable name of this hasher."""
         return self._name
 
     @property
     def algorithm(self) -> str:
-        """Hash algorithm identifier (for protocol compatibility)."""
-        return "sha256"  # Default, can be overridden
+        return "sha256"
 
     @property
     def digest_length(self) -> int:
-        """Length of digest in bytes (for protocol compatibility)."""
-        return 32  # SHA256 digest length
+        return 32
 
     @property
     def supported_algorithms(self) -> tuple[str, ...]:
-        """List of supported hash algorithms."""
-        return ("md5", "sha256", "sha512")
+        return tuple(_HASHLIB_ALGOS)
 
     def hash_file(
         self,
@@ -53,31 +61,24 @@ class FallbackHasher:
         *,
         chunk_size: int = 8192,
     ) -> HashResult:
-        """Compute hash of a single file.
-
-        Args:
-            path: Path to file.
-            algorithm: Hash algorithm to use.
-            chunk_size: Size of chunks to read.
-
-        Returns:
-            Hash result with checksum.
-        """
+        chunk_size = _validate_chunk_size(chunk_size)
         algo = self._get_algo(algorithm)
+        raw_path = path.expanduser()
+        if raw_path.is_symlink():
+            raise ValidationError(msg="Hash source must be a regular non-symlink file", details={"path": str(raw_path)})
+        target = raw_path.resolve(strict=False)
+        if not target.exists():
+            raise NotFoundError(msg=f"File not found for hashing: {target}", details={"path": str(target)})
+        if not target.is_file():
+            raise ValidationError(msg="Hash source must be a regular non-symlink file", details={"path": str(target)})
         hasher = algo()
-
         bytes_hashed = 0
-
-        with open(path, "rb") as f:
-            while chunk := f.read(chunk_size):
-                hasher.update(chunk)
-                bytes_hashed += len(chunk)
-
-        return HashResult(
-            algorithm=algorithm,
-            checksum=hasher.hexdigest(),
-            bytes_hashed=bytes_hashed,
-        )
+        with expected_error_boundary("hashing file", resource=str(target), backend=self.name):
+            with open(target, "rb") as f:
+                while chunk := f.read(chunk_size):
+                    hasher.update(chunk)
+                    bytes_hashed += len(chunk)
+        return HashResult(algorithm=algorithm, checksum=hasher.hexdigest(), bytes_hashed=bytes_hashed)
 
     def hash_files(
         self,
@@ -86,34 +87,14 @@ class FallbackHasher:
         *,
         progress_callback: Callable[[Path, int, int], Any] | None = None,
     ) -> dict[Path, HashResult]:
-        """Compute hashes for multiple files.
-
-        Args:
-            paths: Paths to files to hash.
-            algorithm: Hash algorithm to use.
-            progress_callback: Optional callback (path, current, total).
-
-        Returns:
-            Dict mapping path to hash result.
-        """
-        results = {}
+        if not isinstance(paths, tuple):
+            raise ValidationError(msg="paths must be a tuple")
+        results: dict[Path, HashResult] = {}
         total = len(paths)
-
         for i, path in enumerate(paths, 1):
             if progress_callback:
                 progress_callback(path, i, total)
-
-            if path.is_file():
-                results[path] = self.hash_file(path, algorithm)
-            else:
-                # Create a result for non-existent files
-                results[path] = HashResult(
-                    algorithm=algorithm,
-                    checksum="",
-                    bytes_hashed=0,
-                    error="file not found",
-                )
-
+            results[path] = self.hash_file(path, algorithm)
         return results
 
     def hash_directory(
@@ -123,137 +104,154 @@ class FallbackHasher:
         *,
         recursive: bool = True,
     ) -> HashingResult:
-        """Compute hash of directory contents.
+        if not recursive and path.is_dir():
+            files = tuple(child for child in sorted(path.iterdir()) if child.is_file())
+            manifest = build_source_manifest(files or (path,), symlink_policy="reject") if files else build_source_manifest((path,), symlink_policy="reject")
+            entries = tuple(e for e in manifest.files if e.path.parent == path.resolve(strict=False))
+        else:
+            manifest = build_source_manifest((path,), symlink_policy="reject")
+            entries = manifest.files
 
-        Args:
-            path: Path to directory.
-            algorithm: Hash algorithm to use.
-            recursive: Whether to recurse into subdirectories.
-
-        Returns:
-            Hashing result with all file hashes.
-        """
+        start = time.perf_counter_ns()
         algo = self._get_algo(algorithm)
         dir_hasher = algo()
-
         file_hashes: dict[Path, HashResult] = {}
         total_bytes = 0
-
-        paths_to_process: list[Path] = [path] if path.is_file() else []
-
-        if path.is_dir():
-            if recursive:
-                for root, _, fnames in os.walk(path):
-                    for fname in fnames:
-                        fpath = Path(root) / fname
-                        paths_to_process.append(fpath)
-            else:
-                for fname in path.iterdir():  # type: ignore[assignment]
-                    if fname.is_file():  # type: ignore[attr-defined]
-                        paths_to_process.append(fname)  # type: ignore[arg-type]
-
-        for fpath in paths_to_process:
-            result = self.hash_file(fpath, algorithm)
-            file_hashes[fpath] = result
+        for entry in sorted(entries, key=lambda e: e.archive_name):
+            result = self.hash_file(entry.path, algorithm)
+            file_hashes[entry.path] = result
             total_bytes += result.bytes_hashed
-
-        # Compute directory hash by combining file hashes
-        for fpath in sorted(file_hashes.keys()):
-            dir_hasher.update(fpath.as_posix().encode())
-            dir_hasher.update(file_hashes[fpath].checksum.encode())
-
+            dir_hasher.update(entry.archive_name.encode("utf-8"))
+            dir_hasher.update(b"\0")
+            dir_hasher.update(result.checksum.encode("ascii"))
+            dir_hasher.update(b"\0")
+        elapsed_ms = max(0, int((time.perf_counter_ns() - start) / 1_000_000))
         return HashingResult(
             success=True,
             algorithm=algorithm,
-            root_path=path,
+            root_path=path.expanduser().resolve(strict=False),
             file_count=len(file_hashes),
             total_bytes=total_bytes,
             file_hashes=file_hashes,
             directory_checksum=dir_hasher.hexdigest(),
-            timing_ms=total_bytes,  # Placeholder
+            timing_ms=elapsed_ms,
         )
 
     def _get_algo(self, algorithm: HashAlgorithm):
-        """Get hashlib algorithm by name."""
-        algos = {
-            "md5": hashlib.md5,
-            "sha256": hashlib.sha256,
-            "sha512": hashlib.sha512,
-        }
-
-        if algorithm not in algos:
-            raise ValueError(f"Unsupported algorithm: {algorithm}")
-
-        return algos[algorithm]
+        if algorithm not in _HASHLIB_ALGOS:
+            raise ValidationError(
+                msg="Unsupported hash algorithm for pure Python hasher",
+                details={"algorithm": algorithm, "supported": sorted(_HASHLIB_ALGOS)},
+            )
+        return _HASHLIB_ALGOS[algorithm]
 
     def hash_bytes(self, data: bytes) -> str:
-        """Compute hash of bytes.
-
-        Args:
-            data: Bytes to hash.
-
-        Returns:
-            Hex digest string.
-        """
-        algo = self._get_algo("sha256")
-        hasher: hashlib._Hash = algo()
-        hasher.update(data)
+        if not isinstance(data, (bytes, bytearray, memoryview)):
+            raise TypeError("data must be bytes-like")
+        hasher = hashlib.sha256()
+        hasher.update(bytes(data))
         return hasher.hexdigest()
 
-    def verify(
-        self,
-        path: Path,
-        expected: str,
-        *,
-        chunk_size: int = 64 * 1024,
-    ) -> bool:
-        """Verify file matches expected hash.
+    def verify(self, path: Path, expected: str, *, chunk_size: int = 64 * 1024) -> bool:
+        return self.hash_file(path, chunk_size=chunk_size).checksum.lower() == expected.lower()
 
-        Args:
-            path: Path to file.
-            expected: Expected hex digest.
-            chunk_size: Bytes per read chunk.
-
-        Returns:
-            True if matches, False otherwise.
-        """
-        result = self.hash_file(path)
-        checksum = result.checksum
-        return bool(checksum == expected)
-
-    def hash_stream(
-        self,
-        stream: Iterable[bytes] | BinaryIO,
-        *,
-        chunk_size: int = 64 * 1024,
-    ) -> str:
-        """Compute SHA-256 from a binary stream or bytes-chunk iterable."""
-        if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
-            raise ValueError("chunk_size must be a positive integer")
-        algo = self._get_algo("sha256")
-        hasher: hashlib._Hash = algo()
+    def hash_stream(self, stream: Iterable[bytes] | BinaryIO, *, chunk_size: int = 64 * 1024) -> str:
+        chunk_size = _validate_chunk_size(chunk_size)
+        hasher = hashlib.sha256()
         read = getattr(stream, "read", None)
         if callable(read):
             while True:
                 chunk = read(chunk_size)
                 if not chunk:
                     break
-                if not isinstance(chunk, (bytes, bytearray, memoryview)):
-                    raise TypeError("binary stream read() must return bytes-like chunks")
-                hasher.update(bytes(chunk))
+                _update_bytes(hasher, chunk, "binary stream read() must return bytes-like chunks")
         else:
             for chunk in stream:
-                if not isinstance(chunk, (bytes, bytearray, memoryview)):
-                    raise TypeError("hash stream iterable must yield bytes-like chunks")
-                hasher.update(bytes(chunk))
+                _update_bytes(hasher, chunk, "hash stream iterable must yield bytes-like chunks")
         return hasher.hexdigest()
 
 
+class CommandHasher(FallbackHasher):
+    """Hash files with a detected external hash command when selected."""
+
+    def __init__(self, tool_path: Path, algorithm: HashAlgorithm) -> None:
+        super().__init__(name=tool_path.name)
+        self._tool_path = tool_path
+        self._algorithm = algorithm
+
+    @property
+    def algorithm(self) -> str:
+        return self._algorithm
+
+    @property
+    def supported_algorithms(self) -> tuple[str, ...]:
+        return (self._algorithm,)
+
+    def hash_file(self, path: Path, algorithm: HashAlgorithm = "sha256", *, chunk_size: int = 8192) -> HashResult:
+        del chunk_size
+        if algorithm != self._algorithm:
+            raise ValidationError(msg="Selected external hasher cannot provide requested algorithm", details={"requested": algorithm, "available": self._algorithm})
+        raw_path = path.expanduser()
+        if raw_path.is_symlink():
+            raise ValidationError(msg="Hash source must be a regular non-symlink file", details={"path": str(raw_path)})
+        target = raw_path.resolve(strict=False)
+        if not target.exists():
+            raise NotFoundError(msg=f"File not found for hashing: {target}", details={"path": str(target)})
+        if not target.is_file():
+            raise ValidationError(msg="Hash source must be a regular non-symlink file", details={"path": str(target)})
+        try:
+            result = subprocess.run([str(self._tool_path), str(target)], capture_output=True, text=True, timeout=10, check=False)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            raise ExternalToolError(msg=f"Hash command failed: {exc}", tool_name=self.name, details={"path": str(target), "reason": str(exc)}) from exc
+        if result.returncode != 0:
+            raise ExternalToolError(msg="Hash command returned non-zero", tool_name=self.name, exit_code=result.returncode, stderr=result.stderr, details={"path": str(target)})
+        checksum = result.stdout.strip().split()[0] if result.stdout.strip() else ""
+        if not checksum:
+            raise ExternalToolError(msg="Hash command produced no checksum", tool_name=self.name, details={"path": str(target)})
+        return HashResult(algorithm=algorithm, checksum=checksum, bytes_hashed=target.stat().st_size)
+
+    def hash_stream(self, stream: Iterable[bytes] | BinaryIO, *, chunk_size: int = 64 * 1024) -> str:
+        # Most checksum commands are file oriented. Preserve the public stream
+        # contract by writing chunks to a bounded temporary file and hashing it.
+        chunk_size = _validate_chunk_size(chunk_size)
+        with tempfile.NamedTemporaryFile(delete=True) as tmp:
+            read = getattr(stream, "read", None)
+            if callable(read):
+                while True:
+                    chunk = read(chunk_size)
+                    if not chunk:
+                        break
+                    if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                        raise TypeError("binary stream read() must return bytes-like chunks")
+                    tmp.write(bytes(chunk))
+            else:
+                for chunk in stream:
+                    if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                        raise TypeError("hash stream iterable must yield bytes-like chunks")
+                    tmp.write(bytes(chunk))
+            tmp.flush()
+            return self.hash_file(Path(tmp.name), self._algorithm).checksum
+
+
+def _validate_chunk_size(chunk_size: int) -> int:
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer")
+    return chunk_size
+
+
+def _update_bytes(hasher: Any, chunk: object, message: str) -> None:
+    if not isinstance(chunk, (bytes, bytearray, memoryview)):
+        raise TypeError(message)
+    hasher.update(bytes(chunk))
+
 
 def get_hasher() -> FallbackHasher:
-    """Get the default hasher implementation.
-
-    Returns:
-        FallbackHasher instance (pure Python implementation)
-    """
+    """Get the configured hasher, falling back to pure Python."""
+    detector = get_tool_detector()
+    preferred = detector.get_preferred("hashing")
+    if preferred:
+        info = detector.detect(preferred)
+        algorithm = _COMMAND_ALGORITHMS.get(preferred)
+        if info.available and info.path is not None and algorithm is not None:
+            return CommandHasher(info.path, algorithm)  # type: ignore[arg-type]
     return FallbackHasher()

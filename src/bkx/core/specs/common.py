@@ -108,7 +108,8 @@ def reject_output_inside_sources(output: Path, sources: tuple[Path, ...]) -> Non
     target = canonical_local_path(output)
     for source in sources:
         src = canonical_local_path(source)
-        if src == target or (source.exists() and source.is_dir() and src in target.parents):
+        source_is_dir = src.exists() and src.is_dir()
+        if src == target or (source_is_dir and src in target.parents):
             raise ValidationError(
                 msg="Output/destination must not overlap a source tree",
                 details={"source": str(src), "output": str(target)},

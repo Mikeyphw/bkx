@@ -30,12 +30,17 @@ class ArchiveService:
     def list(self, spec: ArchiveListSpec) -> ArchiveListResult:
         spec = spec.normalize()
         with expected_error_boundary("listing archive", resource=str(spec.archive_path), backend=self._archiver.name):
-            entries = self._archiver.list(spec)
+            list_with_total = getattr(self._archiver, "list_with_total", None)
+            if callable(list_with_total):
+                entries, total_entries = list_with_total(spec)
+            else:
+                entries = self._archiver.list(spec)
+                total_entries = len(entries)
         return ArchiveListResult(
             success=True,
             archive_path=spec.archive_path,
             entries=entries,
-            total_entries=len(entries),
+            total_entries=total_entries,
             page=spec.page,
             page_size=spec.page_size,
             filter_pattern=spec.filter_pattern,
@@ -53,11 +58,13 @@ class ArchiveService:
 
     def browse(self, spec: ArchiveBrowseSpec) -> ArchiveBrowseResult:
         spec = spec.normalize()
-        # RM-023 owns complete pagination. OV-02 still routes the operation through
-        # a canonical list Spec so the service/port boundary is consistent.
         list_spec = ArchiveListSpec(archive_path=spec.archive_path, page=0, page_size=1000).normalize()
         with expected_error_boundary("browsing archive", resource=str(spec.archive_path), backend=self._archiver.name):
-            filtered = list(self._archiver.list(list_spec))
+            read_all = getattr(self._archiver, "_read_all_entries", None)
+            if callable(read_all):
+                filtered = list(read_all(spec.archive_path))
+            else:
+                filtered = list(self._archiver.list(list_spec))
         if spec.query:
             query = spec.query.lower()
             filtered = [entry for entry in filtered if query in entry.path.lower()]

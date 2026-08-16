@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Mapping
+
+from bkx.core.errors import FrozenDetails
 
 from .backup import Timing
 from .common import require_nonnegative
@@ -133,12 +136,14 @@ class ArchiveVerifyResult:
     entries_checked: int = 0
     entries_failed: int = 0
     failed_entries: tuple[str, ...] = field(default_factory=tuple)
+    archive_checksums: Mapping[str, str] = field(default_factory=dict)
     warnings: tuple[str, ...] = field(default_factory=tuple)
     errors: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         require_nonnegative(entries_checked=self.entries_checked, entries_failed=self.entries_failed)
         object.__setattr__(self, "failed_entries", tuple(self.failed_entries))
+        object.__setattr__(self, "archive_checksums", FrozenDetails(dict(self.archive_checksums)))
         object.__setattr__(self, "warnings", tuple(self.warnings))
         object.__setattr__(self, "errors", tuple(self.errors))
         if self.entries_failed > self.entries_checked:

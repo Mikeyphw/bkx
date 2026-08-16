@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
 from bkx.core.errors import NotFoundError, ValidationError
 
 from .backup import DEFAULT_COMPRESSION, CompressionProfile
+HashAlgorithm = Literal["md5", "sha256", "sha512"]
+
 from .common import (
     canonical_local_path,
     deterministic_name,
@@ -114,16 +117,27 @@ class ArchiveInfoSpec:
 @dataclass(frozen=True, kw_only=True)
 class ArchiveVerifySpec:
     archive_path: Path
+    hash_algorithms: tuple[HashAlgorithm, ...] = ("sha256",)
 
     def __post_init__(self) -> None:
         if not isinstance(self.archive_path, Path):
             raise ValidationError(msg="archive_path must be a Path")
+        if not isinstance(self.hash_algorithms, tuple) or not self.hash_algorithms:
+            raise ValidationError(msg="hash_algorithms must be a non-empty tuple")
+        supported = {"md5", "sha256", "sha512"}
+        normalized: list[HashAlgorithm] = []
+        for algorithm in self.hash_algorithms:
+            if algorithm not in supported:
+                raise ValidationError(msg="Unsupported archive verification hash algorithm", details={"algorithm": algorithm, "supported": sorted(supported)})
+            if algorithm not in normalized:
+                normalized.append(algorithm)
+        object.__setattr__(self, "hash_algorithms", tuple(normalized))
 
     def normalize(self) -> ArchiveVerifySpec:
         path = canonical_local_path(self.archive_path)
         if not path.exists():
             raise NotFoundError(msg=f"Archive not found: {path}", details={"path": str(path)})
-        return ArchiveVerifySpec(archive_path=path)
+        return ArchiveVerifySpec(archive_path=path, hash_algorithms=self.hash_algorithms)
 
 
 @dataclass(frozen=True, kw_only=True)

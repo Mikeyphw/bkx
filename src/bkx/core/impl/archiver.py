@@ -1,251 +1,189 @@
-"""FallbackArchiver - pure Python archive operations.
-
-Fallback implementation using tarfile and zipfile for archive operations.
-Uses zlib for checksums when needed.
-"""
+"""FallbackArchiver - pure Python archive operations."""
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import tarfile
-from dataclasses import dataclass
-from collections.abc import Callable
-from typing import Any
+import tempfile
+import time
+import zipfile
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, Literal
 
-from ..results.archive import (
-    ArchiveCreateResult,
-    ArchiveEntry,
-    ArchiveInfoResult,
-    ArchiveVerifyResult,
-)
+from bkx.core.errors import NotFoundError, ValidationError, expected_error_boundary
+
+from ..results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult
 from ..results.backup import Timing
 from ..specs.archive import ArchiveCreateSpec, ArchiveInfoSpec, ArchiveListSpec, ArchiveVerifySpec
+from ..specs.backup import DEFAULT_COMPRESSION, CompressionProfile
+from ..specs.common import normalize_archive_member
 from ..specs.restore import RestoreSpec
+from .traversal import SourceTraversalManifest, TraversalEntry, build_source_manifest
+
+ArchiveFormat = Literal["zip", "tar"]
 
 
 class FallbackArchiver:
     """Pure Python archiver using tarfile and zipfile.
 
-    This is the fallback when external tools like zstd are unavailable.
-    Supports tar (uncompressed) and zip formats.
+    Creation is driven by a shared traversal manifest, publishes through a
+    temporary file in the destination directory, and verifies before replacing
+    the final path when requested.
     """
 
-    def __init__(self) -> None:
-        """Initialize the archiver."""
-        self._name = "python-builtin"
+    def __init__(self, *, selected_tool: str | None = None) -> None:
+        self._name = f"python-builtin/{selected_tool}" if selected_tool else "python-builtin"
         self._supported_formats = ("tar", "zip")
 
     @property
     def name(self) -> str:
-        """Human-readable name of this archiver."""
         return self._name
 
     @property
     def supported_formats(self) -> tuple[str, ...]:
-        """List of supported format identifiers."""
         return self._supported_formats
 
-    def create(
-        self,
-        spec: ArchiveCreateSpec,
-        *,
-        progress_callback: Callable[[int, int], Any] | None = None,
-    ) -> ArchiveCreateResult:
-        """Create an archive from sources.
-
-        Args:
-            spec: Normalized archive creation spec.
-            progress_callback: Optional callback receiving (files_archived, bytes_written).
-
-        Returns:
-            Result with metrics and archive path.
-        """
-        import time
-
+    def create(self, spec: ArchiveCreateSpec, *, progress_callback: Callable[[int, int], Any] | None = None) -> ArchiveCreateResult:
         start_ms = int(time.time() * 1000)
-
-        if not spec.output_path:
+        spec = spec.normalize() if not spec.effective_output_path else spec
+        output_path = spec.effective_output_path
+        if output_path is None:
             raise ValueError("output_path is required")
+        if spec.split_size is not None:
+            raise ValidationError(msg="Split archives are not supported by the builtin archiver", details={"split_size": spec.split_size})
+        if output_path.exists():
+            raise ValidationError(msg="Archive output already exists", details={"output_path": str(output_path)})
+        manifest = build_source_manifest(
+            spec.sources,
+            includes=spec.includes,
+            excludes=spec.excludes,
+            output_path=output_path,
+            symlink_policy="reject",
+        )
+        archive_format = _detect_format_for_create(output_path)
+        spec, warnings = _resolve_builtin_compression_compat(spec, archive_format)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path: Path | None = None
+        try:
+            fd, raw_tmp = tempfile.mkstemp(prefix=f".{output_path.name}.", suffix=".tmp", dir=str(output_path.parent))
+            os.close(fd)
+            tmp_path = Path(raw_tmp)
+            if archive_format == "zip":
+                warnings.extend(self._write_zip(tmp_path, manifest, spec))
+            else:
+                warnings.extend(self._write_tar(tmp_path, manifest, spec))
+            if spec.verify:
+                verify_result = self.verify(ArchiveVerifySpec(archive_path=tmp_path))
+                if not verify_result.success:
+                    raise ValidationError(
+                        msg="Archive verification failed before publication",
+                        details={"output_path": str(output_path), "failed_entries": list(verify_result.failed_entries)},
+                    )
+            _fsync_file(tmp_path)
+            os.replace(tmp_path, output_path)
+            tmp_path = None
+            _fsync_dir(output_path.parent)
+        except Exception:
+            if tmp_path is not None:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            raise
 
-        output_path = spec.output_path
-
-        # Determine format from extension
-        if str(output_path).endswith(".zip"):
-            result = self._create_zip(spec)
-        else:
-            result = self._create_tar(spec)
-
+        bytes_written = output_path.stat().st_size if output_path.exists() else 0
         created = ArchiveCreateResult(
             success=True,
             dry_run=False,
             timing=Timing(start_ms=start_ms, end_ms=int(time.time() * 1000)),
-            files_archived=result.files,
-            bytes_written=result.bytes,
-            original_size=result.original_size,
+            files_archived=len(manifest.files),
+            bytes_written=bytes_written,
+            original_size=manifest.total_size,
             archive_path=output_path,
-            verification_passed=None,
+            verification_passed=True if spec.verify else None,
+            compression_ratio=(bytes_written / manifest.total_size) if manifest.total_size else 1.0,
+            warnings=tuple(warnings),
         )
         if progress_callback is not None:
             progress_callback(created.files_archived, created.bytes_written)
         return created
 
-    def _create_tar(
-        self,
-        spec: ArchiveCreateSpec,
-    ) -> CreateResult:
-        """Create a tar archive."""
-        output_path = spec.output_path
-        if output_path is None:
-            raise ValueError("output_path required for tar creation")
+    def _write_tar(self, tmp_path: Path, manifest: SourceTraversalManifest, spec: ArchiveCreateSpec) -> list[str]:
+        mode, tar_kwargs = _tar_mode_for(spec)
+        with tarfile.open(tmp_path, mode, **tar_kwargs) as tar:
+            for entry in manifest.entries:
+                if entry.is_dir:
+                    info = tarfile.TarInfo(entry.archive_name.rstrip("/") + "/")
+                    info.type = tarfile.DIRTYPE
+                    info.mtime = entry.mtime_ns / 1_000_000_000
+                    tar.addfile(info)
+                else:
+                    tar.add(entry.path, arcname=entry.archive_name, recursive=False, filter=_tar_filter)
+        return []
 
-        files = 0
-        bytes_written = 0
-        original_size = 0
-
-        with tarfile.open(output_path, "w") as tar:
-            for source in spec.sources:
-                if source.is_file():
-                    tar.add(source, arcname=source.name)
-                    files += 1
-                    size = source.stat().st_size
-                    original_size += size
-                elif source.is_dir():
-                    for root, _dirs, fnames in os.walk(source):
-                        for fname in fnames:
-                            fpath = Path(root) / fname
-                            tar.add(fpath, arcname=str(fpath.relative_to(source.parent)))
-                            files += 1
-                            size = fpath.stat().st_size
-                            original_size += size
-
-        bytes_written = output_path.stat().st_size if output_path.exists() else 0
-
-        return CreateResult(files=files, bytes=bytes_written, original_size=original_size)
-
-    def _create_zip(
-        self,
-        spec: ArchiveCreateSpec,
-    ) -> CreateResult:
-        """Create a zip archive."""
-        import zipfile
-
-        output_path = spec.output_path
-        if output_path is None:
-            raise ValueError("output_path required for zip creation")
-
-        files = 0
-        bytes_written = 0
-        original_size = 0
-
-        with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for source in spec.sources:
-                if source.is_file():
-                    zf.write(source, arcname=source.name)
-                    files += 1
-                    size = source.stat().st_size
-                    original_size += size
-                elif source.is_dir():
-                    for root, _dirs, fnames in os.walk(source):
-                        for fname in fnames:
-                            fpath = Path(root) / fname
-                            zf.write(fpath, arcname=str(fpath.relative_to(source.parent)))
-                            files += 1
-                            size = fpath.stat().st_size
-                            original_size += size
-
-        bytes_written = output_path.stat().st_size if output_path.exists() else 0
-
-        return CreateResult(files=files, bytes=bytes_written, original_size=original_size)
+    def _write_zip(self, tmp_path: Path, manifest: SourceTraversalManifest, spec: ArchiveCreateSpec) -> list[str]:
+        compression, compresslevel = _zip_compression_for(spec)
+        with zipfile.ZipFile(tmp_path, "w", compression=compression, compresslevel=compresslevel) as zf:
+            for entry in manifest.entries:
+                if entry.is_dir:
+                    name = entry.archive_name.rstrip("/") + "/"
+                    info = zipfile.ZipInfo(name)
+                    info.external_attr = 0o40755 << 16
+                    zf.writestr(info, b"")
+                else:
+                    zf.write(entry.path, arcname=entry.archive_name)
+        return []
 
     def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
-        """List contents of an archive.
-
-        Args:
-            spec: Normalized archive-list specification.
-
-        Returns:
-            List of archive entries.
-        """
-        entries: list[ArchiveEntry] = []
-
-        if str(spec.archive_path).endswith(".zip"):
-            entries = self._list_zip(spec.archive_path)
-        else:
-            entries = self._list_tar(spec.archive_path)
-
-        # Apply filter if provided
+        entries = self._read_all_entries(spec.archive_path)
         if spec.filter_pattern:
-            import fnmatch
-
             entries = [e for e in entries if fnmatch.fnmatch(e.path, spec.filter_pattern)]
-
-        # Paginate
         start = spec.page * spec.page_size
-        end = start + spec.page_size
+        return tuple(entries[start : start + spec.page_size])
 
-        return tuple(entries[start:end])
+    def list_with_total(self, spec: ArchiveListSpec) -> tuple[tuple[ArchiveEntry, ...], int]:
+        entries = self._read_all_entries(spec.archive_path)
+        if spec.filter_pattern:
+            entries = [e for e in entries if fnmatch.fnmatch(e.path, spec.filter_pattern)]
+        total = len(entries)
+        start = spec.page * spec.page_size
+        return tuple(entries[start : start + spec.page_size]), total
 
-    def _list_tar(self, archive_path: Path) -> list[ArchiveEntry]:  # type: ignore[valid-type]
-        """List tar archive contents."""
-        entries = []
+    def _read_all_entries(self, archive_path: Path) -> list[ArchiveEntry]:
+        archive_format = _detect_format_for_read(archive_path)
+        if archive_format == "zip":
+            return self._list_zip(archive_path)
+        return self._list_tar(archive_path)
 
-        with tarfile.open(archive_path, "r") as tar:
+    def _list_tar(self, archive_path: Path) -> list[ArchiveEntry]:
+        entries: list[ArchiveEntry] = []
+        with tarfile.open(archive_path, "r:*") as tar:
             for member in tar.getmembers():
-                entries.append(
-                    ArchiveEntry(
-                        path=member.name,
-                        is_dir=member.isdir(),
-                        size=member.size,
-                        mtime_ns=int(member.mtime * 1e9),
-                    )
-                )
-
+                entries.append(ArchiveEntry(path=member.name, is_dir=member.isdir(), size=member.size, mtime_ns=int(member.mtime * 1e9)))
         return entries
 
-    def _list_zip(self, archive_path: Path) -> list[ArchiveEntry]:  # type: ignore[valid-type]
-        """List zip archive contents."""
-        import zipfile
-
-        entries = []
-
+    def _list_zip(self, archive_path: Path) -> list[ArchiveEntry]:
+        entries: list[ArchiveEntry] = []
         with zipfile.ZipFile(archive_path, "r") as zf:
             for info in zf.infolist():
-                entries.append(
-                    ArchiveEntry(
-                        path=info.filename,
-                        is_dir=info.is_dir(),
-                        size=info.file_size,
-                        mtime_ns=int(info.date_time[0] << 32),  # Simplified
-                    )
-                )
-
+                # Convert the DOS timestamp to a stable integer representation.
+                mtime_ns = int(time.mktime((*info.date_time, 0, 0, -1)) * 1_000_000_000)
+                entries.append(ArchiveEntry(path=info.filename, is_dir=info.is_dir(), size=info.file_size, mtime_ns=mtime_ns))
         return entries
 
     def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
-        """Get metadata about an archive.
-
-        Args:
-            spec.archive_path: Path to archive.
-
-        Returns:
-            Archive metadata.
-        """
-
-        entries = self.list(ArchiveListSpec(archive_path=spec.archive_path, page=0, page_size=1000))
+        entries = self._read_all_entries(spec.archive_path)
         total_size = spec.archive_path.stat().st_size
         total_entries = len(entries)
-
-        # Calculate uncompressed size
-        uncompressed_size = sum(e.size for e in entries)
-
-        # Calculate compression ratio
+        uncompressed_size = sum(e.size for e in entries if not e.is_dir)
         compression_ratio = total_size / uncompressed_size if uncompressed_size > 0 else 1.0
-
         return ArchiveInfoResult(
             success=True,
             archive_path=spec.archive_path,
-            format="zip" if str(spec.archive_path).endswith(".zip") else "tar",
+            format=_detect_format_for_read(spec.archive_path),
             created_at=int(spec.archive_path.stat().st_mtime),
             total_entries=total_entries,
             total_size=total_size,
@@ -254,66 +192,52 @@ class FallbackArchiver:
         )
 
     def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
-        """Verify archive integrity.
-
-        Args:
-            spec.archive_path: Path to archive.
-
-        Returns:
-            Verification result.
-        """
-        if not spec.archive_path.exists():
-            from ..errors import NotFoundError
-
-            raise NotFoundError(
-                msg=f"Archive not found: {spec.archive_path}",
-                details={"path": str(spec.archive_path)},
-            )
-
-        warnings: list[str] = []
-
-        if str(spec.archive_path).endswith(".zip"):
-            raw_result = self._verify_zip(spec.archive_path)
-        else:
-            raw_result = self._verify_tar(spec.archive_path)
-
-        # Create new result with all warnings
-        result = ArchiveVerifyResult(
-            success=raw_result.success,
-            archive_path=raw_result.archive_path,
-            checksums_valid=raw_result.checksums_valid,
-            structure_valid=raw_result.structure_valid,
-            entries_checked=raw_result.entries_checked,
-            entries_failed=raw_result.entries_failed,
-            failed_entries=raw_result.failed_entries,
-            warnings=tuple(warnings),
+        archive_path = spec.archive_path.expanduser().resolve(strict=False)
+        if not archive_path.exists():
+            raise NotFoundError(msg=f"Archive not found: {archive_path}", details={"path": str(archive_path)})
+        archive_format = _detect_format_for_read(archive_path)
+        checksums = _archive_checksums(archive_path, spec.hash_algorithms)
+        result = self._verify_zip(archive_path) if archive_format == "zip" else self._verify_tar(archive_path)
+        return ArchiveVerifyResult(
+            success=result.success,
+            archive_path=result.archive_path,
+            checksums_valid=result.checksums_valid,
+            structure_valid=result.structure_valid,
+            entries_checked=result.entries_checked,
+            entries_failed=result.entries_failed,
+            failed_entries=result.failed_entries,
+            archive_checksums=checksums,
+            warnings=result.warnings,
+            errors=result.errors,
         )
 
-        return result
-
     def _verify_tar(self, archive_path: Path) -> ArchiveVerifyResult:
-        """Verify tar archive integrity."""
         checksums_valid = True
         structure_valid = True
-        failed_entries = []
+        failed_entries: list[str] = []
         entries_checked = 0
-
+        errors: list[str] = []
         try:
-            with tarfile.open(archive_path, "r") as tar:
+            with tarfile.open(archive_path, "r:*") as tar:
                 for member in tar.getmembers():
                     entries_checked += 1
                     try:
-                        # Try to read a small amount to verify
-                        f = tar.extractfile(member)
-                        if f is not None:
-                            # Just verify we can read it
-                            f.read(1024)
-                    except Exception:
+                        normalize_archive_member(member.name)
+                        if member.islnk() or member.issym():
+                            raise ValidationError(msg="Archive link members are unsafe in this verification policy", details={"member": member.name})
+                        if member.isfile():
+                            stream = tar.extractfile(member)
+                            if stream is None:
+                                raise tarfile.TarError("regular file had no payload stream")
+                            while stream.read(1024 * 1024):
+                                pass
+                    except Exception as exc:
                         checksums_valid = False
                         failed_entries.append(member.name)
-        except Exception:
+                        errors.append(f"{member.name}: {exc}")
+        except Exception as exc:
             structure_valid = False
-
+            errors.append(str(exc))
         return ArchiveVerifyResult(
             success=checksums_valid and structure_valid,
             archive_path=archive_path,
@@ -322,30 +246,39 @@ class FallbackArchiver:
             entries_checked=entries_checked,
             entries_failed=len(failed_entries),
             failed_entries=tuple(failed_entries),
+            errors=tuple(errors),
         )
 
     def _verify_zip(self, archive_path: Path) -> ArchiveVerifyResult:
-        """Verify zip archive integrity."""
-        import zipfile
-
         checksums_valid = True
         structure_valid = True
-        failed_entries = []
+        failed_entries: list[str] = []
+        errors: list[str] = []
         entries_checked = 0
-
         try:
             with zipfile.ZipFile(archive_path, "r") as zf:
-                for info in zf.infolist():
+                infos = zf.infolist()
+                bad = zf.testzip()
+                if bad is not None:
+                    checksums_valid = False
+                    failed_entries.append(bad)
+                    errors.append(f"CRC/read failed for {bad}")
+                for info in infos:
                     entries_checked += 1
                     try:
-                        # Verify CRC
-                        zf.getinfo(info.filename)
-                    except Exception:
+                        normalize_archive_member(info.filename)
+                        if not info.is_dir():
+                            with zf.open(info, "r") as fh:
+                                while fh.read(1024 * 1024):
+                                    pass
+                    except Exception as exc:
                         checksums_valid = False
-                        failed_entries.append(info.filename)
-        except Exception:
+                        if info.filename not in failed_entries:
+                            failed_entries.append(info.filename)
+                        errors.append(f"{info.filename}: {exc}")
+        except Exception as exc:
             structure_valid = False
-
+            errors.append(str(exc))
         return ArchiveVerifyResult(
             success=checksums_valid and structure_valid,
             archive_path=archive_path,
@@ -354,61 +287,153 @@ class FallbackArchiver:
             entries_checked=entries_checked,
             entries_failed=len(failed_entries),
             failed_entries=tuple(failed_entries),
+            errors=tuple(errors),
         )
 
     def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
-        """Extract files from archive.
-
-        Args:
-            spec: Normalized restore spec.
-
-        Returns:
-            Paths of extracted files.
-        """
-        import zipfile
+        # OV-05 owns safe extraction. Keep existing functional behavior behind
+        # the service boundary until that overlay replaces it.
+        import zipfile as _zipfile
 
         archive_path = spec.archive
         destination = spec.destination or Path.cwd()
-
         extracted_paths = []
-
         if str(archive_path).endswith(".zip"):
-            with zipfile.ZipFile(archive_path, "r") as zf:
+            with _zipfile.ZipFile(archive_path, "r") as zf:
                 for info in zf.infolist():
-                    # Filter by paths if partial restore
                     if spec.paths and not any(p in info.filename for p in spec.paths):
                         continue
-
                     zf.extract(info.filename, destination)
                     extracted_paths.append(destination / info.filename)
         else:
-            with tarfile.open(archive_path, "r") as tar:
+            with tarfile.open(archive_path, "r:*") as tar:
                 members = tar.getmembers()
-
-                # Filter by paths if partial restore
                 if spec.paths:
                     members = [m for m in members if any(p in m.name for p in spec.paths)]
-
                 for member in members:
                     tar.extract(member, destination)
                     extracted_paths.append(destination / member.name)
-
         return tuple(extracted_paths)
 
 
 @dataclass(frozen=True)
 class CreateResult:
-    """Internal result from create operation."""
-
     files: int
     bytes: int
     original_size: int
 
 
-def get_archiver() -> FallbackArchiver:
-    """Get the default archiver implementation.
+def _detect_format_for_create(path: Path) -> ArchiveFormat:
+    suffixes = [s.lower() for s in path.suffixes]
+    if ".zip" in suffixes:
+        return "zip"
+    return "tar"
 
-    Returns:
-        FallbackArchiver instance (pure Python implementation)
+
+def _detect_format_for_read(path: Path) -> ArchiveFormat:
+    if zipfile.is_zipfile(path):
+        return "zip"
+    if tarfile.is_tarfile(path):
+        return "tar"
+    suffixes = [s.lower() for s in path.suffixes]
+    if ".zip" in suffixes:
+        return "zip"
+    raise ValidationError(msg="Unsupported or unrecognized archive format", details={"archive_path": str(path)})
+
+
+def _resolve_builtin_compression_compat(spec: ArchiveCreateSpec, archive_format: ArchiveFormat) -> tuple[ArchiveCreateSpec, list[str]]:
+    """Preserve legacy default calls while rejecting explicit unsupported modes.
+
+    Existing callers historically omitted ``compression`` and expected a plain TAR
+    or ZIP to be created even though the dataclass default is the global zstd
+    profile. Treat only that shared default object as an implicit compatibility
+    default; explicit ``CompressionProfile("zstd", 3)`` remains a real request
+    and is rejected by the format-specific helpers below when no external zstd
+    adapter is in use.
     """
-    return FallbackArchiver()
+
+    if spec.compression is not DEFAULT_COMPRESSION or spec.compression.algorithm != "zstd":
+        return spec, []
+    output_path = spec.effective_output_path or spec.output_path
+    suffixes = {suffix.lower() for suffix in (output_path.suffixes if output_path is not None else ())}
+    if suffixes & {".zst", ".zstd"}:
+        return spec, []
+    replacement = CompressionProfile("none", 0) if archive_format == "tar" else CompressionProfile("gzip", 6)
+    return (
+        replace(spec, compression=replacement),
+        [
+            "Implicit default zstd compression requires an external adapter; "
+            f"builtin {archive_format} creation used {replacement.algorithm} compatibility instead"
+        ],
+    )
+
+
+def _tar_mode_for(spec: ArchiveCreateSpec) -> tuple[str, dict[str, int]]:
+    algorithm = spec.compression.algorithm
+    level = spec.compression.level
+    if algorithm == "none":
+        return "w", {}
+    if algorithm == "gzip":
+        return "w:gz", {"compresslevel": level}
+    if algorithm == "bzip2":
+        return "w:bz2", {"compresslevel": level}
+    if algorithm == "xz":
+        return "w:xz", {"preset": level}
+    raise ValidationError(
+        msg="Compression algorithm is unsupported for builtin tar creation",
+        details={"algorithm": algorithm, "supported": ["none", "gzip", "bzip2", "xz"]},
+    )
+
+
+def _zip_compression_for(spec: ArchiveCreateSpec) -> tuple[int, int | None]:
+    algorithm = spec.compression.algorithm
+    level = spec.compression.level
+    if algorithm == "none":
+        return zipfile.ZIP_STORED, None
+    if algorithm == "gzip":
+        return zipfile.ZIP_DEFLATED, level
+    if algorithm == "bzip2":
+        return zipfile.ZIP_BZIP2, level
+    if algorithm == "xz":
+        return zipfile.ZIP_LZMA, None
+    raise ValidationError(
+        msg="Compression algorithm is unsupported for builtin zip creation",
+        details={"algorithm": algorithm, "supported": ["none", "gzip", "bzip2", "xz"]},
+    )
+
+
+def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    info.uid = info.gid = 0
+    info.uname = info.gname = ""
+    return info
+
+
+def _fsync_file(path: Path) -> None:
+    with open(path, "rb") as fh:
+        os.fsync(fh.fileno())
+
+
+def _fsync_dir(path: Path) -> None:
+    try:
+        fd = os.open(path, os.O_DIRECTORY)
+    except (AttributeError, OSError):
+        return
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _archive_checksums(path: Path, algorithms: tuple[Any, ...]) -> dict[str, str]:
+    from .hasher import FallbackHasher
+
+    hasher = FallbackHasher()
+    return {str(algorithm): hasher.hash_file(path, algorithm).checksum for algorithm in algorithms}
+
+
+def get_archiver() -> FallbackArchiver:
+    from .tool_detector import get_tool_detector
+
+    detector = get_tool_detector()
+    selected = detector.get_preferred("archiver") or detector.get_preferred("compression")
+    return FallbackArchiver(selected_tool=selected)

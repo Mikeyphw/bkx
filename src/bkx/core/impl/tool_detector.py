@@ -1,185 +1,195 @@
-"""FallbackToolDetector - detects available tools using shutil.
-
-Fallback implementation that uses shutil.which() to detect tools.
-"""
+"""Bounded fallback optional-tool detection."""
 
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
+
+from bkx.core.errors import ValidationError
 
 from ..ports.tool_detector import KNOWN_TOOLS, PREFERRED_TOOLS, ToolInfo
 
+_CATEGORY_ALIASES = {"hasher": "hashing", "compressor": "compression"}
+_VERSION_RE = re.compile(r"(?P<version>\d+(?:\.\d+)+(?:[-+._~A-Za-z0-9]*)?)")
+
+
+@dataclass(frozen=True)
+class ToolProbeRecord:
+    """Cached detection plus the environment fingerprint it was derived from."""
+
+    info: ToolInfo
+    fingerprint: tuple[str, str | None]
+
 
 class FallbackToolDetector:
-    """Detects available tools using shutil.which().
+    """Detect optional command-line tools using bounded probes.
 
-    This is the fallback implementation when no specialized
-    tool detectors are available.
+    The detector intentionally considers only registry entries and executable
+    files, parses real version-like tokens from command output, and invalidates
+    its cache when ``PATH`` changes.
     """
 
-    def __init__(self, preferences: dict[str, str | None] | None = None) -> None:
-        """Initialize the detector with optional configured category preferences."""
-        self._cache: dict[str, ToolInfo] = {}
-        self._preferences = dict(preferences or {})
+    def __init__(
+        self,
+        preferences: dict[str, str | None] | None = None,
+        *,
+        environ: Mapping[str, str] | None = None,
+        timeout_seconds: float = 2.0,
+    ) -> None:
+        if timeout_seconds <= 0:
+            raise ValidationError(msg="tool probe timeout must be positive", details={"timeout_seconds": timeout_seconds})
+        self._cache: dict[str, ToolProbeRecord] = {}
+        self._preferences = {_canonical_category(k): v for k, v in dict(preferences or {}).items() if v}
+        self._environ = os.environ if environ is None else environ
+        self._timeout_seconds = timeout_seconds
+
+    @property
+    def timeout_seconds(self) -> float:
+        return self._timeout_seconds
+
+    def clear_cache(self) -> None:
+        """Explicitly invalidate all cached probe results."""
+        self._cache.clear()
 
     def detect(self, tool_name: str) -> ToolInfo:
-        """Detect if a specific tool is available.
+        """Detect one registered tool using a bounded subprocess probe."""
+        name = _normalize_tool_name(tool_name)
+        fingerprint = self._fingerprint(name)
+        cached = self._cache.get(name)
+        if cached is not None and cached.fingerprint == fingerprint:
+            return cached.info
 
-        Args:
-            tool_name: Name of tool to detect.
-
-        Returns:
-            ToolInfo with availability and version.
-        """
-        if tool_name in self._cache:
-            return self._cache[tool_name]
-
-        # Find the tool using which
-        tool_path = shutil.which(tool_name)
-
+        tool_path = _which(name, self._environ.get("PATH"))
         if tool_path is None:
-            info = ToolInfo(
-                name=tool_name,
-                path=None,
-                version=None,
-                available=False,
-                capabilities=(),
-            )
+            info = ToolInfo(name=name, path=None, version=None, available=False, capabilities=())
         else:
-            # Get version if possible
-            version = self._get_version(tool_name, Path(tool_path))
-            capabilities = self._get_capabilities(tool_name)
-
-            info = ToolInfo(
-                name=tool_name,
-                path=Path(tool_path),
-                version=version,
-                available=True,
-                capabilities=capabilities,
-            )
-
-        self._cache[tool_name] = info
+            path = Path(tool_path)
+            if not path.is_file() or not os.access(path, os.X_OK):
+                info = ToolInfo(name=name, path=None, version=None, available=False, capabilities=())
+            else:
+                info = ToolInfo(
+                    name=name,
+                    path=path,
+                    version=self._get_version(name, path),
+                    available=True,
+                    capabilities=_capabilities(name),
+                )
+        self._cache[name] = ToolProbeRecord(info=info, fingerprint=fingerprint)
         return info
 
     def detect_all(self, tool_names: tuple[str, ...]) -> dict[str, ToolInfo]:
-        """Detect multiple tools at once.
-
-        Args:
-            tool_names: Names of tools to detect.
-
-        Returns:
-            Dict mapping tool name to ToolInfo.
-        """
         return {name: self.detect(name) for name in tool_names}
 
     def list_available(self) -> tuple[str, ...]:
-        """List all available tools in the registry.
-
-        Returns:
-            Tuple of available tool names.
-        """
-        available = []
-        for name in KNOWN_TOOLS:
-            if self.detect(name).available:
-                available.append(name)
-        return tuple(available)
+        return tuple(name for name in sorted(KNOWN_TOOLS) if self.detect(name).available)
 
     def get_preferred(self, tool_category: str) -> str | None:
-        """Get preferred tool for a category.
-
-        Args:
-            tool_category: Category (e.g., "archiver", "transfer").
-
-        Returns:
-            Name of preferred tool, or None if unavailable.
-        """
-        aliases = {"hasher": "hashing", "compressor": "compression"}
-        category = aliases.get(tool_category, tool_category)
+        category = _canonical_category(tool_category)
+        if category not in PREFERRED_TOOLS:
+            raise ValidationError(msg="Unknown tool category", details={"category": tool_category})
         configured = self._preferences.get(category)
         if configured:
-            if self.detect(configured).available:
-                return configured
-            return None
-        preferred = PREFERRED_TOOLS.get(category, ())
-        for tool_name in preferred:
-            if self.detect(tool_name).available:
+            info = self.detect(configured)
+            return configured if info.available and _tool_matches_category(configured, category) else None
+        for tool_name in PREFERRED_TOOLS[category]:
+            info = self.detect(tool_name)
+            if info.available and _tool_matches_category(tool_name, category):
                 return tool_name
         return None
 
+    def _fingerprint(self, tool_name: str) -> tuple[str, str | None]:
+        return (self._environ.get("PATH", ""), _which(tool_name, self._environ.get("PATH")))
+
     def _get_version(self, tool_name: str, tool_path: Path) -> str | None:
-        """Try to get tool version.
-
-        Args:
-            tool_name: Name of tool.
-            tool_path: Path to tool binary.
-
-        Returns:
-            Version string or None.
-        """
-        import subprocess
-
-        for version_flag in ["--version", "-V", "--version"]:
+        for version_flag in ("--version", "-V", "version"):
             try:
                 result = subprocess.run(
                     [str(tool_path), version_flag],
                     capture_output=True,
                     text=True,
-                    timeout=5,
+                    timeout=self._timeout_seconds,
+                    env=dict(self._environ),
+                    check=False,
                 )
-                if result.returncode == 0:
-                    # Extract version from output
-                    output = result.stdout or result.stderr
-                    # Take first line, first word
-                    return output.strip().split("\n")[0].split()[0]
-            except (subprocess.TimeoutExpired, FileNotFoundError):
+            except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError):
                 continue
+            output = f"{result.stdout}\n{result.stderr}".strip()
+            if not output:
+                continue
+            match = _VERSION_RE.search(output)
+            if match:
+                return match.group("version")
+            first = output.splitlines()[0].strip()
+            return first or None
         return None
 
-    def _get_capabilities(self, tool_name: str) -> tuple[str, ...]:
-        """Get tool capabilities based on name patterns.
 
-        Args:
-            tool_name: Name of tool.
+def _normalize_tool_name(tool_name: str) -> str:
+    if not isinstance(tool_name, str) or not tool_name.strip():
+        raise ValidationError(msg="tool_name must be a non-empty string")
+    return tool_name.strip()
 
-        Returns:
-            Tuple of capability identifiers.
-        """
-        capabilities = []
 
-        # Compression tools
-        if tool_name in ("zstd", "pzstd"):
-            capabilities.append("zstd")
-        if tool_name in ("gzip", "pigz"):
-            capabilities.append("gzip")
-        if tool_name in ("bzip2", "pbzip2"):
-            capabilities.append("bzip2")
-        if tool_name in ("xz", "pxz"):
-            capabilities.append("xz")
+def _which(tool_name: str, path: str | None) -> str | None:
+    try:
+        return shutil.which(tool_name, path=path)
+    except TypeError:
+        # Some tests monkeypatch shutil.which with the legacy one-argument shape.
+        return shutil.which(tool_name)
 
-        # Archive tools
-        if tool_name == "tar":
-            capabilities.append("tar")
-        if tool_name in ("7z", "7za"):
-            capabilities.append("7z")
-        if tool_name == "zip":
-            capabilities.append("zip")
 
-        # Transfer tools
-        if tool_name == "rsync":
-            capabilities.append("rsync")
-        if tool_name == "rclone":
-            capabilities.append("rclone")
-        if tool_name == "scp":
-            capabilities.append("scp")
+def _canonical_category(category: str) -> str:
+    return _CATEGORY_ALIASES.get(category, category)
 
-        # Hash tools
-        if tool_name.startswith("sha"):
-            capabilities.append("sha256" if "256" in tool_name else "sha512")
-        if tool_name.startswith("xxh"):
+
+def _capabilities(tool_name: str) -> tuple[str, ...]:
+    capabilities: list[str] = []
+    if tool_name in ("zstd",):
+        capabilities.extend(("compression", "zstd"))
+    if tool_name in ("gzip", "pigz"):
+        capabilities.extend(("compression", "gzip"))
+    if tool_name in ("bzip2", "pbzip2"):
+        capabilities.extend(("compression", "bzip2"))
+    if tool_name in ("xz",):
+        capabilities.extend(("compression", "xz"))
+    if tool_name in ("tar",):
+        capabilities.extend(("archiver", "tar"))
+    if tool_name in ("7z", "7za"):
+        capabilities.extend(("archiver", "7z"))
+    if tool_name == "zip":
+        capabilities.extend(("archiver", "zip"))
+    if tool_name in ("rsync", "rclone", "scp", "cp"):
+        capabilities.extend(("transfer", tool_name))
+    if tool_name.startswith("sha") or tool_name.startswith("md5") or tool_name.startswith("xxh"):
+        capabilities.append("hashing")
+        if "256" in tool_name:
+            capabilities.append("sha256")
+        elif "512" in tool_name:
+            capabilities.append("sha512")
+        elif tool_name.startswith("md5"):
+            capabilities.append("md5")
+        else:
             capabilities.append(tool_name)
+    if tool_name == "python":
+        capabilities.append("runtime")
+    return tuple(dict.fromkeys(capabilities))
 
-        return tuple(capabilities)
+
+def _tool_matches_category(tool_name: str, category: str) -> bool:
+    if tool_name not in KNOWN_TOOLS:
+        # A user-configured executable is accepted for its configured category;
+        # the service/factory still falls back when it cannot adapt it.
+        return True
+    known_category = KNOWN_TOOLS[tool_name][0]
+    if category == known_category:
+        return True
+    capabilities = _capabilities(tool_name)
+    return category in capabilities or (category == "archiver" and "archiver" in capabilities)
 
 
 def get_tool_detector() -> FallbackToolDetector:

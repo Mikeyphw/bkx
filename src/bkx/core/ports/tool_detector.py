@@ -82,9 +82,11 @@ KNOWN_TOOLS = {
     "python": ("runtime", "Python interpreter"),
     # Archivers
     "zstd": ("compression", "fast compression with zstd"),
+    "gzip": ("compression", "gzip compression"),
     "pigz": ("compression", "parallel gzip"),
     "pbzip2": ("compression", "parallel bzip2"),
     "xz": ("compression", "xz compression"),
+    "bzip2": ("compression", "bzip2 compression"),
     "7z": ("compression", "7-Zip compression"),
     "zip": ("compression", "zip compression"),
     "tar": ("archiving", "tar archiving"),
@@ -92,6 +94,7 @@ KNOWN_TOOLS = {
     "rsync": ("transfer", "efficient file transfer"),
     "rclone": ("cloud", "cloud storage sync"),
     "scp": ("transfer", "SSH file transfer"),
+    "cp": ("transfer", "local file copy"),
     # Hashing
     "xxh128": ("hashing", "xxh128 hash"),
     "xxh64": ("hashing", "xxh64 hash"),

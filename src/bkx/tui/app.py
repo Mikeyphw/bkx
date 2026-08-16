@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import inspect
-from pathlib import Path
 from typing import Any
 
 from mikomn.tui import TuiApp, ui
 from mikomn.tui.app.context import AppContext
 from mikomn.tui.app.services import Notification
 
-from bkx.cli.spec_builders import (
-    build_archive_spec,
-    build_backup_spec,
-    build_restore_spec,
-    build_transfer_spec,
-)
-from bkx.core.errors import BkxError
+from bkx.cli.interface_dispatch import build_spec_from_interface_values
 from bkx.core.services import (
     get_archive_service,
     get_backup_service,
@@ -94,30 +87,6 @@ async def _notify(ctx: AppContext, level: str, message: str, **meta: Any) -> Not
     if callable(notifier):
         return await notifier(message, source="bkx", **meta)
     return await ctx.notify.info(message, source="bkx", **meta)
-
-
-def _coerce_paths(value: Any, default: tuple[Path, ...] = ()) -> list[Path]:
-    if value in (None, "", (), []):
-        return list(default)
-    if isinstance(value, (str, Path)):
-        parts = str(value).split()
-    else:
-        parts = [str(item) for item in value]
-    return [Path(part).expanduser() for part in parts if part]
-
-
-def _coerce_path(value: Any, default: Path | None = None) -> Path | None:
-    if value in (None, ""):
-        return default
-    return Path(str(value)).expanduser()
-
-
-def _coerce_words(value: Any) -> list[str]:
-    if value in (None, "", (), []):
-        return []
-    if isinstance(value, str):
-        return [part for part in value.split() if part]
-    return [str(item) for item in value]
 
 
 async def _run_service_action(ctx: AppContext, title: str, func) -> None:
@@ -323,15 +292,7 @@ async def _backup_action(ctx: AppContext) -> None:
     values = _form_values(ctx, "backup")
 
     def run():
-        spec = build_backup_spec(
-            sources=_coerce_paths(values.get("sources"), (Path("."),)),
-            destination=_coerce_path(values.get("destination")),
-            archive_name=values.get("archive_name") or None,
-            excludes=_coerce_words(values.get("excludes")),
-            algorithm=str(values.get("algorithm") or "zstd"),
-            level=int(values.get("level") or 3),
-            verify=bool(values.get("verify", True)),
-        )
+        spec = build_spec_from_interface_values("backup.create", values)
         return get_backup_service().create(spec)
 
     await _run_service_action(ctx, "Backup", run)
@@ -341,16 +302,7 @@ async def _archive_action(ctx: AppContext) -> None:
     values = _form_values(ctx, "archive")
 
     def run():
-        output = _coerce_path(values.get("output"))
-        if output is None:
-            raise BkxError("Archive output is required")
-        spec = build_archive_spec(
-            sources=_coerce_paths(values.get("sources"), (Path("."),)),
-            output=output,
-            excludes=_coerce_words(values.get("excludes")),
-            algorithm=str(values.get("algorithm") or "zstd"),
-            verify=bool(values.get("verify", True)),
-        )
+        spec = build_spec_from_interface_values("archive.create", values)
         return get_archive_service().create(spec)
 
     await _run_service_action(ctx, "Archive", run)
@@ -360,15 +312,7 @@ async def _restore_action(ctx: AppContext) -> None:
     values = _form_values(ctx, "restore")
 
     def run():
-        archive = _coerce_path(values.get("archive"))
-        if archive is None:
-            raise BkxError("Archive path is required")
-        spec = build_restore_spec(
-            archive=archive,
-            destination=_coerce_path(values.get("destination")),
-            overwrite=bool(values.get("overwrite", False)),
-            fresh_dir=bool(values.get("fresh_dir", False)),
-        )
+        spec = build_spec_from_interface_values("restore.extract", values)
         return get_restore_service().extract(spec)
 
     await _run_service_action(ctx, "Restore", run)
@@ -378,21 +322,11 @@ async def _transfer_action(ctx: AppContext) -> None:
     values = _form_values(ctx, "transfer")
 
     def run():
-        source = _coerce_transfer_location(values.get("source"))
-        destination = _coerce_transfer_location(values.get("destination"))
-        if source is None or destination is None:
-            raise BkxError("Source and destination are required")
-        spec = build_transfer_spec(
-            source=source,
-            destination=destination,
-            direction=str(values.get("direction") or "push"),
-            overwrite=bool(values.get("overwrite", False)),
-        )
+        spec = build_spec_from_interface_values("transfer.run", values)
         service = get_transfer_service()
-        transfer = getattr(service, "transfer", None) or getattr(service, "run", None)
-        if callable(transfer):
-            return transfer(spec)
-        raise BkxError("Transfer service does not expose a transfer method")
+        if spec.direction == "pull":
+            return service.pull(spec)
+        return service.push(spec)
 
     await _run_service_action(ctx, "Transfer", run)
 

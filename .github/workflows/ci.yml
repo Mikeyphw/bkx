@@ -7,21 +7,66 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Install
+          python-version: ${{ matrix.python-version }}
+      - name: Install base and test tooling
         run: |
           python -m pip install -U pip
-          pip install -e .
-          pip install ruff pyright pytest
+          python -m pip install -e '.[dev]'
+      - name: Install required optional UI validator dependencies
+        shell: bash
+        run: |
+          if [[ -z "${MIKOMN_ROOT:-}" || ! -d "${MIKOMN_ROOT}" ]]; then
+            echo "::error::MIKOMN_ROOT must point to a local mikomn checkout for the BKX release seal. Optional Interactive/TUI tests must not disappear silently."
+            exit 1
+          fi
+          python -m pip install -r scripts/validator-local-deps.txt
+          python -m pip install -e '.[interactive,tui]'
       - name: Lint
         run: |
           ruff check .
           ruff format --check .
       - name: Typecheck
         run: pyright
-      - name: Tests
-        run: pytest
+      - name: Base tests
+        run: pytest -q tests --ignore=tests/tui --ignore=tests/interactive
+      - name: Optional UI tests
+        run: pytest -q tests/interactive tests/tui tests/ov11
+      - name: Wheel smoke
+        shell: bash
+        run: |
+          python -m build --wheel
+          WHEEL="$(ls dist/*.whl | head -n 1)"
+          python -m venv /tmp/bkx-wheel-base-smoke
+          /tmp/bkx-wheel-base-smoke/bin/python -m pip install -U pip
+          /tmp/bkx-wheel-base-smoke/bin/python -m pip install "$WHEEL"
+          /tmp/bkx-wheel-base-smoke/bin/python -m bkx --help
+          /tmp/bkx-wheel-base-smoke/bin/bkx --help
+          /tmp/bkx-wheel-base-smoke/bin/python - <<'PY'
+          from importlib.resources import files
+          schema = files('bkx.core.schemas').joinpath('backup_spec.json')
+          css_root = files('bkx.tui').joinpath('css')
+          css_files = [p for p in css_root.rglob('*.tcss') if p.is_file()]
+          assert schema.is_file(), schema
+          assert len(css_files) >= 21, len(css_files)
+          print('base-package-assets-ok')
+          PY
+          python -m venv /tmp/bkx-wheel-extras-smoke
+          /tmp/bkx-wheel-extras-smoke/bin/python -m pip install -U pip
+          /tmp/bkx-wheel-extras-smoke/bin/python -m pip install -r scripts/validator-local-deps.txt
+          /tmp/bkx-wheel-extras-smoke/bin/python -m pip install "$WHEEL[interactive,tui]"
+          /tmp/bkx-wheel-extras-smoke/bin/python - <<'PY'
+          import bkx.interactive.main
+          import bkx.tui.app
+          from importlib.resources import files
+          css_files = [p for p in files('bkx.tui').joinpath('css').rglob('*.tcss') if p.is_file()]
+          assert len(css_files) >= 21, len(css_files)
+          print('extras-import-and-assets-ok')
+          PY

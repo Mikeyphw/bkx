@@ -30,12 +30,7 @@ from rich.prompt import Prompt
 
 from bkx.cli.exit_codes import EXIT_OK, error_to_exit_code
 from bkx.cli.render import get_renderer
-from bkx.cli.spec_builders import (
-    build_archive_spec,
-    build_backup_spec,
-    build_restore_spec,
-    build_transfer_spec,
-)
+from bkx.cli.interface_dispatch import build_spec_from_interface_values
 from bkx.core.config import get_config
 from bkx.core.errors import BkxError
 
@@ -208,14 +203,17 @@ def run_backup_interactive() -> int:
 
     # Build spec and execute
     try:
-        spec = build_backup_spec(
-            sources=sources,
-            destination=destination,
-            archive_name=archive_name,
-            excludes=excludes,
-            algorithm=algorithm if algorithm != "none" else "zstd",
-            level=level,
-            verify=verify,
+        spec = build_spec_from_interface_values(
+            "backup.create",
+            {
+                "sources": sources,
+                "destination": destination,
+                "archive_name": archive_name,
+                "excludes": excludes,
+                "algorithm": algorithm,
+                "level": level,
+                "verify": verify,
+            },
         )
 
         from bkx.core.services import get_backup_service
@@ -301,12 +299,15 @@ def run_archive_interactive() -> int:
         return EXIT_OK
 
     try:
-        spec = build_archive_spec(
-            sources=sources,
-            output=output,
-            excludes=excludes,
-            algorithm=algorithm if algorithm != "none" else "zstd",
-            verify=verify,
+        spec = build_spec_from_interface_values(
+            "archive.create",
+            {
+                "sources": sources,
+                "output": output,
+                "excludes": excludes,
+                "algorithm": algorithm,
+                "verify": verify,
+            },
         )
 
         from bkx.core.services import get_archive_service
@@ -383,13 +384,16 @@ def run_restore_interactive() -> int:
         return EXIT_OK
 
     try:
-        spec = build_restore_spec(
-            archive=archive,
-            destination=destination,
-            fresh_dir=fresh_dir,
-            confirm_overwrite=not overwrite,  # If overwrite=True, skip confirmation
-            overwrite=overwrite,
-            verify=verify,
+        spec = build_spec_from_interface_values(
+            "restore.extract",
+            {
+                "archive": archive,
+                "destination": destination,
+                "fresh_dir": fresh_dir,
+                "confirm_overwrite": not overwrite,
+                "overwrite": overwrite,
+                "verify": verify,
+            },
         )
 
         from bkx.core.services import get_restore_service
@@ -457,11 +461,14 @@ def run_transfer_interactive() -> int:
         return EXIT_OK
 
     try:
-        spec = build_transfer_spec(
-            source=source,
-            destination=destination,
-            direction=direction,
-            verify=verify,
+        spec = build_spec_from_interface_values(
+            "transfer.run",
+            {
+                "source": source,
+                "destination": destination,
+                "direction": direction,
+                "verify": verify,
+            },
         )
 
         from bkx.core.services import get_transfer_service

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import tarfile
+
+import pytest
 from pathlib import Path
 
 from typer.testing import CliRunner

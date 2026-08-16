@@ -1,20 +1,19 @@
 # Checklist: CLI
 
 ## Grammar
-- [ ] All commands follow `<tool> <noun> <verb>`
-- [ ] No overloaded commands / implicit verbs
+- [x] All commands follow `<tool> <noun> <verb>`
+- [x] No overloaded commands / implicit verbs
 
 ## Responsibilities
-- [ ] CLI only parses inputs → builds Specs
-- [ ] CLI calls services only
-- [ ] CLI maps typed errors → stable exit codes
+- [x] CLI only parses inputs → builds Specs
+- [x] CLI calls services only
+- [x] CLI maps typed errors → stable exit codes
 
 ## Output discipline
-- [ ] User output is stdout
-- [ ] Logs are stderr
-- [ ] JSON mode outputs pure data
+- [x] User output is stdout
+- [x] Logs are stderr
+- [x] JSON mode outputs pure data
 
 ## Tests
-- [ ] Args → Spec builder tests
-- [ ] Exit code mapping tests
-
+- [x] Args → Spec builder tests
+- [x] Exit code mapping tests

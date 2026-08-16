@@ -26,6 +26,11 @@ tui = [
     "mikomn[tui]",
 ]
 dev = [
+    "build",
+    "hypothesis>=6",
+    "pytest>=8",
+    "pytest-cov>=4",
+    "jsonschema>=4.23",
     "ruff",
     "pyright",
 ]
@@ -41,6 +46,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "bkx.core.schemas" = ["*.json"]
+"bkx.tui" = ["css/**/*.tcss", "css/*.tcss"]
 "bkx.tui.css" = ["*.tcss", "**/*.tcss"]
 
 [tool.ruff]

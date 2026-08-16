@@ -175,6 +175,7 @@ class TestRestorePick:
                 archive=archive_path,
                 destination=dest_dir,
                 paths=("source/file1.txt", "source/file2.txt"),
+                confirm_overwrite=False,
             )
 
             result = service.pick(spec)
@@ -220,18 +221,27 @@ class TestRestorePick:
             with tarfile.open(archive_path, "w") as tar:
                 tar.add(source_dir / "file1.txt", arcname="file1.txt")
 
-            dest_dir = Path(tmpdir) / "dest"
-            dest_dir.mkdir()
+            extract_dest = Path(tmpdir) / "extract_dest"
+            extract_dest.mkdir()
+            pick_dest = Path(tmpdir) / "pick_dest"
+            pick_dest.mkdir()
 
             # Extract with paths (same as pick)
-            spec = RestoreSpec(
+            extract_spec = RestoreSpec(
                 archive=archive_path,
-                destination=dest_dir,
+                destination=extract_dest,
                 paths=("file1.txt",),
+                confirm_overwrite=False,
+            )
+            pick_spec = RestoreSpec(
+                archive=archive_path,
+                destination=pick_dest,
+                paths=("file1.txt",),
+                confirm_overwrite=False,
             )
 
-            extract_result = service.extract(spec)
-            pick_result = service.pick(spec)
+            extract_result = service.extract(extract_spec)
+            pick_result = service.pick(pick_spec)
 
             # Results should be equivalent
             assert extract_result.success == pick_result.success

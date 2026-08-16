@@ -34,6 +34,16 @@ def canonical_local_path(path: Path) -> Path:
         raise ValidationError(msg=f"Cannot normalize path: {path}", details={"path": str(path), "reason": str(exc)}) from exc
 
 
+
+def absolute_local_path(path: Path) -> Path:
+    """Return an absolute local path without resolving symlinks."""
+    require_path(path, field_name="path")
+    try:
+        expanded = path.expanduser()
+        return expanded if expanded.is_absolute() else Path.cwd() / expanded
+    except (OSError, RuntimeError) as exc:
+        raise ValidationError(msg=f"Cannot normalize path: {path}", details={"path": str(path), "reason": str(exc)}) from exc
+
 def normalize_patterns(patterns: tuple[str, ...], *, field_name: str) -> tuple[str, ...]:
     require_tuple(patterns, field_name=field_name)
     normalized: list[str] = []
@@ -135,7 +145,7 @@ TransferLocation = Path | str
 
 def normalize_transfer_location(value: TransferLocation, *, field_name: str) -> TransferLocation:
     if isinstance(value, Path):
-        return canonical_local_path(value)
+        return absolute_local_path(value)
     if not isinstance(value, str):
         raise ValidationError(msg=f"{field_name} must be a Path or URI string", details={"field": field_name, "type": type(value).__name__})
     raw = value.strip()
@@ -146,7 +156,7 @@ def normalize_transfer_location(value: TransferLocation, *, field_name: str) -> 
         if not parsed.scheme:
             raise ValidationError(msg=f"{field_name} has an invalid URI", details={"field": field_name, "value": value})
         return raw
-    return canonical_local_path(Path(raw))
+    return absolute_local_path(Path(raw))
 
 
 def location_to_string(value: TransferLocation) -> str:

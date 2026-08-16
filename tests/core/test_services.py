@@ -190,8 +190,12 @@ class FakeTransfer:
     ) -> TransferResult:
         return TransferResult(
             success=True,
-            dry_run=False,
+            dry_run=spec.dry_run,
             direction="push",
+            source=spec.effective_source,
+            destination=spec.effective_destination,
+            files_transferred=1 if spec.dry_run else 0,
+            bytes_transferred=7 if spec.dry_run else 0,
             timing=Timing(start_ms=0, end_ms=0),
         )
 
@@ -203,8 +207,12 @@ class FakeTransfer:
     ) -> TransferResult:
         return TransferResult(
             success=True,
-            dry_run=False,
+            dry_run=spec.dry_run,
             direction="pull",
+            source=spec.effective_source,
+            destination=spec.effective_destination,
+            files_transferred=1 if spec.dry_run else 0,
+            bytes_transferred=7 if spec.dry_run else 0,
             timing=Timing(start_ms=0, end_ms=0),
         )
 
@@ -404,7 +412,7 @@ class TestRestoreService:
 
             assert result.success is True
             assert result.archive_path == archive_path
-            assert result.total_files == 2
+            assert result.total_files == 1
             assert result.total_size == 100
             assert result.files[0].archive_path == "file1.txt"
             assert result.files[0].disk_path == destination / "file1.txt"

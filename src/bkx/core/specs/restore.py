@@ -8,7 +8,7 @@ from pathlib import Path
 
 from bkx.core.errors import NotFoundError, ValidationError
 
-from .common import canonical_local_path, normalize_archive_member
+from .common import absolute_local_path, canonical_local_path, normalize_archive_member
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -49,15 +49,15 @@ class RestoreSpec:
         if not archive.exists():
             raise NotFoundError(msg=f"Archive not found: {archive}", details={"archive": str(archive)})
 
-        explicit = canonical_local_path(self.destination) if self.destination is not None else None
-        fallback = canonical_local_path(default_destination) if default_destination is not None else None
+        explicit = absolute_local_path(self.destination) if self.destination is not None else None
+        fallback = absolute_local_path(default_destination) if default_destination is not None else None
         semantic_destination = explicit or fallback
 
         # Preserve the existing fresh-directory behavior for OV-02: RM-028 owns
         # the safety-model redesign. Keep timestamp output in derived state only,
         # so semantic equality/hash remain deterministic.
         if self.fresh_dir and explicit is None and fallback is None:
-            resolved = canonical_local_path(Path(f"restored_{archive.stem}_{int(time.time())}"))
+            resolved = absolute_local_path(Path(f"restored_{archive.stem}_{int(time.time())}"))
         else:
             resolved = semantic_destination
 

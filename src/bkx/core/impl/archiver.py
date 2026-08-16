@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import shutil
 import tarfile
 import tempfile
 import time
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from bkx.core.errors import NotFoundError, ValidationError, expected_error_boundary
+from bkx.core.specs.common import absolute_local_path, contained_path
 
 from ..results.archive import ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveVerifyResult
 from ..results.backup import Timing
@@ -291,29 +293,213 @@ class FallbackArchiver:
         )
 
     def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
-        # OV-05 owns safe extraction. Keep existing functional behavior behind
-        # the service boundary until that overlay replaces it.
-        import zipfile as _zipfile
+        """Extract an archive through BKX's safe restore policy.
 
+        Never delegates path creation to ``tarfile.extract`` or
+        ``ZipFile.extract``. Every member is normalized, joined under the
+        restore root, rejected when it is a link/symlink/special entry, and
+        written into a staging tree before publication.
+        """
+
+        spec = spec.normalize() if spec.effective_destination is None else spec
         archive_path = spec.archive
-        destination = spec.destination or Path.cwd()
-        extracted_paths = []
-        if str(archive_path).endswith(".zip"):
-            with _zipfile.ZipFile(archive_path, "r") as zf:
+        destination = absolute_local_path(spec.effective_destination or Path.cwd())
+        _ensure_no_symlink_destination_root(destination)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        archive_format = _detect_format_for_read(archive_path)
+        members = self._safe_members(archive_path, archive_format, spec.paths)
+        _ensure_all_requested_paths_matched(spec.paths, [member.name for member in members])
+
+        stage_path: Path | None = None
+        try:
+            stage_path = Path(tempfile.mkdtemp(prefix=f".{destination.name}.bkx-restore.", dir=str(destination.parent)))
+            restored_rel_paths: list[str] = []
+            if archive_format == "zip":
+                self._extract_zip_members(archive_path, stage_path, members, restored_rel_paths)
+            else:
+                self._extract_tar_members(archive_path, stage_path, members, restored_rel_paths)
+            final_paths = _publish_staged_restore(stage_path, destination, restored_rel_paths, overwrite=spec.overwrite)
+            stage_path = None
+            return tuple(final_paths)
+        finally:
+            if stage_path is not None:
+                shutil.rmtree(stage_path, ignore_errors=True)
+
+    def _safe_members(self, archive_path: Path, archive_format: ArchiveFormat, selectors: tuple[str, ...]) -> list[SafeArchiveMember]:
+        selected: list[SafeArchiveMember] = []
+        if archive_format == "zip":
+            with zipfile.ZipFile(archive_path, "r") as zf:
                 for info in zf.infolist():
-                    if spec.paths and not any(p in info.filename for p in spec.paths):
-                        continue
-                    zf.extract(info.filename, destination)
-                    extracted_paths.append(destination / info.filename)
-        else:
-            with tarfile.open(archive_path, "r:*") as tar:
-                members = tar.getmembers()
-                if spec.paths:
-                    members = [m for m in members if any(p in m.name for p in spec.paths)]
-                for member in members:
-                    tar.extract(member, destination)
-                    extracted_paths.append(destination / member.name)
-        return tuple(extracted_paths)
+                    member = _safe_zip_member(info)
+                    if member is not None and _member_selected(member.name, selectors):
+                        selected.append(member)
+            return selected
+        with tarfile.open(archive_path, "r:*") as tar:
+            for member in tar.getmembers():
+                safe = _safe_tar_member(member)
+                if safe is not None and _member_selected(safe.name, selectors):
+                    selected.append(safe)
+        return selected
+
+    def _extract_zip_members(self, archive_path: Path, root: Path, members: list[SafeArchiveMember], restored_rel_paths: list[str]) -> None:
+        with zipfile.ZipFile(archive_path, "r") as zf:
+            by_name = {info.filename: info for info in zf.infolist()}
+            for member in members:
+                target = contained_path(root, member.name)
+                _ensure_no_existing_symlink_path(root, target)
+                if member.is_dir:
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(by_name[member.raw_name], "r") as src, open(target, "xb") as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+                restored_rel_paths.append(member.name)
+
+    def _extract_tar_members(self, archive_path: Path, root: Path, members: list[SafeArchiveMember], restored_rel_paths: list[str]) -> None:
+        wanted = {member.raw_name: member for member in members}
+        with tarfile.open(archive_path, "r:*") as tar:
+            for tar_member in tar.getmembers():
+                member = wanted.get(tar_member.name)
+                if member is None:
+                    continue
+                target = contained_path(root, member.name)
+                _ensure_no_existing_symlink_path(root, target)
+                if member.is_dir:
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                stream = tar.extractfile(tar_member)
+                if stream is None:
+                    raise ValidationError(msg="Archive file member has no readable payload", details={"member": tar_member.name})
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with open(target, "xb") as dst:
+                    shutil.copyfileobj(stream, dst, length=1024 * 1024)
+                restored_rel_paths.append(member.name)
+
+
+@dataclass(frozen=True, kw_only=True)
+class SafeArchiveMember:
+    raw_name: str
+    name: str
+    is_dir: bool
+    size: int
+
+
+def _safe_zip_member(info: zipfile.ZipInfo) -> SafeArchiveMember | None:
+    name = normalize_archive_member(info.filename)
+    mode = (info.external_attr >> 16) & 0o170000
+    # ZIP has no single authoritative link bit across platforms. Reject Unix
+    # symlink encodings and extract only regular files/directories.
+    if mode == 0o120000:
+        raise ValidationError(msg="Archive symlink members are unsafe for restore", details={"member": info.filename})
+    if info.is_dir():
+        return SafeArchiveMember(raw_name=info.filename, name=name.rstrip("/") + "/", is_dir=True, size=0)
+    if mode not in {0, 0o100000}:
+        raise ValidationError(msg="Unsupported ZIP member type", details={"member": info.filename, "mode": oct(mode)})
+    return SafeArchiveMember(raw_name=info.filename, name=name, is_dir=False, size=info.file_size)
+
+
+def _safe_tar_member(member: tarfile.TarInfo) -> SafeArchiveMember | None:
+    name = normalize_archive_member(member.name)
+    if member.isdir():
+        return SafeArchiveMember(raw_name=member.name, name=name.rstrip("/") + "/", is_dir=True, size=0)
+    if member.isfile():
+        return SafeArchiveMember(raw_name=member.name, name=name, is_dir=False, size=member.size)
+    if member.issym() or member.islnk():
+        raise ValidationError(msg="Archive link members are unsafe for restore", details={"member": member.name})
+    raise ValidationError(msg="Unsupported TAR member type", details={"member": member.name, "type": member.type.decode(errors="replace") if isinstance(member.type, bytes) else str(member.type)})
+
+
+def _member_selected(member: str, selectors: tuple[str, ...]) -> bool:
+    if not selectors:
+        return True
+    normalized_member = member.rstrip("/")
+    for selector in selectors:
+        requested = normalize_archive_member(selector).rstrip("/")
+        if normalized_member == requested or normalized_member.startswith(f"{requested}/"):
+            return True
+    return False
+
+
+def _ensure_all_requested_paths_matched(selectors: tuple[str, ...], member_names: list[str]) -> None:
+    missing: list[str] = []
+    for selector in selectors:
+        requested = normalize_archive_member(selector).rstrip("/")
+        if not any(name.rstrip("/") == requested or name.rstrip("/").startswith(f"{requested}/") for name in member_names):
+            missing.append(requested)
+    if missing:
+        raise NotFoundError(msg="Requested restore paths were not found in archive", details={"missing_paths": missing})
+
+
+def _ensure_no_existing_symlink_path(root: Path, target: Path) -> None:
+    root = absolute_local_path(root)
+    target = absolute_local_path(target)
+    try:
+        relative = target.relative_to(root)
+    except ValueError as exc:
+        raise ValidationError(msg="Restore target escaped staging root", details={"root": str(root), "target": str(target)}) from exc
+    current = root
+    if current.is_symlink():
+        raise ValidationError(msg="Restore refuses to write through an existing symlink", details={"path": str(current)})
+    for part in relative.parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValidationError(msg="Restore refuses to write through an existing symlink", details={"path": str(current)})
+
+
+def _ensure_no_symlink_destination_root(destination: Path) -> None:
+    destination = absolute_local_path(destination)
+    current = Path(destination.anchor) if destination.is_absolute() else Path.cwd()
+    parts = destination.parts[1:] if destination.is_absolute() else destination.parts
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            raise ValidationError(msg="Restore refuses to write through a destination symlink", details={"path": str(current)})
+
+
+def _publish_staged_restore(stage: Path, destination: Path, restored_rel_paths: list[str], *, overwrite: bool) -> list[Path]:
+    destination = absolute_local_path(destination)
+    _ensure_no_symlink_destination_root(destination)
+    final_paths: list[Path] = []
+    if not destination.exists():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(stage, destination)
+        for rel in restored_rel_paths:
+            final_paths.append(contained_path(destination, rel))
+        _fsync_dir(destination.parent)
+        return final_paths
+
+    if destination.is_symlink() or not destination.is_dir():
+        raise ValidationError(msg="Restore destination must be a real directory when it already exists", details={"destination": str(destination)})
+
+    # Merge staged files into the existing tree. Each file is published through a
+    # temporary sibling and os.replace when overwrite is allowed, so failed copies
+    # do not leave partial final file contents.
+    for source in sorted((p for p in stage.rglob("*") if p.is_dir()), key=lambda p: len(p.parts)):
+        rel = source.relative_to(stage).as_posix()
+        target_dir = contained_path(destination, rel)
+        _ensure_no_existing_symlink_path(destination, target_dir)
+        target_dir.mkdir(parents=True, exist_ok=True)
+    for source in sorted((p for p in stage.rglob("*") if p.is_file()), key=lambda p: p.relative_to(stage).as_posix()):
+        rel = source.relative_to(stage).as_posix()
+        target = contained_path(destination, rel)
+        _ensure_no_existing_symlink_path(destination, target)
+        if target.exists() and not overwrite:
+            raise ValidationError(msg="Restore target already exists and overwrite is disabled", details={"path": str(target)})
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
+        os.close(fd)
+        tmp = Path(tmp_name)
+        try:
+            shutil.copy2(source, tmp)
+            _fsync_file(tmp)
+            if target.exists() and not overwrite:
+                raise ValidationError(msg="Restore target already exists and overwrite is disabled", details={"path": str(target)})
+            os.replace(tmp, target)
+            final_paths.append(target)
+        finally:
+            tmp.unlink(missing_ok=True)
+    _fsync_dir(destination)
+    return final_paths
 
 
 @dataclass(frozen=True)

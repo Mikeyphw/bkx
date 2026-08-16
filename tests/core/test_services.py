@@ -126,13 +126,18 @@ class FakeArchiver:
                 timing=Timing(start_ms=0, end_ms=0),
                 warnings=("Dry run",),
             )
+        archive_path = spec.output_path or Path("/fake/archive.tar")
+        if not archive_path.exists():
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            archive_path.write_bytes(b"fake archive")
         return ArchiveCreateResult(
             success=True,
             dry_run=False,
             timing=Timing(start_ms=0, end_ms=0),
             files_archived=5,
-            bytes_written=1024,
-            archive_path=spec.output_path or Path("/fake/archive.tar"),
+            bytes_written=archive_path.stat().st_size,
+            archive_path=archive_path,
+            verification_passed=True if spec.verify else None,
         )
 
     def extract(
@@ -196,6 +201,8 @@ class FakeTransfer:
             destination=spec.effective_destination,
             files_transferred=1 if spec.dry_run else 0,
             bytes_transferred=7 if spec.dry_run else 0,
+            verification_passed=True if spec.verify else None,
+            checksum_verified=True if spec.verify or spec.checksum else None,
             timing=Timing(start_ms=0, end_ms=0),
         )
 
@@ -213,6 +220,8 @@ class FakeTransfer:
             destination=spec.effective_destination,
             files_transferred=1 if spec.dry_run else 0,
             bytes_transferred=7 if spec.dry_run else 0,
+            verification_passed=True if spec.verify else None,
+            checksum_verified=True if spec.verify or spec.checksum else None,
             timing=Timing(start_ms=0, end_ms=0),
         )
 

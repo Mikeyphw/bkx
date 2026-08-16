@@ -144,7 +144,7 @@ def build_transfer_spec(
         Normalized TransferSpec ready for service
     """
     config = get_config()
-    _verify = verify if verify is not None else config.verify_after_operation
+    _verify = config.resolve("verify_after_operation", cli_value=verify).value if verify is not None else config.verify_after_operation
     spec = TransferSpec(
         sources=(source,),
         destination=destination,
@@ -190,8 +190,12 @@ def build_restore_spec(
     """
     # Get defaults from config
     config = get_config()
+    if excludes:
+        from bkx.core.errors import ValidationError
+
+        raise ValidationError(msg="Restore exclude patterns are not supported by the restore Spec yet", details={"excludes": list(excludes)})
     _fresh_dir = fresh_dir if fresh_dir is not None else config.fresh_restore_dir
-    _verify = verify if verify is not None else config.verify_after_operation
+    _verify = config.resolve("verify_after_operation", cli_value=verify).value if verify is not None else config.verify_after_operation
 
     # Keep the safety default local to RestoreSpec. This is not a public config
     # knob because the current restore engine does not consume it independently.

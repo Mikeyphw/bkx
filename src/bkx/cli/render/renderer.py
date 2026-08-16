@@ -1,13 +1,8 @@
-"""Rendering layer (stdout only).
+"""Shared CLI rendering layer.
 
-Contract rule:
-- No print() scattered.
-- All user output goes through renderer.
-- Logs -> stderr.
-
-Theme integration:
-- Uses mikomn's unified theme system for consistent styling
-- Rich markup styles applied based on active theme
+All commands route through this module.  JSON mode emits exactly one JSON
+object per command.  Text mode emits plain text only; no Rich markup tokens are
+printed literally by the base CLI.
 """
 
 from __future__ import annotations
@@ -15,302 +10,195 @@ from __future__ import annotations
 import json
 import sys
 from abc import ABC, abstractmethod
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
+from pathlib import Path
 from typing import Any
 
-from bkx.core.results import (
-    ArchiveCreateResult,
-    BackupResult,
-    RestoreResult,
-    TransferResult,
-)
-from bkx.ui.theme import (
-    error_color,
-    error_style,
-    info_style,
-    primary_color,
-    success_color,
-    success_style,
-    warning_style,
-)
+from bkx.core.ports.tool_detector import ToolInfo
+from bkx.core.results import ArchiveCreateResult, BackupResult, RestoreResult, TransferResult
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert BKX domain objects into JSON-safe builtin values."""
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, ToolInfo):
+        return {
+            "name": value.name,
+            "path": str(value.path) if value.path is not None else None,
+            "version": value.version,
+            "available": value.available,
+            "capabilities": list(value.capabilities),
+        }
+    if is_dataclass(value) and not isinstance(value, type):
+        return _json_safe(asdict(value))
+    if isinstance(value, dict):
+        return {str(_json_safe(k)): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _result_type(result: Any) -> str:
+    name = type(result).__name__
+    for suffix in ("Result",):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    out: list[str] = []
+    for i, char in enumerate(name):
+        if i and char.isupper():
+            out.append("_")
+        out.append(char.lower())
+    return "".join(out)
+
+
+def _result_payload(result: Any, *, kind: str | None = None) -> dict[str, Any]:
+    payload = _json_safe(result)
+    if not isinstance(payload, dict):
+        payload = {"value": payload}
+    payload.setdefault("type", kind or _result_type(result))
+    return payload
 
 
 class Renderer(ABC):
     """Base renderer interface."""
 
     @abstractmethod
-    def render_backup_result(self, result: BackupResult) -> None:
-        """Render a backup result."""
-        ...
+    def render_backup_result(self, result: BackupResult) -> None: ...
 
     @abstractmethod
-    def render_archive_result(self, result: ArchiveCreateResult) -> None:
-        """Render an archive creation result."""
-        ...
+    def render_archive_result(self, result: ArchiveCreateResult) -> None: ...
 
     @abstractmethod
-    def render_transfer_result(self, result: TransferResult) -> None:
-        """Render a transfer result."""
-        ...
+    def render_transfer_result(self, result: TransferResult) -> None: ...
 
     @abstractmethod
-    def render_restore_result(self, result: RestoreResult) -> None:
-        """Render a restore result."""
-        ...
+    def render_restore_result(self, result: RestoreResult) -> None: ...
 
     @abstractmethod
-    def render_message(self, message: str, level: str = "info") -> None:
-        """Render a message."""
-        ...
+    def render_result(self, result: Any, *, kind: str | None = None) -> None: ...
 
     @abstractmethod
-    def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
-        """Render an error."""
-        ...
+    def render_message(self, message: str, level: str = "info") -> None: ...
 
     @abstractmethod
-    def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
-        """Render a dry-run plan."""
-        ...
+    def render_error(self, message: str, details: dict[str, Any] | None = None) -> None: ...
+
+    @abstractmethod
+    def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None: ...
+
+    @abstractmethod
+    def render_verbose(self, message: str) -> None: ...
 
 
 class JSONRenderer(Renderer):
-    """Render results as JSON."""
+    """Render exactly one structured JSON document for each public output."""
+
+    def _write(self, payload: dict[str, Any]) -> None:
+        json.dump(_json_safe(payload), sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+
+    def render_result(self, result: Any, *, kind: str | None = None) -> None:
+        self._write(_result_payload(result, kind=kind))
 
     def render_backup_result(self, result: BackupResult) -> None:
-        output: dict[str, Any] = {
-            "type": "backup",
-            "success": result.success,
-            "archive_path": str(result.archive_paths[0]) if result.archive_paths else None,
-            "files_count": result.files_processed,
-            "bytes_total": result.bytes_written,
-            "duration_seconds": result.duration_ms / 1000,
-            "verification_passed": result.verification_passed,
-            "checksum": result.checksums.get("archive"),
-        }
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        payload = _result_payload(result, kind="backup")
+        checksums = payload.get("checksums")
+        if isinstance(checksums, dict):
+            payload.setdefault("checksum", checksums.get("archive"))
+        self._write(payload)
 
     def render_archive_result(self, result: ArchiveCreateResult) -> None:
-        output: dict[str, Any] = {
-            "type": "archive",
-            "success": result.success,
-            "output_path": str(result.output_path) if result.output_path else None,
-            "files_count": result.files_archived,
-            "bytes_total": result.bytes_written,
-            "duration_seconds": result.duration_ms / 1000,
-            "verification_passed": result.verification_passed,
-        }
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        self.render_result(result, kind="archive")
 
     def render_transfer_result(self, result: TransferResult) -> None:
-        output: dict[str, Any] = {
-            "type": "transfer",
-            "success": result.success,
-            "source": str(result.source) if result.source else None,
-            "destination": str(result.destination) if result.destination else None,
-            "bytes_transferred": result.bytes_transferred,
-            "duration_seconds": result.duration_ms / 1000,
-            "verification_passed": result.verification_passed,
-        }
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        self.render_result(result, kind="transfer")
 
     def render_restore_result(self, result: RestoreResult) -> None:
-        output: dict[str, Any] = {
-            "type": "restore",
-            "success": result.success,
-            "archive": str(result.archive_path) if result.archive_path else None,
-            "destination": str(result.destination) if result.destination else None,
-            "files_restored": result.files_restored,
-            "bytes_restored": result.bytes_restored,
-            "duration_seconds": result.duration_ms / 1000,
-        }
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        self.render_result(result, kind="restore")
 
     def render_message(self, message: str, level: str = "info") -> None:
-        output: dict[str, Any] = {"type": "message", "level": level, "message": message}
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        self._write({"type": "message", "level": level, "message": message})
 
     def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
-        output: dict[str, Any] = {"type": "error", "message": message}
+        payload: dict[str, Any] = {"type": "error", "success": False, "message": message}
         if details:
-            output["details"] = details
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+            payload["details"] = details
+        self._write(payload)
 
     def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
-        output: dict[str, Any] = {"type": "plan", "spec_type": spec_type, "spec": spec_data}
-        json.dump(output, sys.stdout, indent=2)
-        sys.stdout.write("\n")
+        self._write({"type": "plan", "success": True, "spec_type": spec_type, "spec": spec_data})
+
+    def render_verbose(self, message: str) -> None:
+        # JSON stdout must stay a single result document. Verbose diagnostics go
+        # to stderr so they cannot corrupt machine-readable output.
+        sys.stderr.write(f"verbose: {message}\n")
 
 
 class TextRenderer(Renderer):
-    """Render results as human-readable text with mikomn theme integration."""
+    """Render plain human-readable output without Rich markup syntax."""
+
+    def render_result(self, result: Any, *, kind: str | None = None) -> None:
+        payload = _result_payload(result, kind=kind)
+        title = payload.get("type", "result")
+        success = payload.get("success")
+        if success is True:
+            sys.stdout.write(f"OK {title}\n")
+        elif success is False:
+            sys.stdout.write(f"FAILED {title}\n")
+        else:
+            sys.stdout.write(f"{title}\n")
+        for key, value in payload.items():
+            if key in {"type", "success"} or value in (None, (), [], {}):
+                continue
+            sys.stdout.write(f"  {key}: {self._format_value(value)}\n")
 
     def render_backup_result(self, result: BackupResult) -> None:
-        if result.success:
-            sys.stdout.write(f"[{success_color()}]✅ Backup completed successfully[/]\n")
-            if result.archive_paths:
-                sys.stdout.write(f"   Archive: {result.archive_paths[0]}\n")
-            sys.stdout.write(f"   Files: {result.files_processed}\n")
-            sys.stdout.write(f"   Size: {self._format_bytes(result.bytes_written)}\n")
-            sys.stdout.write(f"   Duration: {result.duration_ms / 1000:.2f}s\n")
-            if result.verification_passed:
-                sys.stdout.write(f"   [{success_color()}]Verification: ✅ Passed[/]\n")
-            if result.checksums.get("archive"):
-                sys.stdout.write(f"   Checksum: {result.checksums['archive']}\n")
-        else:
-            sys.stdout.write(f"[{error_color()}]❌ Backup failed[/]\n")
-            if result.errors:
-                for error in result.errors:
-                    sys.stdout.write(f"   Error: {error}\n")
+        self.render_result(result, kind="backup")
 
     def render_archive_result(self, result: ArchiveCreateResult) -> None:
-        if result.success:
-            sys.stdout.write(f"[{success_color()}]✅ Archive created successfully[/]\n")
-            if result.output_path:
-                sys.stdout.write(f"   Output: {result.output_path}\n")
-            sys.stdout.write(f"   Files: {result.files_archived}\n")
-            sys.stdout.write(f"   Size: {self._format_bytes(result.bytes_written)}\n")
-            sys.stdout.write(f"   Duration: {result.duration_ms / 1000:.2f}s\n")
-            if result.verification_passed:
-                sys.stdout.write(f"   [{success_color()}]Verification: ✅ Passed[/]\n")
-        else:
-            sys.stdout.write(f"[{error_color()}]❌ Archive creation failed[/]\n")
-            if result.warnings:
-                for warning in result.warnings:
-                    sys.stdout.write(f"   Warning: {warning}\n")
+        self.render_result(result, kind="archive")
 
     def render_transfer_result(self, result: TransferResult) -> None:
-        if result.success:
-            sys.stdout.write(f"[{success_color()}]✅ Transfer completed successfully[/]\n")
-            if result.source and result.destination:
-                sys.stdout.write(f"   From: {result.source}\n")
-                sys.stdout.write(f"   To: {result.destination}\n")
-            sys.stdout.write(f"   Size: {self._format_bytes(result.bytes_transferred)}\n")
-            sys.stdout.write(f"   Duration: {result.duration_ms / 1000:.2f}s\n")
-            if result.verification_passed:
-                sys.stdout.write(f"   [{success_color()}]Verification: ✅ Passed[/]\n")
-        else:
-            sys.stdout.write(f"[{error_color()}]❌ Transfer failed[/]\n")
-            if result.errors:
-                for error in result.errors:
-                    sys.stdout.write(f"   Error: {error}\n")
+        self.render_result(result, kind="transfer")
 
     def render_restore_result(self, result: RestoreResult) -> None:
-        if result.success:
-            sys.stdout.write(f"[{success_color()}]✅ Restore completed successfully[/]\n")
-            if result.archive_path:
-                sys.stdout.write(f"   Archive: {result.archive_path}\n")
-            if result.destination:
-                sys.stdout.write(f"   Destination: {result.destination}\n")
-            sys.stdout.write(f"   Files: {result.files_restored}\n")
-            sys.stdout.write(f"   Size: {self._format_bytes(result.bytes_restored)}\n")
-            sys.stdout.write(f"   Duration: {result.duration_ms / 1000:.2f}s\n")
-        else:
-            sys.stdout.write(f"[{error_color()}]❌ Restore failed[/]\n")
-            if result.errors:
-                for error in result.errors:
-                    sys.stdout.write(f"   Error: {error}\n")
+        self.render_result(result, kind="restore")
 
     def render_message(self, message: str, level: str = "info") -> None:
-        """Render a message with theme-aware styling."""
-        style_map = {
-            "info": info_style(),
-            "success": success_style(),
-            "warning": warning_style(),
-            "error": error_style(),
-        }
-        icon_map = {
-            "info": "ℹ️",
-            "success": "✅",
-            "warning": "⚠️",
-            "error": "❌",
-        }
-        style = style_map.get(level, info_style())
-        icon = icon_map.get(level, "ℹ️")
-        sys.stdout.write(f"{icon} [{style}]{message}[/]\n")
+        prefix = {"success": "OK", "warning": "WARNING", "error": "ERROR"}.get(level, "INFO")
+        sys.stdout.write(f"{prefix}: {message}\n")
 
     def render_error(self, message: str, details: dict[str, Any] | None = None) -> None:
-        """Render an error with theme-aware styling."""
-        sys.stdout.write(f"❌ [{error_style()}]{message}[/]\n")
+        sys.stdout.write(f"ERROR: {message}\n")
         if details:
             for key, value in details.items():
-                sys.stdout.write(f"   {key}: {value}\n")
+                sys.stdout.write(f"  {key}: {self._format_value(value)}\n")
 
     def render_plan(self, spec_type: str, spec_data: dict[str, Any]) -> None:
-        """Render a dry-run plan with theme-aware styling."""
-        sys.stdout.write(f"📋 [{primary_color()}]Dry-run plan for {spec_type}[/]:\n")
+        sys.stdout.write(f"Plan for {spec_type}:\n")
         for key, value in spec_data.items():
-            if isinstance(value, list):
-                sys.stdout.write(f"   {key}:\n")
-                for item in value:
-                    sys.stdout.write(f"     - {item}\n")
-            elif isinstance(value, dict):
-                sys.stdout.write(f"   {key}:\n")
-                for k, v in value.items():
-                    sys.stdout.write(f"     - {k}: {v}\n")
-            else:
-                sys.stdout.write(f"   {key}: {value}\n")
+            sys.stdout.write(f"  {key}: {self._format_value(value)}\n")
 
-    def _format_bytes(self, bytes_val: float) -> str:
-        """Format bytes to human-readable string."""
-        for unit in ["B", "KB", "MB", "GB", "TB"]:
-            if bytes_val < 1024:
-                return f"{bytes_val:.1f}{unit}"
-            bytes_val /= 1024
-        return f"{bytes_val:.1f}PB"
+    def render_verbose(self, message: str) -> None:
+        sys.stderr.write(f"verbose: {message}\n")
+
+    def _format_value(self, value: Any) -> str:
+        value = _json_safe(value)
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, sort_keys=True)
+        return str(value)
 
 
 def get_renderer(json_output: bool = False) -> Renderer:
-    """Get the appropriate renderer.
-
-    Args:
-        json_output: Whether to use JSON renderer
-
-    Returns:
-        Renderer instance
-    """
-    if json_output:
-        return JSONRenderer()
-    return TextRenderer()
+    return JSONRenderer() if json_output else TextRenderer()
 
 
-def render_result(result: Any, json_output: bool = False) -> None:
-    """Render a result using the appropriate renderer.
-
-    Args:
-        result: The result to render
-        json_output: Whether to use JSON output
-    """
-    renderer = get_renderer(json_output)
-
-    if isinstance(result, BackupResult):
-        renderer.render_backup_result(result)
-    elif isinstance(result, ArchiveCreateResult):
-        renderer.render_archive_result(result)
-    elif isinstance(result, TransferResult):
-        renderer.render_transfer_result(result)
-    elif isinstance(result, RestoreResult):
-        renderer.render_restore_result(result)
-    else:
-        # Fallback: try to serialize as dict
-        if hasattr(result, "__dict__"):
-            data = asdict(result)
-            if json_output:
-                json.dump(data, sys.stdout, indent=2, default=str)
-            else:
-                sys.stdout.write(str(data))
+def render_result(result: Any, json_output: bool = False, *, kind: str | None = None) -> None:
+    get_renderer(json_output).render_result(result, kind=kind)
 
 
-__all__ = [
-    "Renderer",
-    "JSONRenderer",
-    "TextRenderer",
-    "get_renderer",
-    "render_result",
-]
+__all__ = ["Renderer", "JSONRenderer", "TextRenderer", "get_renderer", "render_result"]

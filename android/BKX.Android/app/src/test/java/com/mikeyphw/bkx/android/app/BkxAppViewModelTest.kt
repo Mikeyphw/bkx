@@ -16,8 +16,14 @@ import com.mikeyphw.bkx.android.core.backup.BackupPlanPreview
 import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.backend.FakeBackendPort
+import com.mikeyphw.bkx.android.core.operations.InMemoryOperationStateStore
+import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.operations.OperationFailureKind
+import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
+import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.core.runs.InMemoryRunSummaryStore
 import com.mikeyphw.bkx.android.core.bridge.BridgeError
+import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.runs.RunSummary
@@ -207,12 +213,92 @@ class BkxAppViewModelTest {
         assertTrue(viewModel.state.value.transfer.result is TransferResultUiState.PartialFailure)
     }
 
+
+    @Test
+    fun operationEventsUpdateReconnectProgressCancellationAndTypedFailures() = runTest(dispatcher) {
+        val viewModel = viewModel()
+
+        advanceUntilIdle()
+        viewModel.onEvent(BkxHomeEvent.TrackOperationStarted("op-1", "backup.create", 100))
+        viewModel.onEvent(
+            BkxHomeEvent.ConsumeOperationProgress(
+                BridgeProgressEnvelope(requestId = "op-1", seq = 1, phase = "scanning", message = "Scanning", progress = 0.25),
+                observedAtEpochMillis = 125,
+            ),
+        )
+        viewModel.onEvent(BkxHomeEvent.RequestOperationCancellation("op-1", "cancel-op-1", 130))
+        viewModel.onEvent(
+            BkxHomeEvent.ApplyOperationFailure(
+                requestId = "op-1",
+                failure = OperationFailureMapper.timeout(),
+                failedAtEpochMillis = 200,
+            ),
+        )
+        advanceUntilIdle()
+
+        val runtime = viewModel.state.value.operationRuntime
+        assertEquals("scanning", runtime.progressEvents["op-1"].orEmpty().single().phase)
+        assertEquals(OperationFailureKind.BackendTimeout, runtime.failureStates["op-1"]?.kind)
+        assertTrue(viewModel.state.value.operationResult is OperationResultUiState.Failed)
+    }
+
+    @Test
+    fun submitOperationCancellationDispatchesBackendCancelAndKeepsCancellingState() = runTest(dispatcher) {
+        val backend = FakeBackendPort()
+        val viewModel = viewModel(backend = backend)
+
+        advanceUntilIdle()
+        viewModel.onEvent(
+            BkxHomeEvent.TrackOperationStarted(
+                requestId = "op-cancel",
+                operation = "transfer.run",
+                startedAtEpochMillis = 100,
+                cancelFilePath = "/tmp/bkx/op-cancel/cancel.json",
+            ),
+        )
+        viewModel.onEvent(
+            BkxHomeEvent.SubmitOperationCancellation(
+                requestId = "op-cancel",
+                cancelFilePath = "/tmp/bkx/op-cancel/cancel.json",
+                cancelRequestId = "cancel-op-cancel",
+                requestedAtEpochMillis = 150,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals("op-cancel", backend.cancellations.single().first)
+        assertEquals("/tmp/bkx/op-cancel/cancel.json", backend.cancellations.single().second)
+        assertEquals(ActiveOperationStatus.Cancelling, viewModel.state.value.operationRuntime.activeFor("op-cancel")?.status)
+    }
+
+    @Test
+    fun rejectedBackendCancellationRendersTypedFailure() = runTest(dispatcher) {
+        val backend = FakeBackendPort(BackendReadiness.RunCommandPermissionMissing)
+        val viewModel = viewModel(backend = backend)
+
+        advanceUntilIdle()
+        viewModel.onEvent(BkxHomeEvent.TrackOperationStarted("op-cancel", "backup.create", 100, "/tmp/bkx/op-cancel/cancel.json"))
+        viewModel.onEvent(
+            BkxHomeEvent.SubmitOperationCancellation(
+                requestId = "op-cancel",
+                cancelFilePath = "/tmp/bkx/op-cancel/cancel.json",
+                cancelRequestId = "cancel-op-cancel",
+                requestedAtEpochMillis = 150,
+            ),
+        )
+        advanceUntilIdle()
+
+        assertEquals(OperationFailureKind.PermissionDenied, viewModel.state.value.operationRuntime.failureStates["op-cancel"]?.kind)
+        assertTrue(viewModel.state.value.operationResult is OperationResultUiState.Failed)
+    }
+
     private fun viewModel(
         backend: FakeBackendPort = FakeBackendPort(),
         runSummaryStore: InMemoryRunSummaryStore = InMemoryRunSummaryStore(),
     ) = BkxAppViewModel(
         backendPort = backend,
         runSummaryStore = runSummaryStore,
+        operationStateStore = InMemoryOperationStateStore(),
         settingsStore = InMemorySettingsStore(),
     )
 }

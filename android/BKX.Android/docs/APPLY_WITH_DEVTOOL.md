@@ -1,12 +1,12 @@
 # Apply BKX Android Companion overlays with Devtool
 
-Use the BKX repository root provided for this task. For AOV-07/AOV-08 and the remaining interim overlays, validation is intentionally deferred until the final overlay.
+Use the BKX repository root provided for this task. For AOV-09/AOV-10 and the remaining interim overlays, validation is intentionally deferred until the final overlay.
 
 ```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov07_aov08_restore_transfer_safety_v2.zip"
+ARTIFACT="$HOME/Downloads/bkx_android_aov09_aov10_operations_rendering_parity_v2.zip"
 devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
   --no-validate \
-  --commit "Add BKX Android restore and transfer safety gates"
+  --commit "Add BKX Android operation runtime and result rendering parity"
 ```
 
 Notes:
@@ -20,6 +20,6 @@ Notes:
 
 The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with refreshed versions for deterministic warning cleanup: AGP `9.3.1`, managed Gradle `9.5.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `37`, and Java toolchain `17`.
 
-## Warning policy
+## Interim validation policy
 
-AOV-03/AOV-04 carried Devtool-side Gradle passthrough for the custom-AAPT2 experimental-option warning and uses one Gradle worker in the constrained Termux validator. These settings keep the successful Termux AAPT2 strategy while reducing deterministic diagnostics.
+Do not add validation-mode or Gradle task flags to interim overlay apply commands. Full Devtool/Gradle validation is reserved for the final roadmap overlay.

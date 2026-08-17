@@ -42,12 +42,23 @@ class TermuxBridgeAdapter(
     }
 
     override suspend fun cancel(requestId: String, cancelFilePath: String): BackendSubmission {
+        val cancelJson = BridgeJson.encodeCancel(com.mikeyphw.bkx.android.core.bridge.BridgeCancelEnvelope(requestId = requestId))
         val readiness = checkReadiness()
-        return BackendSubmission(
-            requestId = requestId,
-            accepted = readiness is BackendReadiness.Ready,
-            readiness = readiness,
-        )
+        if (readiness !is BackendReadiness.Ready && readiness !is BackendReadiness.AllowExternalAppsNotVerified) {
+            return BackendSubmission(requestId = requestId, accepted = false, readiness = readiness)
+        }
+        return when (val result = dispatcher.dispatch(invocationFactory.createCancel(requestId, cancelFilePath, cancelJson))) {
+            RunCommandDispatchResult.Started -> BackendSubmission(
+                requestId = requestId,
+                accepted = true,
+                readiness = readiness,
+            )
+            is RunCommandDispatchResult.Failed -> BackendSubmission(
+                requestId = requestId,
+                accepted = false,
+                readiness = BackendReadiness.ProbeFailed(result.reason),
+            )
+        }
     }
 
     override suspend fun readFinalResult(rawResult: String): BridgeResultEnvelope =

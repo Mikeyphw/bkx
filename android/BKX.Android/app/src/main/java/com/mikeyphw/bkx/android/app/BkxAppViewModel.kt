@@ -19,7 +19,16 @@ import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
+import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
+import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
+import com.mikeyphw.bkx.android.core.operations.OperationFailureUiState
+import com.mikeyphw.bkx.android.core.operations.OperationProgressTracker
+import com.mikeyphw.bkx.android.core.operations.OperationReconnectSnapshot
+import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
+import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
+import com.mikeyphw.bkx.android.core.operations.OperationStateStore
+import com.mikeyphw.bkx.android.core.operations.toOperationResultUiState
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.restore.RestoreDraft
 import com.mikeyphw.bkx.android.core.restore.RestoreExtractionConfirmation
@@ -50,6 +59,8 @@ data class BkxHomeUiState(
     val archiveReadOnly: ArchiveReadOnlyUiState = ArchiveReadOnlyUiState(),
     val restore: RestoreUiState = RestoreUiState(),
     val transfer: TransferUiState = TransferUiState(),
+    val operationRuntime: OperationRuntimeState = OperationRuntimeState(),
+    val operationResult: OperationResultUiState = OperationResultUiState.NotStarted,
     val settings: BkxSettings = BkxSettings(),
     val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
@@ -78,20 +89,40 @@ sealed interface BkxHomeEvent {
     data class UpdateTransferDraft(val draft: TransferTopologyDraft) : BkxHomeEvent
     data class ApplyTransferPreview(val preview: TransferPreviewSummary) : BkxHomeEvent
     data class ApplyTransferResult(val result: BridgeResultEnvelope) : BkxHomeEvent
+    data class TrackOperationStarted(
+        val requestId: String,
+        val operation: String,
+        val startedAtEpochMillis: Long,
+        val cancelFilePath: String? = null,
+    ) : BkxHomeEvent
+    data class ConsumeOperationProgress(val progress: BridgeProgressEnvelope, val observedAtEpochMillis: Long) : BkxHomeEvent
+    data class ApplyOperationFinalResult(val result: BridgeResultEnvelope, val completedAtEpochMillis: Long) : BkxHomeEvent
+    data class ApplyOperationFailure(val requestId: String, val failure: OperationFailureUiState, val failedAtEpochMillis: Long) : BkxHomeEvent
+    data class RequestOperationCancellation(val requestId: String, val cancelRequestId: String, val requestedAtEpochMillis: Long) : BkxHomeEvent
+    data class SubmitOperationCancellation(
+        val requestId: String,
+        val cancelFilePath: String,
+        val cancelRequestId: String,
+        val requestedAtEpochMillis: Long,
+    ) : BkxHomeEvent
+    data class ReconnectOperations(val snapshot: OperationReconnectSnapshot) : BkxHomeEvent
 }
 
 class BkxAppViewModel(
     private val backendPort: BackendPort,
     private val runSummaryStore: RunSummaryStore,
+    private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
 ) : ViewModel() {
     private val checkBackendReadiness = CheckBackendReadinessUseCase(backendPort)
+    private val operationProgressTracker = OperationProgressTracker()
     private val _state = MutableStateFlow(BkxHomeUiState())
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
 
     init {
         refreshBackend()
         refreshRuns()
+        refreshOperations()
         refreshSettings()
     }
 
@@ -144,6 +175,63 @@ class BkxAppViewModel(
             is BkxHomeEvent.ApplyTransferResult -> _state.update { current ->
                 current.copy(transfer = current.transfer.copy(result = event.result.toTransferResultUiState()))
             }
+            is BkxHomeEvent.TrackOperationStarted -> updateOperationRuntime { runtime ->
+                operationProgressTracker.trackStarted(
+                    state = runtime,
+                    requestId = event.requestId,
+                    operation = event.operation,
+                    startedAtEpochMillis = event.startedAtEpochMillis,
+                    cancelFilePath = event.cancelFilePath,
+                )
+            }
+            is BkxHomeEvent.ConsumeOperationProgress -> updateOperationRuntime { runtime ->
+                operationProgressTracker.consume(runtime, event.progress, event.observedAtEpochMillis)
+            }
+            is BkxHomeEvent.ApplyOperationFinalResult -> {
+                updateOperationRuntime { runtime ->
+                    operationProgressTracker.finish(runtime, event.result, event.completedAtEpochMillis)
+                }
+                _state.update { current -> current.copy(operationResult = event.result.toOperationResultUiState()) }
+            }
+            is BkxHomeEvent.ApplyOperationFailure -> {
+                updateOperationRuntime { runtime ->
+                    operationProgressTracker.fail(runtime, event.requestId, event.failure, event.failedAtEpochMillis)
+                }
+                _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(event.failure)) }
+            }
+            is BkxHomeEvent.RequestOperationCancellation -> updateOperationRuntime { runtime ->
+                operationProgressTracker.markCancelling(runtime, event.requestId, event.cancelRequestId, event.requestedAtEpochMillis)
+            }
+            is BkxHomeEvent.SubmitOperationCancellation -> submitOperationCancellation(event)
+            is BkxHomeEvent.ReconnectOperations -> updateOperationRuntime {
+                operationProgressTracker.reconnect(event.snapshot)
+            }
+        }
+    }
+
+    private fun submitOperationCancellation(event: BkxHomeEvent.SubmitOperationCancellation) {
+        updateOperationRuntime { runtime ->
+            operationProgressTracker.markCancelling(
+                state = runtime,
+                requestId = event.requestId,
+                cancelRequestId = event.cancelRequestId,
+                nowEpochMillis = event.requestedAtEpochMillis,
+            )
+        }
+        viewModelScope.launch {
+            val submission = backendPort.cancel(event.requestId, event.cancelFilePath)
+            if (!submission.accepted) {
+                val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
+                updateOperationRuntime { runtime ->
+                    operationProgressTracker.fail(
+                        state = runtime,
+                        requestId = event.requestId,
+                        failure = failure,
+                        nowEpochMillis = event.requestedAtEpochMillis,
+                    )
+                }
+                _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(failure)) }
+            }
         }
     }
 
@@ -179,6 +267,25 @@ class BkxAppViewModel(
         }
     }
 
+    private fun refreshOperations() {
+        viewModelScope.launch {
+            val runtime = operationStateStore.read()
+            _state.update { it.copy(operationRuntime = runtime) }
+        }
+    }
+
+    private fun updateOperationRuntime(transform: (OperationRuntimeState) -> OperationRuntimeState) {
+        var nextRuntime: OperationRuntimeState? = null
+        _state.update { current ->
+            val next = transform(current.operationRuntime)
+            nextRuntime = next
+            current.copy(operationRuntime = next)
+        }
+        nextRuntime?.let { runtime ->
+            viewModelScope.launch { operationStateStore.update(runtime) }
+        }
+    }
+
     private fun refreshSettings() {
         viewModelScope.launch {
             val settings = settingsStore.read()
@@ -190,12 +297,13 @@ class BkxAppViewModel(
 class BkxAppViewModelFactory(
     private val backendPort: BackendPort,
     private val runSummaryStore: RunSummaryStore,
+    private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(BkxAppViewModel::class.java)) {
-            return BkxAppViewModel(backendPort, runSummaryStore, settingsStore) as T
+            return BkxAppViewModel(backendPort, runSummaryStore, operationStateStore, settingsStore) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")
     }

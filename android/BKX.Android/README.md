@@ -87,3 +87,31 @@ devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
   --no-validate \
   --commit "Add BKX Android restore and transfer safety gates"
 ```
+
+## AOV-09/AOV-10 scope
+
+The companion now includes runtime operation and result-rendering contracts:
+
+- progress event consumption keyed by BKX request id;
+- active operation persistence for rotation/process recreation reconnect;
+- request-id cancellation models and fixed-wrapper cancellation dispatch;
+- typed timeout, quota, process-death, permission, backend-not-ready, SAF-loss, cancellation and malformed-result failures;
+- strict schema response parsing that rejects malformed, multiple, partial, unknown-field, or unsupported-version output;
+- stable result rendering actions for typed BKX errors and verification failures;
+- semantic parity snapshots for representative Android bridge requests versus CLI JSON expectations.
+
+The Kotlin layer still does not execute BKX backup/archive/restore/transfer semantics. It tracks Android runtime state and renders BKX structured progress/results.
+
+## Current interim apply command
+
+For AOV-09/AOV-10 and remaining interim Android companion overlays, validation is intentionally deferred until the final overlay:
+
+```bash
+ARTIFACT="$HOME/Downloads/bkx_android_aov09_aov10_operations_rendering_parity_v1.zip"
+devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
+  --no-validate \
+  --commit "Add BKX Android operation runtime and result rendering parity"
+```
+
+
+AOV-09/AOV-10 v2 closes the double-check gaps by adding progress-file polling, backend-submitted cancellation, and result-side CLI parity snapshots.

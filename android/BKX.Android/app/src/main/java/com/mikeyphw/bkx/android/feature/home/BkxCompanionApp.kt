@@ -32,6 +32,9 @@ import com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState
 import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
 import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
+import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
+import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.restore.RestoreOutputMode
 import com.mikeyphw.bkx.android.core.restore.RestoreUiState
@@ -127,8 +130,92 @@ private fun HomeRecentRunsScreen(
             Text("Refresh runs")
         }
     }
+    ActiveOperationsCard(state.operationRuntime, onEvent)
+    OperationResultCard(state.operationResult)
     RecentRunsCard(state.recentRuns, state.screenStatuses[BkxDestination.Home] ?: ScreenStatus.Loading)
 }
+@Composable
+private fun ActiveOperationsCard(
+    runtime: OperationRuntimeState,
+    onEvent: (BkxHomeEvent) -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = "Active operations", style = MaterialTheme.typography.titleMedium)
+            if (runtime.activeOperations.isEmpty()) {
+                Text("No active BKX operation is being tracked.")
+            } else {
+                runtime.activeOperations.values.sortedByDescending { it.lastSeenEpochMillis }.forEach { operation ->
+                    Text(text = "${operation.operation}: ${operation.status} • ${operation.requestId}")
+                    Text(text = "${operation.lastPhase}: ${operation.lastMessage}", style = MaterialTheme.typography.bodySmall)
+                    operation.progress?.let { progress -> Text(text = "Progress: ${(progress * 100).toInt()}%") }
+                    runtime.progressEvents[operation.requestId].orEmpty().takeLast(3).forEach { event ->
+                        Text(text = "#${event.seq} ${event.phase}: ${event.message}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (operation.status == ActiveOperationStatus.Queued || operation.status == ActiveOperationStatus.Running) {
+                        operation.cancelFilePath?.let { cancelFilePath ->
+                            OutlinedButton(
+                                onClick = {
+                                    val now = System.currentTimeMillis()
+                                    onEvent(
+                                        BkxHomeEvent.SubmitOperationCancellation(
+                                            requestId = operation.requestId,
+                                            cancelFilePath = cancelFilePath,
+                                            cancelRequestId = "cancel-${operation.requestId}-$now",
+                                            requestedAtEpochMillis = now,
+                                        ),
+                                    )
+                                },
+                            ) {
+                                Text("Cancel request")
+                            }
+                        } ?: Text(
+                            text = "Cancel path unavailable; reconnect the run from backend status.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    runtime.failureStates[operation.requestId]?.let { failure ->
+                        Text(text = "Failure: ${failure.title} — ${failure.message}")
+                        Text(text = "Actions: ${failure.actions.joinToString()}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OperationResultCard(result: OperationResultUiState) {
+    if (result == OperationResultUiState.NotStarted) return
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(text = "Latest operation result", style = MaterialTheme.typography.titleMedium)
+            when (result) {
+                OperationResultUiState.NotStarted -> Text("No final result loaded.")
+                is OperationResultUiState.Success -> {
+                    Text("Success: ${result.summary}")
+                    result.actions.forEach { action -> Text(text = "• $action", style = MaterialTheme.typography.bodySmall) }
+                }
+                is OperationResultUiState.Cancelled -> {
+                    Text("Cancelled: ${result.summary}")
+                    result.actions.forEach { action -> Text(text = "• $action", style = MaterialTheme.typography.bodySmall) }
+                }
+                is OperationResultUiState.Failed -> {
+                    Text("${result.failure.title}: ${result.failure.message}")
+                    Text("Code: ${result.failure.code}", style = MaterialTheme.typography.bodySmall)
+                    result.failure.actions.forEach { action -> Text(text = "• $action", style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        }
+    }
+}
+
 
 @Composable
 private fun RecentRunsCard(runs: List<RunSummary>, status: ScreenStatus) {

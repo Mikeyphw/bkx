@@ -41,6 +41,12 @@ class BridgeJsonTest {
         BridgeJson.parseFinalResult("not-json")
     }
 
+
+    @Test(expected = BridgeProtocolException::class)
+    fun rejectsPartialFinalResultJson() {
+        BridgeJson.parseFinalResult("{\"protocol_version\":1,\"request_id\":\"abc\",\"status\":\"success\"")
+    }
+
     @Test
     fun encodesVersionedRequestAndCancelDocuments() {
         val request = BridgeRequestEnvelope(requestId = "req-1", operation = "backend.capabilities")

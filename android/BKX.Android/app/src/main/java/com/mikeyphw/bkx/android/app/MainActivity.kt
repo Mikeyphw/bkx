@@ -13,6 +13,7 @@ class MainActivity : ComponentActivity() {
         BkxAppViewModelFactory(
             backendPort = DefaultBackendGraph.backendPort(this),
             runSummaryStore = DefaultBackendGraph.runSummaryStore(this),
+            operationStateStore = DefaultBackendGraph.operationStateStore(this),
             settingsStore = DefaultBackendGraph.settingsStore(this),
         )
     }

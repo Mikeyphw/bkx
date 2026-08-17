@@ -21,6 +21,9 @@ class FakeBackendPort(
             "restore.extract",
             "transfer.plan",
             "transfer.run",
+            "runs.list",
+            "runs.show",
+            "run.cancel",
         ),
     ),
 ) : BackendPort {

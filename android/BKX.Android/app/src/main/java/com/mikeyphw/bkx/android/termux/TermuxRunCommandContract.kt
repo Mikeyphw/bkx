@@ -41,6 +41,17 @@ object TermuxRunCommandContract {
         "--progress", files.progressFilePath,
         "--cancel", files.cancelFilePath,
     )
+
+    fun fixedCancelArguments(requestId: String, cancelFilePath: String): List<String> {
+        require(requestId.isNotBlank()) { "cancel request id must not be blank" }
+        require(cancelFilePath.isNotBlank()) { "cancel file path must not be blank" }
+        return listOf(
+            "--protocol-version", BridgeJson.SUPPORTED_PROTOCOL_VERSION.toString(),
+            "--request-id", requestId,
+            "--cancel", cancelFilePath,
+            "--operation", "run.cancel",
+        )
+    }
 }
 
 data class ApprovedWrapperIdentity(

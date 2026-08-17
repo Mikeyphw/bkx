@@ -47,6 +47,21 @@ class TermuxRunCommandContractTest {
         assertFalse(invocation.arguments.joinToString(" ").contains("backend.capabilities"))
     }
 
+    @Test
+    fun cancelInvocationUsesFixedWrapperAndRequestIdCancelJson() {
+        val invocation = TermuxRunCommandInvocationFactory().createCancel(
+            requestId = "req-123",
+            cancelFilePath = files.cancelFilePath,
+            cancelJson = """{"protocol_version":1,"request_id":"req-123","action":"cancel"}""",
+        )
+
+        assertEquals(TermuxRunCommandContract.APPROVED_WRAPPER_PATH, invocation.commandPath)
+        assertEquals("req-123", invocation.arguments[invocation.arguments.indexOf("--request-id") + 1])
+        assertEquals(files.cancelFilePath, invocation.arguments[invocation.arguments.indexOf("--cancel") + 1])
+        assertTrue(invocation.arguments.contains("run.cancel"))
+        assertTrue(invocation.stdin.contains(""action":"cancel""))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNonApprovedWrapperIdentity() {
         ApprovedWrapperIdentity(

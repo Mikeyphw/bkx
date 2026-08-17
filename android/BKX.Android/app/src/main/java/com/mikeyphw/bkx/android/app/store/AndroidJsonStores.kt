@@ -1,6 +1,8 @@
 package com.mikeyphw.bkx.android.app.store
 
 import android.content.Context
+import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
+import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -55,5 +57,26 @@ class SharedPreferencesSettingsStore(
 
     private companion object {
         const val KEY_SETTINGS = "settings"
+    }
+}
+
+
+class SharedPreferencesOperationStateStore(
+    context: Context,
+    private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
+) : OperationStateStore {
+    private val prefs = context.applicationContext.getSharedPreferences("bkx_active_operations", Context.MODE_PRIVATE)
+
+    override suspend fun read(): OperationRuntimeState {
+        val raw = prefs.getString(KEY_STATE, null) ?: return OperationRuntimeState()
+        return runCatching { json.decodeFromString<OperationRuntimeState>(raw) }.getOrDefault(OperationRuntimeState())
+    }
+
+    override suspend fun update(state: OperationRuntimeState) {
+        prefs.edit().putString(KEY_STATE, json.encodeToString(state)).apply()
+    }
+
+    private companion object {
+        const val KEY_STATE = "operation_runtime_state"
     }
 }

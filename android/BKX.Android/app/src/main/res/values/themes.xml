@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.BKXAndroid" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:navigationBarColor">@android:color/white</item>
+        <item name="android:colorAccent">@color/bkx_seed</item>
+    </style>
+</resources>

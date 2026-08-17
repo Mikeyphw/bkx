@@ -54,3 +54,33 @@ verify_cli = true
 install_dependencies = false
 import_modules = ["bkx"]
 console_scripts = ["bkx"]
+
+# Android companion app target created by BKX Android AOV-01/AOV-02.
+[targets.bkx_android]
+type = "android"
+root = "android/BKX.Android"
+
+[targets.bkx_android.android]
+variant = "debug"
+platform = "36"
+aapt2_provider = "auto"
+instrumentation = "when-device-present"
+
+[targets.bkx_android.gradle]
+version = "9.5.0"
+max_workers = 2
+structured_events = true
+parallel = false
+build_cache = true
+daemon_idle_timeout_ms = 900000
+
+[targets.bkx_android.tasks]
+restore = ["help"]
+build = [":app:assembleDebug"]
+test = [":app:testDebugUnitTest"]
+lint = [":app:lintDebug"]
+clean = [":app:clean"]
+
+[targets.bkx_android.artifacts]
+output_directory = "artifacts/android"
+required = true

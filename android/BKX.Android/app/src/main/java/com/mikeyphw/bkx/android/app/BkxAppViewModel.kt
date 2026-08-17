@@ -6,9 +6,20 @@ import androidx.lifecycle.viewModelScope
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
+import com.mikeyphw.bkx.android.core.archives.ArchiveBrowsePage
+import com.mikeyphw.bkx.android.core.archives.ArchiveInfoSummary
+import com.mikeyphw.bkx.android.core.archives.ArchiveListItem
+import com.mikeyphw.bkx.android.core.archives.ArchiveLocation
+import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
+import com.mikeyphw.bkx.android.core.archives.ArchiveReadOnlyUiState
+import com.mikeyphw.bkx.android.core.archives.toArchiveVerificationUiState
+import com.mikeyphw.bkx.android.core.backup.BackupPlanDraft
+import com.mikeyphw.bkx.android.core.backup.BackupPlanPreview
+import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
+import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -27,6 +38,8 @@ data class BkxHomeUiState(
     val selectedDestination: BkxDestination = BkxDestination.Home,
     val destinations: List<BkxDestination> = BkxDestination.entries,
     val recentRuns: List<RunSummary> = emptyList(),
+    val backupPlanning: BackupPlanningUiState = BackupPlanningUiState(),
+    val archiveReadOnly: ArchiveReadOnlyUiState = ArchiveReadOnlyUiState(),
     val settings: BkxSettings = BkxSettings(),
     val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
@@ -42,6 +55,13 @@ sealed interface BkxHomeEvent {
     data object RefreshBackend : BkxHomeEvent
     data object RefreshRuns : BkxHomeEvent
     data class SelectDestination(val destination: BkxDestination) : BkxHomeEvent
+    data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
+    data class ApplyBackupPlanPreview(val preview: BackupPlanPreview) : BkxHomeEvent
+    data class SelectArchive(val archive: ArchiveLocation) : BkxHomeEvent
+    data class ApplyArchiveList(val archives: List<ArchiveListItem>) : BkxHomeEvent
+    data class ApplyArchiveInfo(val info: ArchiveInfoSummary) : BkxHomeEvent
+    data class ApplyArchiveBrowsePage(val page: ArchiveBrowsePage) : BkxHomeEvent
+    data class ApplyArchiveVerification(val result: BridgeResultEnvelope) : BkxHomeEvent
 }
 
 class BkxAppViewModel(
@@ -64,6 +84,32 @@ class BkxAppViewModel(
             BkxHomeEvent.RefreshBackend -> refreshBackend()
             BkxHomeEvent.RefreshRuns -> refreshRuns()
             is BkxHomeEvent.SelectDestination -> _state.update { it.copy(selectedDestination = event.destination) }
+            is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
+                current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
+            }
+            is BkxHomeEvent.ApplyBackupPlanPreview -> _state.update { current ->
+                current.copy(backupPlanning = BackupPlanningUiState.withPreview(current.backupPlanning.draft, event.preview))
+            }
+            is BkxHomeEvent.SelectArchive -> _state.update { current ->
+                current.copy(archiveReadOnly = current.archiveReadOnly.copy(selectedArchive = event.archive))
+            }
+            is BkxHomeEvent.ApplyArchiveList -> _state.update { current ->
+                current.copy(archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Content(event.archives)))
+            }
+            is BkxHomeEvent.ApplyArchiveInfo -> _state.update { current ->
+                current.copy(
+                    archiveReadOnly = current.archiveReadOnly.copy(
+                        selectedArchive = event.info.archive,
+                        infoState = ArchiveWorkflowUiState.Content(event.info),
+                    ),
+                )
+            }
+            is BkxHomeEvent.ApplyArchiveBrowsePage -> _state.update { current ->
+                current.copy(archiveReadOnly = current.archiveReadOnly.copy(browsePage = event.page))
+            }
+            is BkxHomeEvent.ApplyArchiveVerification -> _state.update { current ->
+                current.copy(archiveReadOnly = current.archiveReadOnly.copy(verification = event.result.toArchiveVerificationUiState()))
+            }
         }
     }
 
@@ -123,8 +169,8 @@ class BkxAppViewModelFactory(
 
 private fun initialScreenStatuses(): Map<BkxDestination, ScreenStatus> = mapOf(
     BkxDestination.Home to ScreenStatus.Loading,
-    BkxDestination.Backup to ScreenStatus.Empty("Backup planning starts in AOV-05 after file access is safe."),
-    BkxDestination.Archives to ScreenStatus.Empty("Read-only archive workflows start in AOV-06."),
+    BkxDestination.Backup to ScreenStatus.Content,
+    BkxDestination.Archives to ScreenStatus.Content,
     BkxDestination.Restore to ScreenStatus.Empty("Restore safety gates start in AOV-07."),
     BkxDestination.Transfers to ScreenStatus.Empty("Transfer topology and verification gates start in AOV-08."),
     BkxDestination.Tools to ScreenStatus.Content,

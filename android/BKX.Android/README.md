@@ -25,22 +25,37 @@ Implemented creation requirements:
 
 This overlay intentionally aligns the Android foundation with the uploaded StudyFlow Gradle plugin and dependency stack: AGP `9.3.1`, Kotlin/Compose/serialization plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, Java toolchain `17`, and the matching AndroidX/coroutines/serialization test dependency versions captured in `gradle/libs.versions.toml`. Unlike the StudyFlow snapshot, BKX Android targets current Android 17 / API 37 so the project does not require current Android 17 / API 37 platforms.
 
-## Validation
+## Interim validation policy
 
-Preferred Devtool apply + validation from the actual BKX repository root (`~/Code/bkx`):
-
-```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov01_aov02_foundation_termux_bridge_v5.zip"
-devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
-  --validate \
-  --task :app:testDebugUnitTest \
-  --task :app:lintDebug \
-  --task :app:assembleDebug \
-  --commit "Create BKX Android companion foundation and Termux bridge"
-```
-
-Each Gradle task name is passed with its own `--task` flag on the apply command itself. The overlay manifest also enables a single commit with the same commit message after validation succeeds.
+AOV-05/AOV-06 and later interim Android companion overlays are applied with `--no-validate`. Full Gradle validation is intentionally deferred until the last roadmap overlay.
 
 ## Validation SDK policy
 
 Devtool pins the validation Android platform to API 37 for this target. The companion app also declares `compileSdk = 37` and `targetSdk = 37`, matching the current released Android platform used by the validator.
+
+
+## AOV-05/AOV-06 scope
+
+The companion now includes backup planning and archive read-only UI contracts:
+
+- backup source/destination/filter/compression/split/verify state;
+- `backup.plan` request generation before any `backup.create`;
+- create gating that refuses invalid, stale, or unpreviewed plans;
+- archive list/info/browse/verify request builders plus list/info/browse/verify UI state;
+- paged browse state for large archives;
+- verification failures rendered as failures;
+- read-only archive operation allowlisting.
+
+The Kotlin layer still does not perform backup or archive engine work; it sends normalized requests to BKX through the backend bridge.
+
+
+## Current interim apply command
+
+For AOV-05/AOV-06 and later interim Android companion overlays, validation is intentionally deferred until the final overlay:
+
+```bash
+ARTIFACT="$HOME/Downloads/bkx_android_aov05_aov06_backup_archive_readonly_v2.zip"
+devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
+  --no-validate \
+  --commit "Add BKX Android backup planning and archive read-only workflows"
+```

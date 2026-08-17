@@ -25,6 +25,12 @@ import com.mikeyphw.bkx.android.app.BkxHomeUiState
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
+import com.mikeyphw.bkx.android.core.archives.ArchiveInfoSummary
+import com.mikeyphw.bkx.android.core.archives.ArchiveListItem
+import com.mikeyphw.bkx.android.core.archives.ArchiveReadOnlyUiState
+import com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState
+import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
+import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -60,10 +66,10 @@ fun BkxHomeScreen(
             NavigationGraphTabs(state, onEvent)
             when (state.selectedDestination) {
                 BkxDestination.Home -> HomeRecentRunsScreen(state, onEvent)
+                BkxDestination.Backup -> BackupPlanningScreen(state.backupPlanning)
+                BkxDestination.Archives -> ArchiveReadOnlyScreen(state.archiveReadOnly)
                 BkxDestination.Tools -> ToolsBackendScreen(state.backendToolState, state.isRefreshing, onEvent)
                 BkxDestination.Settings -> SettingsScreen(state.settings)
-                BkxDestination.Backup,
-                BkxDestination.Archives,
                 BkxDestination.Restore,
                 BkxDestination.Transfers -> InitialScreenPanel(
                     destination = state.selectedDestination,
@@ -144,6 +150,93 @@ private fun RecentRunsCard(runs: List<RunSummary>, status: ScreenStatus) {
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun BackupPlanningScreen(backup: BackupPlanningUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Backup planning", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Android creates backup.plan previews first; backup.create stays disabled until a matching preview exists.")
+            backup.draft.source?.let { Text(text = "Source: ${it.label} → staged") } ?: Text("Source: not selected")
+            backup.draft.destination?.let { Text(text = "Destination: ${it.label}") } ?: Text("Destination: not selected")
+            Text(text = "Compression: ${backup.draft.compression.protocolValue}")
+            Text(text = "Split: ${backup.draft.split.chunkSizeBytes?.toString() ?: "disabled"}")
+            Text(text = "Verify after create: ${backup.draft.verification.verifyAfterCreate}")
+            if (backup.validationIssues.isEmpty()) {
+                Text("Plan request is available.")
+            } else {
+                backup.validationIssues.forEach { issue -> Text(text = "Blocked: ${issue.message}") }
+            }
+            backup.preview?.let { preview ->
+                Text(text = "Preview token: ${preview.planToken}")
+                preview.warnings.forEach { warning -> Text(text = "${warning.severity}: ${warning.message}") }
+                preview.verificationExpectations.forEach { expectation -> Text(text = "Verify: ${expectation.message}") }
+            }
+            Text(text = if (backup.canCreateBackup) "Create backup is enabled from this preview." else "Create backup is disabled until a valid preview exists.")
+        }
+    }
+}
+
+@Composable
+private fun ArchiveReadOnlyScreen(archives: ArchiveReadOnlyUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Archive tools", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Read-only workflows: ${archives.availableWorkflows.joinToString { it.operation }}")
+            ArchiveListStatePanel(archives.listState)
+            archives.selectedArchive?.let { archive ->
+                Text(text = "Archive: ${archive.displayName}")
+            } ?: Text("Archive: not selected")
+            ArchiveInfoStatePanel(archives.infoState)
+            archives.browsePage?.let { page ->
+                Text(text = "Browse entries: ${page.entries.size}")
+                Text(text = if (archives.hasMoreBrowsePages) "More pages are available." else "No more pages loaded.")
+                Text(text = if (archives.isLargeArchive) "Large archive mode." else "Standard archive mode.")
+            } ?: Text("Browse page: not loaded")
+            when (val verification = archives.verification) {
+                ArchiveVerificationUiState.NotStarted -> Text("Verification: not started")
+                is ArchiveVerificationUiState.Passed -> Text("Verification passed: ${verification.summary}")
+                is ArchiveVerificationUiState.Failed -> {
+                    Text("Verification failed: ${verification.summary}")
+                    verification.errors.forEach { error -> Text(text = "${error.code}: ${error.message}") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArchiveListStatePanel(listState: ArchiveWorkflowUiState<List<ArchiveListItem>>) {
+    when (listState) {
+        ArchiveWorkflowUiState.Idle -> Text("Archive list: not loaded")
+        ArchiveWorkflowUiState.Loading -> Text("Archive list: loading…")
+        is ArchiveWorkflowUiState.Content -> {
+            Text(text = "Archive list: ${listState.value.size} archive(s)")
+            listState.value.take(3).forEach { item ->
+                Text(text = "• ${item.archive.displayName} (${item.sizeBytes ?: 0} bytes)", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+        is ArchiveWorkflowUiState.Failed -> Text("Archive list failed: ${listState.summary}")
+    }
+}
+
+@Composable
+private fun ArchiveInfoStatePanel(infoState: ArchiveWorkflowUiState<ArchiveInfoSummary>) {
+    when (infoState) {
+        ArchiveWorkflowUiState.Idle -> Text("Archive info: not loaded")
+        ArchiveWorkflowUiState.Loading -> Text("Archive info: loading…")
+        is ArchiveWorkflowUiState.Content -> {
+            val info = infoState.value
+            val entryLabel = if (info.entryCount == 1L) "entry" else "entries"
+            Text(text = "Archive info: ${info.entryCount ?: 0} $entryLabel")
+            info.formatVersion?.let { Text(text = "Format: $it", style = MaterialTheme.typography.bodySmall) }
+            info.manifestHash?.let { Text(text = "Manifest: $it", style = MaterialTheme.typography.bodySmall) }
+            info.warnings.forEach { warning -> Text(text = "Info warning: $warning", style = MaterialTheme.typography.bodySmall) }
+        }
+        is ArchiveWorkflowUiState.Failed -> Text("Archive info failed: ${infoState.summary}")
     }
 }
 

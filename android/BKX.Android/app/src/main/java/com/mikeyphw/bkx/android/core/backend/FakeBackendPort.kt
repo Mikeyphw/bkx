@@ -9,7 +9,15 @@ class FakeBackendPort(
     private var readiness: BackendReadiness = BackendReadiness.Ready(
         backendVersion = "fake-bkx",
         bridgeProtocolVersion = BridgeJson.SUPPORTED_PROTOCOL_VERSION,
-        capabilities = setOf("readiness.probe"),
+        capabilities = setOf(
+            "readiness.probe",
+            "backup.plan",
+            "backup.create",
+            "archive.list",
+            "archive.info",
+            "archive.browse",
+            "archive.verify",
+        ),
     ),
 ) : BackendPort {
     val submittedRequests = mutableListOf<Pair<BridgeRequestEnvelope, BridgeRequestFiles>>()

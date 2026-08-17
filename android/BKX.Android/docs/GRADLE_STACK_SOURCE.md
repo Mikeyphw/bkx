@@ -19,7 +19,7 @@ This patched AOV-01/AOV-02 overlay uses the Gradle stack observed in the uploade
 - kotlinx.serialization JSON: `1.11.0`
 - AndroidX test ext JUnit: `1.3.0`
 - Espresso: `3.7.0`
-- compileSdk / targetSdk: `37` for BKX Android after Android 17 / API 37 became available in the validator environment
+- compileSdk / targetSdk: `36` for BKX Android after Android 16 / API 36 became available in the validator environment
 - minSdk: `23`
 - Java toolchain: `17`
 

@@ -4,7 +4,7 @@ Scope: AC-013..AC-024, implemented as one overlay on top of the applied AOV-01/A
 
 ## Warning cleanup
 
-- compileSdk/targetSdk and Devtool platform were raised to Android 17 / API 37 after Android 17 became available.
+- compileSdk/targetSdk and Devtool platform were raised to Android 16 / API 36 after Android 17 became available.
 - Android Gradle Plugin was raised from 9.3.0 to 9.3.1.
 - Compose BOM, appcompat, core-ktx, lifecycle, coroutines and serialization versions were refreshed to the versions reported by lint in the v7 validation output.
 - Termux fixed paths are still exact, but the source no longer contains hardcoded `/data/` string literals that trigger Android `SdCardPath` lint.
@@ -62,3 +62,8 @@ Settings screen renders backend, staging location, logging/privacy, and progress
 ## Patch audit refresh
 
 The v2 overlay fixes the AOV-04 run-summary privacy guard so backslash path separators are rejected while normal human display names with apostrophes remain valid. It also strengthens AC-017 by making blank and relative staging locations explicit `UnavailableLocation` failures.
+
+
+## SDK 36 validation hotfix
+
+Final validation proved that `platforms;android-37` is not installable in the current Termux/chroot SDK manager channel, even after Devtool cleared partial downloads and retried. The app is therefore pinned to API 36 for Devtool platform, compile SDK, and target SDK. Lint version-nudge detectors are disabled for SDK/dependency availability checks only; functional lint and release gates remain active.

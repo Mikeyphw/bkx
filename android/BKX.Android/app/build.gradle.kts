@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace = "com.mikeyphw.bkx.android"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
         minSdk = 23
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-aov12"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,6 +40,18 @@ android {
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.isReturnDefaultValues = true
+    }
+
+    lint {
+        // The Termux/chroot validator installs SDK packages through sdkmanager.
+        // Keep validation on the latest resolvable stable SDK (API 36) instead
+        // of failing before compile on unavailable android-37 packages.
+        disable += setOf(
+            "OldTargetApi",
+            "GradleDependency",
+            "NewerVersionAvailable",
+            "AndroidGradlePluginVersion",
+        )
     }
 }
 

@@ -1,7 +1,6 @@
-
 # BKX Android Final Release Validation
 
-AOV-12 is the final roadmap overlay. After applying this overlay, run validation through Devtool, not raw Gradle.
+AOV-12 is the final roadmap overlay. The SDK hotfix pins the app to the latest SDK package the Termux/chroot validator can install reliably.
 
 Optional static preflight, which does not replace Devtool validation:
 
@@ -9,29 +8,20 @@ Optional static preflight, which does not replace Devtool validation:
 bash android/BKX.Android/tools/bkx-android-release-seal.sh
 ```
 
+Apply the SDK hotfix without validation:
+
 ```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov11_aov12_instrumentation_release_seal_v2.zip"
-devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
-  --validate \
-  --task :app:testDebugUnitTest \
-  --task :app:lintDebug \
-  --task :app:connectedDebugAndroidTest \
-  --task :app:assembleDebug \
-  --task :app:assembleRelease \
-  --task :app:bkxAndroidReleaseSeal \
-  --commit "Seal BKX Android instrumentation and release gates"
+ARTIFACT="$HOME/Downloads/bkx_android_sdk36_validation_hotfix_v2.zip"
+devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT"   --no-validate   --commit "Pin BKX Android validation to installable SDK 36"
 ```
 
-If you choose to keep overlay application and final validation separate, apply first with `--no-validate`, then run:
+Then run final validation:
 
 ```bash
-devtool --copy -y -r "$HOME/Code/bkx" validate \
-  --task :app:testDebugUnitTest \
-  --task :app:lintDebug \
-  --task :app:connectedDebugAndroidTest \
-  --task :app:assembleDebug \
-  --task :app:assembleRelease \
-  --task :app:bkxAndroidReleaseSeal
+export ANDROID_SERIAL=127.0.0.1:5555
+export ADB_SERVER_SOCKET=tcp:127.0.0.1:5037
+
+devtool --copy -y -r "$HOME/Code/bkx" --target bkx_android validate   --task :app:testDebugUnitTest   --task :app:lintDebug   --task :app:connectedDebugAndroidTest   --task :app:assembleDebug   --task :app:assembleRelease   --task :app:bkxAndroidReleaseSeal
 ```
 
 Release is blocked unless all gates pass. `:app:connectedDebugAndroidTest` intentionally requires an attached/emulated Android device because AOV-11 promises lifecycle/notification instrumentation coverage.
@@ -45,6 +35,10 @@ Release is blocked unless all gates pass. `:app:connectedDebugAndroidTest` inten
 - release docs presence checks;
 - signing placeholder checks that fail if real keystore material is found in the source tree;
 - manifest checks for notification and foreground-service declarations.
+
+## SDK availability policy
+
+The final validation target intentionally uses `compileSdk = 36`, `targetSdk = 36`, and Devtool Android platform `36`. The validator reported that `sdkmanager` could not resolve `platforms;android-37`, so API 37 is not a valid validation dependency in this environment. Lint's newer-version suggestions are suppressed for SDK/dependency availability checks only; contract, Kotlin, Android, unit, lint, assemble, instrumentation, and release-seal gates still run.
 
 ## Why foreground service and notification checks exist
 

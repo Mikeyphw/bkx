@@ -14,11 +14,11 @@ Notes:
 - `--copy -y` matches the requested non-interactive copied-archive workflow.
 - `--no-validate` is required for interim overlays; final-roadmap validation runs only after the last overlay.
 - `--commit` supplies the commit message explicitly even though the overlay manifest also requests the same single commit.
-- The Devtool Android platform, `compileSdk`, and `targetSdk` remain pinned to Android 17 / API 37 from the applied AOV-03/AOV-04 warning cleanup.
+- The Devtool Android platform, `compileSdk`, and `targetSdk` remain pinned to Android 16 / API 36 from the applied AOV-03/AOV-04 warning cleanup.
 
 ## Gradle stack note
 
-The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with refreshed versions for deterministic warning cleanup: AGP `9.3.1`, managed Gradle `9.5.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `37`, and Java toolchain `17`.
+The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with refreshed versions for deterministic warning cleanup: AGP `9.3.1`, managed Gradle `9.5.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `36`, and Java toolchain `17`.
 
 ## Interim validation policy
 

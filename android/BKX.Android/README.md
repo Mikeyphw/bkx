@@ -23,7 +23,7 @@ Implemented creation requirements:
 
 ## Gradle stack
 
-This overlay intentionally aligns the Android foundation with the uploaded StudyFlow Gradle plugin and dependency stack: AGP `9.3.1`, Kotlin/Compose/serialization plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, Java toolchain `17`, and the matching AndroidX/coroutines/serialization test dependency versions captured in `gradle/libs.versions.toml`. Unlike the StudyFlow snapshot, BKX Android targets current Android 17 / API 37 so the project does not require current Android 17 / API 37 platforms.
+This overlay intentionally aligns the Android foundation with the uploaded StudyFlow Gradle plugin and dependency stack: AGP `9.3.1`, Kotlin/Compose/serialization plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, Java toolchain `17`, and the matching AndroidX/coroutines/serialization test dependency versions captured in `gradle/libs.versions.toml`. Unlike the StudyFlow snapshot, BKX Android targets current Android 16 / API 36 so the project does not require current Android 16 / API 36 platforms.
 
 ## Interim validation policy
 
@@ -31,7 +31,7 @@ AOV-05/AOV-06 and later interim Android companion overlays are applied with `--n
 
 ## Validation SDK policy
 
-Devtool pins the validation Android platform to API 37 for this target. The companion app also declares `compileSdk = 37` and `targetSdk = 37`, matching the current released Android platform used by the validator.
+Devtool pins the validation Android platform to API 36 for this target. The companion app also declares `compileSdk = 36` and `targetSdk = 36`, matching the current released Android platform used by the validator.
 
 
 ## AOV-05/AOV-06 scope

@@ -62,7 +62,7 @@ root = "android/BKX.Android"
 
 [targets.bkx_android.android]
 variant = "debug"
-platform = "37"
+platform = "36"
 aapt2_provider = "auto"
 instrumentation = "when-device-present"
 

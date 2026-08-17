@@ -115,3 +115,19 @@ devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
 
 
 AOV-09/AOV-10 v2 closes the double-check gaps by adding progress-file polling, backend-submitted cancellation, and result-side CLI parity snapshots.
+
+
+## AOV-11/AOV-12 scope
+
+The companion now includes final instrumentation and release-seal contracts:
+
+- adversarial tests for missing Termux, RUN_COMMAND permission denial, SAF grant loss, malformed bridge JSON, and restore confirmation bypass;
+- Android instrumentation tests for activity recreation and notification/reconnect intent contracts;
+- user-visible foreground-service notification shell for active operation request ids;
+- release validation docs, setup guide, signing placeholders, and fail-closed Gradle/Devtool release gates.
+
+The Kotlin layer still does not execute BKX backup/archive/restore/transfer semantics. Android owns lifecycle visibility, notification state, structured rendering, setup guidance, and release validation wiring.
+
+## Final validation command
+
+AOV-12 is the final roadmap overlay. Use `docs/FINAL_RELEASE_VALIDATION.md` for the full Devtool validation command with one `--task` flag per Gradle task.

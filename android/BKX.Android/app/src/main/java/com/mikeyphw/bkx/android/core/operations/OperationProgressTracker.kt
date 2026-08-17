@@ -116,4 +116,9 @@ class OperationProgressTracker(
         progressEvents = emptyMap(),
         failureStates = emptyMap(),
     )
+
+    fun focus(state: OperationRuntimeState, requestId: String): OperationRuntimeState {
+        require(requestId.isNotBlank()) { "focused request id must not be blank" }
+        return state.copy(focusedRequestId = requestId)
+    }
 }

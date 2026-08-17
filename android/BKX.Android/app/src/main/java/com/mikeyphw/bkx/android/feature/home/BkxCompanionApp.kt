@@ -145,6 +145,12 @@ private fun ActiveOperationsCard(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(text = "Active operations", style = MaterialTheme.typography.titleMedium)
+            runtime.focusedRequestId?.let { requestId ->
+                Text(
+                    text = "Focused from notification/reconnect: $requestId",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
             if (runtime.activeOperations.isEmpty()) {
                 Text("No active BKX operation is being tracked.")
             } else {

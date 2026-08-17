@@ -106,6 +106,7 @@ sealed interface BkxHomeEvent {
         val requestedAtEpochMillis: Long,
     ) : BkxHomeEvent
     data class ReconnectOperations(val snapshot: OperationReconnectSnapshot) : BkxHomeEvent
+    data class FocusActiveOperation(val requestId: String) : BkxHomeEvent
 }
 
 class BkxAppViewModel(
@@ -206,6 +207,9 @@ class BkxAppViewModel(
             is BkxHomeEvent.ReconnectOperations -> updateOperationRuntime {
                 operationProgressTracker.reconnect(event.snapshot)
             }
+            is BkxHomeEvent.FocusActiveOperation -> updateOperationRuntimeAndSelectHome { runtime ->
+                operationProgressTracker.focus(runtime, event.requestId)
+            }
         }
     }
 
@@ -270,7 +274,28 @@ class BkxAppViewModel(
     private fun refreshOperations() {
         viewModelScope.launch {
             val runtime = operationStateStore.read()
-            _state.update { it.copy(operationRuntime = runtime) }
+            _state.update { current ->
+                val focusedRequestId = current.operationRuntime.focusedRequestId
+                current.copy(
+                    operationRuntime = if (focusedRequestId == null) {
+                        runtime
+                    } else {
+                        runtime.copy(focusedRequestId = focusedRequestId)
+                    },
+                )
+            }
+        }
+    }
+
+    private fun updateOperationRuntimeAndSelectHome(transform: (OperationRuntimeState) -> OperationRuntimeState) {
+        var nextRuntime: OperationRuntimeState? = null
+        _state.update { current ->
+            val next = transform(current.operationRuntime)
+            nextRuntime = next
+            current.copy(selectedDestination = BkxDestination.Home, operationRuntime = next)
+        }
+        nextRuntime?.let { runtime ->
+            viewModelScope.launch { operationStateStore.update(runtime) }
         }
     }
 

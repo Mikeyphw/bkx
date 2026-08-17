@@ -23,3 +23,17 @@ The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with re
 ## Interim validation policy
 
 Do not add validation-mode or Gradle task flags to interim overlay apply commands. Full Devtool/Gradle validation is reserved for the final roadmap overlay.
+
+
+## AOV-11/AOV-12 final overlay
+
+Apply-only mode, matching the current deferred-validation workflow:
+
+```bash
+ARTIFACT="$HOME/Downloads/bkx_android_aov11_aov12_instrumentation_release_seal_v2.zip"
+devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
+  --no-validate \
+  --commit "Seal BKX Android instrumentation and release gates"
+```
+
+Because AOV-12 is the final roadmap overlay, the full fail-closed validation command is documented in `docs/FINAL_RELEASE_VALIDATION.md` and includes unit, lint, instrumentation, package, and release-seal tasks.

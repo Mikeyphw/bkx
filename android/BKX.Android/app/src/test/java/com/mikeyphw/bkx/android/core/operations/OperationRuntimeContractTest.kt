@@ -96,4 +96,20 @@ class OperationRuntimeContractTest {
 
         assertEquals(ActiveOperationStatus.Cancelled, cancelled.activeFor("req-1")?.status)
     }
+    @Test
+    fun focusedNotificationRequestIdIsTrackedForReconnect() {
+        val tracker = OperationProgressTracker()
+        val started = tracker.trackStarted(
+            state = OperationRuntimeState(),
+            requestId = "req-focus-1",
+            operation = "backup.create",
+            startedAtEpochMillis = 1_786_000_000_000,
+        )
+
+        val focused = tracker.focus(started, "req-focus-1")
+
+        assertEquals("req-focus-1", focused.focusedRequestId)
+        assertEquals("backup.create", focused.focusedOperation?.operation)
+    }
+
 }

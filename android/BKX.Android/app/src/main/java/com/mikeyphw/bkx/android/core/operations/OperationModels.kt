@@ -112,8 +112,15 @@ data class OperationRuntimeState(
     @SerialName("active_operations") val activeOperations: Map<String, ActiveOperation> = emptyMap(),
     @SerialName("progress_events") val progressEvents: Map<String, List<OperationProgressEvent>> = emptyMap(),
     @SerialName("failure_states") val failureStates: Map<String, OperationFailureUiState> = emptyMap(),
+    @SerialName("focused_request_id") val focusedRequestId: String? = null,
 ) {
+    init {
+        require(focusedRequestId == null || focusedRequestId.isNotBlank()) { "focused request id must not be blank when present" }
+    }
+
     fun activeFor(requestId: String): ActiveOperation? = activeOperations[requestId]
+
+    val focusedOperation: ActiveOperation? = focusedRequestId?.let { activeOperations[it] }
 
     val hasActiveWork: Boolean = activeOperations.values.any {
         it.status == ActiveOperationStatus.Queued || it.status == ActiveOperationStatus.Running || it.status == ActiveOperationStatus.Cancelling

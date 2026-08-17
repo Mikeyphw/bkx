@@ -218,3 +218,9 @@ android/**/*.apk
 android/**/*.ap_
 android/**/*.aab
 android/**/*.aar
+
+# BKX Android release signing secrets (example placeholders are tracked)
+android/**/gradle/bkx-release-signing.properties
+android/**/*.jks
+android/**/*.keystore
+!android/**/gradle/*.example

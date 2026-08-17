@@ -1,0 +1,7 @@
+
+# Copy this file to bkx-release-signing.properties outside source control when release signing is needed.
+# Do not commit real keystore paths, passwords, aliases, or secrets.
+storeFile=/absolute/path/outside/repo/bkx-release.jks
+storePassword=REPLACE_ME
+keyAlias=REPLACE_ME
+keyPassword=REPLACE_ME

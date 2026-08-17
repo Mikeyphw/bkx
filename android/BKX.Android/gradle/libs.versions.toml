@@ -1,16 +1,15 @@
-# Version catalog aligned with the uploaded StudyFlow Gradle stack
-# (studyflow-20260815-101352.tar.gz): AGP 9.3.0, Kotlin/Compose/serialization 2.4.10.
+# Version catalog originally seeded from the uploaded StudyFlow Gradle stack and refreshed during AOV-03/AOV-04 to remove deterministic dependency lint warnings.
 [versions]
-agp = "9.3.0"
+agp = "9.3.1"
 kotlin = "2.4.10"
-composeBom = "2026.06.00"
+composeBom = "2026.08.00"
 activity = "1.13.0"
-appcompat = "1.7.1"
-coreKtx = "1.17.0"
-lifecycle = "2.9.4"
+appcompat = "1.8.0"
+coreKtx = "1.19.0"
+lifecycle = "2.11.0"
 navigation = "2.9.8"
-coroutines = "1.10.2"
-serialization = "1.9.0"
+coroutines = "1.11.0"
+serialization = "1.11.0"
 junit4 = "4.13.2"
 androidxJunit = "1.3.0"
 espresso = "3.7.0"

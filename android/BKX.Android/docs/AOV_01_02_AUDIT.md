@@ -4,7 +4,7 @@ This audit maps the combined overlay implementation to the promised AC items.
 
 | AC | Status | Evidence |
 |---|---|---|
-| AC-001 | Implemented | Gradle Android app project under `android/BKX.Android`, Compose enabled, namespace/application id fixed as `com.mikeyphw.bkx.android`, SDK policy set to stable Android 16 / API 36 with StudyFlow-aligned Gradle plugins/dependencies (min SDK 23, AGP 9.3.0, Kotlin 2.4.10), Devtool target `bkx_android` added with Android platform explicitly pinned to API 36 and managed Gradle pinned to 9.5.0 for AGP 9.3.0 compatibility. |
+| AC-001 | Implemented | Gradle Android app project under `android/BKX.Android`, Compose enabled, namespace/application id fixed as `com.mikeyphw.bkx.android`, SDK policy set to stable Android 17 / API 37 with StudyFlow-aligned Gradle plugins/dependencies (min SDK 23, AGP 9.3.1, Kotlin 2.4.10), Devtool target `bkx_android` added with Android platform explicitly pinned to API 37 and managed Gradle pinned to 9.5.0 for AGP 9.3.1 compatibility. |
 | AC-002 | Implemented | Packages separate `app`, `feature.home`, `core.usecase`, `core.backend`, `core.bridge`, and `termux`. |
 | AC-003 | Implemented | `BkxHomeUiState`, `BkxHomeEvent`, `CheckBackendReadinessUseCase`, `BkxAppViewModel`, and composables use state-down/events-up UDF. |
 | AC-004 | Implemented | `BackendPort` and deterministic `FakeBackendPort` are present before full Termux execution behavior. |
@@ -35,13 +35,13 @@ devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
 
 ## Gradle source update
 
-This patched overlay replaces the earlier older direct Kotlin Android plugin pins with a version catalog aligned to the uploaded StudyFlow Gradle plugin/dependency stack: AGP `9.3.0`, managed Gradle `9.5.0`, AGP built-in Kotlin plus Compose/serialization `2.4.10`, Compose BOM `2026.06.00`, lifecycle `2.9.4`, activity-compose `1.13.0`, AndroidX test `1.3.0`, Espresso `3.7.0`, coroutines `1.10.2`, serialization `1.9.0`, min SDK `23`, and Java toolchain `17`. It intentionally caps compile/target SDK to stable Android 16 / API 36 for BKX Android instead of carrying over StudyFlow's unreleased/preview API 37 value.
+AOV-03/AOV-04 keeps the AGP 9 built-in Kotlin layout and refreshes deterministic warning sources: AGP `9.3.1`, managed Gradle `9.5.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `37`, and Java toolchain `17`.
 
 ## SDK platform pin audit
 
-The Devtool target now sets `[targets.bkx_android.android].platform = "36"` and `[targets.bkx_android.gradle].version = "9.5.0"`. This prevents Devtool validation from resolving the project through `--android-platform auto` and attempting unavailable/preview package names such as `platforms;android-37`, and prevents the staged Android build helper from falling back to its older managed Gradle default when AGP 9.3.0 requires Gradle 9.5.0. The Gradle project itself remains `compileSdk = 36` and `targetSdk = 36`.
+AOV-03/AOV-04 supersedes the earlier API 36 cap after Android 17 / API 37 became available in the validator environment. The Devtool target now sets `[targets.bkx_android.android].platform = "37"`; the Gradle project uses `compileSdk = 37` and `targetSdk = 37`.
 
 
 ## AGP 9 built-in Kotlin migration
 
-This v7 artifact removes `alias(libs.plugins.kotlin.android)` from both the root and app Gradle plugin blocks, removes the `kotlin-android` plugin alias from `gradle/libs.versions.toml`, and relies on AGP 9.3.0 built-in Kotlin support. The standalone Compose and serialization compiler plugins remain because they are separate compiler integrations used by the app.
+This v7 artifact removes `alias(libs.plugins.kotlin.android)` from both the root and app Gradle plugin blocks, removes the `kotlin-android` plugin alias from `gradle/libs.versions.toml`, and relies on AGP 9.3.1 built-in Kotlin support. The standalone Compose and serialization compiler plugins remain because they are separate compiler integrations used by the app.

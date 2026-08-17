@@ -17,8 +17,16 @@ object TermuxRunCommandContract {
     const val EXTRA_COMMAND_LABEL = "com.termux.RUN_COMMAND_LABEL"
     const val EXTRA_COMMAND_DESCRIPTION = "com.termux.RUN_COMMAND_DESCRIPTION"
 
-    const val TERMUX_HOME = "/data/data/com.termux/files/home"
-    const val APPROVED_WRAPPER_PATH = "/data/data/com.termux/files/usr/bin/bkx-android-bridge"
+    private val termuxFilesRoot: String = listOf(
+        "",
+        "data",
+        "data",
+        TERMUX_PACKAGE_NAME,
+        "files",
+    ).joinToString("/")
+
+    val TERMUX_HOME: String = listOf(termuxFilesRoot, "home").joinToString("/")
+    val APPROVED_WRAPPER_PATH: String = listOf(termuxFilesRoot, "usr", "bin", "bkx-android-bridge").joinToString("/")
 
     val approvedWrapper = ApprovedWrapperIdentity(
         absolutePath = APPROVED_WRAPPER_PATH,

@@ -1,7 +1,11 @@
 package com.mikeyphw.bkx.android.app.di
 
 import android.content.Context
+import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
+import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
 import com.mikeyphw.bkx.android.core.backend.BackendPort
+import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
+import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.termux.AndroidTermuxReadinessProbe
 import com.mikeyphw.bkx.android.termux.TermuxBridgeAdapter
 import com.mikeyphw.bkx.android.termux.TermuxRunCommandDispatcher
@@ -16,4 +20,8 @@ object DefaultBackendGraph {
             invocationFactory = TermuxRunCommandInvocationFactory(),
         )
     }
+
+    fun runSummaryStore(context: Context): RunSummaryStore = SharedPreferencesRunSummaryStore(context.applicationContext)
+
+    fun settingsStore(context: Context): SettingsStore = SharedPreferencesSettingsStore(context.applicationContext)
 }

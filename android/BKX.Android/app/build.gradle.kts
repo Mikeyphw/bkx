@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "com.mikeyphw.bkx.android"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
         minSdk = 23
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
-        versionName = "0.1.0-aov02"
+        versionName = "0.1.0-aov04"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

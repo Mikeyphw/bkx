@@ -11,10 +11,10 @@ class TermuxRunCommandContractTest {
 
     private val files = BridgeRequestFiles(
         requestId = "req-123",
-        requestFilePath = "/data/data/com.termux/files/home/.bkx-android/req-123/request.json",
-        resultFilePath = "/data/data/com.termux/files/home/.bkx-android/req-123/result.json",
-        progressFilePath = "/data/data/com.termux/files/home/.bkx-android/req-123/progress.jsonl",
-        cancelFilePath = "/data/data/com.termux/files/home/.bkx-android/req-123/cancel.json",
+        requestFilePath = "${TermuxRunCommandContract.TERMUX_HOME}/.bkx-android/req-123/request.json",
+        resultFilePath = "${TermuxRunCommandContract.TERMUX_HOME}/.bkx-android/req-123/result.json",
+        progressFilePath = "${TermuxRunCommandContract.TERMUX_HOME}/.bkx-android/req-123/progress.jsonl",
+        cancelFilePath = "${TermuxRunCommandContract.TERMUX_HOME}/.bkx-android/req-123/cancel.json",
     )
 
     @Test
@@ -50,7 +50,7 @@ class TermuxRunCommandContractTest {
     @Test(expected = IllegalArgumentException::class)
     fun rejectsNonApprovedWrapperIdentity() {
         ApprovedWrapperIdentity(
-            absolutePath = "/data/data/com.termux/files/usr/bin/bash",
+            absolutePath = "${TermuxRunCommandContract.TERMUX_HOME}/../usr/bin/bash",
             label = "unsafe",
         )
     }

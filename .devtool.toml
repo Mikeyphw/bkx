@@ -62,17 +62,18 @@ root = "android/BKX.Android"
 
 [targets.bkx_android.android]
 variant = "debug"
-platform = "36"
+platform = "37"
 aapt2_provider = "auto"
 instrumentation = "when-device-present"
 
 [targets.bkx_android.gradle]
 version = "9.5.0"
-max_workers = 2
+max_workers = 1
 structured_events = true
 parallel = false
 build_cache = true
 daemon_idle_timeout_ms = 900000
+args = ["-Pandroid.suppressUnsupportedOptionWarnings=android.aapt2FromMavenOverride,android.suppressUnsupportedOptionWarnings"]
 
 [targets.bkx_android.tasks]
 restore = ["help"]

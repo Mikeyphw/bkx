@@ -1,12 +1,12 @@
 # Apply BKX Android Companion overlays with Devtool
 
-Use the BKX repository root provided for this task. For AOV-05/AOV-06 and the remaining interim overlays, validation is intentionally deferred until the final overlay.
+Use the BKX repository root provided for this task. For AOV-07/AOV-08 and the remaining interim overlays, validation is intentionally deferred until the final overlay.
 
 ```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov05_aov06_backup_archive_readonly_v2.zip"
+ARTIFACT="$HOME/Downloads/bkx_android_aov07_aov08_restore_transfer_safety_v2.zip"
 devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
   --no-validate \
-  --commit "Add BKX Android backup planning and archive read-only workflows"
+  --commit "Add BKX Android restore and transfer safety gates"
 ```
 
 Notes:

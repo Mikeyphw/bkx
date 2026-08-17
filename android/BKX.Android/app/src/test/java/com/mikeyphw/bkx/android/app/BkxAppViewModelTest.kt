@@ -22,6 +22,19 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunStatus
+import com.mikeyphw.bkx.android.core.restore.RestoreDraft
+import com.mikeyphw.bkx.android.core.restore.RestoreExtractionConfirmation
+import com.mikeyphw.bkx.android.core.restore.RestorePreviewSummary
+import com.mikeyphw.bkx.android.core.restore.RestoreDestinationSelection
+import com.mikeyphw.bkx.android.core.transfer.TransferEndpoint
+import com.mikeyphw.bkx.android.core.transfer.TransferMappingAction
+import com.mikeyphw.bkx.android.core.transfer.TransferMappingSummary
+import com.mikeyphw.bkx.android.core.transfer.TransferMode
+import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
+import com.mikeyphw.bkx.android.core.transfer.TransferResultUiState
+import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
+import com.mikeyphw.bkx.android.core.transfer.TransferCollisionSummary
+import com.mikeyphw.bkx.android.core.transfer.TransferVerificationPlan
 import com.mikeyphw.bkx.android.core.runs.VerificationState
 import com.mikeyphw.bkx.android.core.settings.InMemorySettingsStore
 import kotlinx.coroutines.Dispatchers
@@ -130,6 +143,68 @@ class BkxAppViewModelTest {
         assertTrue(viewModel.state.value.archiveReadOnly.infoState is ArchiveWorkflowUiState.Content)
         assertEquals(true, viewModel.state.value.archiveReadOnly.hasMoreBrowsePages)
         assertTrue(viewModel.state.value.archiveReadOnly.verification is ArchiveVerificationUiState.Failed)
+    }
+
+    @Test
+    fun restoreAndTransferEventsUpdateTypedSafetyState() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        val archive = ArchiveLocation("archive", "backup.bkx", "/shared/bkx/backup.bkx")
+        val restoreDraft = RestoreDraft(
+            archive = archive,
+            destination = RestoreDestinationSelection("restore-dst", "Restore output", "/shared/bkx/restores"),
+        )
+        val restorePreview = RestorePreviewSummary(
+            requestId = "restore-preview",
+            draftFingerprint = restoreDraft.fingerprint(),
+            planToken = "restore-plan",
+            selectedPathCount = 0,
+            fullRestore = true,
+        )
+        val transferDraft = TransferTopologyDraft(
+            mode = TransferMode.Push,
+            sources = listOf(TransferEndpoint("src", "Source", "/shared/bkx/backup.bkx")),
+            destination = TransferEndpoint("dst", "Remote", "user@example:/backups", isRemote = true),
+        )
+        val transferPreview = TransferPreviewSummary(
+            requestId = "transfer-preview",
+            draftFingerprint = transferDraft.fingerprint(),
+            topologyLabel = "push archive",
+            mappings = listOf(TransferMappingSummary("Source", "Remote", "backup.bkx", TransferMappingAction.Create)),
+            collisionSummary = TransferCollisionSummary(),
+            verificationPlan = TransferVerificationPlan(enabled = true),
+        )
+
+        advanceUntilIdle()
+        viewModel.onEvent(BkxHomeEvent.UpdateRestoreDraft(restoreDraft))
+        viewModel.onEvent(BkxHomeEvent.ApplyRestorePreview(restorePreview))
+        viewModel.onEvent(
+            BkxHomeEvent.ConfirmRestoreExtraction(
+                RestoreExtractionConfirmation(
+                    draftFingerprint = restoreDraft.fingerprint(),
+                    planToken = "restore-plan",
+                    acknowledgedOverwriteCount = 0,
+                    confirmationPhrase = RestoreExtractionConfirmation.CONFIRMATION_PHRASE,
+                    confirmedAtEpochMillis = 1_786_000_000_000,
+                ),
+            ),
+        )
+        viewModel.onEvent(BkxHomeEvent.UpdateTransferDraft(transferDraft))
+        viewModel.onEvent(BkxHomeEvent.ApplyTransferPreview(transferPreview))
+        viewModel.onEvent(
+            BkxHomeEvent.ApplyTransferResult(
+                BridgeResultEnvelope(
+                    protocolVersion = 1,
+                    requestId = "transfer-run",
+                    status = BridgeResultStatus.Failure,
+                    summary = "partial",
+                    errors = listOf(BridgeError("partial_failure", "one file failed")),
+                ),
+            ),
+        )
+
+        assertEquals(true, viewModel.state.value.restore.canExtract)
+        assertEquals(true, viewModel.state.value.transfer.canRun)
+        assertTrue(viewModel.state.value.transfer.result is TransferResultUiState.PartialFailure)
     }
 
     private fun viewModel(

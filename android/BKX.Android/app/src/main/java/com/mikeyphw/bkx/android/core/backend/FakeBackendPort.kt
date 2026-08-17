@@ -17,6 +17,10 @@ class FakeBackendPort(
             "archive.info",
             "archive.browse",
             "archive.verify",
+            "restore.preview",
+            "restore.extract",
+            "transfer.plan",
+            "transfer.run",
         ),
     ),
 ) : BackendPort {

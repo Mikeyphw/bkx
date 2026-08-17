@@ -59,3 +59,31 @@ devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
   --no-validate \
   --commit "Add BKX Android backup planning and archive read-only workflows"
 ```
+
+## AOV-07/AOV-08 scope
+
+The companion now includes restore and transfer safety-gate UI contracts:
+
+- restore archive/destination/subset/output-mode state;
+- `restore.preview` request generation before any `restore.extract`;
+- fresh-directory restore as the default;
+- overwrite, link, special-file, and path-safety summaries rendered from BKX bridge result fields;
+- explicit typed confirmation before destructive restore extraction;
+- extraction gated by a matching preview so navigation/output-mode changes cannot bypass confirmation;
+- push/pull/sync transfer topology state and mapping summary;
+- collision, overlap, symlink/special-file policy, and verification-plan rendering;
+- `transfer.plan` request generation before any `transfer.run`, while keeping the UI concept of a transfer preview;
+- partial failures and verification failures rendered as typed failures.
+
+The Kotlin layer still does not restore or transfer files; it sends normalized requests to BKX through the backend bridge and renders structured results.
+
+## Current interim apply command
+
+For AOV-07/AOV-08 and later interim Android companion overlays, validation is intentionally deferred until the final overlay:
+
+```bash
+ARTIFACT="$HOME/Downloads/bkx_android_aov07_aov08_restore_transfer_safety_v2.zip"
+devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
+  --no-validate \
+  --commit "Add BKX Android restore and transfer safety gates"
+```

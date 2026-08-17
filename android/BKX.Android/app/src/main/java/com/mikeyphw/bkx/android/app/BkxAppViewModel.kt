@@ -21,8 +21,16 @@ import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.runs.RunSummary
+import com.mikeyphw.bkx.android.core.restore.RestoreDraft
+import com.mikeyphw.bkx.android.core.restore.RestoreExtractionConfirmation
+import com.mikeyphw.bkx.android.core.restore.RestorePreviewSummary
+import com.mikeyphw.bkx.android.core.restore.RestoreUiState
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
+import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
+import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
+import com.mikeyphw.bkx.android.core.transfer.TransferUiState
+import com.mikeyphw.bkx.android.core.transfer.toTransferResultUiState
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.core.usecase.CheckBackendReadinessUseCase
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +48,8 @@ data class BkxHomeUiState(
     val recentRuns: List<RunSummary> = emptyList(),
     val backupPlanning: BackupPlanningUiState = BackupPlanningUiState(),
     val archiveReadOnly: ArchiveReadOnlyUiState = ArchiveReadOnlyUiState(),
+    val restore: RestoreUiState = RestoreUiState(),
+    val transfer: TransferUiState = TransferUiState(),
     val settings: BkxSettings = BkxSettings(),
     val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
@@ -62,6 +72,12 @@ sealed interface BkxHomeEvent {
     data class ApplyArchiveInfo(val info: ArchiveInfoSummary) : BkxHomeEvent
     data class ApplyArchiveBrowsePage(val page: ArchiveBrowsePage) : BkxHomeEvent
     data class ApplyArchiveVerification(val result: BridgeResultEnvelope) : BkxHomeEvent
+    data class UpdateRestoreDraft(val draft: RestoreDraft) : BkxHomeEvent
+    data class ApplyRestorePreview(val preview: RestorePreviewSummary) : BkxHomeEvent
+    data class ConfirmRestoreExtraction(val confirmation: RestoreExtractionConfirmation) : BkxHomeEvent
+    data class UpdateTransferDraft(val draft: TransferTopologyDraft) : BkxHomeEvent
+    data class ApplyTransferPreview(val preview: TransferPreviewSummary) : BkxHomeEvent
+    data class ApplyTransferResult(val result: BridgeResultEnvelope) : BkxHomeEvent
 }
 
 class BkxAppViewModel(
@@ -109,6 +125,24 @@ class BkxAppViewModel(
             }
             is BkxHomeEvent.ApplyArchiveVerification -> _state.update { current ->
                 current.copy(archiveReadOnly = current.archiveReadOnly.copy(verification = event.result.toArchiveVerificationUiState()))
+            }
+            is BkxHomeEvent.UpdateRestoreDraft -> _state.update { current ->
+                current.copy(restore = RestoreUiState(draft = event.draft))
+            }
+            is BkxHomeEvent.ApplyRestorePreview -> _state.update { current ->
+                current.copy(restore = current.restore.copy(preview = event.preview, confirmation = null))
+            }
+            is BkxHomeEvent.ConfirmRestoreExtraction -> _state.update { current ->
+                current.copy(restore = current.restore.copy(confirmation = event.confirmation))
+            }
+            is BkxHomeEvent.UpdateTransferDraft -> _state.update { current ->
+                current.copy(transfer = TransferUiState(draft = event.draft))
+            }
+            is BkxHomeEvent.ApplyTransferPreview -> _state.update { current ->
+                current.copy(transfer = current.transfer.copy(preview = event.preview))
+            }
+            is BkxHomeEvent.ApplyTransferResult -> _state.update { current ->
+                current.copy(transfer = current.transfer.copy(result = event.result.toTransferResultUiState()))
             }
         }
     }
@@ -171,8 +205,8 @@ private fun initialScreenStatuses(): Map<BkxDestination, ScreenStatus> = mapOf(
     BkxDestination.Home to ScreenStatus.Loading,
     BkxDestination.Backup to ScreenStatus.Content,
     BkxDestination.Archives to ScreenStatus.Content,
-    BkxDestination.Restore to ScreenStatus.Empty("Restore safety gates start in AOV-07."),
-    BkxDestination.Transfers to ScreenStatus.Empty("Transfer topology and verification gates start in AOV-08."),
+    BkxDestination.Restore to ScreenStatus.Content,
+    BkxDestination.Transfers to ScreenStatus.Content,
     BkxDestination.Tools to ScreenStatus.Content,
     BkxDestination.Settings to ScreenStatus.Content,
 )

@@ -33,7 +33,12 @@ import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
 import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.runs.RunSummary
+import com.mikeyphw.bkx.android.core.restore.RestoreOutputMode
+import com.mikeyphw.bkx.android.core.restore.RestoreUiState
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
+import com.mikeyphw.bkx.android.core.transfer.TransferMode
+import com.mikeyphw.bkx.android.core.transfer.TransferResultUiState
+import com.mikeyphw.bkx.android.core.transfer.TransferUiState
 
 @Composable
 fun BkxCompanionApp(viewModel: BkxAppViewModel) {
@@ -68,13 +73,10 @@ fun BkxHomeScreen(
                 BkxDestination.Home -> HomeRecentRunsScreen(state, onEvent)
                 BkxDestination.Backup -> BackupPlanningScreen(state.backupPlanning)
                 BkxDestination.Archives -> ArchiveReadOnlyScreen(state.archiveReadOnly)
+                BkxDestination.Restore -> RestoreSafetyScreen(state.restore)
+                BkxDestination.Transfers -> TransferSafetyScreen(state.transfer)
                 BkxDestination.Tools -> ToolsBackendScreen(state.backendToolState, state.isRefreshing, onEvent)
                 BkxDestination.Settings -> SettingsScreen(state.settings)
-                BkxDestination.Restore,
-                BkxDestination.Transfers -> InitialScreenPanel(
-                    destination = state.selectedDestination,
-                    status = state.screenStatuses[state.selectedDestination] ?: ScreenStatus.Loading,
-                )
             }
         }
     }
@@ -237,6 +239,92 @@ private fun ArchiveInfoStatePanel(infoState: ArchiveWorkflowUiState<ArchiveInfoS
             info.warnings.forEach { warning -> Text(text = "Info warning: $warning", style = MaterialTheme.typography.bodySmall) }
         }
         is ArchiveWorkflowUiState.Failed -> Text("Archive info failed: ${infoState.summary}")
+    }
+}
+
+
+@Composable
+private fun RestoreSafetyScreen(restore: RestoreUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Restore safety", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Restore always previews first. Extraction is disabled until the preview still matches the archive, destination, subset, and output mode.")
+            restore.draft.archive?.let { archive -> Text(text = "Archive: ${archive.displayName}") } ?: Text("Archive: not selected")
+            restore.draft.destination?.let { destination -> Text(text = "Destination: ${destination.label}") } ?: Text("Destination: fresh directory default")
+            Text(text = "Output mode: ${restore.draft.outputMode.protocolValue}")
+            Text(text = "Subset: ${restore.draft.subset.selectedPaths.ifEmpty { listOf("full restore") }.joinToString()}")
+            Text(text = "Fresh destination default: ${restore.isFreshDestinationDefault}")
+            if (restore.validationIssues.isEmpty()) {
+                Text("Restore preview request is available.")
+            } else {
+                restore.validationIssues.forEach { issue -> Text(text = "Blocked: ${issue.message}") }
+            }
+            restore.preview?.let { preview ->
+                Text(text = "Preview token: ${preview.planToken}")
+                Text(text = if (preview.fullRestore) "Preview covers a full restore." else "Preview covers ${preview.selectedPathCount} selected path(s).")
+                Text(text = "Overwrite count: ${preview.overwriteSummary.totalOverwrites}")
+                preview.overwriteSummary.paths.forEach { path -> Text(text = "Overwrite: $path") }
+                preview.pathSafetySummary.unsafePaths.forEach { path -> Text(text = "Unsafe path: $path") }
+                preview.pathSafetySummary.blockedLinks.forEach { link -> Text(text = "Blocked link: $link") }
+                preview.pathSafetySummary.blockedSpecialFiles.forEach { special -> Text(text = "Blocked special file: $special") }
+                preview.verificationHash?.let { hash -> Text(text = "Verification hash: $hash") }
+                preview.warnings.forEach { warning -> Text(text = "Preview: $warning") }
+                Text(text = if (preview.requiresDestructiveConfirmation) "Destructive restore requires typed confirmation." else "No destructive overwrite confirmation required by preview.")
+            } ?: Text("Preview: not loaded")
+            Text(text = if (restore.canExtract) "Extract is enabled from the matching preview." else "Extract is disabled until preview and confirmation gates pass.")
+            if (restore.draft.outputMode == RestoreOutputMode.ExistingDirectory) {
+                Text(text = "Existing directory mode never bypasses the preview/confirmation gate.", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransferSafetyScreen(transfer: TransferUiState) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(text = "Transfer safety", style = MaterialTheme.typography.titleMedium)
+            Text(text = "Transfer runs only after a topology preview. Android renders mapping, collisions, file policies, and verification truthfully.")
+            Text(text = "Mode: ${transfer.draft.mode.protocolValue}")
+            Text(text = "Sources: ${transfer.draft.sources.map { it.label }.ifEmpty { listOf("not selected") }.joinToString()}")
+            transfer.draft.destination?.let { destination -> Text(text = "Destination: ${destination.label}") } ?: Text("Destination: not selected")
+            Text(text = "Verification: ${transfer.draft.verifyAfterTransfer}")
+            if (transfer.draft.mode == TransferMode.Sync) {
+                Text(text = "Sync delete extraneous: ${transfer.draft.deleteExtraneousOnSync}")
+            }
+            Text(text = "Symlink policy: ${transfer.draft.symlinkPolicy.protocolValue}")
+            Text(text = "Special-file policy: ${transfer.draft.specialFilePolicy.protocolValue}")
+            if (transfer.validationIssues.isEmpty()) {
+                Text("Transfer preview request is available.")
+            } else {
+                transfer.validationIssues.forEach { issue -> Text(text = "Blocked: ${issue.message}") }
+            }
+            transfer.preview?.let { preview ->
+                Text(text = "Topology: ${preview.topologyLabel}")
+                Text(text = "Mappings: ${preview.mappings.size}")
+                preview.mappings.take(4).forEach { mapping -> Text(text = "${mapping.action}: ${mapping.relativePath}") }
+                preview.collisionSummary.collisions.forEach { collision -> Text(text = "Collision: $collision") }
+                preview.collisionSummary.overlaps.forEach { overlap -> Text(text = "Overlap: $overlap") }
+                Text(text = "Verify plan: ${preview.verificationPlan.enabled}")
+                preview.verificationPlan.expectedEvidence.forEach { evidence -> Text(text = "Evidence: $evidence") }
+                preview.warnings.forEach { warning -> Text(text = "Preview: $warning") }
+            } ?: Text("Preview: not loaded")
+            when (val result = transfer.result) {
+                TransferResultUiState.NotStarted -> Text("Transfer result: not started")
+                is TransferResultUiState.Succeeded -> Text("Transfer succeeded: ${result.summary}")
+                is TransferResultUiState.PartialFailure -> {
+                    Text("Transfer partial failure: ${result.summary}")
+                    result.errors.forEach { error -> Text(text = "${error.code}: ${error.message}") }
+                }
+                is TransferResultUiState.VerificationFailed -> {
+                    Text("Transfer verification failed: ${result.summary}")
+                    result.errors.forEach { error -> Text(text = "${error.code}: ${error.message}") }
+                }
+                is TransferResultUiState.Failed -> Text("Transfer failed: ${result.summary}")
+                is TransferResultUiState.Cancelled -> Text("Transfer cancelled: ${result.summary}")
+            }
+            Text(text = if (transfer.canRun) "Run is enabled from this topology preview." else "Run is disabled until topology preview passes.")
+        }
     }
 }
 

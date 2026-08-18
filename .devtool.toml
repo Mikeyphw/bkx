@@ -67,7 +67,7 @@ aapt2_provider = "auto"
 instrumentation = "when-device-present"
 
 [targets.bkx_android.gradle]
-version = "9.5.0"
+version = "9.7.0"
 max_workers = 1
 structured_events = true
 parallel = false

@@ -5,7 +5,7 @@ This patched AOV-01/AOV-02 overlay uses the Gradle stack observed in the uploade
 ## Adopted versions
 
 - Android Gradle Plugin: `9.3.1`
-- Managed Gradle for Devtool validation: `9.5.0`
+- Managed Gradle for Devtool validation: `9.7.0`
 - AGP built-in Kotlin: enabled by AGP `9.3.1`
 - Kotlin Compose compiler plugin: `2.4.10`
 - Kotlin serialization plugin: `2.4.10`
@@ -23,7 +23,7 @@ This patched AOV-01/AOV-02 overlay uses the Gradle stack observed in the uploade
 - minSdk: `23`
 - Java toolchain: `17`
 
-The BKX Android app keeps its own package namespace and thin backend contract. Only the Android Gradle/dependency stack was aligned with StudyFlow. Devtool validation pins managed Gradle 9.5.0 because AGP 9.3.1 requires it; no StudyFlow product code or StudyFlow business logic was imported.
+The BKX Android app keeps its own package namespace and thin backend contract. Only the Android Gradle/dependency stack was aligned with StudyFlow. Devtool validation pins managed Gradle 9.7.0 to match the supported Termux build environment; no StudyFlow product code or StudyFlow business logic was imported.
 
 
 ## Built-in Kotlin migration notes

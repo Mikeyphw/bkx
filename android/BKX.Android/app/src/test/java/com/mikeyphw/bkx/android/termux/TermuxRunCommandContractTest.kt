@@ -59,7 +59,7 @@ class TermuxRunCommandContractTest {
         assertEquals("req-123", invocation.arguments[invocation.arguments.indexOf("--request-id") + 1])
         assertEquals(files.cancelFilePath, invocation.arguments[invocation.arguments.indexOf("--cancel") + 1])
         assertTrue(invocation.arguments.contains("run.cancel"))
-        assertTrue(invocation.stdin.contains(""action":"cancel""))
+        assertTrue(invocation.stdin.contains("\"action\":\"cancel\""))
     }
 
     @Test(expected = IllegalArgumentException::class)

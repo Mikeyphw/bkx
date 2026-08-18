@@ -1,12 +1,12 @@
-# Version catalog originally seeded from the uploaded StudyFlow Gradle stack and refreshed during AOV-03/AOV-04 to remove deterministic dependency lint warnings.
+# Version catalog seeded from the StudyFlow Gradle stack. AndroidX UI/runtime versions are intentionally pinned to the newest verified API-36 compatibility lane; do not refresh them from lint suggestions without raising the validator SDK in the same change.
 [versions]
 agp = "9.3.1"
 kotlin = "2.4.10"
-composeBom = "2026.08.00"
-activity = "1.13.0"
-appcompat = "1.8.0"
-coreKtx = "1.19.0"
-lifecycle = "2.11.0"
+composeBom = "2026.06.01"
+activity = "1.12.4"
+appcompat = "1.7.1"
+coreKtx = "1.17.0"
+lifecycle = "2.10.0"
 navigation = "2.9.8"
 coroutines = "1.11.0"
 serialization = "1.11.0"

@@ -84,7 +84,9 @@ object CliParitySnapshots {
         operation = request.operation,
         requestId = request.requestId,
         payloadKeys = request.payload.keys.sorted(),
-        outputMode = (request.payload["output_mode"] ?: request.payload["outputMode"])?.toString()?.trim('"') ?: "json",
+        // BridgeJson is the transport/output contract. payload["output_mode"] is operation data
+        // for restore.preview (fresh_directory/existing_directory), not the CLI renderer mode.
+        outputMode = "json",
     )
 }
 

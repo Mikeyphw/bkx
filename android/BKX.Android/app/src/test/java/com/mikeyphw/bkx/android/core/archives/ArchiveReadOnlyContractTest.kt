@@ -65,7 +65,7 @@ class ArchiveReadOnlyContractTest {
 
         assertEquals(ArchiveReadOnlyOperation.entries.toSet(), state.availableWorkflows)
         assertEquals("backup.bkx", (state.listState as ArchiveWorkflowUiState.Content).value.single().archive.displayName)
-        assertEquals(42, (state.infoState as ArchiveWorkflowUiState.Content).value.entryCount)
+        assertEquals(42L, (state.infoState as ArchiveWorkflowUiState.Content).value.entryCount)
         assertEquals(false, state.hasMoreBrowsePages)
     }
 

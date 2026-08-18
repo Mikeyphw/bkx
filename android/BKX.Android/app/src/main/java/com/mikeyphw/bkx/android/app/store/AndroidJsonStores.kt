@@ -1,6 +1,7 @@
 package com.mikeyphw.bkx.android.app.store
 
 import android.content.Context
+import androidx.core.content.edit
 import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.runs.RunSummary
@@ -26,7 +27,7 @@ class SharedPreferencesRunSummaryStore(
         val next = (readAll().filterNot { it.requestId == summary.requestId } + summary)
             .sortedByDescending { it.startedAtEpochMillis }
             .take(MAX_STORED_RUNS)
-        prefs.edit().putString(KEY_RUNS, json.encodeToString(ListSerializer(RunSummary.serializer()), next)).apply()
+        prefs.edit { putString(KEY_RUNS, json.encodeToString(ListSerializer(RunSummary.serializer()), next)) }
     }
 
     private fun readAll(): List<RunSummary> {
@@ -52,7 +53,7 @@ class SharedPreferencesSettingsStore(
     }
 
     override suspend fun update(settings: BkxSettings) {
-        prefs.edit().putString(KEY_SETTINGS, json.encodeToString(settings)).apply()
+        prefs.edit { putString(KEY_SETTINGS, json.encodeToString(settings)) }
     }
 
     private companion object {
@@ -73,7 +74,7 @@ class SharedPreferencesOperationStateStore(
     }
 
     override suspend fun update(state: OperationRuntimeState) {
-        prefs.edit().putString(KEY_STATE, json.encodeToString(state)).apply()
+        prefs.edit { putString(KEY_STATE, json.encodeToString(state)) }
     }
 
     private companion object {

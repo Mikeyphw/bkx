@@ -21,7 +21,20 @@ Then run final validation:
 export ANDROID_SERIAL=127.0.0.1:5555
 export ADB_SERVER_SOCKET=tcp:127.0.0.1:5037
 
-devtool --copy -y -r "$HOME/Code/bkx" --target bkx_android validate   --task :app:testDebugUnitTest   --task :app:lintDebug   --task :app:connectedDebugAndroidTest   --task :app:assembleDebug   --task :app:assembleRelease   --task :app:bkxAndroidReleaseSeal
+devtool --copy -y -r "$HOME/Code/bkx" \
+  --target bkx_android \
+  validate \
+  --sequential \
+  --complete \
+  --keep-gradle-daemon
+
+# Final named release-seal contract. With a connected device the
+# sequential pipeline has already run instrumentation, so its
+# dependencies should be cached/up-to-date here.
+devtool --copy -y -r "$HOME/Code/bkx" \
+  --target bkx_android \
+  validate \
+  --task :app:bkxAndroidReleaseSeal
 ```
 
 Release is blocked unless all gates pass. `:app:connectedDebugAndroidTest` intentionally requires an attached/emulated Android device because AOV-11 promises lifecycle/notification instrumentation coverage.

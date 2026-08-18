@@ -195,7 +195,7 @@ fun BridgeResultEnvelope.toTransferResultUiState(): TransferResultUiState = when
             errors = errors,
             summary = summary.ifBlank { "Transfer completed with partial failures." },
         )
-        errors.any { it.code.contains("verify", ignoreCase = true) || it.code.contains("checksum", ignoreCase = true) } -> TransferResultUiState.VerificationFailed(
+        errors.any { it.code.contains("verify", ignoreCase = true) || it.code.contains("verification", ignoreCase = true) || it.code.contains("checksum", ignoreCase = true) } -> TransferResultUiState.VerificationFailed(
             errors = errors,
             summary = summary.ifBlank { "Transfer verification failed." },
         )

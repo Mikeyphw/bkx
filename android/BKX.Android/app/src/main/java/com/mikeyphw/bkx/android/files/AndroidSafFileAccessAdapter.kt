@@ -1,5 +1,6 @@
 package com.mikeyphw.bkx.android.files
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.database.Cursor
@@ -20,6 +21,9 @@ class AndroidSafFileAccessAdapter(
     private val context: Context,
     private val planner: StagedFilePlanner = StagedFilePlanner(),
 ) : SafFileAccessPort {
+    // String.toUri() requires AndroidX Core 1.19.0; BKX intentionally
+    // stays on Core 1.17.0 because this validation lane is compileSdk 36.
+    @SuppressLint("UseKtx")
     override fun persistGrant(selection: SafGrantRequest): PersistedUriGrantRecord {
         val flags = selection.toTakePersistableFlags()
         context.contentResolver.takePersistableUriPermission(Uri.parse(selection.uri), flags)
@@ -49,6 +53,7 @@ class AndroidSafFileAccessAdapter(
         evidence: StagingEvidence,
     ): StagedFileRecord = planner.plan(selection, stagingPath, evidence)
 
+    @SuppressLint("UseKtx")
     fun readMetadata(uriString: String): AndroidContentMetadata {
         require(uriString.startsWith(CONTENT_URI_PREFIX)) { "Metadata can be read only from content:// URIs." }
         val uri = Uri.parse(uriString)

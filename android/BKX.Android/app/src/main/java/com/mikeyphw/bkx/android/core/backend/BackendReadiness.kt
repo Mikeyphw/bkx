@@ -25,7 +25,7 @@ sealed interface BackendReadiness {
     }
 
     data object TermuxNotVisibleOrMissing : BackendReadiness {
-        override val code = "termux_missing"
+        override val code = "termux_not_visible_or_missing"
         override val title = "Termux is not visible"
         override val message = "The app cannot discover the Termux package required for BKX execution."
         override val remediationSteps = listOf(

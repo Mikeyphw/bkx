@@ -4,7 +4,7 @@ This audit maps the combined overlay implementation to the promised AC items.
 
 | AC | Status | Evidence |
 |---|---|---|
-| AC-001 | Implemented | Gradle Android app project under `android/BKX.Android`, Compose enabled, namespace/application id fixed as `com.mikeyphw.bkx.android`, SDK policy set to stable Android 16 / API 36 with StudyFlow-aligned Gradle plugins/dependencies (min SDK 23, AGP 9.3.1, Kotlin 2.4.10), Devtool target `bkx_android` added with Android platform explicitly pinned to API 36 and managed Gradle pinned to 9.5.0 for AGP 9.3.1 compatibility. |
+| AC-001 | Implemented | Gradle Android app project under `android/BKX.Android`, Compose enabled, namespace/application id fixed as `com.mikeyphw.bkx.android`, SDK policy set to stable Android 16 / API 36 with StudyFlow-aligned Gradle plugins/dependencies (min SDK 23, AGP 9.3.1, Kotlin 2.4.10), Devtool target `bkx_android` added with Android platform explicitly pinned to API 36 and managed Gradle pinned to 9.7.0 for the standardized stable toolchain. |
 | AC-002 | Implemented | Packages separate `app`, `feature.home`, `core.usecase`, `core.backend`, `core.bridge`, and `termux`. |
 | AC-003 | Implemented | `BkxHomeUiState`, `BkxHomeEvent`, `CheckBackendReadinessUseCase`, `BkxAppViewModel`, and composables use state-down/events-up UDF. |
 | AC-004 | Implemented | `BackendPort` and deterministic `FakeBackendPort` are present before full Termux execution behavior. |
@@ -35,7 +35,7 @@ devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
 
 ## Gradle source update
 
-AOV-03/AOV-04 keeps the AGP 9 built-in Kotlin layout and refreshes deterministic warning sources: AGP `9.3.1`, managed Gradle `9.5.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `36`, and Java toolchain `17`.
+AOV-03/AOV-04 keeps the AGP 9 built-in Kotlin layout and refreshes deterministic warning sources: AGP `9.3.1`, managed Gradle `9.7.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.06.01`, min SDK `23`, target/compile SDK `36`, and Java toolchain `21`.
 
 ## SDK platform pin audit
 

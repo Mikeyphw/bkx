@@ -10,18 +10,18 @@ This patched AOV-01/AOV-02 overlay uses the Gradle stack observed in the uploade
 - Kotlin Compose compiler plugin: `2.4.10`
 - Kotlin serialization plugin: `2.4.10`
 - Removed standalone Kotlin Android plugin: `org.jetbrains.kotlin.android`
-- Compose BOM: `2026.08.00`
-- Activity Compose: `1.13.0`
-- AppCompat: `1.8.0`
-- AndroidX Core KTX: `1.19.0`
-- Lifecycle Compose/ViewModel Compose: `2.11.0`
+- Compose BOM: `2026.06.01`
+- Activity Compose: `1.12.4`
+- AppCompat: `1.7.1`
+- AndroidX Core KTX: `1.17.0`
+- Lifecycle Compose/ViewModel Compose: `2.10.0`
 - Coroutines: `1.11.0`
 - kotlinx.serialization JSON: `1.11.0`
 - AndroidX test ext JUnit: `1.3.0`
 - Espresso: `3.7.0`
 - compileSdk / targetSdk: `36` for BKX Android after Android 16 / API 36 became available in the validator environment
 - minSdk: `23`
-- Java toolchain: `17`
+- Java toolchain: `21`
 
 The BKX Android app keeps its own package namespace and thin backend contract. Only the Android Gradle/dependency stack was aligned with StudyFlow. Devtool validation pins managed Gradle 9.7.0 to match the supported Termux build environment; no StudyFlow product code or StudyFlow business logic was imported.
 

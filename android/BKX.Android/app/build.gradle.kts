@@ -5,10 +5,13 @@ plugins {
 }
 
 val bkxValidationSdk = 36
+val bkxBuildToolsVersion = "36.0.0"
+val bkxJavaVersion = JavaVersion.VERSION_21
 
 android {
     namespace = "com.mikeyphw.bkx.android"
     compileSdk = bkxValidationSdk
+    buildToolsVersion = bkxBuildToolsVersion
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
@@ -25,8 +28,8 @@ android {
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = bkxJavaVersion
+        targetCompatibility = bkxJavaVersion
     }
 
     packaging {
@@ -88,7 +91,12 @@ dependencies {
 }
 
 
+val bkxGradleVersion = gradle.gradleVersion
+val bkxVersionCatalogFile = rootProject.layout.projectDirectory.file("gradle/libs.versions.toml").asFile
+
 val bkxSdk36DependencyLane = mapOf(
+    "AGP" to libs.versions.agp.get(),
+    "Kotlin" to libs.versions.kotlin.get(),
     "Compose BOM" to libs.versions.composeBom.get(),
     "Activity Compose" to libs.versions.activity.get(),
     "AppCompat" to libs.versions.appcompat.get(),
@@ -97,6 +105,9 @@ val bkxSdk36DependencyLane = mapOf(
 )
 
 val expectedBkxSdk36DependencyLane = mapOf(
+    "AGP" to "9.3.1",
+    "Kotlin" to "2.4.10",
+    // Compose 1.12+ requires compileSdk 37; keep the stable SDK-36 lane here.
     "Compose BOM" to "2026.06.01",
     "Activity Compose" to "1.12.4",
     "AppCompat" to "1.7.1",
@@ -106,14 +117,53 @@ val expectedBkxSdk36DependencyLane = mapOf(
 
 tasks.register("verifyBkxAndroidSdk36DependencyLane") {
     group = "verification"
-    description = "Fail closed when BKX Android drifts from the dependency lane verified for compileSdk 36."
+    description = "Fail closed when BKX Android drifts from the stable Java/Gradle/AGP/SDK/dependency lane."
 
+    inputs.property("bkxGradleVersion", bkxGradleVersion)
     inputs.property("bkxValidationSdk", bkxValidationSdk)
+    inputs.property("bkxBuildToolsVersion", bkxBuildToolsVersion)
+    inputs.property("bkxJavaVersion", bkxJavaVersion.toString())
     inputs.properties(bkxSdk36DependencyLane)
+    inputs.file(bkxVersionCatalogFile)
 
     doLast {
+        check(bkxGradleVersion == "9.7.0") {
+            "BKX Android must run with Gradle 9.7.0; found $bkxGradleVersion."
+        }
         check(bkxValidationSdk == 36) {
             "BKX Android SDK policy changed from API 36; update the Devtool platform, dependency lane, and SDK validation policy together."
+        }
+        check(bkxBuildToolsVersion == "36.0.0") {
+            "BKX Android Build Tools policy changed from 36.0.0; keep the stable SDK/build-tools lane synchronized."
+        }
+        check(bkxJavaVersion == JavaVersion.VERSION_21) {
+            "BKX Android JVM policy changed from Java 21; update the fleet toolchain contract deliberately."
+        }
+
+        val prereleaseToken = Regex(
+            """(?i)(?:^|[._+-])(alpha|beta|rc[0-9]*|preview|canary|eap|snapshot|nightly|milestone)(?:[._+-]|$)"""
+        )
+        val versionAssignment = Regex("""^([A-Za-z0-9_.-]+)\s*=\s*"([^"]+)"\s*(?:#.*)?$""")
+        var inVersions = false
+        val prereleaseVersions = mutableListOf<String>()
+
+        bkxVersionCatalogFile.forEachLine { rawLine ->
+            val line = rawLine.trim()
+            if (line.startsWith("[")) {
+                inVersions = line == "[versions]"
+            } else if (inVersions) {
+                val match = versionAssignment.matchEntire(line)
+                if (match != null) {
+                    val (name, version) = match.destructured
+                    if (prereleaseToken.containsMatchIn(version)) {
+                        prereleaseVersions += "$name=$version"
+                    }
+                }
+            }
+        }
+
+        check(prereleaseVersions.isEmpty()) {
+            "BKX Android stable-only dependency policy rejected prerelease versions: ${prereleaseVersions.joinToString()}."
         }
 
         val drift = expectedBkxSdk36DependencyLane.mapNotNull { (name, expected) ->

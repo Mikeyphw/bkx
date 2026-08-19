@@ -18,7 +18,7 @@ Notes:
 
 ## Gradle stack note
 
-The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with refreshed versions for deterministic warning cleanup: AGP `9.3.1`, managed Gradle `9.7.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.08.00`, min SDK `23`, target/compile SDK `36`, and Java toolchain `17`.
+The project remains on the StudyFlow-style AGP 9 built-in Kotlin layout, with refreshed versions for deterministic warning cleanup: AGP `9.3.1`, managed Gradle `9.7.0`, Kotlin/Compose/serialization compiler plugins `2.4.10`, Compose BOM `2026.06.01`, min SDK `23`, target/compile SDK `36`, and Java toolchain `21`.
 
 ## Interim validation policy
 

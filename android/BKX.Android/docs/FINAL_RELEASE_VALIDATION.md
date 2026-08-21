@@ -1,4 +1,8 @@
-# BKX Android Final Release Validation
+# BKX Android Final Validation
+
+> **Roadmap status after AOV-13→16:** the previous AOV-12 release seal is now a historical baseline, not the final standalone-BKX qualification. Do not run the final release gate for this interim mega overlay. Apply AOV-13→16, AOV-17→20, and AOV-21→24 with `--no-validate`; AOV-25→32 will replace this document with the final embedded-engine/device qualification command.
+
+## Historical AOV-12 baseline
 
 AOV-12 is the final roadmap overlay. The SDK hotfix pins the app to the latest SDK package the Termux/chroot validator can install reliably.
 

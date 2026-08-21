@@ -124,7 +124,7 @@ private fun HomeRecentRunsScreen(
             onClick = { onEvent(BkxHomeEvent.RefreshBackend) },
             enabled = !state.isRefreshing,
         ) {
-            Text(if (state.isRefreshing) "Checking…" else "Check Termux backend")
+            Text(if (state.isRefreshing) "Checking…" else "Check embedded BKX engine")
         }
         OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshRuns) }) {
             Text("Refresh runs")

@@ -1,0 +1,611 @@
+"""JSON boundary used by the embedded BKX Android backend."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import sys
+from dataclasses import asdict, is_dataclass
+from datetime import datetime
+from importlib import metadata
+from pathlib import Path
+from threading import RLock
+from typing import Any, Callable, Mapping
+
+from bkx.core.errors import (
+    BkxError,
+    ExternalToolError,
+    NotFoundError,
+    PermissionDeniedError,
+    ValidationError,
+)
+from bkx.core.results.execution_plan import plan_for_spec
+from bkx.core.services.factory import (
+    get_archive_service,
+    get_backup_service,
+    get_restore_service,
+    get_run_service,
+    get_transfer_service,
+)
+from bkx.core.specs.archive import ArchiveBrowseSpec, ArchiveInfoSpec, ArchiveVerifySpec
+from bkx.core.specs.backup import BackupSpec, CompressionProfile
+from bkx.core.specs.restore import RestoreSpec
+from bkx.core.specs.transfer import TransferSpec, TransferSyncSpec
+
+PROTOCOL_VERSION = 1
+_RUNTIME = "embedded-cpython"
+_CAPABILITIES = frozenset(
+    {
+        "readiness.probe",
+        "backup.plan",
+        "backup.create",
+        "archive.list",
+        "archive.info",
+        "archive.browse",
+        "archive.verify",
+        "restore.preview",
+        "restore.extract",
+        "transfer.plan",
+        "transfer.run",
+        "runs.list",
+        "runs.show",
+        "run.cancel.queued",
+    }
+)
+
+_cancelled_requests: set[str] = set()
+_cancel_lock = RLock()
+
+
+def _version() -> str:
+    try:
+        return metadata.version("bkx")
+    except metadata.PackageNotFoundError:
+        return "0.0.1-dev"
+
+
+def supported_operations() -> tuple[str, ...]:
+    """Return the immutable operation contract advertised to Android."""
+    return tuple(sorted(_CAPABILITIES - {"readiness.probe", "run.cancel.queued"}))
+
+
+def readiness_json() -> str:
+    return _json(
+        {
+            "protocol_version": PROTOCOL_VERSION,
+            "backend_version": _version(),
+            "runtime": _RUNTIME,
+            "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "capabilities": sorted(_CAPABILITIES),
+        }
+    )
+
+
+def cancel_json(request_id: str) -> str:
+    request_id = _require_request_id(request_id)
+    with _cancel_lock:
+        _cancelled_requests.add(request_id)
+    return _json(
+        _success(
+            request_id,
+            "Cancellation recorded. A queued embedded operation will not start; active-operation cooperative cancellation is completed in AOV-17→20.",
+        )
+    )
+
+
+def execute_json(raw_request: str) -> str:
+    """Execute one bridge-shaped request synchronously inside the current process."""
+    request_id = "unknown"
+    try:
+        request = _parse_request(raw_request)
+        request_id = request["request_id"]
+        if _consume_cancel(request_id):
+            return _json(_cancelled(request_id, "Operation was cancelled before embedded execution started."))
+        operation = request["operation"]
+        handler = _HANDLERS.get(operation)
+        if handler is None:
+            raise ValidationError(
+                msg=f"Unsupported embedded Android operation: {operation}",
+                details={"operation": operation, "supported": sorted(_HANDLERS)},
+            )
+        result = handler(request_id, request["payload"])
+        return _json(result)
+    except BkxError as exc:
+        return _json(_failure(request_id, exc))
+    except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        error = ValidationError(msg=f"Invalid embedded Android request: {exc}")
+        return _json(_failure(request_id, error))
+    except Exception as exc:  # boundary: never leak a Python traceback through the app protocol
+        error = ExternalToolError(
+            msg=f"Embedded BKX runtime failed: {type(exc).__name__}: {exc}",
+            tool_name="embedded-cpython",
+        )
+        return _json(_failure(request_id, error, code="embedded_runtime_error"))
+
+
+def _parse_request(raw_request: str) -> dict[str, Any]:
+    if not isinstance(raw_request, str) or not raw_request.strip():
+        raise ValidationError(msg="Embedded request JSON must be a non-empty string")
+    document = json.loads(raw_request)
+    if not isinstance(document, dict):
+        raise ValidationError(msg="Embedded request root must be an object")
+    protocol = document.get("protocol_version")
+    if protocol != PROTOCOL_VERSION:
+        raise ValidationError(
+            msg=f"Unsupported bridge protocol version {protocol}; expected {PROTOCOL_VERSION}",
+            details={"expected": PROTOCOL_VERSION, "actual": protocol},
+        )
+    request_id = _require_request_id(document.get("request_id"))
+    operation = document.get("operation")
+    if not isinstance(operation, str) or not operation.strip():
+        raise ValidationError(msg="operation must be a non-empty string")
+    payload = document.get("payload", {})
+    if not isinstance(payload, dict):
+        raise ValidationError(msg="payload must be an object")
+    return {
+        "protocol_version": protocol,
+        "request_id": request_id,
+        "operation": operation.strip(),
+        "payload": payload,
+    }
+
+
+def _require_request_id(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(msg="request_id must be a non-empty string")
+    request_id = value.strip()
+    if any(ch not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for ch in request_id):
+        raise ValidationError(msg="request_id must be file-name safe")
+    return request_id
+
+
+def _consume_cancel(request_id: str) -> bool:
+    with _cancel_lock:
+        if request_id in _cancelled_requests:
+            _cancelled_requests.remove(request_id)
+            return True
+    return False
+
+
+def _backup_spec(payload: Mapping[str, Any], *, dry_run: bool) -> BackupSpec:
+    source = _mapping(payload, "source")
+    destination = _mapping(payload, "destination")
+    filters = _mapping(payload, "filters", default={})
+    archive = _mapping(payload, "archive", default={})
+    split = _mapping(archive, "split", default={})
+    verification = _mapping(archive, "verification", default={})
+    compression = str(archive.get("compression") or "gzip").strip().lower()
+    # Android's first embedded lane intentionally uses a stdlib-supported default.
+    # zstd/lz4 remain valid BKX values, but the pure fallback archiver reports the
+    # typed unsupported-backend error if execution requires unavailable tooling.
+    level = int(archive.get("compression_level", 3))
+    split_size = int(split["chunk_size_bytes"]) if split.get("enabled") and split.get("chunk_size_bytes") is not None else None
+    return BackupSpec(
+        sources=(Path(_string(source, "staged_path")),),
+        destination=Path(_string(destination, "staged_directory_path")),
+        archive_name=_optional_string(archive.get("archive_name")),
+        excludes=_string_tuple(filters.get("exclude_patterns", [])),
+        includes=_string_tuple(filters.get("include_patterns", [])),
+        split_size=split_size,
+        compression=CompressionProfile(compression, level),
+        verify=bool(verification.get("verify_after_create", True)),
+        dry_run=dry_run,
+    )
+
+
+def _handle_backup_plan(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _backup_spec(payload, dry_run=True)
+    plan = plan_for_spec(spec, command="backup.plan")
+    token = _token(plan)
+    warnings = [str(item) for item in plan.warnings]
+    return _success(
+        request_id,
+        f"Backup plan ready: {plan.total_files if plan.total_files is not None else '?'} files, {plan.step_count} steps.",
+        errors=[_warning(code="plan_warning", message=w) for w in warnings],
+        artifacts=[_artifact("backup_plan", f"embedded://plan/{request_id}", token)],
+    )
+
+
+def _handle_backup_create(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _backup_spec(payload, dry_run=False)
+    result = get_backup_service().create(spec)
+    errors = [_error("backup_error", message) for message in result.errors]
+    errors.extend(_warning("backup_warning", message) for message in result.warnings)
+    artifacts = []
+    for path in result.archive_paths:
+        digest = result.checksums.get(path.name) or result.checksums.get("archive")
+        artifacts.append(_artifact("backup_archive", str(path), digest))
+    status = "success" if result.success else "failure"
+    return _result(
+        request_id,
+        status,
+        f"Backup {'completed' if result.success else 'failed'}: {result.files_processed} files, {result.bytes_written} bytes written.",
+        errors=errors,
+        artifacts=artifacts,
+    )
+
+
+def _archive_path(payload: Mapping[str, Any]) -> Path:
+    archive = _mapping(payload, "archive")
+    return Path(_string(archive, "staged_path"))
+
+
+def _handle_archive_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    # The bridge's archive.list request carries no storage root. The embedded
+    # implementation therefore projects archives from canonical BKX run history.
+    # AOV-17→20 will replace this with the Android SAF archive index.
+    run_result = get_run_service().list(limit=100)
+    seen: set[str] = set()
+    artifacts: list[dict[str, Any]] = []
+    for run in run_result.runs:
+        try:
+            detail = get_run_service().show(run.run_id)
+        except BkxError:
+            continue
+        path = detail.archive_path
+        if path and path not in seen and Path(path).exists():
+            seen.add(path)
+            artifacts.append(_artifact("archive", path))
+    return _success(request_id, f"Found {len(artifacts)} embedded BKX archives in run history.", artifacts=artifacts)
+
+
+def _handle_archive_info(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = get_archive_service().info(ArchiveInfoSpec(archive_path=_archive_path(payload)))
+    errors = [_warning("archive_warning", item) for item in result.warnings]
+    errors.extend(_error("archive_error", item) for item in result.errors)
+    return _result(
+        request_id,
+        "success" if result.success else "failure",
+        f"Archive: {result.total_entries} entries, {result.uncompressed_size} uncompressed bytes, format {result.format}.",
+        errors=errors,
+        artifacts=[_artifact("archive", str(result.archive_path))],
+    )
+
+
+def _handle_archive_browse(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    page = _mapping(payload, "page", default={})
+    page_size = int(page.get("page_size", 100))
+    token = page.get("page_token")
+    offset = int(token) if token not in (None, "") else 0
+    result = get_archive_service().browse(
+        ArchiveBrowseSpec(archive_path=_archive_path(payload), limit=page_size, offset=offset)
+    )
+    artifacts = [
+        _artifact("archive_entry_dir" if entry.is_dir else "archive_entry", entry.path)
+        for entry in result.entries
+    ]
+    next_offset = result.offset + len(result.entries)
+    if next_offset < result.total_matches:
+        artifacts.append(_artifact("archive_next_page", f"embedded://archive/page/{next_offset}"))
+    return _success(
+        request_id,
+        f"Archive page contains {len(result.entries)} of {result.total_matches} matching entries ({result.total_size} bytes).",
+        artifacts=artifacts,
+    )
+
+
+def _handle_archive_verify(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = get_archive_service().verify(ArchiveVerifySpec(archive_path=_archive_path(payload)))
+    errors = [_warning("archive_verify_warning", item) for item in result.warnings]
+    errors.extend(_error("archive_verify_error", item) for item in result.errors)
+    for entry in result.failed_entries:
+        errors.append(_error("archive_verification_entry_failed", entry))
+    digest = result.archive_checksums.get("sha256")
+    status = "success" if result.success and result.structure_valid is not False and result.checksums_valid is not False else "failure"
+    return _result(
+        request_id,
+        status,
+        f"Archive verification {'passed' if status == 'success' else 'failed'}; checked {result.entries_checked} entries.",
+        errors=errors,
+        artifacts=[_artifact("archive_verification", str(result.archive_path), digest)],
+    )
+
+
+def _restore_spec(payload: Mapping[str, Any], *, dry_run: bool) -> RestoreSpec:
+    destination_path = payload.get("destination_path")
+    if destination_path is None:
+        destination = payload.get("destination")
+        if isinstance(destination, dict):
+            destination_path = destination.get("staged_directory_path")
+    destination = Path(destination_path) if isinstance(destination_path, str) and destination_path else None
+    return RestoreSpec(
+        archive=Path(_string(payload, "archive")),
+        destination=destination,
+        paths=_string_tuple(payload.get("paths", [])),
+        overwrite=bool(payload.get("overwrite", False)),
+        verify=bool(payload.get("verify", True)),
+        dry_run=dry_run,
+        fresh_dir=bool(payload.get("fresh_dir", True)),
+        confirm_overwrite=bool(payload.get("confirm_overwrite", False)),
+    )
+
+
+def _handle_restore_preview(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _restore_spec(payload, dry_run=True)
+    result = get_restore_service().preview(spec)
+    plan = plan_for_spec(spec, command="restore.preview")
+    token = _token(plan)
+    errors = [_warning("restore_warning", item) for item in result.warnings]
+    if result.existing_files:
+        errors.append(
+            _warning(
+                "overwrite_collision",
+                f"{result.existing_files} selected restore targets already exist.",
+            )
+        )
+    artifacts = [_artifact("restore_plan", f"embedded://plan/{request_id}", token)]
+    if spec.verify:
+        verify = get_archive_service().verify(ArchiveVerifySpec(archive_path=spec.archive))
+        digest = verify.archive_checksums.get("sha256")
+        artifacts.append(_artifact("archive_verification", str(spec.archive), digest))
+        if not verify.success:
+            errors.append(_error("archive_verification_failed", "Archive verification failed during restore preview."))
+    status = "success" if result.success and not any(e["code"] == "archive_verification_failed" for e in errors) else "failure"
+    return _result(
+        request_id,
+        status,
+        f"Restore preview: {result.total_files} files, {result.total_size} bytes; {result.existing_files} existing targets.",
+        errors=errors,
+        artifacts=artifacts,
+    )
+
+
+def _handle_restore_extract(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    result = get_restore_service().extract(_restore_spec(payload, dry_run=False))
+    errors = [_warning("restore_warning", item) for item in result.warnings]
+    errors.extend(_error("restore_error", item) for item in result.errors)
+    artifacts = [_artifact("restored_path", str(path)) for path in result.restored_paths]
+    return _result(
+        request_id,
+        "success" if result.success else "failure",
+        f"Restore {'completed' if result.success else 'failed'}: {result.files_restored} files, {result.bytes_restored} bytes.",
+        errors=errors,
+        artifacts=artifacts,
+    )
+
+
+def _transfer_spec(payload: Mapping[str, Any], *, dry_run: bool) -> TransferSpec | TransferSyncSpec:
+    sources_raw = payload.get("sources")
+    if not isinstance(sources_raw, list) or not sources_raw:
+        raise ValidationError(msg="transfer sources must be a non-empty list")
+    destination = _mapping(payload, "destination")
+    mode = str(payload.get("mode") or payload.get("direction") or "push").strip().lower()
+    source_locations = tuple(_location(item, "source") for item in sources_raw)
+    destination_location = _location(destination, "destination")
+    verify = bool(payload.get("verify", True))
+    checksum = _optional_string(payload.get("checksum"))
+    overwrite = bool(payload.get("overwrite", False))
+    if mode == "sync":
+        if len(source_locations) != 1 or not isinstance(source_locations[0], Path) or not isinstance(destination_location, Path):
+            raise ValidationError(msg="Embedded sync currently requires one local source and one local destination")
+        return TransferSyncSpec(
+            source=source_locations[0],
+            destination=destination_location,
+            delete=bool(payload.get("delete_extraneous_on_sync", False)),
+            verify=verify,
+            checksum=checksum,
+            dry_run=dry_run,
+            overwrite=overwrite,
+        )
+    if mode not in {"push", "pull"}:
+        raise ValidationError(msg=f"Invalid transfer mode: {mode}")
+    return TransferSpec(
+        sources=source_locations,
+        destination=destination_location,
+        direction=mode,
+        verify=verify,
+        checksum=checksum,
+        dry_run=dry_run,
+        overwrite=overwrite,
+    )
+
+
+def _location(document: Any, label: str) -> Path | str:
+    if not isinstance(document, dict):
+        raise ValidationError(msg=f"{label} endpoint must be an object")
+    value = _string(document, "location")
+    return value if bool(document.get("remote", False)) else Path(value)
+
+
+def _handle_transfer_plan(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _transfer_spec(payload, dry_run=True)
+    plan = plan_for_spec(spec, command="transfer.plan")
+    token = _token(plan)
+    return _success(
+        request_id,
+        f"Transfer plan ready: {plan.total_files if plan.total_files is not None else '?'} files, {plan.step_count} steps.",
+        errors=[_warning("plan_warning", item) for item in plan.warnings],
+        artifacts=[_artifact("transfer_plan", f"embedded://plan/{request_id}", token)],
+    )
+
+
+def _handle_transfer_run(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    spec = _transfer_spec(payload, dry_run=False)
+    service = get_transfer_service()
+    if isinstance(spec, TransferSyncSpec):
+        result = service.sync(spec)
+    elif spec.direction == "pull":
+        result = service.pull(spec)
+    else:
+        result = service.push(spec)
+    errors = [_warning("transfer_warning", item) for item in result.warnings]
+    errors.extend(_error("transfer_error", item) for item in result.errors)
+    if result.verification_passed is False or result.checksum_verified is False:
+        errors.append(_error("transfer_verification_failed", "Transfer verification did not pass."))
+    status = "success" if result.success and result.verification_passed is not False and result.checksum_verified is not False else "failure"
+    return _result(
+        request_id,
+        status,
+        f"Transfer {'completed' if status == 'success' else 'failed'}: {result.files_transferred} files, {result.bytes_transferred} bytes.",
+        errors=errors,
+    )
+
+
+def _handle_runs_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    limit = int(payload.get("limit", 20))
+    operation = _optional_string(payload.get("operation"))
+    result = get_run_service().list(limit=limit, operation=operation)
+    artifacts = [
+        _artifact("run", f"embedded://runs/{run.run_id}", _token(run))
+        for run in result.runs
+    ]
+    return _success(request_id, f"{result.total_count} BKX runs available.", artifacts=artifacts)
+
+
+def _handle_runs_show(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    run_id = _optional_string(payload.get("run_id")) or _optional_string(payload.get("target_request_id"))
+    if run_id is None:
+        raise ValidationError(msg="runs.show requires run_id or target_request_id")
+    result = get_run_service().show(run_id)
+    return _success(
+        request_id,
+        f"Run {result.run_id}: {result.operation} is {result.status}.",
+        artifacts=[_artifact("run", f"embedded://runs/{result.run_id}", _token(result))],
+    )
+
+
+def _handle_cancel(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    target = _optional_string(payload.get("target_request_id")) or request_id
+    with _cancel_lock:
+        _cancelled_requests.add(target)
+    return _success(request_id, f"Cancellation recorded for {target}.")
+
+
+_HANDLERS: dict[str, Callable[[str, Mapping[str, Any]], dict[str, Any]]] = {
+    "backup.plan": _handle_backup_plan,
+    "backup.create": _handle_backup_create,
+    "archive.list": _handle_archive_list,
+    "archive.info": _handle_archive_info,
+    "archive.browse": _handle_archive_browse,
+    "archive.verify": _handle_archive_verify,
+    "restore.preview": _handle_restore_preview,
+    "restore.extract": _handle_restore_extract,
+    "transfer.plan": _handle_transfer_plan,
+    "transfer.run": _handle_transfer_run,
+    "runs.list": _handle_runs_list,
+    "runs.show": _handle_runs_show,
+    "run.cancel": _handle_cancel,
+}
+
+
+def _mapping(document: Mapping[str, Any], key: str, *, default: Mapping[str, Any] | None = None) -> Mapping[str, Any]:
+    value = document.get(key, default)
+    if not isinstance(value, dict):
+        raise ValidationError(msg=f"{key} must be an object")
+    return value
+
+
+def _string(document: Mapping[str, Any], key: str) -> str:
+    value = document.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValidationError(msg=f"{key} must be a non-empty string")
+    return value.strip()
+
+
+def _optional_string(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValidationError(msg="Expected string or null")
+    stripped = value.strip()
+    return stripped or None
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        raise ValidationError(msg="Expected a list of strings")
+    return tuple(item for item in value if item)
+
+
+def _plain(value: Any) -> Any:
+    if is_dataclass(value):
+        return _plain(asdict(value))
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, Mapping):
+        return {str(key): _plain(item) for key, item in sorted(value.items(), key=lambda item: str(item[0]))}
+    if isinstance(value, (tuple, list, set, frozenset)):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _token(value: Any) -> str:
+    raw = json.dumps(_plain(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _json(value: Mapping[str, Any]) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _artifact(label: str, path: str, sha256: str | None = None) -> dict[str, Any]:
+    artifact: dict[str, Any] = {"label": label, "path": path}
+    if sha256:
+        artifact["sha256"] = sha256
+    return artifact
+
+
+def _error(code: str, message: str, action: str = "Review the operation details and retry.") -> dict[str, str]:
+    return {"code": code, "message": str(message), "action": action}
+
+
+def _warning(code: str, message: str) -> dict[str, str]:
+    return _error(code, message, "Review this warning before continuing.")
+
+
+def _result(
+    request_id: str,
+    status: str,
+    summary: str,
+    *,
+    errors: list[dict[str, str]] | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return {
+        "protocol_version": PROTOCOL_VERSION,
+        "request_id": request_id,
+        "status": status,
+        "summary": summary,
+        "errors": errors or [],
+        "artifacts": artifacts or [],
+    }
+
+
+def _success(
+    request_id: str,
+    summary: str,
+    *,
+    errors: list[dict[str, str]] | None = None,
+    artifacts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return _result(request_id, "success", summary, errors=errors, artifacts=artifacts)
+
+
+def _cancelled(request_id: str, summary: str) -> dict[str, Any]:
+    return _result(request_id, "cancelled", summary)
+
+
+def _failure(request_id: str, exc: BkxError, *, code: str | None = None) -> dict[str, Any]:
+    error_code = code or {
+        ValidationError: "validation_error",
+        NotFoundError: "not_found",
+        PermissionDeniedError: "permission_denied",
+        ExternalToolError: "external_tool_error",
+    }.get(type(exc), "bkx_error")
+    action = {
+        "validation_error": "Review the selected files and operation options.",
+        "not_found": "Choose an existing source, archive, or destination.",
+        "permission_denied": "Grant access to the selected location and retry.",
+        "external_tool_error": "This operation needs a backend capability unavailable in the embedded lane.",
+        "embedded_runtime_error": "Review diagnostics and retry the operation.",
+    }.get(error_code, "Review the operation details and retry.")
+    return _result(
+        request_id,
+        "failure",
+        str(exc),
+        errors=[_error(error_code, str(exc), action)],
+    )

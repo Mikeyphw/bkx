@@ -1,3 +1,9 @@
+# BKX Android — Embedded Engine Cutover
+
+> Current state after AOV-13→16: the production Android backend embeds the canonical Python BKX engine with Chaquopy. Termux is no longer selected by `DefaultBackendGraph`; the old Termux adapter remains temporarily for cutover parity only. The full Material 3 product redesign is scheduled for AOV-21→24.
+
+See `docs/AOV_13_16_AUDIT.md` and `docs/APPLY_WITH_DEVTOOL.md` for the current milestone.
+
 # BKX Android Companion
 
 Native Kotlin + Jetpack Compose companion app for BKX.

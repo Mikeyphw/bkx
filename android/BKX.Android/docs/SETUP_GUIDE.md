@@ -1,34 +1,37 @@
-
-# BKX Android Companion Setup Guide
+# BKX Android Setup Guide — Embedded Engine Lane
 
 ## BKX backend
 
-Install and repair BKX in Termux first. The Android app is a thin interface and must not replace BKX core logic.
-
-The supported bridge path is:
+The default Android backend is now embedded in the APK:
 
 ```text
-Compose UI -> ViewModel -> BackendPort -> TermuxBridgeAdapter -> fixed bkx-android-bridge wrapper -> BKX engine
+Compose UI -> ViewModel -> BackendPort -> EmbeddedBkxBackend -> Chaquopy/CPython -> bkx.android_api -> bkx.core
 ```
 
-## Termux RUN_COMMAND
+A separate Termux installation is **not required** for the production backend.
+The legacy Termux adapter remains in source temporarily for AOV-13→16 parity and
+will be removed by the standalone-runtime mega overlay.
 
-The companion requires Termux to be installed and externally callable. Termux-side setup must include:
+## Embedded Python
 
-```text
-allow-external-apps=true
-```
-
-in Termux properties, plus the fixed `bkx-android-bridge` wrapper installed at the expected location. Android UI input is never converted into arbitrary shell commands.
+Chaquopy starts Python once per Android process from `BkxAndroidApplication`.
+Kotlin calls only the JSON functions exported by `bkx.android_api`; it does not
+invoke the BKX CLI, Textual TUI, arbitrary Python expressions, or shell commands.
 
 ## Android file access
 
-Pick user-visible files and folders through Android's Storage Access Framework. `content://` URIs are not POSIX paths; the app records grants and stages files before passing normalized paths to BKX.
+User-selected `content://` documents are still represented by the existing SAF
+and staging contracts. BKX receives ordinary staged filesystem paths. AOV-17→20
+finishes the native SAF staging/index/runtime so this boundary no longer carries
+legacy bridge-file assumptions.
 
 ## Notifications and active operations
 
-Grant notification permission when Android asks. Active BKX operations use request ids, progress files, status polling, and notification/reconnect state so the UI can recover after rotation or process recreation.
+The current foreground-service and reconnect contracts remain in place. AOV-17→20
+will replace polling/bridge-file runtime assumptions with the in-process operation
+manager while preserving request IDs and lifecycle recovery.
 
-## Final validation
+## Validation
 
-Use `docs/FINAL_RELEASE_VALIDATION.md`. Do not use raw Gradle as the primary release gate; use Devtool with one `--task` flag per Gradle task.
+AOV-13→16 is an interim mega overlay and is applied with `--no-validate`. The
+final fail-closed Devtool validation remains reserved for AOV-25→32.

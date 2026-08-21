@@ -110,6 +110,7 @@ required = true
 [validation.phases]
 preflight = [
     ":app:verifyBkxAndroidSdk36DependencyLane",
+    ":app:verifyBkxEmbeddedEngineContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",
     ":app:verifyBkxAndroidReleaseDocs",

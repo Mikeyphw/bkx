@@ -1,7 +1,8 @@
 # Version catalog seeded from the StudyFlow Gradle stack. AndroidX UI/runtime versions are intentionally pinned to the newest verified API-36 compatibility lane; do not refresh them from lint suggestions without raising the validator SDK in the same change.
 [versions]
-agp = "9.3.1"
+agp = "9.2.1"
 kotlin = "2.4.10"
+chaquopy = "17.0.0"
 composeBom = "2026.06.01"
 activity = "1.12.4"
 appcompat = "1.7.1"
@@ -42,5 +43,6 @@ junit4 = { module = "junit:junit", version.ref = "junit4" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
+chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

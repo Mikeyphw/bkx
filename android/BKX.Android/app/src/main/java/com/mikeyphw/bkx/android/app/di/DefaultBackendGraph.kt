@@ -8,18 +8,14 @@ import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
-import com.mikeyphw.bkx.android.termux.AndroidTermuxReadinessProbe
-import com.mikeyphw.bkx.android.termux.TermuxBridgeAdapter
-import com.mikeyphw.bkx.android.termux.TermuxRunCommandDispatcher
-import com.mikeyphw.bkx.android.termux.TermuxRunCommandInvocationFactory
+import com.mikeyphw.bkx.android.embedded.ChaquopyPythonGateway
+import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
 
 object DefaultBackendGraph {
     fun backendPort(context: Context): BackendPort {
         val appContext = context.applicationContext
-        return TermuxBridgeAdapter(
-            readinessProbe = AndroidTermuxReadinessProbe(appContext),
-            dispatcher = TermuxRunCommandDispatcher(appContext),
-            invocationFactory = TermuxRunCommandInvocationFactory(),
+        return EmbeddedBkxBackend(
+            gateway = ChaquopyPythonGateway(appContext),
         )
     }
 

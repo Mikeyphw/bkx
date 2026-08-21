@@ -12,8 +12,10 @@ class ArchitectureContractTest {
         .joinToString("\n") { it.readText() }
 
     @Test
-    fun sourceDefinesThinBackendPortAndTermuxAdapterBoundary() {
+    fun sourceDefinesEmbeddedBackendPortAndRetainsLegacyParityBoundary() {
         assertTrue(sourceText.contains("interface BackendPort"))
+        assertTrue(sourceText.contains("class EmbeddedBkxBackend"))
+        assertTrue(sourceText.contains("class ChaquopyPythonGateway"))
         assertTrue(sourceText.contains("class TermuxBridgeAdapter"))
         assertTrue(sourceText.contains("class FakeBackendPort"))
         assertTrue(sourceText.contains("sealed interface BackendReadiness"))

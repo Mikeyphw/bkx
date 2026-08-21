@@ -80,7 +80,7 @@ data class BackupPlanDraft(
     val source: BackupSourceSelection? = null,
     val destination: BackupDestinationSelection? = null,
     val filters: BackupFilterRules = BackupFilterRules(),
-    val compression: BackupCompression = BackupCompression.Zstd,
+    val compression: BackupCompression = BackupCompression.Gzip,
     val split: BackupSplitPolicy = BackupSplitPolicy(),
     val verification: BackupVerificationPolicy = BackupVerificationPolicy(),
 ) {
@@ -146,7 +146,7 @@ data class BackupCliIntent(
     val excludePatterns: List<String> = emptyList(),
     val includeHidden: Boolean = true,
     val followSymlinks: Boolean = false,
-    val compression: BackupCompression = BackupCompression.Zstd,
+    val compression: BackupCompression = BackupCompression.Gzip,
     val splitChunkSizeBytes: Long? = null,
     val verifyAfterCreate: Boolean = true,
 )

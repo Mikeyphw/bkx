@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.chaquopy)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -15,11 +16,14 @@ android {
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
-        minSdk = 23
+        minSdk = 24
         targetSdk = bkxValidationSdk
         versionCode = 1
-        versionName = "0.1.0-aov12"
+        versionName = "0.1.0-aov16"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildFeatures {
@@ -60,6 +64,23 @@ android {
     }
 }
 
+chaquopy {
+    defaultConfig {
+        version = "3.13"
+        // BKX core's embedded lane uses only the Python standard library.
+        // Do not install CLI/TUI dependencies into the APK.
+        pyc {
+            src = true
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            // Keep src/bkx as the single canonical Python implementation.
+            srcDir(rootProject.file("../../src"))
+        }
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -96,6 +117,7 @@ val bkxVersionCatalogFile = rootProject.layout.projectDirectory.file("gradle/lib
 
 val bkxSdk36DependencyLane = mapOf(
     "AGP" to libs.versions.agp.get(),
+    "Chaquopy" to libs.versions.chaquopy.get(),
     "Kotlin" to libs.versions.kotlin.get(),
     "Compose BOM" to libs.versions.composeBom.get(),
     "Activity Compose" to libs.versions.activity.get(),
@@ -105,7 +127,8 @@ val bkxSdk36DependencyLane = mapOf(
 )
 
 val expectedBkxSdk36DependencyLane = mapOf(
-    "AGP" to "9.3.1",
+    "AGP" to "9.2.1",
+    "Chaquopy" to "17.0.0",
     "Kotlin" to "2.4.10",
     // Compose 1.12+ requires compileSdk 37; keep the stable SDK-36 lane here.
     "Compose BOM" to "2026.06.01",
@@ -178,6 +201,57 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
     }
 }
 
+
+
+tasks.register("verifyBkxEmbeddedEngineContract") {
+    group = "verification"
+    description = "Fail closed when the AOV-13→16 embedded BKX/Chaquopy contract drifts."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val versionCatalog = androidRootDir.resolve("gradle/libs.versions.toml")
+    val appBuild = androidRootDir.resolve("app/build.gradle.kts")
+    val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
+    val embeddedBackend = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
+    val androidApi = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
+
+    inputs.files(versionCatalog, appBuild, graph, embeddedBackend, androidApi)
+
+    doLast {
+        val catalogText = versionCatalog.readText()
+        val appText = appBuild.readText()
+        val graphText = graph.readText()
+        val engineText = androidApi.readText()
+
+        check(catalogText.contains("chaquopy = \"17.0.0\"")) {
+            "AOV-13→16 requires Chaquopy 17.0.0."
+        }
+        check(catalogText.contains("agp = \"9.2.1\"")) {
+            "AOV-13→16 pins AGP 9.2.1, inside Chaquopy 17's tested 9.2.x lane."
+        }
+        check(appText.contains("minSdk = 24")) {
+            "Embedded CPython requires minSdk 24."
+        }
+        check(appText.contains("version = \"3.13\"")) {
+            "Embedded BKX must stay on Python 3.13 for this lane."
+        }
+        check(appText.contains("arm64-v8a") && appText.contains("x86_64")) {
+            "Embedded CPython ABI lane must include arm64-v8a and x86_64."
+        }
+        check(graphText.contains("EmbeddedBkxBackend") && graphText.contains("ChaquopyPythonGateway")) {
+            "Production BackendPort must resolve to the embedded BKX backend."
+        }
+        check(!graphText.contains("TermuxBridgeAdapter(")) {
+            "Production graph must not instantiate the legacy Termux adapter after AOV-15."
+        }
+        check(embeddedBackend.isFile && androidApi.isFile) {
+            "Embedded Kotlin/Python boundary files are missing."
+        }
+        check(!engineText.contains("bkx.__main__") && !engineText.contains("argparse") && !engineText.contains("textual")) {
+            "Android embedded engine must call bkx.core directly, never the CLI/TUI entrypoint."
+        }
+    }
+}
 
 tasks.register("verifyBkxAndroidReleaseDocs") {
     group = "verification"
@@ -285,6 +359,7 @@ tasks.register("bkxAndroidReleaseSeal") {
         "assembleDebug",
         "assembleRelease",
         "verifyBkxAndroidSdk36DependencyLane",
+        "verifyBkxEmbeddedEngineContract",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
         "verifyBkxAndroidManifestReleaseContract",

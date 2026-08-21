@@ -17,10 +17,15 @@ sealed interface BackendReadiness {
         val backendVersion: String,
         val bridgeProtocolVersion: Int,
         val capabilities: Set<String>,
+        val runtime: String = "legacy-bridge",
     ) : BackendReadiness {
         override val code = "ready"
         override val title = "BKX backend ready"
-        override val message = "BKX $backendVersion is available through bridge protocol $bridgeProtocolVersion."
+        override val message = if (runtime == "embedded-cpython") {
+            "BKX $backendVersion is embedded in this app (Python runtime, protocol $bridgeProtocolVersion)."
+        } else {
+            "BKX $backendVersion is available through bridge protocol $bridgeProtocolVersion."
+        }
         override val remediationSteps = emptyList<String>()
     }
 

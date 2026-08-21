@@ -2,11 +2,11 @@ package com.mikeyphw.bkx.android.storage
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.Settings
+import androidx.core.net.toUri
 import java.io.File
 
 sealed interface AllFilesAccessState {
@@ -104,11 +104,12 @@ class AndroidStorageAccessManager(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
         return Intent(
             Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-            Uri.parse("package:${appContext.packageName}"),
+            "package:${appContext.packageName}".toUri(),
         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
     fun openGrantSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
         val intent = grantIntent() ?: return false
         return runCatching {
             appContext.startActivity(intent)

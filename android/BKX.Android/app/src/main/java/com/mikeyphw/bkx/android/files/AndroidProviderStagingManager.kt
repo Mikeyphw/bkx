@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
+import androidx.core.net.toUri
 import com.mikeyphw.bkx.android.core.files.CONTENT_URI_PREFIX
 import com.mikeyphw.bkx.android.core.files.ProviderStagedItem
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
@@ -149,7 +150,7 @@ class AndroidProviderStagingManager(
 
     private fun requireContentUri(raw: String): Uri {
         require(raw.startsWith(CONTENT_URI_PREFIX)) { "Provider staging accepts content:// URIs only." }
-        return Uri.parse(raw)
+        return raw.toUri()
     }
 
     private fun String?.safeName(fallback: String): String {

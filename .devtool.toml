@@ -64,7 +64,7 @@ execution_environment = "native-termux"
 [targets.bkx_android.android]
 variant = "debug"
 platform = "36"
-aapt2_provider = "termux"
+aapt2_provider = "sdk"
 instrumentation = "when-device-present"
 test_runner = "com.mikeyphw.bkx.android.test/androidx.test.runner.AndroidJUnitRunner"
 target_package = "com.mikeyphw.bkx.android"
@@ -78,7 +78,7 @@ max_workers = 2
 
 structured_events = false
 
-no_daemon = false
+no_daemon = true
 daemon_idle_timeout_ms = 900000
 
 parallel = true
@@ -91,6 +91,7 @@ args = [
   "-Dorg.gradle.vfs.watch=false",
   "-Pkotlin.incremental=true",
   "-Pkotlin.compiler.execution.strategy=in-process",
+  "--warning-mode=all",
 ]
 
 [targets.bkx_android.tasks]
@@ -161,17 +162,15 @@ cpu_limit = 2
 split_gradle = true
 parallel = true
 
-no_daemon = false
+no_daemon = true
 stop_daemon_after_phase = false
 low_priority = false
 
 gradle_heap_mb = 1152
-gradle_metaspace_mb = 384
-
-gradle_packaging_metaspace_mb = 512
-gradle_lint_metaspace_mb = 640
-
-memory_guard_mb = 512
+gradle_metaspace_mb = 768
+gradle_packaging_metaspace_mb = 768
+gradle_lint_metaspace_mb = 768
+memory_guard_mb = 0
 affected_module_lint = true
 
 
@@ -179,8 +178,8 @@ affected_module_lint = true
 max_workers = 1
 cpu_limit = 1
 gradle_heap_mb = 768
-memory_guard_mb = 384
-no_daemon = false
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -188,8 +187,8 @@ low_priority = false
 max_workers = 2
 cpu_limit = 2
 gradle_heap_mb = 1152
-memory_guard_mb = 512
-no_daemon = false
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -197,8 +196,8 @@ low_priority = false
 max_workers = 2
 cpu_limit = 2
 gradle_heap_mb = 1152
-memory_guard_mb = 512
-no_daemon = false
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -206,8 +205,8 @@ low_priority = false
 max_workers = 2
 cpu_limit = 2
 gradle_heap_mb = 1152
-memory_guard_mb = 512
-no_daemon = false
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -215,9 +214,9 @@ low_priority = false
 max_workers = 2
 cpu_limit = 2
 gradle_heap_mb = 1152
-gradle_metaspace_mb = 512
-memory_guard_mb = 640
-no_daemon = false
+gradle_metaspace_mb = 768
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -225,9 +224,9 @@ low_priority = false
 max_workers = 1
 cpu_limit = 2
 gradle_heap_mb = 1152
-gradle_metaspace_mb = 640
-memory_guard_mb = 640
-no_daemon = false
+gradle_metaspace_mb = 768
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 
 
@@ -235,7 +234,7 @@ low_priority = false
 max_workers = 1
 cpu_limit = 1
 gradle_heap_mb = 1024
-memory_guard_mb = 512
-no_daemon = false
+memory_guard_mb = 0
+no_daemon = true
 low_priority = false
 

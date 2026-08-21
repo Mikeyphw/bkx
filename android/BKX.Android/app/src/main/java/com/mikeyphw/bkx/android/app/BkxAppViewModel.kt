@@ -164,7 +164,6 @@ sealed interface BkxHomeEvent {
         val cancelFilePath: String? = null,
     ) : BkxHomeEvent
     data class ConsumeOperationProgress(val progress: BridgeProgressEnvelope, val observedAtEpochMillis: Long) : BkxHomeEvent
-    data class ApplyOperationFinalResult(val result: BridgeResultEnvelope, val completedAtEpochMillis: Long) : BkxHomeEvent
     data class ApplyOperationFailure(val requestId: String, val failure: OperationFailureUiState, val failedAtEpochMillis: Long) : BkxHomeEvent
     data class RequestOperationCancellation(val requestId: String, val cancelRequestId: String, val requestedAtEpochMillis: Long) : BkxHomeEvent
     data class SubmitOperationCancellation(
@@ -309,7 +308,6 @@ class BkxAppViewModel(
             is BkxHomeEvent.ConsumeOperationProgress -> updateOperationRuntime { runtime ->
                 operationProgressTracker.consume(runtime, event.progress, event.observedAtEpochMillis)
             }
-            is BkxHomeEvent.ApplyOperationFinalResult -> applyFinalResult(event.result, event.completedAtEpochMillis)
             is BkxHomeEvent.ApplyOperationFailure -> {
                 updateOperationRuntime { runtime ->
                     operationProgressTracker.fail(runtime, event.requestId, event.failure, event.failedAtEpochMillis)

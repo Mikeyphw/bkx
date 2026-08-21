@@ -1,0 +1,241 @@
+[project]
+kind = "python"
+python = "python3"
+run_command = "bkx --help"
+
+[execution]
+environment = "auto"
+chroot_name = "androidos"
+device_serial = ""
+
+[toolchain]
+manager = "auto"
+
+[targets.bkx]
+type = "python"
+root = "."
+
+[python]
+manager = ""
+test_framework = "pytest"
+groups = []
+extras = ["dev", "tui"]
+validator_dependencies = [
+  "build",
+  "-r",
+  "scripts/validator-local-deps.txt",
+  "pytest>=8",
+  "pytest-cov>=4",
+  "typer>=0.12",
+  "rich>=14.2.0",
+  "textual>=7.1",
+  "hypothesis>=6",
+  "PyYAML>=6",
+  "jsonschema>=4.23",
+  "ruff",
+  "pyright"
+]
+locked = false
+offline = false
+install_project = true
+isolation = true
+source_import_isolation = false
+cli_contract = true
+disable_network = false
+fresh_dist = true
+clean_categories = ["artifacts", "caches"]
+lint = ["ruff"]
+
+[python.package]
+verify_all_wheels = false
+rebuild_sdist = false
+import_smoke = true
+verify_cli = true
+install_dependencies = false
+import_modules = ["bkx"]
+console_scripts = ["bkx"]
+
+# Standalone BKX Android target; embedded/root engine and product UI are validated in-process.
+[targets.bkx_android]
+type = "android"
+root = "android/BKX.Android"
+execution_environment = "native-termux"
+
+[targets.bkx_android.android]
+variant = "debug"
+platform = "36"
+aapt2_provider = "termux"
+instrumentation = "when-device-present"
+test_runner = "com.mikeyphw.bkx.android.test/androidx.test.runner.AndroidJUnitRunner"
+target_package = "com.mikeyphw.bkx.android"
+prefer_native_termux = true
+
+[targets.bkx_android.gradle]
+version = "9.7.1"
+provider = "auto"
+
+max_workers = 2
+
+structured_events = false
+
+no_daemon = false
+daemon_idle_timeout_ms = 900000
+
+parallel = true
+build_cache = true
+fail_fast = true
+offline = false
+
+args = [
+  "-Dorg.gradle.parallel=true",
+  "-Dorg.gradle.vfs.watch=false",
+  "-Pkotlin.incremental=true",
+  "-Pkotlin.compiler.execution.strategy=in-process",
+]
+
+[targets.bkx_android.tasks]
+restore = ["help"]
+build = [":app:assembleDebug"]
+test = [":app:testDebugUnitTest"]
+lint = [":app:lintDebug"]
+instrumentation = [":app:connectedDebugAndroidTest"]
+release = [":app:bkxAndroidReleaseSeal"]
+package = [":app:assembleRelease"]
+clean = [":app:clean"]
+
+[targets.bkx_android.artifacts]
+output_directory = "artifacts/android"
+required = true
+
+[validation.phases]
+preflight = [
+    ":app:verifyBkxAndroidSdk36DependencyLane",
+    ":app:verifyBkxEmbeddedEngineContract",
+    ":app:verifyBkxRootStorageContract",
+    ":app:verifyBkxProductUiContract",
+    ":app:verifyBkxRuntimeHardeningContract",
+    ":app:verifyBkxRestoreSafetySeal",
+    ":app:verifyBkxPerformanceAndProgressContract",
+    ":app:verifyBkxLargeTreePerformanceSeal",
+    ":app:verifyBkxStorageCompletenessContract",
+    ":app:verifyBkxAccessibilityVisualContract",
+    ":app:verifyBkxUxHardeningContract",
+    ":app:verifyBkxEmbeddedParitySeal",
+    ":app:verifyBkxReleaseHygiene",
+    ":app:verifyBkxDeviceQualificationContract",
+    ":app:verifyBkxFinalReleaseContract",
+    ":app:verifyBkxAndroidManifestReleaseContract",
+    ":app:verifyBkxAndroidSigningPlaceholders",
+    ":app:verifyBkxAndroidReleaseDocs",
+]
+
+compile = [
+  ":app:compileDebugSources",
+]
+
+resources = [
+  ":app:processDebugResources",
+]
+
+unit-test = [
+  ":app:testDebugUnitTest",
+]
+
+package = [
+  ":app:assembleDebug",
+  ":app:assembleDebugAndroidTest",
+  ":app:assembleRelease",
+]
+
+lint = [
+  ":app:lintDebug",
+]
+
+
+[validation]
+android_safe = false
+
+max_workers = 2
+cpu_limit = 2
+
+split_gradle = true
+parallel = true
+
+no_daemon = false
+stop_daemon_after_phase = false
+low_priority = false
+
+gradle_heap_mb = 1152
+gradle_metaspace_mb = 384
+
+gradle_packaging_metaspace_mb = 512
+gradle_lint_metaspace_mb = 640
+
+memory_guard_mb = 512
+affected_module_lint = true
+
+
+[validation.phase_profiles.preflight]
+max_workers = 1
+cpu_limit = 1
+gradle_heap_mb = 768
+memory_guard_mb = 384
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.compile]
+max_workers = 2
+cpu_limit = 2
+gradle_heap_mb = 1152
+memory_guard_mb = 512
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.resources]
+max_workers = 2
+cpu_limit = 2
+gradle_heap_mb = 1152
+memory_guard_mb = 512
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.unit-test]
+max_workers = 2
+cpu_limit = 2
+gradle_heap_mb = 1152
+memory_guard_mb = 512
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.package]
+max_workers = 2
+cpu_limit = 2
+gradle_heap_mb = 1152
+gradle_metaspace_mb = 512
+memory_guard_mb = 640
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.lint]
+max_workers = 1
+cpu_limit = 2
+gradle_heap_mb = 1152
+gradle_metaspace_mb = 640
+memory_guard_mb = 640
+no_daemon = false
+low_priority = false
+
+
+[validation.phase_profiles.instrumentation]
+max_workers = 1
+cpu_limit = 1
+gradle_heap_mb = 1024
+memory_guard_mb = 512
+no_daemon = false
+low_priority = false
+

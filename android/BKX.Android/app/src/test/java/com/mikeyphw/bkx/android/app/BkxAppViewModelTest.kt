@@ -333,5 +333,6 @@ class BkxAppViewModelTest {
         runSummaryStore = runSummaryStore,
         operationStateStore = InMemoryOperationStateStore(),
         settingsStore = InMemorySettingsStore(),
+        requestBaseDirectoryPath = "/tmp/bkx",
     )
 }

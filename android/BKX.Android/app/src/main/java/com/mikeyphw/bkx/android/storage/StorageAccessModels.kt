@@ -1,5 +1,7 @@
 package com.mikeyphw.bkx.android.storage
 
+import android.annotation.SuppressLint
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -21,6 +23,8 @@ data class StorageLocation(
     val requiresRoot: Boolean,
 )
 
+// These are intentional canonical paths for foreign/root-owned storage, not this app's filesDir.
+@SuppressLint("SdCardPath")
 object BkxStorageLocations {
     const val SHARED_STORAGE = "/storage/emulated/0"
     const val TERMUX_FILES = "/data/data/com.termux/files"
@@ -45,6 +49,8 @@ object BkxStorageLocations {
     )
 }
 
+// RootPathPolicy must recognize literal protected Android filesystem roots and the /sdcard compatibility alias.
+@SuppressLint("SdCardPath")
 object RootPathPolicy {
     fun isTermuxPrivate(path: String): Boolean = normalize(path).let {
         it == BkxStorageLocations.TERMUX_FILES || it.startsWith("${BkxStorageLocations.TERMUX_FILES}/")

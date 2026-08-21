@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class BkxHomeUiState(
-    val title: String = "BKX Companion",
+    val title: String = "BKX",
     val readiness: BackendReadiness = BackendReadiness.Checking,
     val isRefreshing: Boolean = false,
     val selectedDestination: BkxDestination = BkxDestination.Home,
@@ -66,6 +66,10 @@ data class BkxHomeUiState(
 ) {
     val backendToolState: BackendToolState = BackendToolState(
         readiness = readiness,
+        runtimeLabel = when (val ready = readiness as? BackendReadiness.Ready) {
+            null -> "Embedded BKX"
+            else -> if (ready.isRoot) "Embedded BKX (root)" else "Embedded BKX (app privileges)"
+        },
         protocolVersion = BridgeJson.SUPPORTED_PROTOCOL_VERSION,
         bkxVersion = (readiness as? BackendReadiness.Ready)?.backendVersion,
         capabilities = (readiness as? BackendReadiness.Ready)?.capabilities?.sorted().orEmpty(),

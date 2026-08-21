@@ -10,12 +10,21 @@ import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.embedded.ChaquopyPythonGateway
 import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
+import com.mikeyphw.bkx.android.embedded.RootAwarePythonGateway
+import com.mikeyphw.bkx.android.root.RootBkxServiceClient
 
 object DefaultBackendGraph {
     fun backendPort(context: Context): BackendPort {
         val appContext = context.applicationContext
+        val local = ChaquopyPythonGateway(appContext)
+        val root = RootBkxServiceClient(appContext)
+        val rootMode = SharedPreferencesSettingsStore(appContext).readNow().rootAccessMode
         return EmbeddedBkxBackend(
-            gateway = ChaquopyPythonGateway(appContext),
+            gateway = RootAwarePythonGateway(
+                localGateway = local,
+                rootClient = root,
+                mode = rootMode,
+            ),
         )
     }
 

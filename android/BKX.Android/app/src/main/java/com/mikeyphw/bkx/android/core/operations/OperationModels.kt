@@ -204,7 +204,7 @@ object OperationFailureMapper {
         code = "BKX_MALFORMED_RESULT",
         title = "Malformed BKX result",
         message = message,
-        actions = listOf("Open backend tools", "Retry after checking BKX wrapper"),
+        actions = listOf("Open engine diagnostics", "Retry after checking BKX runtime"),
         retryAllowed = false,
     )
 
@@ -213,37 +213,34 @@ object OperationFailureMapper {
         code = "BKX_BACKEND_TIMEOUT",
         title = "Backend timed out",
         message = message,
-        actions = listOf("Poll status", "Cancel request", "Open backend tools"),
+        actions = listOf("Poll status", "Cancel request", "Open engine diagnostics"),
     )
 
-    fun quota(message: String = "Android or Termux refused more background work for this request."): OperationFailureUiState = OperationFailureUiState(
+    fun quota(message: String = "Android refused more background work for this request."): OperationFailureUiState = OperationFailureUiState(
         kind = OperationFailureKind.QuotaExceeded,
         code = "BKX_ANDROID_QUOTA_EXCEEDED",
         title = "Background quota reached",
         message = message,
-        actions = listOf("Reconnect later", "Open backend tools"),
+        actions = listOf("Retry later", "Open engine diagnostics"),
     )
 
-    fun processDied(message: String = "The Termux wrapper process ended before a final result was written."): OperationFailureUiState = OperationFailureUiState(
+    fun processDied(message: String = "The embedded BKX process ended before a final result was written."): OperationFailureUiState = OperationFailureUiState(
         kind = OperationFailureKind.ProcessDied,
         code = "BKX_PROCESS_DIED",
         title = "Backend process ended",
         message = message,
-        actions = listOf("Poll status", "Retry operation", "Open backend tools"),
+        actions = listOf("Poll status", "Retry operation", "Open engine diagnostics"),
     )
 
     fun fromBackendReadiness(readiness: BackendReadiness): OperationFailureUiState = when (readiness) {
-        BackendReadiness.RunCommandPermissionMissing -> OperationFailureUiState(
+        BackendReadiness.RootPermissionRequired -> OperationFailureUiState(
             kind = OperationFailureKind.PermissionDenied,
-            code = "BKX_RUN_COMMAND_PERMISSION_MISSING",
+            code = "BKX_ROOT_PERMISSION_REQUIRED",
             title = readiness.title,
             message = readiness.message,
             actions = readiness.remediationSteps,
             retryAllowed = true,
         )
-        BackendReadiness.TermuxNotVisibleOrMissing,
-        BackendReadiness.AllowExternalAppsNotVerified,
-        is BackendReadiness.WrapperUnavailable,
         is BackendReadiness.UnsupportedProtocol,
         is BackendReadiness.ProbeFailed,
         BackendReadiness.Checking -> OperationFailureUiState(
@@ -251,15 +248,15 @@ object OperationFailureMapper {
             code = readiness.code.uppercase(),
             title = readiness.title,
             message = readiness.message,
-            actions = readiness.remediationSteps.ifEmpty { listOf("Open backend tools", "Re-check backend") },
+            actions = readiness.remediationSteps.ifEmpty { listOf("Open engine diagnostics", "Re-check backend") },
             retryAllowed = true,
         )
         is BackendReadiness.Ready -> OperationFailureUiState(
             kind = OperationFailureKind.Unknown,
             code = "BKX_CANCELLATION_NOT_ACCEPTED",
             title = "Cancellation was not accepted",
-            message = "BKX backend was ready but did not accept the cancellation request.",
-            actions = listOf("Poll status", "Open backend tools"),
+            message = "BKX engine was ready but did not accept the cancellation request.",
+            actions = listOf("Poll status", "Open engine diagnostics"),
             retryAllowed = true,
         )
     }
@@ -274,8 +271,8 @@ object OperationFailureMapper {
             normalized.contains("TIMEOUT") -> OperationFailureKind.BackendTimeout
             normalized.contains("QUOTA") -> OperationFailureKind.QuotaExceeded
             normalized.contains("PROCESS") || normalized.contains("EXIT") || normalized.contains("DIED") -> OperationFailureKind.ProcessDied
-            normalized.contains("PERMISSION") || normalized.contains("RUN_COMMAND") -> OperationFailureKind.PermissionDenied
-            normalized.contains("BACKEND_NOT_READY") || normalized.contains("WRAPPER") || normalized.contains("TERMUX") -> OperationFailureKind.BackendNotReady
+            normalized.contains("PERMISSION") || normalized.contains("ROOT_DENIED") || normalized.contains("ALL_FILES") -> OperationFailureKind.PermissionDenied
+            normalized.contains("BACKEND_NOT_READY") || normalized.contains("ROOT_SERVICE") || normalized.contains("EMBEDDED") -> OperationFailureKind.BackendNotReady
             normalized.contains("MALFORMED") || normalized.contains("JSON") || normalized.contains("PROTOCOL") -> OperationFailureKind.MalformedResult
             normalized.contains("SAF") || normalized.contains("GRANT") -> OperationFailureKind.SafGrantLost
             normalized.contains("CANCEL") -> OperationFailureKind.Cancelled
@@ -294,14 +291,14 @@ object OperationFailureMapper {
         }
         val defaultActions = when (kind) {
             OperationFailureKind.BackendTimeout -> listOf("Poll status", "Cancel request")
-            OperationFailureKind.QuotaExceeded -> listOf("Reconnect later", "Open backend tools")
+            OperationFailureKind.QuotaExceeded -> listOf("Retry later", "Open engine diagnostics")
             OperationFailureKind.ProcessDied -> listOf("Poll status", "Retry operation")
-            OperationFailureKind.PermissionDenied -> listOf("Grant RUN_COMMAND permission", "Open backend tools")
-            OperationFailureKind.BackendNotReady -> listOf("Open backend tools", "Re-check backend")
-            OperationFailureKind.MalformedResult -> listOf("Open backend tools", "Report wrapper output")
+            OperationFailureKind.PermissionDenied -> listOf("Grant the requested file/root permission", "Open engine diagnostics")
+            OperationFailureKind.BackendNotReady -> listOf("Open engine diagnostics", "Re-check backend")
+            OperationFailureKind.MalformedResult -> listOf("Open engine diagnostics", "Export diagnostics")
             OperationFailureKind.SafGrantLost -> listOf("Re-select files", "Open settings")
             OperationFailureKind.Cancelled -> listOf("Review partial artifacts", "Start a new request")
-            OperationFailureKind.Unknown -> listOf("Open backend tools", "Retry operation")
+            OperationFailureKind.Unknown -> listOf("Open engine diagnostics", "Retry operation")
         }
         return OperationFailureUiState(
             kind = kind,
@@ -324,7 +321,7 @@ fun BridgeResultEnvelope.toOperationResultUiState(): OperationResultUiState = wh
                 code = "BKX_OPERATION_FAILED",
                 title = "BKX operation failed",
                 message = summary.ifBlank { "BKX returned failure without a typed error." },
-                actions = listOf("Open backend tools", "Retry operation"),
+                actions = listOf("Open engine diagnostics", "Retry operation"),
             ),
     )
 }
@@ -351,7 +348,7 @@ fun BkxBridgeResponseEnvelope.toOperationResultUiState(): OperationResultUiState
                 code = "BKX_OPERATION_FAILED",
                 title = "BKX operation failed",
                 message = "BKX returned ok=false without a typed error.",
-                actions = listOf("Open backend tools", "Retry operation"),
+                actions = listOf("Open engine diagnostics", "Retry operation"),
             ),
     )
 }

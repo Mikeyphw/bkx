@@ -1,7 +1,6 @@
 package com.mikeyphw.bkx.android.app.navigation
 
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
-import com.mikeyphw.bkx.android.termux.TermuxRunCommandContract
 
 enum class BkxDestination(val label: String) {
     Home("Home"),
@@ -22,7 +21,7 @@ sealed interface ScreenStatus {
 
 data class BackendToolState(
     val readiness: BackendReadiness,
-    val wrapperPath: String = TermuxRunCommandContract.APPROVED_WRAPPER_PATH,
+    val runtimeLabel: String = "Embedded BKX / libsu root when granted",
     val protocolVersion: Int,
     val bkxVersion: String? = null,
     val capabilities: List<String> = emptyList(),

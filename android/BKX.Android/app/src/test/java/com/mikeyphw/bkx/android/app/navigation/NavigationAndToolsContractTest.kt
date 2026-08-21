@@ -20,11 +20,11 @@ class NavigationAndToolsContractTest {
     @Test
     fun backendToolStateProvidesRemediationActionsForNotReadyStates() {
         val tools = BackendToolState(
-            readiness = BackendReadiness.RunCommandPermissionMissing,
+            readiness = BackendReadiness.RootPermissionRequired,
             protocolVersion = 1,
         )
 
-        assertEquals("run_command_permission_missing", tools.remediationActions.single().code)
-        assertTrue(tools.remediationActions.single().steps.any { it.contains("Run commands") })
+        assertEquals("root_permission_required", tools.remediationActions.single().code)
+        assertTrue(tools.remediationActions.single().steps.any { it.contains("root", ignoreCase = true) })
     }
 }

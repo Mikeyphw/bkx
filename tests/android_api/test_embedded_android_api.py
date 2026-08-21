@@ -153,3 +153,43 @@ def test_malformed_and_unsupported_requests_fail_closed() -> None:
     unsupported = request("shell.exec", "no-shell", {})
     assert unsupported["status"] == "failure"
     assert unsupported["errors"][0]["code"] == "validation_error"
+
+
+def test_direct_path_aliases_do_not_require_staging_field_names(tmp_path: Path) -> None:
+    source = tmp_path / "source-direct"
+    source.mkdir()
+    (source / "direct.txt").write_text("direct", encoding="utf-8")
+    destination = tmp_path / "destination-direct"
+    destination.mkdir()
+    payload = backup_payload(source, destination)
+    payload["source"] = {"source_id": "src", "label": "Source", "path": str(source)}
+    payload["destination"] = {"destination_id": "dst", "label": "Destination", "path": str(destination)}
+
+    result = request("backup.plan", "direct-path-plan", payload)
+    assert result["status"] == "success", result
+
+
+def test_filesystem_list_and_stat_use_real_paths(tmp_path: Path) -> None:
+    folder = tmp_path / "browse"
+    folder.mkdir()
+    (folder / "alpha.txt").write_text("alpha", encoding="utf-8")
+    (folder / "nested").mkdir()
+
+    listed = request("filesystem.list", "filesystem-list", {"path": str(folder), "limit": 20})
+    assert listed["status"] == "success", listed
+    labels = {(item["label"], Path(item["path"]).name) for item in listed["artifacts"]}
+    assert ("directory", "nested") in labels
+    assert ("file", "alpha.txt") in labels
+
+    info = request("filesystem.stat", "filesystem-stat", {"path": str(folder / "alpha.txt")})
+    assert info["status"] == "success", info
+    assert info["artifacts"] == [{"label": "file", "path": str(folder / "alpha.txt")}]
+    assert "5 bytes" in info["summary"]
+
+
+def test_storage_locations_operation_is_part_of_embedded_contract() -> None:
+    readiness = json.loads(readiness_json())
+    assert "storage.locations" in readiness["capabilities"]
+    assert "filesystem.list" in readiness["capabilities"]
+    result = request("storage.locations", "storage-locations", {})
+    assert result["status"] == "success"

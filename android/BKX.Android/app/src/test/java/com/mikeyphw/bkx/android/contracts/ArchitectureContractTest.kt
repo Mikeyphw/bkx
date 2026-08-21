@@ -12,13 +12,16 @@ class ArchitectureContractTest {
         .joinToString("\n") { it.readText() }
 
     @Test
-    fun sourceDefinesEmbeddedBackendPortAndRetainsLegacyParityBoundary() {
+    fun sourceDefinesEmbeddedRootAwareBackendWithoutTermuxExecutionAdapter() {
         assertTrue(sourceText.contains("interface BackendPort"))
         assertTrue(sourceText.contains("class EmbeddedBkxBackend"))
         assertTrue(sourceText.contains("class ChaquopyPythonGateway"))
-        assertTrue(sourceText.contains("class TermuxBridgeAdapter"))
+        assertTrue(sourceText.contains("class RootAwarePythonGateway"))
+        assertTrue(sourceText.contains("class RootBkxServiceClient"))
+        assertTrue(sourceText.contains("class BkxRootEngineService"))
         assertTrue(sourceText.contains("class FakeBackendPort"))
         assertTrue(sourceText.contains("sealed interface BackendReadiness"))
+        assertFalse(sourceText.contains("class TermuxBridgeAdapter"))
     }
 
     @Test

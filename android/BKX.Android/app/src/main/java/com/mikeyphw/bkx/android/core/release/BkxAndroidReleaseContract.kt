@@ -13,9 +13,11 @@ object BkxAndroidReleaseContract {
         ":app:bkxAndroidReleaseSeal",
     )
     val requiredAdversarialCases: List<String> = listOf(
-        "missing Termux",
-        "RUN_COMMAND permission denial",
-        "SAF grant loss",
+        "root denied with local fallback",
+        "root-required mode without grant",
+        "All files access denial",
+        "Termux private path access through root",
+        "SAF fallback grant loss",
         "malformed bridge JSON",
         "restore confirmation bypass",
     )

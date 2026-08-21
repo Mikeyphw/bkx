@@ -1,17 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- Personal/backup build: direct shared-storage access when the user enables the special access screen. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
-    <queries>
-        <package android:name="com.termux" />
-        <intent>
-            <action android:name="com.termux.RUN_COMMAND" />
-        </intent>
-    </queries>
 
     <application
         android:name=".app.BkxAndroidApplication"
@@ -27,6 +24,12 @@
             android:name=".app.service.BkxOperationForegroundService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Started only through libsu RootService after the root manager authorizes BKX. -->
+        <service
+            android:name=".root.BkxRootEngineService"
+            android:exported="false"
+            tools:ignore="Instantiatable" />
 
         <activity
             android:name=".app.MainActivity"

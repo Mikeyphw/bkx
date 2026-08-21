@@ -18,11 +18,11 @@ class ChaquopyPythonGateway(
 
     private fun module() = python().getModule("bkx.android_api")
 
-    override fun readinessJson(): String = module().callAttr("readiness_json").toString()
+    override suspend fun readinessJson(): String = module().callAttr("readiness_json").toString()
 
-    override fun executeJson(requestJson: String): String =
+    override suspend fun executeJson(requestJson: String): String =
         module().callAttr("execute_json", requestJson).toString()
 
-    override fun cancelJson(requestId: String): String =
+    override suspend fun cancelJson(requestId: String): String =
         module().callAttr("cancel_json", requestId).toString()
 }

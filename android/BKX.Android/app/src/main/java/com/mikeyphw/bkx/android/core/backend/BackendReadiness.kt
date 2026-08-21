@@ -8,8 +8,8 @@ sealed interface BackendReadiness {
 
     data object Checking : BackendReadiness {
         override val code = "checking"
-        override val title = "Checking backend"
-        override val message = "BKX backend readiness has not finished yet."
+        override val title = "Checking BKX engine"
+        override val message = "BKX engine readiness has not finished yet."
         override val remediationSteps = emptyList<String>()
     }
 
@@ -17,58 +17,27 @@ sealed interface BackendReadiness {
         val backendVersion: String,
         val bridgeProtocolVersion: Int,
         val capabilities: Set<String>,
-        val runtime: String = "legacy-bridge",
+        val runtime: String = "embedded-cpython",
     ) : BackendReadiness {
+        val isRoot: Boolean get() = "root.filesystem" in capabilities
+
         override val code = "ready"
-        override val title = "BKX backend ready"
-        override val message = if (runtime == "embedded-cpython") {
-            "BKX $backendVersion is embedded in this app (Python runtime, protocol $bridgeProtocolVersion)."
+        override val title = if (isRoot) "BKX root engine ready" else "BKX engine ready"
+        override val message = if (isRoot) {
+            "BKX $backendVersion is embedded in this app and running with root filesystem access."
         } else {
-            "BKX $backendVersion is available through bridge protocol $bridgeProtocolVersion."
+            "BKX $backendVersion is embedded in this app. Root-only paths remain unavailable until root is granted."
         }
         override val remediationSteps = emptyList<String>()
     }
 
-    data object TermuxNotVisibleOrMissing : BackendReadiness {
-        override val code = "termux_not_visible_or_missing"
-        override val title = "Termux is not visible"
-        override val message = "The app cannot discover the Termux package required for BKX execution."
+    data object RootPermissionRequired : BackendReadiness {
+        override val code = "root_permission_required"
+        override val title = "Root access required"
+        override val message = "BKX is configured to require root, but the device root manager has not granted it."
         override val remediationSteps = listOf(
-            "Install Termux from a trusted source.",
-            "Keep the manifest package visibility query for com.termux enabled.",
-        )
-    }
-
-    data object RunCommandPermissionMissing : BackendReadiness {
-        override val code = "run_command_permission_missing"
-        override val title = "RUN_COMMAND permission not granted"
-        override val message = "Android has not granted permission to run the fixed BKX wrapper in Termux."
-        override val remediationSteps = listOf(
-            "Open Android Settings for BKX Companion.",
-            "Grant the additional permission named Run commands in Termux environment.",
-        )
-    }
-
-    data object AllowExternalAppsNotVerified : BackendReadiness {
-        override val code = "allow_external_apps_not_verified"
-        override val title = "Termux external app access needs verification"
-        override val message = "Termux must allow external apps before it will execute the fixed BKX wrapper."
-        override val remediationSteps = listOf(
-            "Set allow-external-apps=true in ~/.termux/termux.properties.",
-            "Restart Termux after changing termux.properties.",
-            "Run backend check again so the wrapper can prove readiness.",
-        )
-    }
-
-    data class WrapperUnavailable(
-        val wrapperPath: String,
-    ) : BackendReadiness {
-        override val code = "wrapper_unavailable"
-        override val title = "BKX wrapper unavailable"
-        override val message = "The approved BKX Android wrapper was not found at $wrapperPath."
-        override val remediationSteps = listOf(
-            "Install the repaired BKX engine inside Termux.",
-            "Install the approved bkx-android-bridge wrapper at the documented path.",
+            "Grant BKX root access in your root manager.",
+            "Run the engine check again.",
         )
     }
 
@@ -77,17 +46,17 @@ sealed interface BackendReadiness {
         val actual: Int,
     ) : BackendReadiness {
         override val code = "unsupported_protocol"
-        override val title = "Unsupported bridge protocol"
-        override val message = "The app supports protocol $expected, but the backend reported $actual."
-        override val remediationSteps = listOf("Update BKX Companion and the Termux wrapper together.")
+        override val title = "Unsupported engine protocol"
+        override val message = "The app supports protocol $expected, but the embedded engine reported $actual."
+        override val remediationSteps = listOf("Update the Android app and embedded BKX engine together.")
     }
 
     data class ProbeFailed(
         val reason: String,
     ) : BackendReadiness {
         override val code = "probe_failed"
-        override val title = "Backend probe failed"
+        override val title = "BKX engine check failed"
         override val message = reason
-        override val remediationSteps = listOf("Review Termux and BKX setup, then retry backend check.")
+        override val remediationSteps = listOf("Review engine diagnostics, then retry the check.")
     }
 }

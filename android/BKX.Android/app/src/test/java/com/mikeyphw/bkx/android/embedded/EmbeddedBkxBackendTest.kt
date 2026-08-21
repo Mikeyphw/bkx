@@ -95,10 +95,10 @@ class EmbeddedBkxBackendTest {
         var lastRequestJson: String? = null
         var cancelledRequestId: String? = null
 
-        override fun readinessJson(): String =
+        override suspend fun readinessJson(): String =
             """{"protocol_version":1,"backend_version":"0.0.1","runtime":"embedded-cpython","python_version":"3.13.9","capabilities":["backup.plan"]}"""
 
-        override fun executeJson(requestJson: String): String {
+        override suspend fun executeJson(requestJson: String): String {
             lastRequestJson = requestJson
             val requestId = Regex("\\\"request_id\\\":\\\"([^\\\"]+)\\\"").find(requestJson)?.groupValues?.get(1) ?: "req-1"
             return if (resultJson.contains("\"request_id\":\"req-1\"")) {
@@ -108,7 +108,7 @@ class EmbeddedBkxBackendTest {
             }
         }
 
-        override fun cancelJson(requestId: String): String {
+        override suspend fun cancelJson(requestId: String): String {
             cancelledRequestId = requestId
             return """{"protocol_version":1,"request_id":"$requestId","status":"success","summary":"cancel recorded","errors":[],"artifacts":[]}"""
         }

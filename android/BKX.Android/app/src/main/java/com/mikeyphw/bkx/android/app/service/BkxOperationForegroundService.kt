@@ -25,10 +25,10 @@ import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
 /**
  * User-visible service shell for active BKX operations.
  *
- * BKX still runs through Termux and the fixed wrapper. This service does not
+ * BKX runs through the embedded root-aware engine. This service does not
  * execute backup/archive/restore/transfer logic; it only supplies Android's
  * required visible lifecycle/notification surface for a request id that the app
- * can later reconnect to through `runs.show`/progress polling.
+ * can later reconnect to through persisted run state.
  */
 class BkxOperationForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
@@ -92,7 +92,7 @@ class BkxOperationForegroundService : Service() {
             "BKX operations",
             NotificationManager.IMPORTANCE_LOW,
         ).apply {
-            description = "Progress for active BKX operations launched through the Termux bridge."
+            description = "Progress for active embedded BKX operations."
         }
         manager.createNotificationChannel(channel)
     }

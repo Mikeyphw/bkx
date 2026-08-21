@@ -19,7 +19,7 @@ android {
         minSdk = 24
         targetSdk = bkxValidationSdk
         versionCode = 1
-        versionName = "0.1.0-aov16"
+        versionName = "0.1.0-aov20"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -28,6 +28,7 @@ android {
 
     buildFeatures {
         compose = true
+        aidl = true
     }
 
     compileOptions {
@@ -95,6 +96,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.libsu.core)
+    implementation(libs.libsu.service)
+    implementation(libs.libsu.io)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
@@ -124,6 +128,7 @@ val bkxSdk36DependencyLane = mapOf(
     "AppCompat" to libs.versions.appcompat.get(),
     "Core KTX" to libs.versions.coreKtx.get(),
     "Lifecycle Compose" to libs.versions.lifecycle.get(),
+    "libsu" to libs.versions.libsu.get(),
 )
 
 val expectedBkxSdk36DependencyLane = mapOf(
@@ -136,6 +141,7 @@ val expectedBkxSdk36DependencyLane = mapOf(
     "AppCompat" to "1.7.1",
     "Core KTX" to "1.17.0",
     "Lifecycle Compose" to "2.10.0",
+    "libsu" to "6.0.0",
 )
 
 tasks.register("verifyBkxAndroidSdk36DependencyLane") {
@@ -253,6 +259,71 @@ tasks.register("verifyBkxEmbeddedEngineContract") {
     }
 }
 
+
+
+tasks.register("verifyBkxRootStorageContract") {
+    group = "verification"
+    description = "Fail closed when AOV-17→20 root/all-files/Termux-private-storage contracts drift."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val manifest = androidRootDir.resolve("app/src/main/AndroidManifest.xml")
+    val catalog = androidRootDir.resolve("gradle/libs.versions.toml")
+    val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
+    val rootService = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
+    val rootClient = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/RootBkxServiceClient.kt")
+    val storage = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/storage/StorageAccessModels.kt")
+    val androidApi = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
+
+    inputs.files(manifest, catalog, graph, rootService, rootClient, storage, androidApi)
+
+    doLast {
+        val manifestText = manifest.readText()
+        val catalogText = catalog.readText()
+        val graphText = graph.readText()
+        val rootServiceText = rootService.readText()
+        val rootClientText = rootClient.readText()
+        val storageText = storage.readText()
+        val engineText = androidApi.readText()
+
+        check(catalogText.contains("libsu = \"6.0.0\"")) {
+            "AOV-17→20 requires the audited libsu 6.0.0 root transport lane."
+        }
+        check(manifestText.contains("android.permission.MANAGE_EXTERNAL_STORAGE")) {
+            "BKX personal backup build must declare All files access."
+        }
+        check(manifestText.contains(".root.BkxRootEngineService")) {
+            "BKX root engine service is missing from the manifest."
+        }
+        check(!manifestText.contains("com.termux.permission.RUN_COMMAND") && !manifestText.contains("com.termux.RUN_COMMAND")) {
+            "Termux RUN_COMMAND must not return as an execution dependency."
+        }
+        check(graphText.contains("RootAwarePythonGateway") && graphText.contains("RootBkxServiceClient")) {
+            "Production embedded backend must be root-aware."
+        }
+        check(rootServiceText.contains("RootService") && rootServiceText.contains("Os.getuid()") && rootServiceText.contains("bkx.android_api")) {
+            "Root service must run the canonical embedded BKX API and verify UID 0."
+        }
+        check(!rootServiceText.contains("ProcessBuilder(") && !rootServiceText.contains("su -c")) {
+            "Root transport must not expose a shell-command implementation."
+        }
+        check(rootClientText.contains("Shell.getShell().isRoot") && rootClientText.contains("RootService.bind")) {
+            "Root client must use libsu authorization and RootService binding."
+        }
+        check(
+            storageText.contains("/data/data/com.termux/files") &&
+                storageText.contains("/data/data/com.termux/files/home") &&
+                storageText.contains("/data/data/com.termux/files/home/storage") &&
+                storageText.contains("/data/data/com.termux/files/usr")
+        ) {
+            "Termux private files/home/storage/prefix locations must remain first-class root storage targets."
+        }
+        check(engineText.contains("root.filesystem") && engineText.contains("storage.termux.private")) {
+            "Root BKX Python runtime must advertise root and Termux-private capabilities."
+        }
+    }
+}
+
 tasks.register("verifyBkxAndroidReleaseDocs") {
     group = "verification"
     description = "Fail closed when BKX Android release documentation or setup guides are missing."
@@ -360,6 +431,7 @@ tasks.register("bkxAndroidReleaseSeal") {
         "assembleRelease",
         "verifyBkxAndroidSdk36DependencyLane",
         "verifyBkxEmbeddedEngineContract",
+        "verifyBkxRootStorageContract",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
         "verifyBkxAndroidManifestReleaseContract",

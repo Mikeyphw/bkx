@@ -19,8 +19,9 @@ class BkxAndroidReleaseContractTest {
     @Test
     fun releaseSealCarriesAdversarialCoverageList() {
         val cases = BkxAndroidReleaseContract.requiredAdversarialCases.joinToString("|")
-        assertTrue(cases.contains("missing Termux"))
-        assertTrue(cases.contains("SAF grant loss"))
+        assertTrue(cases.contains("root denied"))
+        assertTrue(cases.contains("Termux private path"))
+        assertTrue(cases.contains("SAF fallback grant loss"))
         assertTrue(cases.contains("malformed bridge JSON"))
         assertTrue(cases.contains("confirmation bypass"))
     }

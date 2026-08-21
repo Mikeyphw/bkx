@@ -72,11 +72,11 @@ class BkxAppViewModelTest {
 
     @Test
     fun refreshBackendUpdatesStructuredReadinessState() = runTest(dispatcher) {
-        val viewModel = viewModel(backend = FakeBackendPort(BackendReadiness.RunCommandPermissionMissing))
+        val viewModel = viewModel(backend = FakeBackendPort(BackendReadiness.RootPermissionRequired))
 
         advanceUntilIdle()
 
-        assertEquals(BackendReadiness.RunCommandPermissionMissing, viewModel.state.value.readiness)
+        assertEquals(BackendReadiness.RootPermissionRequired, viewModel.state.value.readiness)
         assertEquals(false, viewModel.state.value.isRefreshing)
     }
 
@@ -273,7 +273,7 @@ class BkxAppViewModelTest {
 
     @Test
     fun rejectedBackendCancellationRendersTypedFailure() = runTest(dispatcher) {
-        val backend = FakeBackendPort(BackendReadiness.RunCommandPermissionMissing)
+        val backend = FakeBackendPort(BackendReadiness.RootPermissionRequired)
         val viewModel = viewModel(backend = backend)
 
         advanceUntilIdle()

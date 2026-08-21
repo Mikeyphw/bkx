@@ -5,7 +5,16 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class BackendPreference {
+    @SerialName("embedded") Embedded,
+    @Deprecated("Legacy value retained only so old settings can still deserialize.")
     @SerialName("termux_run_command") TermuxRunCommand,
+}
+
+@Serializable
+enum class RootAccessMode {
+    @SerialName("preferred") Preferred,
+    @SerialName("required") Required,
+    @SerialName("disabled") Disabled,
 }
 
 @Serializable
@@ -16,16 +25,18 @@ enum class LogPrivacyMode {
 
 @Serializable
 enum class ProgressPreference {
+    @SerialName("event_driven") EventDriven,
     @SerialName("polling") Polling,
     @SerialName("compact") Compact,
 }
 
 @Serializable
 data class BkxSettings(
-    val backend: BackendPreference = BackendPreference.TermuxRunCommand,
-    val stagingLocationLabel: String = "Termux shared staging area",
+    val backend: BackendPreference = BackendPreference.Embedded,
+    val rootAccessMode: RootAccessMode = RootAccessMode.Preferred,
+    val storageLocationLabel: String = "Direct filesystem access",
     val logPrivacyMode: LogPrivacyMode = LogPrivacyMode.Private,
-    val progressPreference: ProgressPreference = ProgressPreference.Polling,
+    val progressPreference: ProgressPreference = ProgressPreference.EventDriven,
 )
 
 interface SettingsStore {

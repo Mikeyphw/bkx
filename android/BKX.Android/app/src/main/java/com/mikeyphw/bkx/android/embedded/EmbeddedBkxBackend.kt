@@ -45,6 +45,8 @@ class EmbeddedBkxBackend(
                     runtime = document.runtime,
                 )
             }
+        } catch (exc: RootAccessRequiredException) {
+            BackendReadiness.RootPermissionRequired
         } catch (exc: Exception) {
             BackendReadiness.ProbeFailed("Embedded BKX startup failed: ${exc.message ?: exc::class.java.simpleName}")
         }

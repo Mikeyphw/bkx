@@ -18,12 +18,12 @@ class FakeBackendPortTest {
     }
 
     @Test
-    fun readinessCanRepresentRunCommandPermissionFailure() = runTest {
-        val backend = FakeBackendPort(BackendReadiness.RunCommandPermissionMissing)
+    fun readinessCanRepresentRootPermissionFailure() = runTest {
+        val backend = FakeBackendPort(BackendReadiness.RootPermissionRequired)
         val readiness = backend.checkReadiness()
 
-        assertEquals("run_command_permission_missing", readiness.code)
-        assertTrue(readiness.remediationSteps.any { it.contains("Run commands in Termux") })
+        assertEquals("root_permission_required", readiness.code)
+        assertTrue(readiness.remediationSteps.any { it.contains("root access") })
     }
 
     @Test

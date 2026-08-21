@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxAppViewModel
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
@@ -39,6 +40,7 @@ import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.restore.RestoreOutputMode
 import com.mikeyphw.bkx.android.core.restore.RestoreUiState
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
+import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
 import com.mikeyphw.bkx.android.core.transfer.TransferMode
 import com.mikeyphw.bkx.android.core.transfer.TransferResultUiState
 import com.mikeyphw.bkx.android.core.transfer.TransferUiState
@@ -68,7 +70,7 @@ fun BkxHomeScreen(
         ) {
             Text(text = state.title, style = MaterialTheme.typography.headlineMedium)
             Text(
-                text = "Thin Android interface over the BKX engine contract.",
+                text = "Standalone BKX engine with optional root access.",
                 style = MaterialTheme.typography.bodyMedium,
             )
             NavigationGraphTabs(state, onEvent)
@@ -431,8 +433,8 @@ private fun ToolsBackendScreen(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(text = "Backend tools", style = MaterialTheme.typography.titleMedium)
-            Text(text = "Wrapper: ${tools.wrapperPath}")
-            Text(text = "Bridge protocol: ${tools.protocolVersion}")
+            Text(text = "Runtime: ${tools.runtimeLabel}")
+            Text(text = "Engine protocol: ${tools.protocolVersion}")
             Text(text = "BKX version: ${tools.bkxVersion ?: "not verified"}")
             Text(text = "Capabilities: ${tools.capabilities.ifEmpty { listOf("not verified") }.joinToString()}")
             Button(onClick = { onEvent(BkxHomeEvent.RefreshBackend) }, enabled = !isRefreshing) {
@@ -452,15 +454,22 @@ private fun ToolsBackendScreen(
 
 @Composable
 private fun SettingsScreen(settings: BkxSettings) {
+    val context = LocalContext.current
+    val storageAccess = AndroidStorageAccessManager(context)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(text = "Settings", style = MaterialTheme.typography.titleMedium)
             Text(text = "Backend: ${settings.backend}")
-            Text(text = "Staging: ${settings.stagingLocationLabel}")
+            Text(text = "Storage: ${settings.storageLocationLabel}")
+            Text(text = "Root: ${settings.rootAccessMode}")
+            Text(text = "All files access: ${if (storageAccess.hasAllFilesAccess()) "granted" else "not granted"}")
+            if (!storageAccess.hasAllFilesAccess()) {
+                Button(onClick = { storageAccess.openGrantSettings() }) { Text("Grant all files access") }
+            }
             Text(text = "Log privacy: ${settings.logPrivacyMode}")
             Text(text = "Progress: ${settings.progressPreference}")
             Text(
-                text = "SAF grants are kept deliberate; content URIs are staged before BKX receives filesystem paths.",
+                text = "Root mode lets the embedded BKX engine access protected paths such as Termux home directly. SAF remains a fallback for content providers.",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

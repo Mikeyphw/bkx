@@ -1,139 +1,45 @@
-# BKX Android — Embedded Engine Cutover
+# BKX Android
 
-> Current state after AOV-13→16: the production Android backend embeds the canonical Python BKX engine with Chaquopy. Termux is no longer selected by `DefaultBackendGraph`; the old Termux adapter remains temporarily for cutover parity only. The full Material 3 product redesign is scheduled for AOV-21→24.
+BKX Android is a standalone Android frontend for the canonical Python BKX engine.
 
-See `docs/AOV_13_16_AUDIT.md` and `docs/APPLY_WITH_DEVTOOL.md` for the current milestone.
+Current milestone: **AOV-17→20 root-native storage/runtime cutover**.
 
-# BKX Android Companion
+## Runtime
 
-Native Kotlin + Jetpack Compose companion app for BKX.
-
-This project is intentionally a thin interface over the repaired BKX Python engine. Android code owns UI state, Android permissions, Termux bridge dispatch, and structured rendering. BKX remains the canonical implementation for backup, archive, restore, and transfer semantics.
-
-## AOV-01/AOV-02 scope
-
-Implemented creation requirements:
-
-- AC-001: Android app project with fixed namespace/application id `com.mikeyphw.bkx.android`, Compose, Kotlin, min SDK 23, target/compile SDK 36, and Devtool target metadata.
-- AC-002: package layout separates app/UI, core backend ports, bridge DTOs, Termux adapter, and tests.
-- AC-003: Compose UDF screen state and typed UI events through `BkxAppViewModel`.
-- AC-004: `BackendPort` and `FakeBackendPort` exist before real Termux execution.
-- AC-005: backend readiness uses structured sealed states with remediation steps.
-- AC-006: no arbitrary shell strings or general process execution APIs are used.
-- AC-007: manifest declares package visibility for Termux package and RUN_COMMAND action.
-- AC-008: readiness handles missing Termux, missing RUN_COMMAND permission, and unverified `allow-external-apps` setup.
-- AC-009: Termux dispatch uses only the approved `bkx-android-bridge` wrapper identity.
-- AC-010: bridge invocation passes request/result/progress/cancel paths with a request id.
-- AC-011: final backend result parsing accepts exactly one structured JSON document.
-- AC-012: bridge protocol is versioned and unsupported versions are rejected.
-
-## Gradle stack
-
-This overlay intentionally aligns the Android foundation with the uploaded StudyFlow Gradle plugin and dependency stack: AGP `9.3.1`, Kotlin/Compose/serialization plugins `2.4.10`, Compose BOM `2026.06.01`, min SDK `23`, Java toolchain `21`, and the matching AndroidX/coroutines/serialization test dependency versions captured in `gradle/libs.versions.toml`. Unlike the StudyFlow snapshot, BKX Android targets current Android 16 / API 36 so the project does not require current Android 16 / API 36 platforms.
-
-## Interim validation policy
-
-AOV-05/AOV-06 and later interim Android companion overlays are applied with `--no-validate`. Full Gradle validation is intentionally deferred until the last roadmap overlay.
-
-## Validation SDK policy
-
-Devtool pins the validation Android platform to API 36 for this target. The companion app also declares `compileSdk = 36` and `targetSdk = 36`, matching the current released Android platform used by the validator.
-
-
-## AOV-05/AOV-06 scope
-
-The companion now includes backup planning and archive read-only UI contracts:
-
-- backup source/destination/filter/compression/split/verify state;
-- `backup.plan` request generation before any `backup.create`;
-- create gating that refuses invalid, stale, or unpreviewed plans;
-- archive list/info/browse/verify request builders plus list/info/browse/verify UI state;
-- paged browse state for large archives;
-- verification failures rendered as failures;
-- read-only archive operation allowlisting.
-
-The Kotlin layer still does not perform backup or archive engine work; it sends normalized requests to BKX through the backend bridge.
-
-
-## Current interim apply command
-
-For AOV-05/AOV-06 and later interim Android companion overlays, validation is intentionally deferred until the final overlay:
-
-```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov05_aov06_backup_archive_readonly_v2.zip"
-devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
-  --no-validate \
-  --commit "Add BKX Android backup planning and archive read-only workflows"
+```text
+Compose / Android lifecycle
+  -> BackendPort
+  -> EmbeddedBkxBackend
+  -> RootAwarePythonGateway
+       |-> libsu RootService -> Chaquopy -> bkx.android_api -> bkx.core
+       `-> Chaquopy -> bkx.android_api -> bkx.core
 ```
 
-## AOV-07/AOV-08 scope
+Root is preferred by default but optional. If a compatible root manager grants access, the embedded BKX engine itself runs as UID 0. If root is unavailable, BKX falls back to the normal embedded engine.
 
-The companion now includes restore and transfer safety-gate UI contracts:
+No Termux execution bridge is used. There is no RUN_COMMAND permission, `allow-external-apps` requirement, wrapper process, or arbitrary root-shell API.
 
-- restore archive/destination/subset/output-mode state;
-- `restore.preview` request generation before any `restore.extract`;
-- fresh-directory restore as the default;
-- overwrite, link, special-file, and path-safety summaries rendered from BKX bridge result fields;
-- explicit typed confirmation before destructive restore extraction;
-- extraction gated by a matching preview so navigation/output-mode changes cannot bypass confirmation;
-- push/pull/sync transfer topology state and mapping summary;
-- collision, overlap, symlink/special-file policy, and verification-plan rendering;
-- `transfer.plan` request generation before any `transfer.run`, while keeping the UI concept of a transfer preview;
-- partial failures and verification failures rendered as typed failures.
+## Storage
 
-The Kotlin layer still does not restore or transfer files; it sends normalized requests to BKX through the backend bridge and renders structured results.
+The personal build declares Android All files access for direct shared-storage operation. With root granted, BKX can also access protected filesystem paths directly, including Termux private storage:
 
-## Current interim apply command
+- `/data/data/com.termux/files`
+- `/data/data/com.termux/files/home`
+- `/data/data/com.termux/files/home/storage`
+- `/data/data/com.termux/files/usr`
 
-For AOV-07/AOV-08 and later interim Android companion overlays, validation is intentionally deferred until the final overlay:
+The same root runtime can reach other root-readable paths such as `/data/user/0` and `/data/adb`. SAF remains a fallback for content providers rather than the primary local-file architecture.
 
-```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov07_aov08_restore_transfer_safety_v2.zip"
-devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
-  --no-validate \
-  --commit "Add BKX Android restore and transfer safety gates"
-```
+## Canonical behavior
 
-## AOV-09/AOV-10 scope
+Android does not reimplement backup/archive/restore/transfer rules. `bkx.android_api` is a narrow structured boundary over `bkx.core`; it does not call the BKX CLI/TUI or accept arbitrary commands/Python expressions.
 
-The companion now includes runtime operation and result-rendering contracts:
+## Milestones
 
-- progress event consumption keyed by BKX request id;
-- active operation persistence for rotation/process recreation reconnect;
-- request-id cancellation models and fixed-wrapper cancellation dispatch;
-- typed timeout, quota, process-death, permission, backend-not-ready, SAF-loss, cancellation and malformed-result failures;
-- strict schema response parsing that rejects malformed, multiple, partial, unknown-field, or unsupported-version output;
-- stable result rendering actions for typed BKX errors and verification failures;
-- semantic parity snapshots for representative Android bridge requests versus CLI JSON expectations.
+- AOV-01→12: Android companion contracts/lifecycle/safety foundation.
+- AOV-13→16: embedded Chaquopy/CPython BKX engine cutover.
+- AOV-17→20: root-native storage, All files access, Termux-private storage, Termux execution removal.
+- AOV-21→24: full Material 3 product UI replacement.
+- AOV-25→32: hardening, parity, performance, physical-device qualification, release seal.
 
-The Kotlin layer still does not execute BKX backup/archive/restore/transfer semantics. It tracks Android runtime state and renders BKX structured progress/results.
-
-## Current interim apply command
-
-For AOV-09/AOV-10 and remaining interim Android companion overlays, validation is intentionally deferred until the final overlay:
-
-```bash
-ARTIFACT="$HOME/Downloads/bkx_android_aov09_aov10_operations_rendering_parity_v1.zip"
-devtool --copy -y -r "$HOME/Code/bkx" apply-overlay "$ARTIFACT" \
-  --no-validate \
-  --commit "Add BKX Android operation runtime and result rendering parity"
-```
-
-
-AOV-09/AOV-10 v2 closes the double-check gaps by adding progress-file polling, backend-submitted cancellation, and result-side CLI parity snapshots.
-
-
-## AOV-11/AOV-12 scope
-
-The companion now includes final instrumentation and release-seal contracts:
-
-- adversarial tests for missing Termux, RUN_COMMAND permission denial, SAF grant loss, malformed bridge JSON, and restore confirmation bypass;
-- Android instrumentation tests for activity recreation and notification/reconnect intent contracts;
-- user-visible foreground-service notification shell for active operation request ids;
-- release validation docs, setup guide, signing placeholders, and fail-closed Gradle/Devtool release gates.
-
-The Kotlin layer still does not execute BKX backup/archive/restore/transfer semantics. Android owns lifecycle visibility, notification state, structured rendering, setup guidance, and release validation wiring.
-
-## Final validation command
-
-AOV-12 is the final roadmap overlay. Use `docs/FINAL_RELEASE_VALIDATION.md` for the full Devtool validation command with one `--task` flag per Gradle task.
+See `docs/AOV_17_20_AUDIT.md`, `docs/SETUP_GUIDE.md`, and `docs/APPLY_WITH_DEVTOOL.md`.

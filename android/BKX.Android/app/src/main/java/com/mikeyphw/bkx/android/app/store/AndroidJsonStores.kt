@@ -47,10 +47,12 @@ class SharedPreferencesSettingsStore(
 ) : SettingsStore {
     private val prefs = context.applicationContext.getSharedPreferences("bkx_settings", Context.MODE_PRIVATE)
 
-    override suspend fun read(): BkxSettings {
+    fun readNow(): BkxSettings {
         val raw = prefs.getString(KEY_SETTINGS, null) ?: return BkxSettings()
         return runCatching { json.decodeFromString<BkxSettings>(raw) }.getOrDefault(BkxSettings())
     }
+
+    override suspend fun read(): BkxSettings = readNow()
 
     override suspend fun update(settings: BkxSettings) {
         prefs.edit { putString(KEY_SETTINGS, json.encodeToString(settings)) }

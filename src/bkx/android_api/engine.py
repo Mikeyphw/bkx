@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat as stat_module
 import sys
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -50,6 +52,9 @@ _CAPABILITIES = frozenset(
         "runs.list",
         "runs.show",
         "run.cancel.queued",
+        "storage.locations",
+        "filesystem.list",
+        "filesystem.stat",
     }
 )
 
@@ -64,6 +69,24 @@ def _version() -> str:
         return "0.0.1-dev"
 
 
+def _is_root_runtime() -> bool:
+    geteuid = getattr(os, "geteuid", None)
+    if not callable(geteuid):
+        return False
+    try:
+        return int(geteuid()) == 0
+    except OSError:
+        return False
+
+
+def _runtime_capabilities() -> set[str]:
+    capabilities = set(_CAPABILITIES)
+    capabilities.add("filesystem.direct")
+    if _is_root_runtime():
+        capabilities.update({"root.filesystem", "storage.termux.private", "storage.app_private"})
+    return capabilities
+
+
 def supported_operations() -> tuple[str, ...]:
     """Return the immutable operation contract advertised to Android."""
     return tuple(sorted(_CAPABILITIES - {"readiness.probe", "run.cancel.queued"}))
@@ -76,7 +99,7 @@ def readiness_json() -> str:
             "backend_version": _version(),
             "runtime": _RUNTIME,
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-            "capabilities": sorted(_CAPABILITIES),
+            "capabilities": sorted(_runtime_capabilities()),
         }
     )
 
@@ -88,7 +111,7 @@ def cancel_json(request_id: str) -> str:
     return _json(
         _success(
             request_id,
-            "Cancellation recorded. A queued embedded operation will not start; active-operation cooperative cancellation is completed in AOV-17→20.",
+            "Cancellation recorded for the embedded operation.",
         )
     )
 
@@ -181,8 +204,8 @@ def _backup_spec(payload: Mapping[str, Any], *, dry_run: bool) -> BackupSpec:
     level = int(archive.get("compression_level", 3))
     split_size = int(split["chunk_size_bytes"]) if split.get("enabled") and split.get("chunk_size_bytes") is not None else None
     return BackupSpec(
-        sources=(Path(_string(source, "staged_path")),),
-        destination=Path(_string(destination, "staged_directory_path")),
+        sources=(Path(_string_alias(source, "path", "staged_path")),),
+        destination=Path(_string_alias(destination, "path", "staged_directory_path")),
         archive_name=_optional_string(archive.get("archive_name")),
         excludes=_string_tuple(filters.get("exclude_patterns", [])),
         includes=_string_tuple(filters.get("include_patterns", [])),
@@ -227,7 +250,7 @@ def _handle_backup_create(request_id: str, payload: Mapping[str, Any]) -> dict[s
 
 def _archive_path(payload: Mapping[str, Any]) -> Path:
     archive = _mapping(payload, "archive")
-    return Path(_string(archive, "staged_path"))
+    return Path(_string_alias(archive, "path", "staged_path"))
 
 
 def _handle_archive_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -441,6 +464,92 @@ def _handle_transfer_run(request_id: str, payload: Mapping[str, Any]) -> dict[st
     )
 
 
+def _handle_storage_locations(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    candidates = [
+        ("shared-storage", Path("/storage/emulated/0")),
+        ("termux-files", Path("/data/data/com.termux/files")),
+        ("termux-home", Path("/data/data/com.termux/files/home")),
+        ("termux-storage", Path("/data/data/com.termux/files/home/storage")),
+        ("termux-prefix", Path("/data/data/com.termux/files/usr")),
+        ("data-adb", Path("/data/adb")),
+        ("app-data", Path("/data/user/0")),
+        ("removable-storage", Path("/mnt/media_rw")),
+    ]
+    artifacts: list[dict[str, Any]] = []
+    for label, path in candidates:
+        try:
+            if path.exists():
+                artifacts.append(_artifact(label, str(path)))
+        except PermissionError:
+            continue
+    privilege = "root" if _is_root_runtime() else "app"
+    return _success(
+        request_id,
+        f"Discovered {len(artifacts)} direct filesystem locations with {privilege} privileges.",
+        artifacts=artifacts,
+    )
+
+
+def _handle_filesystem_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    path = Path(_string(payload, "path")).expanduser()
+    show_hidden = bool(payload.get("show_hidden", True))
+    limit = max(1, min(int(payload.get("limit", 250)), 1000))
+    offset = max(0, int(payload.get("offset", 0)))
+    try:
+        if not path.exists():
+            raise NotFoundError(msg=f"Path not found: {path}", details={"path": str(path)})
+        if not path.is_dir():
+            raise ValidationError(msg=f"Path is not a directory: {path}", details={"path": str(path)})
+        entries = sorted(path.iterdir(), key=lambda item: (not item.is_dir(), item.name.casefold(), item.name))
+    except PermissionError as exc:
+        raise PermissionDeniedError(msg=f"Permission denied while listing {path}", details={"path": str(path)}) from exc
+    if not show_hidden:
+        entries = [entry for entry in entries if not entry.name.startswith(".")]
+    page = entries[offset : offset + limit]
+    artifacts: list[dict[str, Any]] = []
+    for entry in page:
+        try:
+            mode = entry.lstat().st_mode
+            label = (
+                "directory" if stat_module.S_ISDIR(mode) else
+                "symlink" if stat_module.S_ISLNK(mode) else
+                "file" if stat_module.S_ISREG(mode) else
+                "special"
+            )
+        except OSError:
+            label = "unreadable"
+        artifacts.append(_artifact(label, str(entry)))
+    more = offset + len(page) < len(entries)
+    suffix = " More entries are available." if more else ""
+    return _success(
+        request_id,
+        f"Listed {len(page)} of {len(entries)} entries in {path}.{suffix}",
+        artifacts=artifacts,
+    )
+
+
+def _handle_filesystem_stat(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    path = Path(_string(payload, "path")).expanduser()
+    try:
+        info = path.lstat()
+    except FileNotFoundError as exc:
+        raise NotFoundError(msg=f"Path not found: {path}", details={"path": str(path)}) from exc
+    except PermissionError as exc:
+        raise PermissionDeniedError(msg=f"Permission denied while inspecting {path}", details={"path": str(path)}) from exc
+    mode = info.st_mode
+    kind = (
+        "directory" if stat_module.S_ISDIR(mode) else
+        "symlink" if stat_module.S_ISLNK(mode) else
+        "file" if stat_module.S_ISREG(mode) else
+        "special"
+    )
+    return _success(
+        request_id,
+        f"{path}: {kind}, {info.st_size} bytes, mode {stat_module.S_IMODE(mode):04o}, uid {info.st_uid}, gid {info.st_gid}.",
+        artifacts=[_artifact(kind, str(path))],
+    )
+
+
 def _handle_runs_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     limit = int(payload.get("limit", 20))
     operation = _optional_string(payload.get("operation"))
@@ -485,6 +594,9 @@ _HANDLERS: dict[str, Callable[[str, Mapping[str, Any]], dict[str, Any]]] = {
     "runs.list": _handle_runs_list,
     "runs.show": _handle_runs_show,
     "run.cancel": _handle_cancel,
+    "storage.locations": _handle_storage_locations,
+    "filesystem.list": _handle_filesystem_list,
+    "filesystem.stat": _handle_filesystem_stat,
 }
 
 
@@ -500,6 +612,13 @@ def _string(document: Mapping[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError(msg=f"{key} must be a non-empty string")
     return value.strip()
+
+
+def _string_alias(document: Mapping[str, Any], primary: str, legacy: str) -> str:
+    value = document.get(primary)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return _string(document, legacy)
 
 
 def _optional_string(value: Any) -> str | None:

@@ -1,37 +1,27 @@
-# BKX Android Setup Guide — Embedded Engine Lane
+# BKX Android setup
 
-## BKX backend
+BKX Android is standalone. Termux is not an execution dependency.
 
-The default Android backend is now embedded in the APK:
+## Recommended personal-device setup
 
-```text
-Compose UI -> ViewModel -> BackendPort -> EmbeddedBkxBackend -> Chaquopy/CPython -> bkx.android_api -> bkx.core
-```
+1. Install the BKX APK.
+2. Open BKX and allow the root request in Magisk, KernelSU, APatch, or another libsu-compatible root manager if root-backed operation is desired.
+3. Enable **All files access** when BKX opens Android's special access screen. This gives the non-root fallback direct shared-storage access.
+4. Return to BKX and re-check the engine. A root-ready engine advertises `root.filesystem`.
 
-A separate Termux installation is **not required** for the production backend.
-The legacy Termux adapter remains in source temporarily for AOV-13→16 parity and
-will be removed by the standalone-runtime mega overlay.
+## Termux data
 
-## Embedded Python
+With root granted, BKX can operate directly on Termux's private filesystem, including:
 
-Chaquopy starts Python once per Android process from `BkxAndroidApplication`.
-Kotlin calls only the JSON functions exported by `bkx.android_api`; it does not
-invoke the BKX CLI, Textual TUI, arbitrary Python expressions, or shell commands.
+- `/data/data/com.termux/files`
+- `/data/data/com.termux/files/home`
+- `/data/data/com.termux/files/home/storage`
+- `/data/data/com.termux/files/usr`
 
-## Android file access
+Termux does not need `allow-external-apps`, `RUN_COMMAND`, or a BKX wrapper. BKX executes its own embedded Python engine.
 
-User-selected `content://` documents are still represented by the existing SAF
-and staging contracts. BKX receives ordinary staged filesystem paths. AOV-17→20
-finishes the native SAF staging/index/runtime so this boundary no longer carries
-legacy bridge-file assumptions.
+## Without root
 
-## Notifications and active operations
+BKX still works through its normal embedded Python runtime. On Android 11+ enable All files access for broad shared-storage access. Root-only areas such as other apps' private data and Termux's private `$HOME` remain unavailable.
 
-The current foreground-service and reconnect contracts remain in place. AOV-17→20
-will replace polling/bridge-file runtime assumptions with the in-process operation
-manager while preserving request IDs and lifecycle recovery.
-
-## Validation
-
-AOV-13→16 is an interim mega overlay and is applied with `--no-validate`. The
-final fail-closed Devtool validation remains reserved for AOV-25→32.
+SAF remains a fallback for document providers which do not expose normal filesystem paths.

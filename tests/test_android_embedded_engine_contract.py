@@ -37,8 +37,8 @@ def test_aov15_production_graph_uses_embedded_backend() -> None:
     assert "TermuxBridgeAdapter(" not in graph
 
 
-def test_aov15_legacy_termux_adapter_is_retained_only_for_cutover_parity() -> None:
-    assert (ANDROID / "app/src/main/java/com/mikeyphw/bkx/android/termux/TermuxBridgeAdapter.kt").is_file()
+def test_aov20_legacy_termux_execution_adapter_is_removed() -> None:
+    assert not (ANDROID / "app/src/main/java/com/mikeyphw/bkx/android/termux/TermuxBridgeAdapter.kt").exists()
     assert (ANDROID / "app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt").is_file()
 
 

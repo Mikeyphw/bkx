@@ -111,6 +111,7 @@ required = true
 preflight = [
     ":app:verifyBkxAndroidSdk36DependencyLane",
     ":app:verifyBkxEmbeddedEngineContract",
+    ":app:verifyBkxRootStorageContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",
     ":app:verifyBkxAndroidReleaseDocs",

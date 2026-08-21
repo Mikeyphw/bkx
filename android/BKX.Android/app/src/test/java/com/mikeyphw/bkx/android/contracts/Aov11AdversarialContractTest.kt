@@ -21,21 +21,20 @@ import org.junit.Test
 
 class Aov11AdversarialContractTest {
     @Test
-    fun missingTermuxMapsToStableBackendNotReadyFailure() {
-        val failure = OperationFailureMapper.fromBackendReadiness(BackendReadiness.TermuxNotVisibleOrMissing)
+    fun rootRequiredWithoutGrantMapsToStablePermissionFailure() {
+        val failure = OperationFailureMapper.fromBackendReadiness(BackendReadiness.RootPermissionRequired)
 
-        assertEquals(OperationFailureKind.BackendNotReady, failure.kind)
-        assertEquals("TERMUX_NOT_VISIBLE_OR_MISSING", failure.code)
-        assertTrue(failure.actions.any { it.contains("Termux", ignoreCase = true) || it.contains("backend", ignoreCase = true) })
+        assertEquals(OperationFailureKind.PermissionDenied, failure.kind)
+        assertEquals("BKX_ROOT_PERMISSION_REQUIRED", failure.code)
+        assertTrue(failure.actions.any { it.contains("root", ignoreCase = true) })
     }
 
     @Test
-    fun runCommandPermissionDenialMapsToStablePermissionFailure() {
-        val failure = OperationFailureMapper.fromBackendReadiness(BackendReadiness.RunCommandPermissionMissing)
+    fun embeddedProbeFailureMapsToStableBackendNotReadyFailure() {
+        val failure = OperationFailureMapper.fromBackendReadiness(BackendReadiness.ProbeFailed("root service unavailable"))
 
-        assertEquals(OperationFailureKind.PermissionDenied, failure.kind)
-        assertEquals("BKX_RUN_COMMAND_PERMISSION_MISSING", failure.code)
-        assertTrue(failure.actions.any { it.contains("RUN_COMMAND") || it.contains("Grant", ignoreCase = true) })
+        assertEquals(OperationFailureKind.BackendNotReady, failure.kind)
+        assertEquals("PROBE_FAILED", failure.code)
     }
 
     @Test

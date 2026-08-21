@@ -55,7 +55,7 @@ install_dependencies = false
 import_modules = ["bkx"]
 console_scripts = ["bkx"]
 
-# Android companion app target created by BKX Android AOV-01/AOV-02.
+# Standalone BKX Android target; embedded/root engine and product UI are validated in-process.
 [targets.bkx_android]
 type = "android"
 root = "android/BKX.Android"
@@ -112,6 +112,7 @@ preflight = [
     ":app:verifyBkxAndroidSdk36DependencyLane",
     ":app:verifyBkxEmbeddedEngineContract",
     ":app:verifyBkxRootStorageContract",
+    ":app:verifyBkxProductUiContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",
     ":app:verifyBkxAndroidReleaseDocs",

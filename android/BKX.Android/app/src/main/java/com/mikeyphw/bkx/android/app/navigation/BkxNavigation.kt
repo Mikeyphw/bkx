@@ -2,14 +2,12 @@ package com.mikeyphw.bkx.android.app.navigation
 
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 
-enum class BkxDestination(val label: String) {
-    Home("Home"),
-    Backup("Backup"),
-    Archives("Archives"),
-    Restore("Restore"),
-    Transfers("Transfers"),
-    Tools("Tools"),
-    Settings("Settings"),
+enum class BkxDestination(val label: String, val shortLabel: String) {
+    Home("Home", "Home"),
+    Backup("Backup", "Backup"),
+    Archives("Archives & restore", "Archives"),
+    Activity("Activity", "Activity"),
+    More("More", "More"),
 }
 
 sealed interface ScreenStatus {
@@ -36,7 +34,7 @@ data class SetupRemediationAction(
 
 fun BackendReadiness.toSetupActions(): List<SetupRemediationAction> = when (this) {
     BackendReadiness.Checking -> listOf(
-        SetupRemediationAction("wait_for_probe", "Wait for backend probe", listOf("Let the readiness check finish.")),
+        SetupRemediationAction("wait_for_probe", "Checking BKX", listOf("The embedded engine check is still running.")),
     )
     is BackendReadiness.Ready -> emptyList()
     else -> listOf(

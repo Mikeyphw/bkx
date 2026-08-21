@@ -10,6 +10,7 @@ object BkxAndroidReleaseContract {
         ":app:connectedDebugAndroidTest",
         ":app:assembleDebug",
         ":app:assembleRelease",
+        ":app:verifyBkxProductUiContract",
         ":app:bkxAndroidReleaseSeal",
     )
     val requiredAdversarialCases: List<String> = listOf(

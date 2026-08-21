@@ -31,12 +31,21 @@ enum class ProgressPreference {
 }
 
 @Serializable
+enum class AppearancePreference {
+    @SerialName("system") System,
+    @SerialName("light") Light,
+    @SerialName("dark") Dark,
+}
+
+@Serializable
 data class BkxSettings(
     val backend: BackendPreference = BackendPreference.Embedded,
     val rootAccessMode: RootAccessMode = RootAccessMode.Preferred,
     val storageLocationLabel: String = "Direct filesystem access",
     val logPrivacyMode: LogPrivacyMode = LogPrivacyMode.Private,
     val progressPreference: ProgressPreference = ProgressPreference.EventDriven,
+    val appearance: AppearancePreference = AppearancePreference.System,
+    val dynamicColor: Boolean = true,
 )
 
 interface SettingsStore {

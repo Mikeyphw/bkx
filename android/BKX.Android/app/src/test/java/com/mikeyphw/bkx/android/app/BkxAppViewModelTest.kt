@@ -42,6 +42,8 @@ import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
 import com.mikeyphw.bkx.android.core.transfer.TransferCollisionSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferVerificationPlan
 import com.mikeyphw.bkx.android.core.runs.VerificationState
+import com.mikeyphw.bkx.android.core.settings.AppearancePreference
+import com.mikeyphw.bkx.android.core.settings.BkxSettings
 import com.mikeyphw.bkx.android.core.settings.InMemorySettingsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -98,9 +100,9 @@ class BkxAppViewModelTest {
         val viewModel = viewModel(runSummaryStore = runs)
 
         advanceUntilIdle()
-        viewModel.onEvent(BkxHomeEvent.SelectDestination(BkxDestination.Tools))
+        viewModel.onEvent(BkxHomeEvent.SelectDestination(BkxDestination.More))
 
-        assertEquals(BkxDestination.Tools, viewModel.state.value.selectedDestination)
+        assertEquals(BkxDestination.More, viewModel.state.value.selectedDestination)
         assertEquals("req-1", viewModel.state.value.recentRuns.single().requestId)
     }
 
@@ -213,6 +215,37 @@ class BkxAppViewModelTest {
         assertTrue(viewModel.state.value.transfer.result is TransferResultUiState.PartialFailure)
     }
 
+
+
+    @Test
+    fun settingsUpdatesArePersistedAndAppliedToUiState() = runTest(dispatcher) {
+        val store = InMemorySettingsStore()
+        val viewModel = BkxAppViewModel(
+            backendPort = FakeBackendPort(),
+            runSummaryStore = InMemoryRunSummaryStore(),
+            operationStateStore = InMemoryOperationStateStore(),
+            settingsStore = store,
+        )
+
+        advanceUntilIdle()
+        val updated = BkxSettings(appearance = AppearancePreference.Dark, dynamicColor = false)
+        viewModel.onEvent(BkxHomeEvent.UpdateSettings(updated))
+        advanceUntilIdle()
+
+        assertEquals(updated, viewModel.state.value.settings)
+        assertEquals(updated, store.read())
+    }
+
+    @Test
+    fun notificationFocusOpensActivityInsteadOfDiagnosticsHome() = runTest(dispatcher) {
+        val viewModel = viewModel()
+        advanceUntilIdle()
+        viewModel.onEvent(BkxHomeEvent.TrackOperationStarted("focus-op", "backup.create", 100))
+        viewModel.onEvent(BkxHomeEvent.FocusActiveOperation("focus-op"))
+
+        assertEquals(BkxDestination.Activity, viewModel.state.value.selectedDestination)
+        assertEquals("focus-op", viewModel.state.value.operationRuntime.focusedRequestId)
+    }
 
     @Test
     fun operationEventsUpdateReconnectProgressCancellationAndTypedFailures() = runTest(dispatcher) {

@@ -13,6 +13,7 @@ class BkxAndroidReleaseContractTest {
         assertTrue(BkxAndroidReleaseContract.requiredDevtoolTasks.contains(":app:lintDebug"))
         assertTrue(BkxAndroidReleaseContract.requiredDevtoolTasks.contains(":app:connectedDebugAndroidTest"))
         assertTrue(BkxAndroidReleaseContract.requiredDevtoolTasks.contains(":app:assembleRelease"))
+        assertTrue(BkxAndroidReleaseContract.requiredDevtoolTasks.contains(":app:verifyBkxProductUiContract"))
         assertTrue(BkxAndroidReleaseContract.requiredDevtoolTasks.contains(":app:bkxAndroidReleaseSeal"))
     }
 

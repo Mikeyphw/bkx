@@ -19,7 +19,7 @@ android {
         minSdk = 24
         targetSdk = bkxValidationSdk
         versionCode = 1
-        versionName = "0.1.0-aov20"
+        versionName = "0.1.0-aov24"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
@@ -432,8 +432,66 @@ tasks.register("bkxAndroidReleaseSeal") {
         "verifyBkxAndroidSdk36DependencyLane",
         "verifyBkxEmbeddedEngineContract",
         "verifyBkxRootStorageContract",
+        "verifyBkxProductUiContract",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
         "verifyBkxAndroidManifestReleaseContract",
     )
+}
+
+
+
+tasks.register("verifyBkxProductUiContract") {
+    group = "verification"
+    description = "Fail closed when AOV-21→24 product navigation, Material 3 UI, and user-facing terminology drift."
+
+    val sourceRoot = layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
+    val navigation = sourceRoot.resolve("app/navigation/BkxNavigation.kt")
+    val shell = sourceRoot.resolve("feature/home/BkxProductApp.kt")
+    val home = sourceRoot.resolve("feature/home/HomeScreen.kt")
+    val backup = sourceRoot.resolve("feature/backup/BackupScreen.kt")
+    val archives = sourceRoot.resolve("feature/archives/ArchivesScreen.kt")
+    val activity = sourceRoot.resolve("feature/activity/ActivityScreen.kt")
+    val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
+    val theme = sourceRoot.resolve("app/ui/theme/BkxTheme.kt")
+
+    inputs.files(navigation, shell, home, backup, archives, activity, more, theme)
+
+    doLast {
+        val navigationText = navigation.readText()
+        val shellText = shell.readText()
+        val productSources = listOf(home, backup, archives, activity, more).associateWith { it.readText() }
+        val themeText = theme.readText()
+
+        listOf("Home", "Backup", "Archives", "Activity", "More").forEach { destination ->
+            check("$destination(" in navigationText) { "AOV-21→24 primary destination missing: $destination" }
+        }
+        listOf("Restore(\"Restore\")", "Transfers(\"Transfers\")", "Tools(\"Tools\")", "Settings(\"Settings\")").forEach { old ->
+            check(old !in navigationText) { "Legacy developer-style primary destination returned: $old" }
+        }
+        check("NavigationBar" in shellText && "NavigationRail" in shellText) {
+            "BKX product shell must provide phone bottom navigation and wide-screen navigation rail."
+        }
+        check("dynamicLightColorScheme" in themeText && "AppearancePreference" in themeText) {
+            "BKX theme must support Material 3 dynamic color and persisted appearance preference."
+        }
+        val forbiddenUserTerms = listOf("RUN_COMMAND", "Termux backend", "bridge request", "request JSON", "response JSON", "Preview token:")
+        productSources.forEach { (file, text) ->
+            forbiddenUserTerms.forEach { forbidden ->
+                check(forbidden !in text) { "User-facing product UI leaks internal term '$forbidden' in ${file.name}." }
+            }
+        }
+        check("RequestBackupPlan" in backup.readText() && "CreateBackup" in backup.readText()) {
+            "Backup product screen must invoke real embedded BKX plan/create actions."
+        }
+        check("RequestRestorePreview" in archives.readText() && "ExecuteRestore" in archives.readText()) {
+            "Archives product screen must expose contextual restore review/execution."
+        }
+        check("Search archives" in archives.readText() && "ArchiveSort" in archives.readText() && "ArchiveEntryFilter" in archives.readText()) {
+            "Archives product screen must provide archive search/sort and loaded-entry filtering."
+        }
+        check("RequestTransferPreview" in more.readText() && "RunTransfer" in more.readText()) {
+            "More screen must expose real local transfer review/execution."
+        }
+    }
 }

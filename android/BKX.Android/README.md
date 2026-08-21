@@ -1,13 +1,14 @@
 # BKX Android
 
-BKX Android is a standalone Android frontend for the canonical Python BKX engine.
+BKX Android is a standalone Material 3 Android application for the canonical Python BKX engine.
 
-Current milestone: **AOV-17→20 root-native storage/runtime cutover**.
+Current milestone: **AOV-21→24 product UI replacement**.
 
-## Runtime
+## Product architecture
 
 ```text
-Compose / Android lifecycle
+Material 3 phone/tablet UI
+  -> BkxAppViewModel
   -> BackendPort
   -> EmbeddedBkxBackend
   -> RootAwarePythonGateway
@@ -15,31 +16,48 @@ Compose / Android lifecycle
        `-> Chaquopy -> bkx.android_api -> bkx.core
 ```
 
-Root is preferred by default but optional. If a compatible root manager grants access, the embedded BKX engine itself runs as UID 0. If root is unavailable, BKX falls back to the normal embedded engine.
+The primary navigation is intentionally user-oriented:
 
-No Termux execution bridge is used. There is no RUN_COMMAND permission, `allow-external-apps` requirement, wrapper process, or arbitrary root-shell API.
+- Home
+- Backup
+- Archives
+- Activity
+- More
 
-## Storage
+Restore is contextual to an archive. Local transfer lives under More. Engine diagnostics are hidden under Advanced rather than occupying a primary destination.
 
-The personal build declares Android All files access for direct shared-storage operation. With root granted, BKX can also access protected filesystem paths directly, including Termux private storage:
+## Root and storage
+
+Root is preferred by default but optional. With a libsu-compatible root manager grant, the embedded BKX engine itself runs as UID 0 and can directly access protected paths, including Termux private storage:
 
 - `/data/data/com.termux/files`
 - `/data/data/com.termux/files/home`
 - `/data/data/com.termux/files/home/storage`
 - `/data/data/com.termux/files/usr`
 
-The same root runtime can reach other root-readable paths such as `/data/user/0` and `/data/adb`. SAF remains a fallback for content providers rather than the primary local-file architecture.
+The personal build also requests Android All files access for direct shared-storage work. SAF remains a provider fallback, not the normal local-file path.
 
-## Canonical behavior
+No Termux execution bridge is used. There is no RUN_COMMAND permission, `allow-external-apps` requirement, wrapper process, or generic root-shell endpoint.
 
-Android does not reimplement backup/archive/restore/transfer rules. `bkx.android_api` is a narrow structured boundary over `bkx.core`; it does not call the BKX CLI/TUI or accept arbitrary commands/Python expressions.
+## AOV-21→24 product work
+
+- Material 3 light/dark/dynamic-color design system.
+- Phone bottom navigation and tablet/wide navigation rail.
+- Home dashboard with engine/root state, active operation, and recent activity.
+- Direct-path Backup workflow with review and create actions wired to embedded BKX.
+- Archive index/manual path open, info, browse, verify, and contextual restore.
+- Restore review and destructive overwrite confirmation without exposing plan tokens.
+- Activity timeline with live work and privacy-preserving local history.
+- Local transfer review/run UI.
+- Persistent appearance, root policy, privacy, and progress preferences.
+- Advanced engine diagnostics hidden outside the primary workflows.
 
 ## Milestones
 
-- AOV-01→12: Android companion contracts/lifecycle/safety foundation.
+- AOV-01→12: Android contracts/lifecycle/safety foundation.
 - AOV-13→16: embedded Chaquopy/CPython BKX engine cutover.
 - AOV-17→20: root-native storage, All files access, Termux-private storage, Termux execution removal.
-- AOV-21→24: full Material 3 product UI replacement.
+- AOV-21→24: Material 3 product UI and real user workflow wiring.
 - AOV-25→32: hardening, parity, performance, physical-device qualification, release seal.
 
-See `docs/AOV_17_20_AUDIT.md`, `docs/SETUP_GUIDE.md`, and `docs/APPLY_WITH_DEVTOOL.md`.
+See `docs/AOV_21_24_AUDIT.md`, `docs/SETUP_GUIDE.md`, and `docs/APPLY_WITH_DEVTOOL.md`.

@@ -3,18 +3,23 @@ package com.mikeyphw.bkx.android.app.navigation
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NavigationAndToolsContractTest {
     @Test
-    fun initialNavigationGraphContainsEveryPlannedScreenWithState() {
+    fun primaryNavigationIsTheFiveDestinationProductShell() {
         val state = BkxHomeUiState()
 
-        assertEquals(BkxDestination.entries.toList(), state.destinations)
+        assertEquals(
+            listOf(BkxDestination.Home, BkxDestination.Backup, BkxDestination.Archives, BkxDestination.Activity, BkxDestination.More),
+            state.destinations,
+        )
         BkxDestination.entries.forEach { destination ->
             assertTrue("Missing screen status for $destination", state.screenStatuses.containsKey(destination))
         }
+        assertFalse(state.destinations.any { it.label == "Tools" || it.label == "Settings" || it.label == "Restore" || it.label == "Transfers" })
     }
 
     @Test

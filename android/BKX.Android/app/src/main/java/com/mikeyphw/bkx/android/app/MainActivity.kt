@@ -4,11 +4,11 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 import com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService
-import com.mikeyphw.bkx.android.app.ui.theme.BkxTheme
-import com.mikeyphw.bkx.android.feature.home.BkxCompanionApp
+import com.mikeyphw.bkx.android.feature.home.BkxAndroidApp
 
 class MainActivity : ComponentActivity() {
     private val viewModel: BkxAppViewModel by viewModels {
@@ -17,16 +17,16 @@ class MainActivity : ComponentActivity() {
             runSummaryStore = DefaultBackendGraph.runSummaryStore(this),
             operationStateStore = DefaultBackendGraph.operationStateStore(this),
             settingsStore = DefaultBackendGraph.settingsStore(this),
+            requestBaseDirectoryPath = filesDir.resolve("bkx/requests").absolutePath,
         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         handleReconnectIntent(intent)
         setContent {
-            BkxTheme {
-                BkxCompanionApp(viewModel = viewModel)
-            }
+            BkxAndroidApp(viewModel = viewModel)
         }
     }
 

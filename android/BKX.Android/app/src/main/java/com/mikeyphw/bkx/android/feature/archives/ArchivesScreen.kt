@@ -1,5 +1,7 @@
 package com.mikeyphw.bkx.android.feature.archives
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,7 +45,9 @@ import com.mikeyphw.bkx.android.core.archives.ArchiveEntryType
 import com.mikeyphw.bkx.android.core.archives.ArchiveLocation
 import com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState
 import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
+import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.restore.RestoreDestinationSelection
+import com.mikeyphw.bkx.android.core.restore.RestoreDestinationPolicy
 import com.mikeyphw.bkx.android.core.restore.RestoreExtractionConfirmation
 import com.mikeyphw.bkx.android.core.restore.RestoreOutputMode
 import com.mikeyphw.bkx.android.feature.home.formatBytes
@@ -60,6 +64,9 @@ fun ArchivesScreen(
     var archiveSort by rememberSaveable { mutableStateOf(ArchiveSort.Newest.name) }
     var entryQuery by rememberSaveable { mutableStateOf("") }
     var entryFilter by rememberSaveable { mutableStateOf(ArchiveEntryFilter.All.name) }
+    val providerArchiveLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderArchive(it)) }
+    }
 
     LaunchedEffect(archives.selectedArchive?.stagedPath) {
         val selectedPath = archives.selectedArchive?.stagedPath
@@ -80,14 +87,14 @@ fun ArchivesScreen(
 
         BkxSectionHeader("Your archives", "Refresh") { onEvent(BkxHomeEvent.RefreshArchives) }
         when (val listState = archives.listState) {
-            ArchiveWorkflowUiState.Idle -> BkxEmptyState("Load your archives", "BKX can index archives from its local run history, or you can open any archive by path below.")
+            ArchiveWorkflowUiState.Idle -> BkxEmptyState("Load your archives", "BKX indexes its bounded local/removable storage roots and completed backup history. You can also open any archive by path or document provider below.")
             ArchiveWorkflowUiState.Loading -> BkxSurfaceCard { Text("Loading archives…") }
             is ArchiveWorkflowUiState.Failed -> BkxSurfaceCard {
                 Text("Could not load archives", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
                 Text(listState.summary)
             }
             is ArchiveWorkflowUiState.Content -> if (listState.value.isEmpty()) {
-                BkxEmptyState("No indexed archives yet", "Create a backup or enter an archive path below.")
+                BkxEmptyState("No indexed archives yet", "Create a backup, browse storage, or import an archive from a document provider.")
             } else {
                 OutlinedTextField(
                     value = archiveQuery,
@@ -153,6 +160,18 @@ fun ArchivesScreen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.Archive, manualPath.takeIf { it.startsWith("/") } ?: "/storage/emulated/0")) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Browse files") }
+                OutlinedButton(
+                    onClick = { providerArchiveLauncher.launch(arrayOf("*/*")) },
+                    enabled = !state.providerImportInProgress,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Document provider") }
+            }
+            state.providerImportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Button(
                 onClick = {
                     val archive = archiveLocation(manualPath)
@@ -285,7 +304,7 @@ private fun RestorePanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(
                 selected = draft.outputMode == RestoreOutputMode.FreshDirectory,
-                onClick = { onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(outputMode = RestoreOutputMode.FreshDirectory, destination = null))) },
+                onClick = { onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(outputMode = RestoreOutputMode.FreshDirectory))) },
                 label = { Text("New folder") },
             )
             FilterChip(
@@ -294,29 +313,39 @@ private fun RestorePanel(
                 label = { Text("Existing folder") },
             )
         }
-        if (draft.outputMode == RestoreOutputMode.ExistingDirectory) {
-            OutlinedTextField(
-                value = draft.destination?.stagedDirectoryPath.orEmpty(),
-                onValueChange = { path ->
-                    onEvent(
-                        BkxHomeEvent.UpdateRestoreDraft(
-                            draft.copy(
-                                destination = path.trim().takeIf { it.startsWith("/") }?.let {
-                                    RestoreDestinationSelection(
-                                        destinationId = "restore-${it.hashCode()}",
-                                        label = it.substringAfterLast('/').ifBlank { "Restore destination" },
-                                        stagedDirectoryPath = it,
-                                    )
-                                },
-                            ),
+        Text(
+            if (draft.outputMode == RestoreOutputMode.FreshDirectory)
+                "Enter a new destination path. BKX will refuse to reuse an existing directory in New folder mode."
+            else
+                "Enter the existing directory which should receive the restored files.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        OutlinedTextField(
+            value = draft.destination?.stagedDirectoryPath.orEmpty(),
+            onValueChange = { path ->
+                onEvent(
+                    BkxHomeEvent.UpdateRestoreDraft(
+                        draft.copy(
+                            destination = path.trim().takeIf { it.startsWith("/") }?.let {
+                                RestoreDestinationSelection(
+                                    destinationId = "restore-${it.hashCode()}",
+                                    label = it.substringAfterLast('/').ifBlank { "Restore destination" },
+                                    stagedDirectoryPath = it,
+                                )
+                            },
                         ),
-                    )
-                },
-                label = { Text("Destination path") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-            )
-        }
+                    ),
+                )
+            },
+            label = { Text(if (draft.outputMode == RestoreOutputMode.FreshDirectory) "New destination path" else "Existing destination path") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+        )
+        OutlinedButton(
+            onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.RestoreDestination, draft.destination?.stagedDirectoryPath ?: "/storage/emulated/0")) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Browse destination") }
         BkxSettingSwitch(
             title = "Verify before restore",
             summary = "Check the archive before writing restored files.",
@@ -339,13 +368,21 @@ private fun RestorePanel(
             preview.pathSafetySummary.unsafePaths.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
             preview.pathSafetySummary.blockedLinks.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
             preview.pathSafetySummary.blockedSpecialFiles.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
-            if (preview.requiresDestructiveConfirmation) {
-                Text("This restore would replace existing files. Type RESTORE to confirm.", style = MaterialTheme.typography.titleMedium)
+            val confirmationRequired = preview.requiresDestructiveConfirmation ||
+                RestoreDestinationPolicy.requiresRootConfirmation(draft.destination?.stagedDirectoryPath)
+            if (confirmationRequired) {
+                val requiredPhrase = RestoreExtractionConfirmation.requiredPhrase(draft)
+                val reason = if (RestoreDestinationPolicy.requiresRootConfirmation(draft.destination?.stagedDirectoryPath)) {
+                    "This destination is root-sensitive. Type $requiredPhrase to confirm privileged writes."
+                } else {
+                    "This restore would replace existing files. Type $requiredPhrase to confirm."
+                }
+                Text(reason, style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
                     value = confirmationText,
                     onValueChange = { value ->
                         confirmationText = value
-                        if (value == RestoreExtractionConfirmation.CONFIRMATION_PHRASE) {
+                        if (value == requiredPhrase) {
                             onEvent(
                                 BkxHomeEvent.ConfirmRestoreExtraction(
                                     RestoreExtractionConfirmation(

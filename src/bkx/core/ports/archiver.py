@@ -28,8 +28,18 @@ class ArchiverPort(Protocol):
 
     def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]: ...
     def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult: ...
-    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult: ...
-    def extract(self, spec: RestoreSpec) -> tuple[Path, ...]: ...
+    def verify(
+        self,
+        spec: ArchiveVerifySpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> ArchiveVerifyResult: ...
+    def extract(
+        self,
+        spec: RestoreSpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> tuple[Path, ...]: ...
 
 
 @dataclass(frozen=True)

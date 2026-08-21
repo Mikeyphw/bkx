@@ -96,6 +96,7 @@ def plan_for_spec(spec: Any, *, command: str | None = None) -> ExecutionPlan:
             compression=normalized.compression,
             verify=normalized.verify,
             dry_run=True,
+            skip_symlinks=normalized.skip_symlinks,
         ).normalize()
         files, size = _measure_local_sources(normalized.sources)
         output = archive_spec.effective_output_path

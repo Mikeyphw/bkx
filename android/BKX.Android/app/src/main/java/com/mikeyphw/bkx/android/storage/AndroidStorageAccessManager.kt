@@ -5,7 +5,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.Settings
+import java.io.File
 
 sealed interface AllFilesAccessState {
     data object Granted : AllFilesAccessState
@@ -26,29 +28,77 @@ class AndroidStorageAccessManager(
         else -> AllFilesAccessState.NeedsGrant
     }
 
-
+    /**
+     * Discover actual shared/removable volumes rather than hard-coding a single
+     * emulated-storage path. Root-private locations are appended only when the
+     * currently selected execution route is privileged.
+     */
     fun discoverLocations(rootAvailable: Boolean): List<StorageLocation> {
-        val locations = BkxStorageLocations.defaults(rootAvailable).toMutableList()
-        val known = locations.mapTo(mutableSetOf()) { it.path }
+        val locations = mutableListOf<StorageLocation>()
+        val seen = mutableSetOf<String>()
+
+        fun add(location: StorageLocation) {
+            val normalized = location.path.trimEnd('/').ifBlank { "/" }
+            if (seen.add(normalized)) locations += location.copy(path = normalized)
+        }
+
+        add(StorageLocation("shared", "Internal storage", BkxStorageLocations.SHARED_STORAGE, StorageLocationKind.Shared, false))
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val manager = appContext.getSystemService(StorageManager::class.java)
+            manager?.storageVolumes.orEmpty().forEachIndexed { index, volume ->
+                val directory = volume.directory ?: return@forEachIndexed
+                val path = directory.absolutePath
+                if (path == BkxStorageLocations.SHARED_STORAGE || path == "/storage/self/primary") return@forEachIndexed
+                add(
+                    StorageLocation(
+                        id = "volume-$index",
+                        label = runCatching { volume.getDescription(appContext) }.getOrNull().orEmpty().ifBlank {
+                            if (volume.isRemovable) "Removable storage" else "Storage volume"
+                        },
+                        path = path,
+                        kind = if (volume.isRemovable) StorageLocationKind.Removable else StorageLocationKind.Shared,
+                        requiresRoot = false,
+                    ),
+                )
+            }
+        }
+
+        // API 24-29 fallback and an additional compatibility source on vendor
+        // builds which do not expose a directory on StorageVolume.
         appContext.getExternalFilesDirs(null).forEachIndexed { index, directory ->
-            val absolute = directory?.absolutePath ?: return@forEachIndexed
-            val marker = "/Android/data/"
-            val markerIndex = absolute.indexOf(marker)
-            if (markerIndex <= 0) return@forEachIndexed
-            val root = absolute.substring(0, markerIndex)
-            if (root !in known) {
-                known += root
-                locations += StorageLocation(
-                    id = "removable-$index",
+            val root = directory?.volumeRootFromAppExternalDir() ?: return@forEachIndexed
+            if (root == BkxStorageLocations.SHARED_STORAGE) return@forEachIndexed
+            add(
+                StorageLocation(
+                    id = "external-$index",
                     label = "Removable storage",
                     path = root,
                     kind = StorageLocationKind.Removable,
                     requiresRoot = false,
-                )
-            }
+                ),
+            )
+        }
+
+        if (rootAvailable) {
+            BkxStorageLocations.rootPrivateDefaults().forEach(::add)
         }
         return locations
     }
+
+    /** Bounded roots used by archive.list. We search BKX folders, not whole disks. */
+    fun archiveSearchRoots(rootAvailable: Boolean): List<String> = discoverLocations(rootAvailable)
+        .filter { !it.requiresRoot || rootAvailable }
+        .mapNotNull { location ->
+            when (location.kind) {
+                StorageLocationKind.Shared,
+                StorageLocationKind.Removable -> File(location.path, "BKX").absolutePath
+                StorageLocationKind.TermuxHome,
+                StorageLocationKind.TermuxPrefix,
+                StorageLocationKind.RootPrivate -> null
+            }
+        }
+        .distinct()
 
     fun grantIntent(): Intent? {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
@@ -72,5 +122,12 @@ class AndroidStorageAccessManager(
                 true
             }.getOrDefault(false)
         }
+    }
+
+    private fun File.volumeRootFromAppExternalDir(): String? {
+        val absolute = absolutePath
+        val marker = "/Android/data/"
+        val markerIndex = absolute.indexOf(marker)
+        return absolute.takeIf { markerIndex > 0 }?.substring(0, markerIndex)
     }
 }

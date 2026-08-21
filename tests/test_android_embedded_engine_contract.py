@@ -18,7 +18,11 @@ def test_aov13_chaquopy_lane_is_pinned_and_sdk36_is_retained() -> None:
     assert 'minSdk = 24' in app
     assert 'compileSdk = bkxValidationSdk' in app
     assert 'val bkxValidationSdk = 36' in app
-    assert 'version = "3.13"' in app
+    assert 'val bkxSupportedEmbeddedPythonVersions = setOf("3.13", "3.14")' in app
+    assert '"/data/data/com.termux/files/usr/bin/python3"' in app
+    assert 'version = bkxEmbeddedPythonVersion' in app
+    assert 'buildPython(bkxBuildPythonCommand)' in app
+    assert 'bkx.buildPython' in app
     assert 'srcDir(rootProject.file("../../src"))' in app
     assert '"arm64-v8a", "x86_64"' in app
 

@@ -46,6 +46,21 @@ object BridgeJson {
         return parsed
     }
 
+
+    fun parseProgress(raw: String): BridgeProgressEnvelope? {
+        val trimmed = raw.trim()
+        if (trimmed.isEmpty() || trimmed == "null") return null
+        val parsed = try {
+            json.decodeFromString<BridgeProgressEnvelope>(trimmed)
+        } catch (exc: SerializationException) {
+            throw BridgeProtocolException("Embedded progress is not valid bridge progress JSON.", exc)
+        } catch (exc: IllegalArgumentException) {
+            throw BridgeProtocolException("Embedded progress is not valid bridge progress JSON.", exc)
+        }
+        requireSupported(parsed.protocolVersion)
+        return parsed
+    }
+
     fun requireSupported(protocolVersion: Int) {
         if (protocolVersion != SUPPORTED_PROTOCOL_VERSION) {
             throw BridgeProtocolException(

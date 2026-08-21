@@ -1,12 +1,13 @@
-# Apply BKX Android overlays with Devtool
+# Apply BKX Android AOV-25→32
 
-AOV-13→16 embedded the canonical BKX engine. AOV-17→20 added root-native storage and removed Termux execution. AOV-21→24 replaces the developer frontend with the Material 3 product UI and wires the primary workflows to the embedded backend.
-
-Interim mega overlays are applied without full validation:
+This is the final release-seal overlay, so do **not** use `--no-validate`.
 
 ```bash
-devtool --yes --copy -r ~/Code/bkx --target bkx_android \
-  apply overlay --no-validate ~/Downloads/<overlay>.zip
+devtool --yes --copy \
+  -r ~/Code/bkx \
+  --target bkx_android \
+  apply overlay \
+  ~/Downloads/bkx_android_aov25_aov32_final_release_seal_v5.zip
 ```
 
-Full Android validation remains reserved for the AOV-25→32 release-seal overlay. Source-hash inventory conflicts must fail closed rather than applying an overlay to a different repository state.
+If a device/root grant is not available during the normal validator, the explicit root qualification test remains opt-in. After the APK and test APK are installed and BKX is authorized in the root manager, run `android/BKX.Android/scripts/qualify-device.sh`.

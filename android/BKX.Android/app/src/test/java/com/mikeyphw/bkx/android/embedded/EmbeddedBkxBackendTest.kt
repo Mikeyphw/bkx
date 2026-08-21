@@ -108,6 +108,8 @@ class EmbeddedBkxBackendTest {
             }
         }
 
+        override suspend fun progressJson(requestId: String): String = "null"
+
         override suspend fun cancelJson(requestId: String): String {
             cancelledRequestId = requestId
             return """{"protocol_version":1,"request_id":"$requestId","status":"success","summary":"cancel recorded","errors":[],"artifacts":[]}"""

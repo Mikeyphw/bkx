@@ -112,4 +112,18 @@ class OperationRuntimeContractTest {
         assertEquals("backup.create", focused.focusedOperation?.operation)
     }
 
+    @Test
+    fun interruptedWorkAndPersistenceBoundsAreExplicit() {
+        val started = tracker.trackStarted(OperationRuntimeState(), "req-interrupted", "backup.create", 100)
+        val interrupted = tracker.interrupt(started, "req-interrupted", OperationFailureMapper.interrupted(), 200)
+        assertEquals(ActiveOperationStatus.Interrupted, interrupted.activeFor("req-interrupted")?.status)
+        assertEquals(OperationFailureKind.Interrupted, interrupted.failureStates["req-interrupted"]?.kind)
+
+        var state = OperationRuntimeState()
+        repeat(80) { index ->
+            state = tracker.trackStarted(state, "bounded-$index", "backup.create", index.toLong())
+        }
+        assertTrue(state.bounded(maxOperations = 10).activeOperations.size <= 10)
+    }
+
 }

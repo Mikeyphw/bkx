@@ -12,7 +12,9 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import com.mikeyphw.bkx.android.R
+import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 import com.mikeyphw.bkx.android.app.notifications.AndroidNotificationPermissionChecker
+import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
 import com.mikeyphw.bkx.android.core.notifications.BkxNotificationPermissionStatus
 import com.mikeyphw.bkx.android.core.notifications.BkxNotificationIds
 import com.mikeyphw.bkx.android.core.notifications.BkxOperationNotificationChannels
@@ -21,6 +23,12 @@ import com.mikeyphw.bkx.android.core.notifications.BkxOperationNotificationPlann
 import com.mikeyphw.bkx.android.core.notifications.OperationNotificationPolicy
 import com.mikeyphw.bkx.android.core.operations.ActiveOperation
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.settings.LogPrivacyMode
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * User-visible service shell for active BKX operations.
@@ -31,6 +39,9 @@ import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
  * can later reconnect to through persisted run state.
  */
 class BkxOperationForegroundService : Service() {
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var activeRequestId: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -40,6 +51,7 @@ class BkxOperationForegroundService : Service() {
             stopSelf(startId)
             return START_NOT_STICKY
         }
+        activeRequestId = requestId
 
         val activeOperation = ActiveOperation(
             requestId = requestId,
@@ -54,15 +66,19 @@ class BkxOperationForegroundService : Service() {
             cancelFilePath = intent?.getStringExtra(EXTRA_CANCEL_FILE_PATH),
         )
         val permission = AndroidNotificationPermissionChecker.status(this)
-        if (permission == BkxNotificationPermissionStatus.Denied || permission == BkxNotificationPermissionStatus.Unknown) {
-            stopSelf(startId)
-            return START_NOT_STICKY
+        // Android still requires an FGS notification even when the app-level
+        // POST_NOTIFICATIONS permission is denied. Keep the service alive and
+        // let the system surface the mandatory FGS disclosure.
+        val fgsPermission = if (permission == BkxNotificationPermissionStatus.Denied || permission == BkxNotificationPermissionStatus.Unknown) {
+            BkxNotificationPermissionStatus.NotRequired
+        } else {
+            permission
         }
-
+        val privacyMode = SharedPreferencesSettingsStore(this).readNow().logPrivacyMode == LogPrivacyMode.Private
         val decision = BkxOperationNotificationPlanner.plan(
             operation = activeOperation,
-            permissionStatus = permission,
-            policy = OperationNotificationPolicy(enabled = true, privacyMode = true),
+            permissionStatus = fgsPermission,
+            policy = OperationNotificationPolicy(enabled = true, privacyMode = privacyMode),
         )
         if (decision !is BkxOperationNotificationDecision.Show) {
             stopSelf(startId)
@@ -81,7 +97,29 @@ class BkxOperationForegroundService : Service() {
     }
 
     override fun onTimeout(startId: Int, fgsType: Int) {
-        stopSelf(startId)
+        val requestId = activeRequestId
+        if (requestId == null) {
+            stopSelf(startId)
+            return
+        }
+        // A data-sync FGS timeout must not leave the Python operation running
+        // unprotected in the background. Route the timeout through the same
+        // cooperative cancellation path used by the product UI.
+        serviceScope.launch {
+            runCatching {
+                DefaultBackendGraph.operationCoordinator(this@BkxOperationForegroundService).cancel(
+                    requestId = requestId,
+                    cancelRequestId = "fgs-timeout-${System.currentTimeMillis()}",
+                )
+            }
+            stopSelf(startId)
+        }
+    }
+
+    override fun onDestroy() {
+        activeRequestId = null
+        serviceScope.cancel()
+        super.onDestroy()
     }
 
     private fun ensureOperationChannel() {
@@ -140,6 +178,19 @@ class BkxOperationForegroundService : Service() {
             operation.progress?.let { putExtra(EXTRA_PROGRESS, it) }
             operation.cancelFilePath?.let { putExtra(EXTRA_CANCEL_FILE_PATH, it) }
         }
+
+        fun intentFor(
+            context: Context,
+            requestId: String,
+            operation: String,
+            startedAtEpochMillis: Long,
+        ): Intent = Intent(context, BkxOperationForegroundService::class.java).apply {
+            putExtra(EXTRA_REQUEST_ID, requestId)
+            putExtra(EXTRA_OPERATION, operation)
+            putExtra(EXTRA_STARTED_AT_EPOCH_MILLIS, startedAtEpochMillis)
+            putExtra(EXTRA_PHASE, "starting")
+        }
+
 
         fun reconnectIntentFor(context: Context, operation: ActiveOperation): Intent = Intent(context, com.mikeyphw.bkx.android.app.MainActivity::class.java).apply {
             action = ACTION_RECONNECT_OPERATION

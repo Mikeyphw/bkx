@@ -90,6 +90,22 @@ class OperationProgressTracker(
         )
     }
 
+    fun interrupt(
+        state: OperationRuntimeState,
+        requestId: String,
+        failure: OperationFailureUiState,
+        nowEpochMillis: Long,
+    ): OperationRuntimeState {
+        val active = state.activeOperations[requestId]
+            ?: throw IllegalArgumentException("No persisted operation exists for interrupted request id $requestId.")
+        return state.copy(
+            activeOperations = state.activeOperations + (
+                requestId to active.finished(ActiveOperationStatus.Interrupted, failure.message, nowEpochMillis)
+            ),
+            failureStates = state.failureStates + (requestId to failure),
+        )
+    }
+
     fun fail(
         state: OperationRuntimeState,
         requestId: String,

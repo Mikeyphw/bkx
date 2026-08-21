@@ -64,7 +64,7 @@ Removed from production source:
 
 Termux is now a **storage target only**. BKX does not need Termux installed in order to execute. If Termux is installed and root is granted, BKX can access its private files directly.
 
-The old `termux_run_command` serialized settings enum value is retained only as a deserialization/migration token; it is not a selectable production backend.
+The obsolete `termux_run_command` serialized settings enum value is removed by the final release seal. Legacy execution vocabulary is not retained in the 1.0.0 production source.
 
 ## Security boundary
 
@@ -79,3 +79,15 @@ Root authorization comes from the device root manager through libsu. BKX deliber
 - `:app:verifyBkxEmbeddedEngineContract`
 
 Full Android compile/lint/device validation remains deferred to the final release-seal overlay, per the overlay workflow.
+
+## Final completeness replay correction
+
+A replay of AOV-13→32 found that the first AOV-17→20 implementation had declared storage abstractions without fully wiring them into product behavior. The final release overlay closes those gaps while preserving this milestone's architecture:
+
+- `StorageManager.storageVolumes` and the app external-directory fallback discover internal/removable SD/USB roots;
+- the root-aware product filesystem browser executes canonical `filesystem.list` instead of requiring manual path typing;
+- `archive.list` performs a bounded direct filesystem index over discovered `<volume>/BKX` roots and returns real size/mtime metadata instead of projecting only run history;
+- provider-only `content://` backup/archive/transfer **inputs** stream into bounded app-private staging through `AndroidProviderStagingManager`; normal filesystem paths continue to bypass staging;
+- provider tree staging enforces both depth and total-entry bounds.
+
+Termux remains a root-accessible storage tree only; none of these corrections restore a Termux execution dependency.

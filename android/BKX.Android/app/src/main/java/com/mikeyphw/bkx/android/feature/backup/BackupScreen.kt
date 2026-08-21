@@ -1,5 +1,7 @@
 package com.mikeyphw.bkx.android.feature.backup
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -35,6 +37,7 @@ import com.mikeyphw.bkx.android.core.backup.BackupCompression
 import com.mikeyphw.bkx.android.core.backup.BackupDestinationSelection
 import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
 import com.mikeyphw.bkx.android.core.backup.BackupSplitPolicy
+import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.storage.BkxStorageLocations
 
 @Composable
@@ -45,6 +48,9 @@ fun BackupScreen(
 ) {
     val planning = state.backupPlanning
     val draft = planning.draft
+    val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderBackupTree(it)) }
+    }
 
     Column(
         modifier = modifier
@@ -82,6 +88,18 @@ fun BackupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupSource, draft.source?.stagedPath ?: BkxStorageLocations.SHARED_STORAGE)) },
+                    modifier = Modifier.weight(1f),
+                ) { Text("Browse files") }
+                OutlinedButton(
+                    onClick = { providerTreeLauncher.launch(null) },
+                    enabled = !state.providerImportInProgress,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Document provider") }
+            }
+            state.providerImportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(
                     onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(source = source(BkxStorageLocations.SHARED_STORAGE, "Internal storage")))) },
@@ -124,6 +142,10 @@ fun BackupScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
+            OutlinedButton(
+                onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupDestination, draft.destination?.stagedDirectoryPath ?: BkxStorageLocations.SHARED_STORAGE)) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Browse destination") }
             AssistChip(
                 onClick = {
                     val path = "${BkxStorageLocations.SHARED_STORAGE}/BKX"
@@ -166,13 +188,10 @@ fun BackupScreen(
                     onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(filters = draft.filters.copy(includeHidden = enabled))))
                 },
             )
-            BkxSettingSwitch(
-                title = "Follow symbolic links",
-                summary = "Follow links instead of preserving the link itself. Leave off unless you need it.",
-                checked = draft.filters.followSymlinks,
-                onCheckedChange = { enabled ->
-                    onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(filters = draft.filters.copy(followSymlinks = enabled))))
-                },
+            Text(
+                "Symbolic links are skipped safely rather than followed. This keeps root backups such as Termux home from escaping the selected source tree.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             BkxSettingSwitch(
                 title = "Split large backups",

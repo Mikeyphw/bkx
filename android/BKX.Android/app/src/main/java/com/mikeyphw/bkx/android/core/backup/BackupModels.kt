@@ -88,6 +88,7 @@ data class BackupPlanDraft(
         if (source == null) add(BackupPlanIssue.MissingSource)
         if (destination == null) add(BackupPlanIssue.MissingDestination)
         if (source != null && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
+        if (filters.followSymlinks) add(BackupPlanIssue.FollowSymlinksUnsupported)
     }
 
     fun requireValid() {
@@ -168,6 +169,11 @@ sealed interface BackupPlanIssue {
     data object SourceEqualsDestination : BackupPlanIssue {
         override val code: String = "source_equals_destination"
         override val message: String = "Source and destination must not resolve to the same staged path."
+    }
+
+    data object FollowSymlinksUnsupported : BackupPlanIssue {
+        override val code: String = "follow_symlinks_unsupported"
+        override val message: String = "BKX Android skips symbolic links for safe root backups; following links is not supported."
     }
 }
 

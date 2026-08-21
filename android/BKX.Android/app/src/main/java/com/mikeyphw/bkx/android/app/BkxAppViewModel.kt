@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
+import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
+import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator.OperationOutcome
 import com.mikeyphw.bkx.android.core.archives.ArchiveBrowsePage
 import com.mikeyphw.bkx.android.core.archives.ArchiveBrowsePageRequest
 import com.mikeyphw.bkx.android.core.archives.ArchiveEntrySummary
@@ -17,7 +19,9 @@ import com.mikeyphw.bkx.android.core.archives.ArchiveReadOnlyUiState
 import com.mikeyphw.bkx.android.core.archives.ArchiveRequestBuilder
 import com.mikeyphw.bkx.android.core.archives.ArchiveWorkflowUiState
 import com.mikeyphw.bkx.android.core.archives.toArchiveVerificationUiState
+import com.mikeyphw.bkx.android.core.backup.BackupDestinationSelection
 import com.mikeyphw.bkx.android.core.backup.BackupPlanDraft
+import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
 import com.mikeyphw.bkx.android.core.backup.BackupPlanPreview
 import com.mikeyphw.bkx.android.core.backup.BackupPlanWarning
 import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
@@ -26,12 +30,16 @@ import com.mikeyphw.bkx.android.core.backup.BackupVerificationExpectation
 import com.mikeyphw.bkx.android.core.backup.BackupWarningSeverity
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
-import com.mikeyphw.bkx.android.core.bridge.BridgeFileLayout
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
 import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
+import com.mikeyphw.bkx.android.core.files.FilesystemBrowserEntry
+import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
+import com.mikeyphw.bkx.android.core.files.FilesystemEntryKind
+import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
+import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
 import com.mikeyphw.bkx.android.core.operations.OperationFailureUiState
 import com.mikeyphw.bkx.android.core.operations.OperationProgressTracker
@@ -40,20 +48,19 @@ import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.operations.toOperationResultUiState
+import com.mikeyphw.bkx.android.core.restore.RestoreDestinationSelection
 import com.mikeyphw.bkx.android.core.restore.RestoreDraft
 import com.mikeyphw.bkx.android.core.restore.RestoreExtractionConfirmation
 import com.mikeyphw.bkx.android.core.restore.RestorePreviewSummary
 import com.mikeyphw.bkx.android.core.restore.RestoreRequestBuilder
 import com.mikeyphw.bkx.android.core.restore.RestoreUiState
 import com.mikeyphw.bkx.android.core.restore.toRestorePreviewSummary
-import com.mikeyphw.bkx.android.core.runs.RunArtifactSummary
-import com.mikeyphw.bkx.android.core.runs.RunStatus
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
-import com.mikeyphw.bkx.android.core.runs.VerificationState
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.core.transfer.TransferCollisionSummary
+import com.mikeyphw.bkx.android.core.transfer.TransferEndpoint
 import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferRequestBuilder
 import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
@@ -63,13 +70,14 @@ import com.mikeyphw.bkx.android.core.transfer.toTransferResultUiState
 import com.mikeyphw.bkx.android.core.usecase.CheckBackendReadinessUseCase
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 data class BkxHomeUiState(
     val title: String = "BKX",
@@ -84,6 +92,9 @@ data class BkxHomeUiState(
     val transfer: TransferUiState = TransferUiState(),
     val operationRuntime: OperationRuntimeState = OperationRuntimeState(),
     val operationResult: OperationResultUiState = OperationResultUiState.NotStarted,
+    val filesystemBrowser: FilesystemBrowserUiState = FilesystemBrowserUiState(),
+    val providerImportInProgress: Boolean = false,
+    val providerImportMessage: String? = null,
     val settings: BkxSettings = BkxSettings(),
     val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
@@ -135,6 +146,15 @@ sealed interface BkxHomeEvent {
     data object RequestTransferPreview : BkxHomeEvent
     data object RunTransfer : BkxHomeEvent
 
+    data class OpenFilesystemBrowser(val target: FilesystemSelectionTarget, val initialPath: String) : BkxHomeEvent
+    data class NavigateFilesystem(val path: String) : BkxHomeEvent
+    data object ToggleFilesystemHidden : BkxHomeEvent
+    data class SelectFilesystemPath(val path: String, val isDirectory: Boolean) : BkxHomeEvent
+    data object CloseFilesystemBrowser : BkxHomeEvent
+    data class ImportProviderBackupTree(val uri: String) : BkxHomeEvent
+    data class ImportProviderArchive(val uri: String) : BkxHomeEvent
+    data class ImportProviderTransferTree(val uri: String) : BkxHomeEvent
+
     data class UpdateSettings(val settings: BkxSettings) : BkxHomeEvent
 
     data class TrackOperationStarted(
@@ -162,7 +182,16 @@ class BkxAppViewModel(
     private val runSummaryStore: RunSummaryStore,
     private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
+    private val providerStagingPort: ProviderStagingPort? = null,
+    private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
+    private val operationCoordinator: BkxOperationCoordinator = BkxOperationCoordinator(
+        context = null,
+        backendPort = backendPort,
+        runSummaryStore = runSummaryStore,
+        operationStateStore = operationStateStore,
+        requestBaseDirectoryPath = requestBaseDirectoryPath,
+    ),
 ) : ViewModel() {
     private val checkBackendReadiness = CheckBackendReadinessUseCase(backendPort)
     private val operationProgressTracker = OperationProgressTracker()
@@ -175,6 +204,14 @@ class BkxAppViewModel(
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
 
     init {
+        viewModelScope.launch {
+            operationCoordinator.runtimeState.collect { runtime ->
+                _state.update { current ->
+                    val focus = current.operationRuntime.focusedRequestId
+                    current.copy(operationRuntime = if (focus == null) runtime else runtime.copy(focusedRequestId = focus))
+                }
+            }
+        }
         refreshBackend()
         refreshRuns()
         refreshOperations()
@@ -246,6 +283,18 @@ class BkxAppViewModel(
             BkxHomeEvent.RequestTransferPreview -> requestTransferPreview()
             BkxHomeEvent.RunTransfer -> runTransfer()
 
+            is BkxHomeEvent.OpenFilesystemBrowser -> openFilesystemBrowser(event.target, event.initialPath)
+            is BkxHomeEvent.NavigateFilesystem -> loadFilesystem(event.path)
+            BkxHomeEvent.ToggleFilesystemHidden -> {
+                _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(showHidden = !current.filesystemBrowser.showHidden)) }
+                loadFilesystem(_state.value.filesystemBrowser.currentPath)
+            }
+            is BkxHomeEvent.SelectFilesystemPath -> selectFilesystemPath(event.path, event.isDirectory)
+            BkxHomeEvent.CloseFilesystemBrowser -> _state.update { it.copy(filesystemBrowser = FilesystemBrowserUiState()) }
+            is BkxHomeEvent.ImportProviderBackupTree -> importProviderBackupTree(event.uri)
+            is BkxHomeEvent.ImportProviderArchive -> importProviderArchive(event.uri)
+            is BkxHomeEvent.ImportProviderTransferTree -> importProviderTransferTree(event.uri)
+
             is BkxHomeEvent.UpdateSettings -> updateSettings(event.settings)
 
             is BkxHomeEvent.TrackOperationStarted -> updateOperationRuntime { runtime ->
@@ -315,7 +364,7 @@ class BkxAppViewModel(
     }
 
     private fun refreshArchives() {
-        val request = archiveRequestBuilder.buildListRequest(nextRequestId("archives-list"))
+        val request = archiveRequestBuilder.buildListRequest(nextRequestId("archives-list"), roots = archiveRootsProvider(_state.value.rootAvailable))
         _state.update { current ->
             current.copy(
                 archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Loading),
@@ -330,6 +379,8 @@ class BkxAppViewModel(
                     .map { artifact ->
                         ArchiveListItem(
                             archive = archiveLocation(artifact.path),
+                            sizeBytes = artifact.sizeBytes,
+                            createdAtEpochMillis = artifact.modifiedAtEpochMillis,
                             verification = com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState.NotStarted,
                         )
                     }
@@ -399,8 +450,10 @@ class BkxAppViewModel(
             if (result.status != BridgeResultStatus.Success) return@executeRequest
             val entries = result.artifacts.mapNotNull { artifact ->
                 when (artifact.label) {
-                    "archive_entry" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.File)
-                    "archive_entry_dir" -> ArchiveEntrySummary(artifact.path.trimEnd('/'), ArchiveEntryType.Directory)
+                    "archive_entry" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.File, sizeBytes = artifact.sizeBytes)
+                    "archive_entry_dir" -> ArchiveEntrySummary(artifact.path.trimEnd('/'), ArchiveEntryType.Directory, sizeBytes = artifact.sizeBytes)
+                    "archive_entry_symlink" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.Symlink, sizeBytes = artifact.sizeBytes)
+                    "archive_entry_special" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.Special, sizeBytes = artifact.sizeBytes)
                     else -> null
                 }
             }
@@ -515,95 +568,155 @@ class BkxAppViewModel(
     private fun executeRequest(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
+        surfaceResult: Boolean = true,
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
-        val files = BridgeFileLayout.forRequest(requestBaseDirectoryPath, request.requestId)
-        val startedAt = System.currentTimeMillis()
-        updateOperationRuntime { runtime ->
-            operationProgressTracker.trackStarted(
-                state = runtime,
-                requestId = request.requestId,
-                operation = request.operation,
-                startedAtEpochMillis = startedAt,
-                cancelFilePath = files.cancelFilePath,
-            )
-        }
         viewModelScope.launch {
-            val submission = backendPort.submit(request, files)
-            if (!submission.accepted) {
-                val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
-                val failedAt = System.currentTimeMillis()
-                updateOperationRuntime { runtime -> operationProgressTracker.fail(runtime, request.requestId, failure, failedAt) }
-                _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(failure)) }
-                return@launch
-            }
-            val rawResult = withContext(Dispatchers.IO) { File(files.resultFilePath).readText() }
-            val result = backendPort.readFinalResult(rawResult)
-            val completedAt = System.currentTimeMillis()
-            applyFinalResult(result, completedAt)
-            onResult(result)
-            if (recordInHistory) {
-                persistRun(request.operation, startedAt, completedAt, result)
+            when (val outcome = operationCoordinator.execute(request, recordInHistory)) {
+                is OperationOutcome.Completed -> {
+                    val result = outcome.result
+                    if (surfaceResult) _state.update { current -> current.copy(operationResult = result.toOperationResultUiState()) }
+                    onResult(result)
+                    refreshOperations()
+                    if (recordInHistory) refreshRuns()
+                }
+                is OperationOutcome.Failed -> {
+                    if (surfaceResult) _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(outcome.failure)) }
+                    refreshOperations()
+                }
+                is OperationOutcome.CancellationAccepted -> refreshOperations()
             }
         }
-    }
-
-    private fun persistRun(operation: String, startedAt: Long, completedAt: Long, result: BridgeResultEnvelope) {
-        viewModelScope.launch {
-            val status = when (result.status) {
-                BridgeResultStatus.Success -> RunStatus.Success
-                BridgeResultStatus.Failure -> RunStatus.Failure
-                BridgeResultStatus.Cancelled -> RunStatus.Cancelled
-            }
-            val verification = when {
-                result.status != BridgeResultStatus.Success && result.errors.any { it.code.contains("verify", true) } -> VerificationState.Failed
-                result.artifacts.any { it.sha256 != null } -> VerificationState.Passed
-                else -> VerificationState.NotRequested
-            }
-            val summary = RunSummary(
-                requestId = result.requestId,
-                operation = operation,
-                status = status,
-                startedAtEpochMillis = startedAt,
-                finishedAtEpochMillis = completedAt,
-                durationMillis = (completedAt - startedAt).coerceAtLeast(0L),
-                artifacts = result.artifacts.map { artifact ->
-                    RunArtifactSummary(
-                        label = artifact.label,
-                        displayName = artifact.path.substringAfterLast('/').substringAfterLast('\\').ifBlank { artifact.label },
-                        sha256 = artifact.sha256,
-                    )
-                },
-                verification = verification,
-                summary = result.summary.lineSequence().firstOrNull().orEmpty().removeSensitivePathPrefixes(),
-            )
-            runSummaryStore.upsert(summary)
-            refreshRuns()
-        }
-    }
-
-    private fun applyFinalResult(result: BridgeResultEnvelope, completedAtEpochMillis: Long) {
-        updateOperationRuntime { runtime -> operationProgressTracker.finish(runtime, result, completedAtEpochMillis) }
-        _state.update { current -> current.copy(operationResult = result.toOperationResultUiState()) }
     }
 
     private fun submitOperationCancellation(event: BkxHomeEvent.SubmitOperationCancellation) {
-        updateOperationRuntime { runtime ->
-            operationProgressTracker.markCancelling(
-                state = runtime,
-                requestId = event.requestId,
-                cancelRequestId = event.cancelRequestId,
-                nowEpochMillis = event.requestedAtEpochMillis,
+        viewModelScope.launch {
+            when (val outcome = operationCoordinator.cancel(event.requestId, event.cancelRequestId)) {
+                is OperationOutcome.Failed -> {
+                    _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(outcome.failure)) }
+                }
+                else -> Unit
+            }
+            refreshOperations()
+        }
+    }
+
+    private fun openFilesystemBrowser(target: FilesystemSelectionTarget, initialPath: String) {
+        val path = initialPath.takeIf { it.startsWith("/") } ?: "/storage/emulated/0"
+        _state.update { current ->
+            current.copy(filesystemBrowser = FilesystemBrowserUiState(open = true, target = target, currentPath = path, loading = true))
+        }
+        loadFilesystem(path)
+    }
+
+    private fun loadFilesystem(path: String) {
+        val browser = _state.value.filesystemBrowser
+        if (!browser.open || !path.startsWith("/")) return
+        _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(currentPath = path, loading = true, error = null)) }
+        val request = BridgeRequestEnvelope(
+            requestId = nextRequestId("filesystem-list"),
+            operation = "filesystem.list",
+            payload = buildJsonObject {
+                put("path", path)
+                put("show_hidden", _state.value.filesystemBrowser.showHidden)
+                put("limit", 500)
+            },
+        )
+        executeRequest(request, recordInHistory = false, surfaceResult = false) { result ->
+            if (result.status == BridgeResultStatus.Success) {
+                val entries = result.artifacts.map { artifact ->
+                    FilesystemBrowserEntry(
+                        path = artifact.path,
+                        name = artifact.path.substringAfterLast('/').ifBlank { artifact.path },
+                        kind = when (artifact.label) {
+                            "directory" -> FilesystemEntryKind.Directory
+                            "file" -> FilesystemEntryKind.File
+                            "symlink" -> FilesystemEntryKind.Symlink
+                            "special" -> FilesystemEntryKind.Special
+                            else -> FilesystemEntryKind.Unreadable
+                        },
+                        sizeBytes = artifact.sizeBytes,
+                        modifiedAtEpochMillis = artifact.modifiedAtEpochMillis,
+                    )
+                }
+                _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(entries = entries, loading = false, error = null)) }
+            } else {
+                _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(loading = false, error = result.summary.ifBlank { "Could not list this path." })) }
+            }
+        }
+    }
+
+    private fun selectFilesystemPath(path: String, isDirectory: Boolean) {
+        val target = _state.value.filesystemBrowser.target ?: return
+        if (target.folderOnly && !isDirectory) return
+        when (target) {
+            FilesystemSelectionTarget.BackupSource -> {
+                val draft = _state.value.backupPlanning.draft
+                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(source = BackupSourceSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+            }
+            FilesystemSelectionTarget.BackupDestination -> {
+                val draft = _state.value.backupPlanning.draft
+                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(destination = BackupDestinationSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+            }
+            FilesystemSelectionTarget.Archive -> {
+                if (isDirectory) { loadFilesystem(path); return }
+                val archive = archiveLocation(path)
+                _state.update { it.copy(filesystemBrowser = FilesystemBrowserUiState()) }
+                loadArchiveDetails(archive)
+                return
+            }
+            FilesystemSelectionTarget.RestoreDestination -> {
+                val draft = _state.value.restore.draft
+                onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(destination = RestoreDestinationSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+            }
+            FilesystemSelectionTarget.TransferSource -> {
+                val draft = _state.value.transfer.draft
+                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(sources = listOf(TransferEndpoint("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path)))))
+            }
+            FilesystemSelectionTarget.TransferDestination -> {
+                val draft = _state.value.transfer.draft
+                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(destination = TransferEndpoint("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+            }
+        }
+        _state.update { it.copy(filesystemBrowser = FilesystemBrowserUiState()) }
+    }
+
+    private fun importProviderBackupTree(uri: String) = stageProvider("backup source") {
+        val staged = providerStagingPort?.stageTree(uri) ?: error("Provider staging is unavailable.")
+        val draft = _state.value.backupPlanning.draft
+        _state.update { current ->
+            current.copy(
+                backupPlanning = BackupPlanningUiState(draft = draft.copy(source = BackupSourceSelection("provider-${staged.stagedPath.hashCode()}", staged.displayName, staged.stagedPath, staged.sourceUri))),
+                providerImportInProgress = false,
+                providerImportMessage = "Imported ${staged.filesCopied} provider files into temporary BKX staging.",
             )
         }
+    }
+
+    private fun importProviderArchive(uri: String) = stageProvider("archive") {
+        val staged = providerStagingPort?.stageDocument(uri) ?: error("Provider staging is unavailable.")
+        val archive = archiveLocation(staged.stagedPath)
+        _state.update { current -> current.copy(providerImportInProgress = false, providerImportMessage = "Imported ${staged.displayName} from the document provider.") }
+        loadArchiveDetails(archive)
+    }
+
+    private fun importProviderTransferTree(uri: String) = stageProvider("transfer source") {
+        val staged = providerStagingPort?.stageTree(uri) ?: error("Provider staging is unavailable.")
+        val draft = _state.value.transfer.draft
+        _state.update { current ->
+            current.copy(
+                transfer = TransferUiState(draft = draft.copy(sources = listOf(TransferEndpoint("provider-${staged.stagedPath.hashCode()}", staged.displayName, staged.stagedPath)))),
+                providerImportInProgress = false,
+                providerImportMessage = "Imported ${staged.filesCopied} provider files for transfer.",
+            )
+        }
+    }
+
+    private fun stageProvider(label: String, block: suspend () -> Unit) {
+        _state.update { it.copy(providerImportInProgress = true, providerImportMessage = "Importing $label…") }
         viewModelScope.launch {
-            val submission = backendPort.cancel(event.requestId, event.cancelFilePath)
-            if (!submission.accepted) {
-                val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
-                updateOperationRuntime { runtime ->
-                    operationProgressTracker.fail(runtime, event.requestId, failure, event.requestedAtEpochMillis)
-                }
-                _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(failure)) }
+            runCatching { block() }.onFailure { error ->
+                _state.update { it.copy(providerImportInProgress = false, providerImportMessage = "Could not import $label: ${error.message ?: error::class.java.simpleName}") }
             }
         }
     }
@@ -642,7 +755,7 @@ class BkxAppViewModel(
 
     private fun refreshOperations() {
         viewModelScope.launch {
-            val runtime = operationStateStore.read()
+            val runtime = operationCoordinator.snapshot()
             _state.update { current ->
                 val focusedRequestId = current.operationRuntime.focusedRequestId
                 current.copy(
@@ -698,20 +811,26 @@ class BkxAppViewModel(
 
 class BkxAppViewModelFactory(
     private val backendPort: BackendPort,
+    private val operationCoordinator: BkxOperationCoordinator,
     private val runSummaryStore: RunSummaryStore,
     private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
+    private val providerStagingPort: ProviderStagingPort? = null,
+    private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(BkxAppViewModel::class.java)) {
             return BkxAppViewModel(
-                backendPort,
-                runSummaryStore,
-                operationStateStore,
-                settingsStore,
-                requestBaseDirectoryPath,
+                backendPort = backendPort,
+                runSummaryStore = runSummaryStore,
+                operationStateStore = operationStateStore,
+                settingsStore = settingsStore,
+                providerStagingPort = providerStagingPort,
+                archiveRootsProvider = archiveRootsProvider,
+                requestBaseDirectoryPath = requestBaseDirectoryPath,
+                operationCoordinator = operationCoordinator,
             ) as T
         }
         throw IllegalArgumentException("Unsupported ViewModel class: ${modelClass.name}")
@@ -735,7 +854,3 @@ private fun Map<BkxDestination, ScreenStatus>.withBackendStatus(readiness: Backe
 
 private fun defaultRequestBaseDirectory(): String =
     File(System.getProperty("java.io.tmpdir") ?: "/tmp", "bkx-android-requests").absolutePath
-
-private fun String.removeSensitivePathPrefixes(): String =
-    replace(Regex("/data/(?:data|user/\\d+)/[^ ]+"), "private path")
-        .replace(Regex("/storage/[^ ]+"), "storage path")

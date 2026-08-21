@@ -11,6 +11,7 @@
     "includes",
     "split_size",
     "compression",
+    "skip_symlinks",
     "verify",
     "dry_run"
   ],
@@ -56,6 +57,10 @@
     },
     "compression": {
       "$ref": "#/$defs/compression"
+    },
+    "skip_symlinks": {
+      "type": "boolean",
+      "default": false
     },
     "verify": {
       "type": "boolean",

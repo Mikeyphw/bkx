@@ -23,6 +23,9 @@ class ChaquopyPythonGateway(
     override suspend fun executeJson(requestJson: String): String =
         module().callAttr("execute_json", requestJson).toString()
 
+    override suspend fun progressJson(requestId: String): String =
+        module().callAttr("progress_json", requestId).toString()
+
     override suspend fun cancelJson(requestId: String): String =
         module().callAttr("cancel_json", requestId).toString()
 }

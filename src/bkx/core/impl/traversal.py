@@ -12,7 +12,7 @@ from typing import Literal
 from bkx.core.errors import NotFoundError, ValidationError
 from bkx.core.specs.common import canonical_local_path, normalize_archive_member, reject_output_inside_sources
 
-SymlinkPolicy = Literal["reject", "preserve"]
+SymlinkPolicy = Literal["reject", "skip", "preserve"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -64,7 +64,7 @@ def build_source_manifest(
     links must opt into and implement that representation explicitly.
     """
 
-    if symlink_policy not in {"reject", "preserve"}:
+    if symlink_policy not in {"reject", "skip", "preserve"}:
         raise ValidationError(msg="Unsupported symlink policy", details={"policy": symlink_policy})
 
     roots = tuple(canonical_local_path(src) for src in sources)
@@ -75,7 +75,7 @@ def build_source_manifest(
     for src in roots:
         if not src.exists():
             raise NotFoundError(msg=f"Source path does not exist: {src}", details={"path": str(src)})
-        _validate_supported_source(src, symlink_policy=symlink_policy)
+        _validate_supported_source(src, symlink_policy="reject" if symlink_policy == "skip" else symlink_policy)
     if output_path is not None:
         reject_output_inside_sources(output_path, roots)
 
@@ -99,6 +99,8 @@ def build_source_manifest(
             valid_dirs: list[str] = []
             for dirname in sorted(dirnames):
                 child = current / dirname
+                if symlink_policy == "skip" and child.is_symlink():
+                    continue
                 _validate_supported_source(child, symlink_policy=symlink_policy)
                 valid_dirs.append(dirname)
             dirnames[:] = valid_dirs
@@ -111,6 +113,8 @@ def build_source_manifest(
 
             for fname in sorted(filenames):
                 fpath = current / fname
+                if symlink_policy == "skip" and fpath.is_symlink():
+                    continue
                 _validate_supported_source(fpath, symlink_policy=symlink_policy)
                 rel = fpath.relative_to(base_parent)
                 archive_name = _member_name(rel.as_posix())

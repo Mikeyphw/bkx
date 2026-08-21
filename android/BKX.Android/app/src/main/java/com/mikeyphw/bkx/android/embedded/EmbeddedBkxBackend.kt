@@ -4,6 +4,7 @@ import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.backend.BackendSubmission
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
+import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestFiles
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
@@ -79,6 +80,14 @@ class EmbeddedBkxBackend(
                     "Embedded BKX execution failed before result publication: ${exc.message ?: exc::class.java.simpleName}",
                 ),
             )
+        }
+    }
+
+    override suspend fun progress(requestId: String): BridgeProgressEnvelope? = withContext(ioDispatcher) {
+        try {
+            BridgeJson.parseProgress(gateway.progressJson(requestId))
+        } catch (_: Exception) {
+            null
         }
     }
 

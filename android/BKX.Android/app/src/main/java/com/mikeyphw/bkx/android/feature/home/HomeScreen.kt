@@ -54,7 +54,7 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
     ) {
         BkxPageHeader(
-            title = "Your backups, without the bridge",
+            title = "Your backups, built in",
             subtitle = "BKX runs inside the app. Root unlocks private app data and Termux storage.",
         )
 

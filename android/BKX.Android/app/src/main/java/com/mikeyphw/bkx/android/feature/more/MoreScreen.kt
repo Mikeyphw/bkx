@@ -1,5 +1,7 @@
 package com.mikeyphw.bkx.android.feature.more
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -36,6 +38,7 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxSettingSwitch
 import com.mikeyphw.bkx.android.app.ui.components.BkxStatusPill
 import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
+import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.settings.AppearancePreference
 import com.mikeyphw.bkx.android.core.settings.LogPrivacyMode
 import com.mikeyphw.bkx.android.core.settings.ProgressPreference
@@ -45,6 +48,7 @@ import com.mikeyphw.bkx.android.core.transfer.TransferMode
 import com.mikeyphw.bkx.android.core.transfer.TransferResultUiState
 import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
 import com.mikeyphw.bkx.android.storage.BkxStorageLocations
+import com.mikeyphw.bkx.android.storage.StorageLocationKind
 
 @Composable
 fun MoreScreen(
@@ -54,6 +58,7 @@ fun MoreScreen(
 ) {
     val context = LocalContext.current
     val storageAccess = AndroidStorageAccessManager(context)
+    val quickLocations = storageAccess.discoverLocations(state.rootAvailable)
     var showDiagnostics by rememberSaveable { mutableStateOf(false) }
 
     Column(
@@ -85,11 +90,15 @@ fun MoreScreen(
             }
             BkxDivider()
             Text("Quick locations", style = MaterialTheme.typography.titleMedium)
-            BkxStorageLocations.defaults(state.rootAvailable).forEach { location ->
+            quickLocations.forEach { location ->
                 BkxPathRow(
                     label = location.label,
                     path = location.path,
-                    supporting = if (location.requiresRoot) "Root access" else "Shared storage",
+                    supporting = when {
+                        location.requiresRoot -> "Root access"
+                        location.kind == StorageLocationKind.Removable -> "SD / USB storage"
+                        else -> "Shared storage"
+                    },
                 )
             }
         }
@@ -115,7 +124,7 @@ fun MoreScreen(
                     )
                 }
             }
-            Text("Root policy changes take effect the next time the embedded engine is created.", style = MaterialTheme.typography.bodySmall)
+            Text("Root policy is evaluated for every operation; running work keeps the route it started with.", style = MaterialTheme.typography.bodySmall)
             OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshBackend) }) { Text("Check root status") }
         }
 
@@ -193,6 +202,9 @@ private fun TransferPanel(
     val draft = transfer.draft
     val sourcePath = draft.sources.firstOrNull()?.location.orEmpty()
     val destinationPath = draft.destination?.location.orEmpty()
+    val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderTransferTree(it)) }
+    }
 
     BkxSectionHeader("Local transfer")
     BkxSurfaceCard {
@@ -218,6 +230,17 @@ private fun TransferPanel(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(
+                onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferSource, sourcePath.takeIf { it.startsWith("/") } ?: BkxStorageLocations.SHARED_STORAGE)) },
+                modifier = Modifier.weight(1f),
+            ) { Text("Browse source") }
+            OutlinedButton(
+                onClick = { providerTreeLauncher.launch(null) },
+                enabled = !state.providerImportInProgress,
+                modifier = Modifier.weight(1f),
+            ) { Text("Document provider") }
+        }
         OutlinedTextField(
             value = destinationPath,
             onValueChange = { path ->
@@ -230,6 +253,11 @@ private fun TransferPanel(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
         )
+        OutlinedButton(
+            onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferDestination, destinationPath.takeIf { it.startsWith("/") } ?: BkxStorageLocations.SHARED_STORAGE)) },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("Browse destination") }
+        state.providerImportMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AssistChip(
                 onClick = {

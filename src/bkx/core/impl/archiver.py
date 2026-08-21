@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import shutil
+import stat
 import tarfile
 import tempfile
 import time
@@ -63,7 +64,7 @@ class FallbackArchiver:
             includes=spec.includes,
             excludes=spec.excludes,
             output_path=output_path,
-            symlink_policy="reject",
+            symlink_policy="skip" if spec.skip_symlinks else "reject",
         )
         archive_format = _detect_format_for_create(output_path)
         spec, warnings = _resolve_builtin_compression_compat(spec, archive_format)
@@ -74,9 +75,9 @@ class FallbackArchiver:
             os.close(fd)
             tmp_path = Path(raw_tmp)
             if archive_format == "zip":
-                warnings.extend(self._write_zip(tmp_path, manifest, spec))
+                warnings.extend(self._write_zip(tmp_path, manifest, spec, progress_callback=progress_callback))
             else:
-                warnings.extend(self._write_tar(tmp_path, manifest, spec))
+                warnings.extend(self._write_tar(tmp_path, manifest, spec, progress_callback=progress_callback))
             if spec.verify:
                 verify_result = self.verify(ArchiveVerifySpec(archive_path=tmp_path))
                 if not verify_result.success:
@@ -113,8 +114,17 @@ class FallbackArchiver:
             progress_callback(created.files_archived, created.bytes_written)
         return created
 
-    def _write_tar(self, tmp_path: Path, manifest: SourceTraversalManifest, spec: ArchiveCreateSpec) -> list[str]:
+    def _write_tar(
+        self,
+        tmp_path: Path,
+        manifest: SourceTraversalManifest,
+        spec: ArchiveCreateSpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> list[str]:
         mode, tar_kwargs = _tar_mode_for(spec)
+        files_done = 0
+        bytes_done = 0
         with tarfile.open(tmp_path, mode, **tar_kwargs) as tar:
             for entry in manifest.entries:
                 if entry.is_dir:
@@ -124,10 +134,23 @@ class FallbackArchiver:
                     tar.addfile(info)
                 else:
                     tar.add(entry.path, arcname=entry.archive_name, recursive=False, filter=_tar_filter)
+                    files_done += 1
+                    bytes_done += entry.size
+                if progress_callback is not None:
+                    progress_callback(files_done, bytes_done)
         return []
 
-    def _write_zip(self, tmp_path: Path, manifest: SourceTraversalManifest, spec: ArchiveCreateSpec) -> list[str]:
+    def _write_zip(
+        self,
+        tmp_path: Path,
+        manifest: SourceTraversalManifest,
+        spec: ArchiveCreateSpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> list[str]:
         compression, compresslevel = _zip_compression_for(spec)
+        files_done = 0
+        bytes_done = 0
         with zipfile.ZipFile(tmp_path, "w", compression=compression, compresslevel=compresslevel) as zf:
             for entry in manifest.entries:
                 if entry.is_dir:
@@ -137,6 +160,10 @@ class FallbackArchiver:
                     zf.writestr(info, b"")
                 else:
                     zf.write(entry.path, arcname=entry.archive_name)
+                    files_done += 1
+                    bytes_done += entry.size
+                if progress_callback is not None:
+                    progress_callback(files_done, bytes_done)
         return []
 
     def list(self, spec: ArchiveListSpec) -> tuple[ArchiveEntry, ...]:
@@ -164,7 +191,23 @@ class FallbackArchiver:
         entries: list[ArchiveEntry] = []
         with tarfile.open(archive_path, "r:*") as tar:
             for member in tar.getmembers():
-                entries.append(ArchiveEntry(path=member.name, is_dir=member.isdir(), size=member.size, mtime_ns=int(member.mtime * 1e9)))
+                if member.isdir():
+                    entry_type = "directory"
+                elif member.issym() or member.islnk():
+                    entry_type = "symlink"
+                elif member.isreg():
+                    entry_type = "file"
+                else:
+                    entry_type = "special"
+                entries.append(
+                    ArchiveEntry(
+                        path=member.name,
+                        is_dir=member.isdir(),
+                        size=member.size,
+                        mtime_ns=int(member.mtime * 1e9),
+                        entry_type=entry_type,
+                    )
+                )
         return entries
 
     def _list_zip(self, archive_path: Path) -> list[ArchiveEntry]:
@@ -173,7 +216,24 @@ class FallbackArchiver:
             for info in zf.infolist():
                 # Convert the DOS timestamp to a stable integer representation.
                 mtime_ns = int(time.mktime((*info.date_time, 0, 0, -1)) * 1_000_000_000)
-                entries.append(ArchiveEntry(path=info.filename, is_dir=info.is_dir(), size=info.file_size, mtime_ns=mtime_ns))
+                unix_mode = (info.external_attr >> 16) & 0xFFFF
+                if info.is_dir():
+                    entry_type = "directory"
+                elif unix_mode and stat.S_ISLNK(unix_mode):
+                    entry_type = "symlink"
+                elif unix_mode and not stat.S_ISREG(unix_mode):
+                    entry_type = "special"
+                else:
+                    entry_type = "file"
+                entries.append(
+                    ArchiveEntry(
+                        path=info.filename,
+                        is_dir=info.is_dir(),
+                        size=info.file_size,
+                        mtime_ns=mtime_ns,
+                        entry_type=entry_type,
+                    )
+                )
         return entries
 
     def info(self, spec: ArchiveInfoSpec) -> ArchiveInfoResult:
@@ -193,13 +253,22 @@ class FallbackArchiver:
             compression_ratio=compression_ratio,
         )
 
-    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
+    def verify(
+        self,
+        spec: ArchiveVerifySpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> ArchiveVerifyResult:
         archive_path = spec.archive_path.expanduser().resolve(strict=False)
         if not archive_path.exists():
             raise NotFoundError(msg=f"Archive not found: {archive_path}", details={"path": str(archive_path)})
         archive_format = _detect_format_for_read(archive_path)
         checksums = _archive_checksums(archive_path, spec.hash_algorithms)
-        result = self._verify_zip(archive_path) if archive_format == "zip" else self._verify_tar(archive_path)
+        result = (
+            self._verify_zip(archive_path, progress_callback=progress_callback)
+            if archive_format == "zip"
+            else self._verify_tar(archive_path, progress_callback=progress_callback)
+        )
         return ArchiveVerifyResult(
             success=result.success,
             archive_path=result.archive_path,
@@ -213,11 +282,17 @@ class FallbackArchiver:
             errors=result.errors,
         )
 
-    def _verify_tar(self, archive_path: Path) -> ArchiveVerifyResult:
+    def _verify_tar(
+        self,
+        archive_path: Path,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> ArchiveVerifyResult:
         checksums_valid = True
         structure_valid = True
         failed_entries: list[str] = []
         entries_checked = 0
+        bytes_checked = 0
         errors: list[str] = []
         try:
             with tarfile.open(archive_path, "r:*") as tar:
@@ -233,6 +308,9 @@ class FallbackArchiver:
                                 raise tarfile.TarError("regular file had no payload stream")
                             while stream.read(1024 * 1024):
                                 pass
+                            bytes_checked += member.size
+                        if progress_callback is not None:
+                            progress_callback(entries_checked, bytes_checked)
                     except Exception as exc:
                         checksums_valid = False
                         failed_entries.append(member.name)
@@ -251,12 +329,18 @@ class FallbackArchiver:
             errors=tuple(errors),
         )
 
-    def _verify_zip(self, archive_path: Path) -> ArchiveVerifyResult:
+    def _verify_zip(
+        self,
+        archive_path: Path,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> ArchiveVerifyResult:
         checksums_valid = True
         structure_valid = True
         failed_entries: list[str] = []
         errors: list[str] = []
         entries_checked = 0
+        bytes_checked = 0
         try:
             with zipfile.ZipFile(archive_path, "r") as zf:
                 infos = zf.infolist()
@@ -273,6 +357,9 @@ class FallbackArchiver:
                             with zf.open(info, "r") as fh:
                                 while fh.read(1024 * 1024):
                                     pass
+                            bytes_checked += info.file_size
+                        if progress_callback is not None:
+                            progress_callback(entries_checked, bytes_checked)
                     except Exception as exc:
                         checksums_valid = False
                         if info.filename not in failed_entries:
@@ -292,7 +379,12 @@ class FallbackArchiver:
             errors=tuple(errors),
         )
 
-    def extract(self, spec: RestoreSpec) -> tuple[Path, ...]:
+    def extract(
+        self,
+        spec: RestoreSpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> tuple[Path, ...]:
         """Extract an archive through BKX's safe restore policy.
 
         Never delegates path creation to ``tarfile.extract`` or
@@ -315,9 +407,9 @@ class FallbackArchiver:
             stage_path = Path(tempfile.mkdtemp(prefix=f".{destination.name}.bkx-restore.", dir=str(destination.parent)))
             restored_rel_paths: list[str] = []
             if archive_format == "zip":
-                self._extract_zip_members(archive_path, stage_path, members, restored_rel_paths)
+                self._extract_zip_members(archive_path, stage_path, members, restored_rel_paths, progress_callback=progress_callback)
             else:
-                self._extract_tar_members(archive_path, stage_path, members, restored_rel_paths)
+                self._extract_tar_members(archive_path, stage_path, members, restored_rel_paths, progress_callback=progress_callback)
             final_paths = _publish_staged_restore(stage_path, destination, restored_rel_paths, overwrite=spec.overwrite)
             stage_path = None
             return tuple(final_paths)
@@ -341,7 +433,17 @@ class FallbackArchiver:
                     selected.append(safe)
         return selected
 
-    def _extract_zip_members(self, archive_path: Path, root: Path, members: list[SafeArchiveMember], restored_rel_paths: list[str]) -> None:
+    def _extract_zip_members(
+        self,
+        archive_path: Path,
+        root: Path,
+        members: list[SafeArchiveMember],
+        restored_rel_paths: list[str],
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> None:
+        files_done = 0
+        bytes_done = 0
         with zipfile.ZipFile(archive_path, "r") as zf:
             by_name = {info.filename: info for info in zf.infolist()}
             for member in members:
@@ -354,8 +456,22 @@ class FallbackArchiver:
                 with zf.open(by_name[member.raw_name], "r") as src, open(target, "xb") as dst:
                     shutil.copyfileobj(src, dst, length=1024 * 1024)
                 restored_rel_paths.append(member.name)
+                files_done += 1
+                bytes_done += member.size
+                if progress_callback is not None:
+                    progress_callback(files_done, bytes_done)
 
-    def _extract_tar_members(self, archive_path: Path, root: Path, members: list[SafeArchiveMember], restored_rel_paths: list[str]) -> None:
+    def _extract_tar_members(
+        self,
+        archive_path: Path,
+        root: Path,
+        members: list[SafeArchiveMember],
+        restored_rel_paths: list[str],
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> None:
+        files_done = 0
+        bytes_done = 0
         wanted = {member.raw_name: member for member in members}
         with tarfile.open(archive_path, "r:*") as tar:
             for tar_member in tar.getmembers():
@@ -374,6 +490,10 @@ class FallbackArchiver:
                 with open(target, "xb") as dst:
                     shutil.copyfileobj(stream, dst, length=1024 * 1024)
                 restored_rel_paths.append(member.name)
+                files_done += 1
+                bytes_done += member.size
+                if progress_callback is not None:
+                    progress_callback(files_done, bytes_done)
 
 
 @dataclass(frozen=True, kw_only=True)

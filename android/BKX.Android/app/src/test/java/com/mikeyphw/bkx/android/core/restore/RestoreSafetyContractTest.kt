@@ -148,4 +148,22 @@ class RestoreSafetyContractTest {
     fun unsafeSubsetPathsAreRejected() {
         RestoreSubsetSelection.Paths(listOf("../escape"))
     }
+    @Test
+    fun everyRestoreModeRequiresExplicitDestinationAndRootSensitivePathsNeedRootPhrase() {
+        val missing = RestoreDraft(archive = archive, outputMode = RestoreOutputMode.FreshDirectory)
+        assertTrue(missing.validationIssues().any { it is RestoreValidationIssue.MissingDestination })
+        assertTrue(RestoreDestinationPolicy.blockedReason("/system/etc") != null)
+        assertTrue(RestoreDestinationPolicy.blockedReason("/data/system/users") != null)
+        assertTrue(RestoreDestinationPolicy.requiresRootConfirmation("/data/data/com.termux/files/home/restore-test"))
+
+        val rootDraft = draft.copy(
+            destination = RestoreDestinationSelection(
+                destinationId = "termux-root",
+                label = "Termux restore test",
+                stagedDirectoryPath = "/data/data/com.termux/files/home/bkx-restore-test",
+            ),
+        )
+        assertEquals(RestoreExtractionConfirmation.ROOT_CONFIRMATION_PHRASE, RestoreExtractionConfirmation.requiredPhrase(rootDraft))
+    }
+
 }

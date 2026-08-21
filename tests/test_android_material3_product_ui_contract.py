@@ -33,8 +33,8 @@ def test_backup_restore_and_transfer_screens_submit_real_embedded_actions() -> N
     assert "ArchiveEntryFilter" in archives
     assert "BkxHomeEvent.RequestTransferPreview" in more
     assert "BkxHomeEvent.RunTransfer" in more
-    assert "backendPort.submit" in view_model
-    assert "BridgeFileLayout.forRequest" in view_model
+    assert "operationCoordinator.execute" in view_model
+    assert "operationCoordinator.runtimeState.collect" in view_model
 
 
 def test_product_ui_hides_bridge_and_termux_backend_vocabulary() -> None:
@@ -74,4 +74,4 @@ def test_root_storage_presets_survive_product_ui_replacement() -> None:
         "/data/data/com.termux/files/usr",
     ):
         assert path in storage
-    assert "BkxStorageLocations.defaults(state.rootAvailable)" in more
+    assert "storageAccess.discoverLocations(state.rootAvailable)" in more

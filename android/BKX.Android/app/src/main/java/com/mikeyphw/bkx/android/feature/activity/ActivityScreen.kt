@@ -26,6 +26,7 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
 import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
+import com.mikeyphw.bkx.android.core.settings.LogPrivacyMode
 import com.mikeyphw.bkx.android.feature.home.formatTime
 import com.mikeyphw.bkx.android.feature.home.operationLabel
 
@@ -48,7 +49,7 @@ fun ActivityScreen(
     ) {
         BkxPageHeader(
             title = "Activity",
-            subtitle = "Live operations and a private, path-free history of completed BKX work.",
+            subtitle = if (state.settings.logPrivacyMode == LogPrivacyMode.Private) "Live operations and a private, path-free history of completed BKX work." else "Live operations with diagnostic request identifiers and compact completed history.",
         )
 
         BkxSectionHeader("In progress")
@@ -66,6 +67,24 @@ fun ActivityScreen(
                         BkxStatusPill("STOP REQUESTED", MaterialTheme.colorScheme.tertiary)
                     } else {
                         BkxStatusPill("RUNNING")
+                    }
+                    if (state.settings.logPrivacyMode == LogPrivacyMode.Diagnostic) {
+                        Text("Request ${operation.requestId.take(16)} · seq ${operation.lastSeq}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (operation.cancelFilePath != null && operation.status != ActiveOperationStatus.Cancelling) {
+                        OutlinedButton(
+                            onClick = {
+                                onEvent(
+                                    BkxHomeEvent.SubmitOperationCancellation(
+                                        requestId = operation.requestId,
+                                        cancelFilePath = operation.cancelFilePath,
+                                        cancelRequestId = "cancel-${System.currentTimeMillis()}",
+                                        requestedAtEpochMillis = System.currentTimeMillis(),
+                                    ),
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Cancel operation") }
                     }
                     state.operationRuntime.failureStates[operation.requestId]?.let { failure ->
                         Text(failure.title, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.titleMedium)

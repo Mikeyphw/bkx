@@ -19,6 +19,7 @@ enum class ActiveOperationStatus {
     @SerialName("success") Success,
     @SerialName("failure") Failure,
     @SerialName("cancelled") Cancelled,
+    @SerialName("interrupted") Interrupted,
     @SerialName("unknown") Unknown,
 }
 
@@ -148,6 +149,7 @@ enum class OperationFailureKind {
     @SerialName("malformed_result") MalformedResult,
     @SerialName("saf_grant_lost") SafGrantLost,
     @SerialName("cancelled") Cancelled,
+    @SerialName("interrupted") Interrupted,
     @SerialName("unknown") Unknown,
 }
 
@@ -232,6 +234,15 @@ object OperationFailureMapper {
         actions = listOf("Poll status", "Retry operation", "Open engine diagnostics"),
     )
 
+    fun interrupted(message: String = "BKX was interrupted before a trustworthy final result was committed."): OperationFailureUiState = OperationFailureUiState(
+        kind = OperationFailureKind.Interrupted,
+        code = "BKX_OPERATION_INTERRUPTED",
+        title = "Operation interrupted",
+        message = message,
+        actions = listOf("Review partial artifacts", "Retry operation", "Open engine diagnostics"),
+        retryAllowed = true,
+    )
+
     fun fromBackendReadiness(readiness: BackendReadiness): OperationFailureUiState = when (readiness) {
         BackendReadiness.RootPermissionRequired -> OperationFailureUiState(
             kind = OperationFailureKind.PermissionDenied,
@@ -287,6 +298,7 @@ object OperationFailureMapper {
             OperationFailureKind.MalformedResult -> "Malformed BKX result"
             OperationFailureKind.SafGrantLost -> "File permission lost"
             OperationFailureKind.Cancelled -> "Request cancelled"
+            OperationFailureKind.Interrupted -> "Operation interrupted"
             OperationFailureKind.Unknown -> "BKX operation failed"
         }
         val defaultActions = when (kind) {
@@ -298,6 +310,7 @@ object OperationFailureMapper {
             OperationFailureKind.MalformedResult -> listOf("Open engine diagnostics", "Export diagnostics")
             OperationFailureKind.SafGrantLost -> listOf("Re-select files", "Open settings")
             OperationFailureKind.Cancelled -> listOf("Review partial artifacts", "Start a new request")
+            OperationFailureKind.Interrupted -> listOf("Review partial artifacts", "Retry operation")
             OperationFailureKind.Unknown -> listOf("Open engine diagnostics", "Retry operation")
         }
         return OperationFailureUiState(
@@ -350,5 +363,28 @@ fun BkxBridgeResponseEnvelope.toOperationResultUiState(): OperationResultUiState
                 message = "BKX returned ok=false without a typed error.",
                 actions = listOf("Open engine diagnostics", "Retry operation"),
             ),
+    )
+}
+
+
+fun OperationRuntimeState.bounded(
+    maxOperations: Int = 64,
+    maxEventsPerRequest: Int = 200,
+): OperationRuntimeState {
+    require(maxOperations > 0) { "maxOperations must be positive" }
+    require(maxEventsPerRequest > 0) { "maxEventsPerRequest must be positive" }
+    val keep = activeOperations.values
+        .sortedWith(compareByDescending<ActiveOperation> { it.status == ActiveOperationStatus.Queued || it.status == ActiveOperationStatus.Running || it.status == ActiveOperationStatus.Cancelling }
+            .thenByDescending { it.lastSeenEpochMillis })
+        .take(maxOperations)
+        .map { it.requestId }
+        .toSet()
+    return copy(
+        activeOperations = activeOperations.filterKeys { it in keep },
+        progressEvents = progressEvents
+            .filterKeys { it in keep }
+            .mapValues { (_key, events) -> events.takeLast(maxEventsPerRequest) },
+        failureStates = failureStates.filterKeys { it in keep },
+        focusedRequestId = focusedRequestId?.takeIf { it in keep },
     )
 }

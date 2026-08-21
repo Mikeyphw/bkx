@@ -67,6 +67,7 @@ class BackupSpec:
     compression: CompressionProfile = DEFAULT_COMPRESSION
     verify: bool = True
     dry_run: bool = False
+    skip_symlinks: bool = False
     _resolved_destination: Path | None = field(default=None, compare=False, repr=False)
     _archive_path: Path | None = field(default=None, compare=False, repr=False)
 
@@ -85,8 +86,8 @@ class BackupSpec:
         object.__setattr__(self, "split_size", validate_split_size(self.split_size))
         if not isinstance(self.compression, CompressionProfile):
             raise ValidationError(msg="compression must be a CompressionProfile")
-        if not isinstance(self.verify, bool) or not isinstance(self.dry_run, bool):
-            raise ValidationError(msg="verify and dry_run must be booleans")
+        if not isinstance(self.verify, bool) or not isinstance(self.dry_run, bool) or not isinstance(self.skip_symlinks, bool):
+            raise ValidationError(msg="verify, dry_run, and skip_symlinks must be booleans")
 
     def normalize(self, *, default_destination: Path | None = None, auto_name: bool = True) -> BackupSpec:
         sources = normalize_source_paths(self.sources)
@@ -108,6 +109,7 @@ class BackupSpec:
             compression=self.compression,
             verify=self.verify,
             dry_run=self.dry_run,
+            skip_symlinks=self.skip_symlinks,
             _resolved_destination=destination,
             _archive_path=archive_path,
         )

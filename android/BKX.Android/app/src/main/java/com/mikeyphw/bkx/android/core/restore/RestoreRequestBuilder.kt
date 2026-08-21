@@ -31,9 +31,11 @@ class RestoreRequestBuilder {
         }
         require(preview.isExecutable) { "restore.extract is blocked by BKX path-safety/link/special-file preview fields." }
         val destructive = preview.requiresDestructiveConfirmation
-        if (destructive) {
+        val privilegedDestination = RestoreDestinationPolicy.requiresRootConfirmation(draft.destination?.stagedDirectoryPath)
+        val confirmationRequired = destructive || privilegedDestination
+        if (confirmationRequired) {
             require(confirmation != null && confirmation.matches(draft, preview)) {
-                "restore.extract requires explicit confirmation for destructive overwrite preview fields."
+                "restore.extract requires explicit confirmation for destructive or root-sensitive destinations."
             }
         }
         return BridgeRequestEnvelope(
@@ -47,8 +49,10 @@ class RestoreRequestBuilder {
                     put("preview_request_id", preview.requestId)
                     put("plan_token", preview.planToken)
                     put("destructive_confirmation_required", destructive)
-                    if (destructive) {
+                    put("root_sensitive_confirmation_required", privilegedDestination)
+                    if (confirmationRequired) {
                         val matchingConfirmation = requireNotNull(confirmation)
+                        if (privilegedDestination) put("root_confirmation", matchingConfirmation.confirmationPhrase)
                         putJsonObject("confirmation_evidence") {
                             put("phrase", matchingConfirmation.confirmationPhrase)
                             put("confirmed_at_ms", matchingConfirmation.confirmedAtEpochMillis)

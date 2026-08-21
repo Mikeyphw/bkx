@@ -7,6 +7,7 @@ import json
 import os
 import stat as stat_module
 import sys
+import time
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from importlib import metadata
@@ -51,7 +52,8 @@ _CAPABILITIES = frozenset(
         "transfer.run",
         "runs.list",
         "runs.show",
-        "run.cancel.queued",
+        "run.cancel.cooperative",
+        "run.progress",
         "storage.locations",
         "filesystem.list",
         "filesystem.stat",
@@ -59,7 +61,14 @@ _CAPABILITIES = frozenset(
 )
 
 _cancelled_requests: set[str] = set()
+_progress_documents: dict[str, dict[str, Any]] = {}
+_progress_sequences: dict[str, int] = {}
 _cancel_lock = RLock()
+_progress_lock = RLock()
+
+
+class AndroidOperationCancelled(BkxError):
+    """Internal typed cancellation signal raised only at cooperative checkpoints."""
 
 
 def _version() -> str:
@@ -89,7 +98,7 @@ def _runtime_capabilities() -> set[str]:
 
 def supported_operations() -> tuple[str, ...]:
     """Return the immutable operation contract advertised to Android."""
-    return tuple(sorted(_CAPABILITIES - {"readiness.probe", "run.cancel.queued"}))
+    return tuple(sorted(_CAPABILITIES - {"readiness.probe", "run.cancel.cooperative", "run.progress"}))
 
 
 def readiness_json() -> str:
@@ -102,6 +111,13 @@ def readiness_json() -> str:
             "capabilities": sorted(_runtime_capabilities()),
         }
     )
+
+
+def progress_json(request_id: str) -> str:
+    request_id = _require_request_id(request_id)
+    with _progress_lock:
+        document = _progress_documents.get(request_id)
+        return "null" if document is None else _json(document)
 
 
 def cancel_json(request_id: str) -> str:
@@ -119,11 +135,13 @@ def cancel_json(request_id: str) -> str:
 def execute_json(raw_request: str) -> str:
     """Execute one bridge-shaped request synchronously inside the current process."""
     request_id = "unknown"
+    result: dict[str, Any]
+    started = time.monotonic()
     try:
         request = _parse_request(raw_request)
         request_id = request["request_id"]
-        if _consume_cancel(request_id):
-            return _json(_cancelled(request_id, "Operation was cancelled before embedded execution started."))
+        _emit_progress(request_id, "preparing", "Preparing embedded BKX operation.", 0.0)
+        _cancellation_checkpoint(request_id, "preparing")
         operation = request["operation"]
         handler = _HANDLERS.get(operation)
         if handler is None:
@@ -132,19 +150,67 @@ def execute_json(raw_request: str) -> str:
                 details={"operation": operation, "supported": sorted(_HANDLERS)},
             )
         result = handler(request_id, request["payload"])
-        return _json(result)
+    except AndroidOperationCancelled as exc:
+        result = _cancelled(request_id, str(exc) or "Operation cancelled.")
     except BkxError as exc:
-        return _json(_failure(request_id, exc))
+        result = _failure(request_id, exc)
     except (TypeError, ValueError, KeyError, json.JSONDecodeError) as exc:
         error = ValidationError(msg=f"Invalid embedded Android request: {exc}")
-        return _json(_failure(request_id, error))
+        result = _failure(request_id, error)
     except Exception as exc:  # boundary: never leak a Python traceback through the app protocol
         error = ExternalToolError(
             msg=f"Embedded BKX runtime failed: {type(exc).__name__}: {exc}",
             tool_name="embedded-cpython",
         )
-        return _json(_failure(request_id, error, code="embedded_runtime_error"))
+        result = _failure(request_id, error, code="embedded_runtime_error")
 
+    duration_ms = max(0, int((time.monotonic() - started) * 1000))
+    result["metrics"] = {"duration_ms": duration_ms}
+    if request_id != "unknown":
+        status = str(result.get("status") or "failure")
+        final_progress = 1.0 if status == "success" else None
+        _emit_progress(request_id, status, str(result.get("summary") or status), final_progress)
+        _discard_cancel(request_id)
+        _trim_runtime_maps()
+    return _json(result)
+
+
+
+def _emit_progress(request_id: str, phase: str, message: str, progress: float | None = None) -> None:
+    with _progress_lock:
+        seq = _progress_sequences.get(request_id, 0) + 1
+        _progress_sequences[request_id] = seq
+        _progress_documents[request_id] = {
+            "protocol_version": PROTOCOL_VERSION,
+            "request_id": request_id,
+            "seq": seq,
+            "phase": phase,
+            "message": message,
+            **({"progress": max(0.0, min(float(progress), 1.0))} if progress is not None else {}),
+        }
+
+
+def _is_cancelled(request_id: str) -> bool:
+    with _cancel_lock:
+        return request_id in _cancelled_requests
+
+
+def _cancellation_checkpoint(request_id: str, phase: str) -> None:
+    if _is_cancelled(request_id):
+        raise AndroidOperationCancelled(msg=f"Operation cancelled during {phase}.")
+
+
+def _discard_cancel(request_id: str) -> None:
+    with _cancel_lock:
+        _cancelled_requests.discard(request_id)
+
+
+def _trim_runtime_maps(limit: int = 128) -> None:
+    with _progress_lock:
+        while len(_progress_documents) > limit:
+            oldest = next(iter(_progress_documents))
+            _progress_documents.pop(oldest, None)
+            _progress_sequences.pop(oldest, None)
 
 def _parse_request(raw_request: str) -> dict[str, Any]:
     if not isinstance(raw_request, str) or not raw_request.strip():
@@ -182,14 +248,6 @@ def _require_request_id(value: Any) -> str:
     return request_id
 
 
-def _consume_cancel(request_id: str) -> bool:
-    with _cancel_lock:
-        if request_id in _cancelled_requests:
-            _cancelled_requests.remove(request_id)
-            return True
-    return False
-
-
 def _backup_spec(payload: Mapping[str, Any], *, dry_run: bool) -> BackupSpec:
     source = _mapping(payload, "source")
     destination = _mapping(payload, "destination")
@@ -203,6 +261,8 @@ def _backup_spec(payload: Mapping[str, Any], *, dry_run: bool) -> BackupSpec:
     # typed unsupported-backend error if execution requires unavailable tooling.
     level = int(archive.get("compression_level", 3))
     split_size = int(split["chunk_size_bytes"]) if split.get("enabled") and split.get("chunk_size_bytes") is not None else None
+    if bool(filters.get("follow_symlinks", False)):
+        raise ValidationError(msg="BKX Android does not follow symbolic links; root backups skip links to stay inside the selected source tree")
     return BackupSpec(
         sources=(Path(_string_alias(source, "path", "staged_path")),),
         destination=Path(_string_alias(destination, "path", "staged_directory_path")),
@@ -213,10 +273,13 @@ def _backup_spec(payload: Mapping[str, Any], *, dry_run: bool) -> BackupSpec:
         compression=CompressionProfile(compression, level),
         verify=bool(verification.get("verify_after_create", True)),
         dry_run=dry_run,
+        skip_symlinks=True,
     )
 
 
 def _handle_backup_plan(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    _emit_progress(request_id, "planning", "Reviewing backup plan.", 0.15)
+    _cancellation_checkpoint(request_id, "backup planning")
     spec = _backup_spec(payload, dry_run=True)
     plan = plan_for_spec(spec, command="backup.plan")
     token = _token(plan)
@@ -231,7 +294,22 @@ def _handle_backup_plan(request_id: str, payload: Mapping[str, Any]) -> dict[str
 
 def _handle_backup_create(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     spec = _backup_spec(payload, dry_run=False)
-    result = get_backup_service().create(spec)
+    plan = plan_for_spec(spec, command="backup.create")
+    total_files = max(0, int(plan.total_files or 0))
+
+    def progress(phase: str, files_done: int, bytes_done: int) -> None:
+        _cancellation_checkpoint(request_id, phase)
+        fraction = (files_done / total_files) if total_files > 0 else None
+        _emit_progress(
+            request_id,
+            phase,
+            f"{phase.replace('_', ' ').title()}: {files_done} files, {bytes_done} bytes.",
+            fraction,
+        )
+
+    _emit_progress(request_id, "archiving", "Creating backup archive.", 0.05)
+    result = get_backup_service().create(spec, progress_callback=progress)
+    _cancellation_checkpoint(request_id, "backup finalization")
     errors = [_error("backup_error", message) for message in result.errors]
     errors.extend(_warning("backup_warning", message) for message in result.warnings)
     artifacts = []
@@ -254,22 +332,126 @@ def _archive_path(payload: Mapping[str, Any]) -> Path:
 
 
 def _handle_archive_list(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    # The bridge's archive.list request carries no storage root. The embedded
-    # implementation therefore projects archives from canonical BKX run history.
-    # AOV-17→20 will replace this with the Android SAF archive index.
-    run_result = get_run_service().list(limit=100)
+    """Build a bounded direct-filesystem archive index.
+
+    Android supplies user-visible storage roots (internal/removable volumes and
+    the BKX backup directory). Canonical run history is merged as a second
+    source so archives created in arbitrary explicit destinations remain
+    discoverable. Symlinks are never followed while indexing.
+    """
+    roots_raw = payload.get("roots", [])
+    if roots_raw is None:
+        roots_raw = []
+    if not isinstance(roots_raw, list) or any(not isinstance(item, str) for item in roots_raw):
+        raise ValidationError(msg="archive.list roots must be a list of absolute path strings")
+    max_depth = max(0, min(int(payload.get("max_depth", 4)), 8))
+    limit = max(1, min(int(payload.get("limit", 500)), 2000))
+
     seen: set[str] = set()
     artifacts: list[dict[str, Any]] = []
+
+    def add_archive(path: Path) -> None:
+        if len(artifacts) >= limit:
+            return
+        try:
+            if path.is_symlink() or not path.is_file() or not _looks_like_archive(path):
+                return
+            resolved = str(path.absolute())
+            if resolved in seen:
+                return
+            stat = path.stat()
+        except (OSError, PermissionError):
+            return
+        seen.add(resolved)
+        artifacts.append(
+            _artifact(
+                "archive",
+                resolved,
+                size_bytes=stat.st_size,
+                modified_at_epoch_millis=max(0, int(stat.st_mtime * 1000)),
+            )
+        )
+
+    for raw_root in roots_raw:
+        if len(artifacts) >= limit:
+            break
+        root = Path(raw_root).expanduser()
+        if not root.is_absolute():
+            continue
+        _scan_archive_root(root, max_depth=max_depth, limit=limit, add_archive=add_archive)
+
+    # Always merge canonical run history. This catches backups written to
+    # arbitrary direct paths outside the standard BKX volume roots.
+    run_result = get_run_service().list(limit=min(limit, 200))
     for run in run_result.runs:
+        if len(artifacts) >= limit:
+            break
         try:
             detail = get_run_service().show(run.run_id)
         except BkxError:
             continue
-        path = detail.archive_path
-        if path and path not in seen and Path(path).exists():
-            seen.add(path)
-            artifacts.append(_artifact("archive", path))
-    return _success(request_id, f"Found {len(artifacts)} embedded BKX archives in run history.", artifacts=artifacts)
+        if detail.archive_path:
+            add_archive(Path(detail.archive_path))
+
+    artifacts.sort(
+        key=lambda item: (
+            -int(item.get("modified_at_epoch_millis", 0)),
+            str(item.get("path", "")).casefold(),
+        )
+    )
+    return _success(
+        request_id,
+        f"Indexed {len(artifacts)} BKX-compatible archives from direct storage and run history.",
+        artifacts=artifacts,
+    )
+
+
+def _looks_like_archive(path: Path) -> bool:
+    name = path.name.casefold()
+    return name.endswith((
+        ".bakery", ".zip", ".tar", ".tar.gz", ".tgz",
+        ".tar.bz2", ".tbz2", ".tar.xz", ".txz",
+    ))
+
+
+def _scan_archive_root(
+    root: Path,
+    *,
+    max_depth: int,
+    limit: int,
+    add_archive: Callable[[Path], None],
+) -> None:
+    try:
+        if root.is_symlink() or not root.exists():
+            return
+        if root.is_file():
+            add_archive(root)
+            return
+    except (OSError, PermissionError):
+        return
+
+    stack: list[tuple[Path, int]] = [(root, 0)]
+    visited = 0
+    while stack and visited < max(limit * 20, 1000):
+        directory, depth = stack.pop()
+        try:
+            entries = list(os.scandir(directory))
+        except (OSError, PermissionError):
+            continue
+        for entry in entries:
+            visited += 1
+            if visited >= max(limit * 20, 1000):
+                break
+            try:
+                if entry.is_symlink():
+                    continue
+                candidate = Path(entry.path)
+                if entry.is_file(follow_symlinks=False):
+                    add_archive(candidate)
+                elif depth < max_depth and entry.is_dir(follow_symlinks=False):
+                    stack.append((candidate, depth + 1))
+            except (OSError, PermissionError):
+                continue
 
 
 def _handle_archive_info(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -294,7 +476,16 @@ def _handle_archive_browse(request_id: str, payload: Mapping[str, Any]) -> dict[
         ArchiveBrowseSpec(archive_path=_archive_path(payload), limit=page_size, offset=offset)
     )
     artifacts = [
-        _artifact("archive_entry_dir" if entry.is_dir else "archive_entry", entry.path)
+        _artifact(
+            {
+                "directory": "archive_entry_dir",
+                "symlink": "archive_entry_symlink",
+                "special": "archive_entry_special",
+            }.get(entry.entry_type or ("directory" if entry.is_dir else "file"), "archive_entry"),
+            entry.path,
+            size_bytes=entry.size,
+            modified_at_epoch_millis=max(0, entry.mtime_ns // 1_000_000),
+        )
         for entry in result.entries
     ]
     next_offset = result.offset + len(result.entries)
@@ -308,7 +499,18 @@ def _handle_archive_browse(request_id: str, payload: Mapping[str, Any]) -> dict[
 
 
 def _handle_archive_verify(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    result = get_archive_service().verify(ArchiveVerifySpec(archive_path=_archive_path(payload)))
+    archive_path = _archive_path(payload)
+    info = get_archive_service().info(ArchiveInfoSpec(archive_path=archive_path))
+    total_entries = max(0, int(info.total_entries))
+
+    def progress(entries_done: int, bytes_done: int) -> None:
+        _cancellation_checkpoint(request_id, "archive verification")
+        fraction = (entries_done / total_entries) if total_entries > 0 else None
+        _emit_progress(request_id, "verifying", f"Verified {entries_done} of {total_entries or '?'} entries ({bytes_done} bytes).", fraction)
+
+    _emit_progress(request_id, "verifying", "Verifying archive structure and contents.", 0.1)
+    _cancellation_checkpoint(request_id, "archive verification")
+    result = get_archive_service().verify(ArchiveVerifySpec(archive_path=archive_path), progress_callback=progress)
     errors = [_warning("archive_verify_warning", item) for item in result.warnings]
     errors.extend(_error("archive_verify_error", item) for item in result.errors)
     for entry in result.failed_entries:
@@ -331,6 +533,8 @@ def _restore_spec(payload: Mapping[str, Any], *, dry_run: bool) -> RestoreSpec:
         if isinstance(destination, dict):
             destination_path = destination.get("staged_directory_path")
     destination = Path(destination_path) if isinstance(destination_path, str) and destination_path else None
+    if destination is not None:
+        _validate_android_restore_destination(destination, payload, dry_run=dry_run)
     return RestoreSpec(
         archive=Path(_string(payload, "archive")),
         destination=destination,
@@ -343,7 +547,85 @@ def _restore_spec(payload: Mapping[str, Any], *, dry_run: bool) -> RestoreSpec:
     )
 
 
+
+def _restore_destination_writable_by_current_process(destination: Path) -> bool:
+    """Return whether this process can restore there without elevating to root.
+
+    For a fresh destination, walk upward until an existing ancestor is found;
+    creating the requested directory only requires write/search permission on
+    that ancestor. Existing restore targets themselves must be writable and
+    searchable. Permission probing is intentionally capability-based rather
+    than package-name-based so this works for BKX's own app-private directory
+    and for host parity execution under Termux without weakening access to
+    other apps' private trees.
+    """
+
+    candidate = destination
+    while not candidate.exists():
+        parent = candidate.parent
+        if parent == candidate:
+            return False
+        candidate = parent
+    return candidate.is_dir() and os.access(candidate, os.W_OK | os.X_OK)
+
+
+def _validate_android_restore_destination(
+    destination: Path,
+    payload: Mapping[str, Any],
+    *,
+    dry_run: bool,
+) -> None:
+    normalized = os.path.normpath(str(destination))
+    fresh_dir = bool(payload.get("fresh_dir", True))
+    if fresh_dir and destination.exists():
+        raise ValidationError(
+            msg="New-folder restore requires a destination path which does not already exist.",
+            details={"destination": normalized},
+        )
+    if not fresh_dir and (not destination.exists() or not destination.is_dir()):
+        raise ValidationError(
+            msg="Existing-folder restore requires an existing directory destination.",
+            details={"destination": normalized},
+        )
+    blocked = (
+        "/", "/proc", "/sys", "/dev", "/system", "/vendor", "/product", "/apex", "/metadata",
+        "/data/system", "/data/misc", "/data/vendor", "/data/property",
+    )
+    for root in blocked:
+        if normalized == root or (root != "/" and normalized.startswith(root + "/")):
+            raise ValidationError(
+                msg=f"BKX refuses restore writes into protected Android system root {root}",
+                details={"destination": normalized, "blocked_root": root},
+            )
+
+    privileged = ("/data/data", "/data/user", "/data/adb")
+    root_sensitive = any(normalized == root or normalized.startswith(root + "/") for root in privileged)
+    if not root_sensitive:
+        return
+    # Android app-private paths are generally root-sensitive, but the current
+    # process may legitimately own one of them. This matters both for BKX's
+    # own private files and for the host-side parity seal when it runs inside
+    # Termux, whose temporary directory lives below /data/data/com.termux.
+    # Require root only when the current process cannot already traverse and
+    # write the destination (or the nearest existing parent for a new folder).
+    is_root_runtime = _is_root_runtime()
+    writable_without_root = (
+        not is_root_runtime and _restore_destination_writable_by_current_process(destination)
+    )
+    if not is_root_runtime and not writable_without_root:
+        raise PermissionDeniedError(
+            msg="This restore destination requires BKX root execution.",
+            details={"destination": normalized},
+        )
+    if is_root_runtime and not dry_run and payload.get("root_confirmation") != "RESTORE ROOT":
+        raise ValidationError(
+            msg="Root-sensitive restore requires the exact RESTORE ROOT confirmation.",
+            details={"destination": normalized},
+        )
+
 def _handle_restore_preview(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    _emit_progress(request_id, "planning", "Reviewing restore safety and collisions.", 0.1)
+    _cancellation_checkpoint(request_id, "restore preview")
     spec = _restore_spec(payload, dry_run=True)
     result = get_restore_service().preview(spec)
     plan = plan_for_spec(spec, command="restore.preview")
@@ -374,7 +656,24 @@ def _handle_restore_preview(request_id: str, payload: Mapping[str, Any]) -> dict
 
 
 def _handle_restore_extract(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
-    result = get_restore_service().extract(_restore_spec(payload, dry_run=False))
+    spec = _restore_spec(payload, dry_run=False)
+    preview = get_restore_service().preview(spec)
+    total_files = max(0, int(preview.total_files))
+
+    def progress(phase: str, files_done: int, bytes_done: int) -> None:
+        _cancellation_checkpoint(request_id, phase)
+        fraction = (files_done / total_files) if total_files > 0 else None
+        if phase == "verifying" and fraction is not None:
+            fraction *= 0.4
+        elif phase == "extracting" and fraction is not None:
+            fraction = 0.4 + (fraction * 0.55)
+        _emit_progress(request_id, phase, f"{phase.title()}: {files_done} of {total_files or '?'} files ({bytes_done} bytes).", fraction)
+
+    _emit_progress(request_id, "verifying", "Checking restore archive before writing files.", 0.05)
+    _cancellation_checkpoint(request_id, "restore verification")
+    result = get_restore_service().extract(spec, progress_callback=progress)
+    _cancellation_checkpoint(request_id, "restore publication")
+    _emit_progress(request_id, "publishing", "Restore files published safely.", 0.95)
     errors = [_warning("restore_warning", item) for item in result.warnings]
     errors.extend(_error("restore_error", item) for item in result.errors)
     artifacts = [_artifact("restored_path", str(path)) for path in result.restored_paths]
@@ -445,12 +744,22 @@ def _handle_transfer_plan(request_id: str, payload: Mapping[str, Any]) -> dict[s
 def _handle_transfer_run(request_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
     spec = _transfer_spec(payload, dry_run=False)
     service = get_transfer_service()
+
+    def progress(event: Any) -> None:
+        _cancellation_checkpoint(request_id, "transfer")
+        total = int(getattr(event, "total_files", 0) or 0)
+        done = int(getattr(event, "files_transferred", 0) or 0)
+        fraction = (done / total) if total > 0 else None
+        _emit_progress(request_id, "transferring", f"Transferred {done} of {total or '?'} files.", fraction)
+
+    _emit_progress(request_id, "transferring", "Starting local transfer.", 0.02)
     if isinstance(spec, TransferSyncSpec):
-        result = service.sync(spec)
+        result = service.sync(spec, progress_callback=progress)
     elif spec.direction == "pull":
-        result = service.pull(spec)
+        result = service.pull(spec, progress_callback=progress)
     else:
-        result = service.push(spec)
+        result = service.push(spec, progress_callback=progress)
+    _cancellation_checkpoint(request_id, "transfer finalization")
     errors = [_warning("transfer_warning", item) for item in result.warnings]
     errors.extend(_error("transfer_error", item) for item in result.errors)
     if result.verification_passed is False or result.checksum_verified is False:
@@ -518,7 +827,18 @@ def _handle_filesystem_list(request_id: str, payload: Mapping[str, Any]) -> dict
             )
         except OSError:
             label = "unreadable"
-        artifacts.append(_artifact(label, str(entry)))
+        try:
+            stat = entry.lstat()
+            artifacts.append(
+                _artifact(
+                    label,
+                    str(entry),
+                    size_bytes=max(0, int(stat.st_size)),
+                    modified_at_epoch_millis=max(0, int(stat.st_mtime * 1000)),
+                )
+            )
+        except OSError:
+            artifacts.append(_artifact(label, str(entry)))
     more = offset + len(page) < len(entries)
     suffix = " More entries are available." if more else ""
     return _success(
@@ -546,7 +866,14 @@ def _handle_filesystem_stat(request_id: str, payload: Mapping[str, Any]) -> dict
     return _success(
         request_id,
         f"{path}: {kind}, {info.st_size} bytes, mode {stat_module.S_IMODE(mode):04o}, uid {info.st_uid}, gid {info.st_gid}.",
-        artifacts=[_artifact(kind, str(path))],
+        artifacts=[
+            _artifact(
+                kind,
+                str(path),
+                size_bytes=max(0, int(info.st_size)),
+                modified_at_epoch_millis=max(0, int(info.st_mtime * 1000)),
+            )
+        ],
     )
 
 
@@ -661,10 +988,21 @@ def _json(value: Mapping[str, Any]) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _artifact(label: str, path: str, sha256: str | None = None) -> dict[str, Any]:
+def _artifact(
+    label: str,
+    path: str,
+    sha256: str | None = None,
+    *,
+    size_bytes: int | None = None,
+    modified_at_epoch_millis: int | None = None,
+) -> dict[str, Any]:
     artifact: dict[str, Any] = {"label": label, "path": path}
     if sha256:
         artifact["sha256"] = sha256
+    if size_bytes is not None:
+        artifact["size_bytes"] = max(0, int(size_bytes))
+    if modified_at_epoch_millis is not None:
+        artifact["modified_at_epoch_millis"] = max(0, int(modified_at_epoch_millis))
     return artifact
 
 

@@ -4,5 +4,6 @@ package com.mikeyphw.bkx.android.embedded
 interface EmbeddedPythonGateway {
     suspend fun readinessJson(): String
     suspend fun executeJson(requestJson: String): String
+    suspend fun progressJson(requestId: String): String
     suspend fun cancelJson(requestId: String): String
 }

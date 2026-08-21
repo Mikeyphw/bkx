@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxAppViewModel
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
@@ -67,6 +68,7 @@ fun BkxProductApp(
                     NavigationBar {
                         state.destinations.forEach { destination ->
                             NavigationBarItem(
+                                modifier = Modifier.testTag("nav-${destination.name.lowercase()}"),
                                 selected = destination == state.selectedDestination,
                                 onClick = { onEvent(BkxHomeEvent.SelectDestination(destination)) },
                                 icon = { Text(destination.glyph()) },
@@ -82,6 +84,7 @@ fun BkxProductApp(
                     NavigationRail(modifier = Modifier.padding(horizontal = 6.dp)) {
                         state.destinations.forEach { destination ->
                             NavigationRailItem(
+                                modifier = Modifier.testTag("nav-${destination.name.lowercase()}"),
                                 selected = destination == state.selectedDestination,
                                 onClick = { onEvent(BkxHomeEvent.SelectDestination(destination)) },
                                 icon = { Text(destination.glyph()) },
@@ -95,6 +98,7 @@ fun BkxProductApp(
                 DestinationContent(state, onEvent, Modifier.fillMaxSize().padding(innerPadding))
             }
         }
+        FilesystemBrowserDialog(state.filesystemBrowser, onEvent)
     }
 }
 

@@ -26,6 +26,10 @@ class BkxRootEngineService : RootService() {
             module().callAttr("execute_json", requestJson).toString()
         }
 
+        override fun progressJson(requestId: String): String = requireRoot {
+            module().callAttr("progress_json", requestId).toString()
+        }
+
         override fun cancelJson(requestId: String): String = requireRoot {
             module().callAttr("cancel_json", requestId).toString()
         }

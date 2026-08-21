@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..errors import expected_error_boundary
 from ..results.archive import ArchiveBrowseResult, ArchiveCreateResult, ArchiveEntry, ArchiveInfoResult, ArchiveListResult, ArchiveVerifyResult
@@ -74,10 +74,17 @@ class ArchiveService:
         with expected_error_boundary("reading archive info", resource=str(spec.archive_path), backend=self._archiver.name):
             return self._archiver.info(spec)
 
-    def verify(self, spec: ArchiveVerifySpec) -> ArchiveVerifyResult:
+    def verify(
+        self,
+        spec: ArchiveVerifySpec,
+        *,
+        progress_callback: Callable[[int, int], Any] | None = None,
+    ) -> ArchiveVerifyResult:
         spec = spec.normalize()
         with expected_error_boundary("verifying archive", resource=str(spec.archive_path), backend=self._archiver.name):
-            return self._archiver.verify(spec)
+            if progress_callback is None:
+                return self._archiver.verify(spec)
+            return self._archiver.verify(spec, progress_callback=progress_callback)
 
     def browse(self, spec: ArchiveBrowseSpec) -> ArchiveBrowseResult:
         spec = spec.normalize()

@@ -5,14 +5,30 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.putJsonObject
 
 class ArchiveRequestBuilder {
-    fun buildListRequest(requestId: String): BridgeRequestEnvelope = BridgeRequestEnvelope(
-        requestId = requestId,
-        operation = ArchiveReadOnlyOperation.List.operation,
-        payload = readOnlyPayload(),
-    )
+    fun buildListRequest(
+        requestId: String,
+        roots: List<String> = emptyList(),
+        maxDepth: Int = 4,
+        limit: Int = 500,
+    ): BridgeRequestEnvelope {
+        require(roots.all { it.startsWith("/") }) { "Archive index roots must be absolute paths." }
+        require(maxDepth in 0..8) { "Archive index maxDepth must be between 0 and 8." }
+        require(limit in 1..2000) { "Archive index limit must be between 1 and 2000." }
+        return BridgeRequestEnvelope(
+            requestId = requestId,
+            operation = ArchiveReadOnlyOperation.List.operation,
+            payload = readOnlyPayload {
+                putJsonArray("roots") { roots.distinct().forEach(::add) }
+                put("max_depth", maxDepth)
+                put("limit", limit)
+            },
+        )
+    }
 
     fun buildInfoRequest(requestId: String, archive: ArchiveLocation): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId,

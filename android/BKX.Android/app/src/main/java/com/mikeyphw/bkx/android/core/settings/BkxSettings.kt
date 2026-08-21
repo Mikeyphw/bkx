@@ -4,13 +4,6 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 @Serializable
-enum class BackendPreference {
-    @SerialName("embedded") Embedded,
-    @Deprecated("Legacy value retained only so old settings can still deserialize.")
-    @SerialName("termux_run_command") TermuxRunCommand,
-}
-
-@Serializable
 enum class RootAccessMode {
     @SerialName("preferred") Preferred,
     @SerialName("required") Required,
@@ -39,7 +32,6 @@ enum class AppearancePreference {
 
 @Serializable
 data class BkxSettings(
-    val backend: BackendPreference = BackendPreference.Embedded,
     val rootAccessMode: RootAccessMode = RootAccessMode.Preferred,
     val storageLocationLabel: String = "Direct filesystem access",
     val logPrivacyMode: LogPrivacyMode = LogPrivacyMode.Private,

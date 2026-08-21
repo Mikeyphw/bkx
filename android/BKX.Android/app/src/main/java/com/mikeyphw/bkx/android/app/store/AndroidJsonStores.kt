@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.content.edit
 import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
+import com.mikeyphw.bkx.android.core.operations.bounded
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -76,7 +77,7 @@ class SharedPreferencesOperationStateStore(
     }
 
     override suspend fun update(state: OperationRuntimeState) {
-        prefs.edit { putString(KEY_STATE, json.encodeToString(state)) }
+        prefs.edit { putString(KEY_STATE, json.encodeToString(state.bounded())) }
     }
 
     private companion object {

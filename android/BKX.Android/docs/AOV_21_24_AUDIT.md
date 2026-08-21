@@ -69,3 +69,15 @@ Added:
 - cooperative cancellation during an already-running Python filesystem operation (the embedded API currently guarantees queued/pre-start cancellation only).
 - large-tree performance profiling and memory-pressure tuning.
 - final warning/lint/release seal.
+
+## Final completeness replay fulfillment
+
+The AOV-25→32 final seal fulfills the deliberate deferrals above and repairs two product-data gaps discovered by replay audit:
+
+- Activity observes application-scoped live operation state and exposes cooperative cancellation for active work; foreground notifications refresh from the same authoritative progress state.
+- the persisted progress preference controls the polling cadence and log privacy controls notification/Activity detail exposure.
+- the physical-device qualifier runs Compose accessibility assertions and captures Home/Backup/Archives/Activity/More screenshots.
+- the deterministic large-tree profiler enforces bounded time/memory on a 768-file nested workload.
+- Archives now receives real size/mtime index metadata, so newest/name/size sorting is functional.
+- archive browse classifies regular files, directories, symlinks, and special entries so the File/Folder/Link/Special filters are functional rather than decorative.
+- backup/archive/transfer inputs from provider-only `content://` sources are reachable from product UI and staged through the SAF fallback.

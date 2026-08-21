@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..errors import ValidationError, expected_error_boundary
 from ..results.restore import RestoreFileInfo, RestorePreviewResult, RestoreResult, Timing
@@ -22,7 +22,12 @@ class RestoreService:
         self._archiver = archiver
         self._run_store = run_store
 
-    def extract(self, spec: RestoreSpec) -> RestoreResult:
+    def extract(
+        self,
+        spec: RestoreSpec,
+        *,
+        progress_callback: Callable[[str, int, int], Any] | None = None,
+    ) -> RestoreResult:
         import time
 
         spec = spec.normalize()
@@ -47,7 +52,14 @@ class RestoreService:
             warnings: list[str] = []
             if spec.verify:
                 with expected_error_boundary("verifying archive before restore", resource=str(spec.archive), backend=self._archiver.name):
-                    verify_result = self._archiver.verify(ArchiveVerifySpec(archive_path=spec.archive).normalize())
+                    verify_spec = ArchiveVerifySpec(archive_path=spec.archive).normalize()
+                    if progress_callback is None:
+                        verify_result = self._archiver.verify(verify_spec)
+                    else:
+                        verify_result = self._archiver.verify(
+                            verify_spec,
+                            progress_callback=lambda files, bytes_done: progress_callback("verifying", files, bytes_done),
+                        )
                 warnings.extend(verify_result.warnings)
                 if not verify_result.success:
                     from ..errors import ExternalToolError
@@ -59,7 +71,13 @@ class RestoreService:
                 verification_passed = True
 
             with expected_error_boundary("extracting archive", resource=str(spec.archive), backend=self._archiver.name):
-                restored_paths = self._archiver.extract(spec)
+                if progress_callback is None:
+                    restored_paths = self._archiver.extract(spec)
+                else:
+                    restored_paths = self._archiver.extract(
+                        spec,
+                        progress_callback=lambda files, bytes_done: progress_callback("extracting", files, bytes_done),
+                    )
             bytes_restored = _sum_existing_file_bytes(restored_paths)
             return RestoreResult(
                 success=True,

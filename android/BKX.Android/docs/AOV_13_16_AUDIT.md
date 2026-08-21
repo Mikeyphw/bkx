@@ -13,8 +13,8 @@ Implemented:
 - AGP pinned to `9.2.1`, within Chaquopy 17's tested 9.2.x lane;
 - `minSdk` raised from 23 to 24;
 - compile/target SDK remains 36;
-- Java remains 21 and the Devtool Gradle contract remains 9.7.0;
-- Python pinned to 3.13;
+- Java remains 21 and the final Devtool Gradle contract requires 9.7.1 or newer;
+- Python originally used 3.13; the final release seal now selects 3.13 or 3.14 to match the available build interpreter, as required by Chaquopy 17;
 - `arm64-v8a` and `x86_64` packaged;
 - Chaquopy reads the repository `src` tree directly, preserving one canonical
   implementation of `bkx.core`;

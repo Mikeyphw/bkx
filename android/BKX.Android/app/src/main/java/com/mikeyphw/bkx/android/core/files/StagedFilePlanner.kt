@@ -49,7 +49,7 @@ object RestrictedLocationPolicy {
             normalized == segment || normalized.startsWith("$segment/")
         }
         return blocked?.let {
-            FileAccessIssue.RestrictedLocation(it, "Android storage restrictions make this location unavailable to the companion app")
+            FileAccessIssue.RestrictedLocation(it, "Android storage restrictions make this location unavailable to the BKX app")
         }
     }
 }

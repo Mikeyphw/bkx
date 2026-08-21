@@ -21,6 +21,7 @@ data class BridgeResultEnvelope(
     val summary: String = "",
     val errors: List<BridgeError> = emptyList(),
     val artifacts: List<BridgeArtifact> = emptyList(),
+    val metrics: BridgeMetrics? = null,
 )
 
 @Serializable
@@ -28,6 +29,15 @@ enum class BridgeResultStatus {
     @SerialName("success") Success,
     @SerialName("failure") Failure,
     @SerialName("cancelled") Cancelled,
+}
+
+@Serializable
+data class BridgeMetrics(
+    @SerialName("duration_ms") val durationMillis: Long = 0L,
+) {
+    init {
+        require(durationMillis >= 0L) { "duration_ms must be non-negative" }
+    }
 }
 
 @Serializable
@@ -42,7 +52,14 @@ data class BridgeArtifact(
     val label: String,
     val path: String,
     val sha256: String? = null,
-)
+    @SerialName("size_bytes") val sizeBytes: Long? = null,
+    @SerialName("modified_at_epoch_millis") val modifiedAtEpochMillis: Long? = null,
+) {
+    init {
+        require(sizeBytes == null || sizeBytes >= 0L) { "artifact size_bytes must be non-negative" }
+        require(modifiedAtEpochMillis == null || modifiedAtEpochMillis >= 0L) { "artifact modified_at_epoch_millis must be non-negative" }
+    }
+}
 
 @Serializable
 data class BridgeProgressEnvelope(

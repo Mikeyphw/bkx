@@ -14,9 +14,12 @@ class MainActivity : ComponentActivity() {
     private val viewModel: BkxAppViewModel by viewModels {
         BkxAppViewModelFactory(
             backendPort = DefaultBackendGraph.backendPort(this),
+            operationCoordinator = DefaultBackendGraph.operationCoordinator(this),
             runSummaryStore = DefaultBackendGraph.runSummaryStore(this),
             operationStateStore = DefaultBackendGraph.operationStateStore(this),
             settingsStore = DefaultBackendGraph.settingsStore(this),
+            providerStagingPort = DefaultBackendGraph.providerStaging(this),
+            archiveRootsProvider = { rooted -> DefaultBackendGraph.archiveSearchRoots(this, rooted) },
             requestBaseDirectoryPath = filesDir.resolve("bkx/requests").absolutePath,
         )
     }

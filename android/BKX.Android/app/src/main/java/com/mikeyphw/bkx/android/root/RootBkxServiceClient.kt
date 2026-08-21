@@ -54,6 +54,10 @@ class RootBkxServiceClient(
         call(EXECUTE_TIMEOUT_MS) { it.executeJson(requestJson) }
     }
 
+    suspend fun progressJson(requestId: String): String = call(PROGRESS_TIMEOUT_MS) {
+        it.progressJson(requestId)
+    }
+
     suspend fun cancelJson(requestId: String): String = call(CANCEL_TIMEOUT_MS) {
         it.cancelJson(requestId)
     }
@@ -184,6 +188,7 @@ class RootBkxServiceClient(
         const val ROOT_PROBE_TIMEOUT_MS = 8_000L
         const val BIND_TIMEOUT_MS = 20_000L
         const val READINESS_TIMEOUT_MS = 20_000L
+        const val PROGRESS_TIMEOUT_MS = 10_000L
         const val CANCEL_TIMEOUT_MS = 20_000L
         const val EXECUTE_TIMEOUT_MS = 6L * 60L * 60L * 1000L
     }

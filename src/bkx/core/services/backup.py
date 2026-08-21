@@ -13,7 +13,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Callable
 
 from ..errors import ExternalToolError, ValidationError, expected_error_boundary
 from ..results.archive import ArchiveCreateResult
@@ -49,7 +49,12 @@ class BackupService:
         self._tool_detector = tool_detector
         self._run_store = run_store
 
-    def create(self, spec: BackupSpec) -> BackupResult:
+    def create(
+        self,
+        spec: BackupSpec,
+        *,
+        progress_callback: Callable[[str, int, int], Any] | None = None,
+    ) -> BackupResult:
         spec = spec.normalize()
         return track_run(
             self._run_store,
@@ -58,12 +63,17 @@ class BackupService:
             destination_path=str(spec.effective_destination) if spec.effective_destination else None,
             archive_path=str(spec.archive_path) if spec.archive_path else None,
             spec_snapshot=snapshot_spec(spec),
-            execute=lambda: self._create_untracked(spec),
+            execute=lambda: self._create_untracked(spec, progress_callback=progress_callback),
             files_count=lambda result: result.files_processed,
             bytes_processed=lambda result: result.bytes_written,
         )
 
-    def _create_untracked(self, spec: BackupSpec) -> BackupResult:
+    def _create_untracked(
+        self,
+        spec: BackupSpec,
+        *,
+        progress_callback: Callable[[str, int, int], Any] | None = None,
+    ) -> BackupResult:
         if spec.dry_run:
             return self._execute_dry_run(spec)
 
@@ -73,7 +83,7 @@ class BackupService:
         step_results: dict[str, bool] = {}
 
         with _backup_staging_dir(spec) as staging_dir:
-            archive_result = self._create_archive(spec, staging_dir=staging_dir)
+            archive_result = self._create_archive(spec, staging_dir=staging_dir, progress_callback=progress_callback)
             warnings.extend(archive_result.warnings)
             step_results["archive"] = archive_result.success
             if not archive_result.success:
@@ -118,7 +128,7 @@ class BackupService:
                     checksums["archive"] = checksum
 
             final_artifacts = staged_artifacts
-            transfer_result = self._transfer_artifacts(spec, staged_artifacts)
+            transfer_result = self._transfer_artifacts(spec, staged_artifacts, progress_callback=progress_callback)
             warnings.extend(transfer_result.warnings)
             step_results["transfer"] = transfer_result.success
             if not transfer_result.success:
@@ -162,7 +172,13 @@ class BackupService:
                 checksums=checksums,
             )
 
-    def _create_archive(self, spec: BackupSpec, *, staging_dir: Path | None = None) -> ArchiveCreateResult:
+    def _create_archive(
+        self,
+        spec: BackupSpec,
+        *,
+        staging_dir: Path | None = None,
+        progress_callback: Callable[[str, int, int], Any] | None = None,
+    ) -> ArchiveCreateResult:
         output_path = _staged_archive_path(spec, staging_dir)
         archive_spec = ArchiveCreateSpec(
             sources=spec.sources,
@@ -173,11 +189,23 @@ class BackupService:
             compression=spec.compression,
             verify=spec.verify,
             dry_run=False,
+            skip_symlinks=spec.skip_symlinks,
         ).normalize(auto_name=True)
         with expected_error_boundary("creating backup archive", resource=str(archive_spec.output_path) if archive_spec.output_path else None, backend=self._archiver.name):
-            return self._archiver.create(archive_spec)
+            if progress_callback is None:
+                return self._archiver.create(archive_spec)
+            return self._archiver.create(
+                archive_spec,
+                progress_callback=lambda files, bytes_written: progress_callback("archiving", files, bytes_written),
+            )
 
-    def _transfer_artifacts(self, spec: BackupSpec, artifacts: tuple[Path, ...]) -> TransferResult:
+    def _transfer_artifacts(
+        self,
+        spec: BackupSpec,
+        artifacts: tuple[Path, ...],
+        *,
+        progress_callback: Callable[[str, int, int], Any] | None = None,
+    ) -> TransferResult:
         if spec.effective_destination is None:
             now = int(time.time() * 1000)
             return TransferResult(success=True, direction="none", timing=Timing(start_ms=now, end_ms=now), files_transferred=0, bytes_transferred=0, verification_passed=True if spec.verify else None, checksum_verified=True if spec.verify else None)
@@ -186,7 +214,12 @@ class BackupService:
             destination.mkdir(parents=True, exist_ok=True)
         transfer_spec = TransferSpec(sources=artifacts, destination=destination, direction="push", verify=spec.verify, dry_run=False, overwrite=False).normalize()
         with expected_error_boundary("transferring backup archive", resource=", ".join(str(path) for path in artifacts), backend=self._transfer.name):
-            return self._transfer.push(transfer_spec)
+            if progress_callback is None:
+                return self._transfer.push(transfer_spec)
+            return self._transfer.push(
+                transfer_spec,
+                progress_callback=lambda event: progress_callback("publishing", event.files_transferred, event.bytes_transferred),
+            )
 
     def _hash_artifact(self, archive_path: Path) -> str:
         # Hashes are recorded as evidence only. Verification truth comes from

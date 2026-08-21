@@ -71,7 +71,7 @@ target_package = "com.mikeyphw.bkx.android"
 prefer_native_termux = true
 
 [targets.bkx_android.gradle]
-version = "9.7.0"
+version = "9.7.1"
 provider = "auto"
 
 max_workers = 2
@@ -113,6 +113,17 @@ preflight = [
     ":app:verifyBkxEmbeddedEngineContract",
     ":app:verifyBkxRootStorageContract",
     ":app:verifyBkxProductUiContract",
+    ":app:verifyBkxRuntimeHardeningContract",
+    ":app:verifyBkxRestoreSafetySeal",
+    ":app:verifyBkxPerformanceAndProgressContract",
+    ":app:verifyBkxLargeTreePerformanceSeal",
+    ":app:verifyBkxStorageCompletenessContract",
+    ":app:verifyBkxAccessibilityVisualContract",
+    ":app:verifyBkxUxHardeningContract",
+    ":app:verifyBkxEmbeddedParitySeal",
+    ":app:verifyBkxReleaseHygiene",
+    ":app:verifyBkxDeviceQualificationContract",
+    ":app:verifyBkxFinalReleaseContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",
     ":app:verifyBkxAndroidReleaseDocs",

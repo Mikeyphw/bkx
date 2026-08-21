@@ -1,6 +1,7 @@
 package com.mikeyphw.bkx.android.core.backend
 
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
+import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestFiles
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
@@ -47,6 +48,8 @@ class FakeBackendPort(
             readiness = readiness,
         )
     }
+
+    override suspend fun progress(requestId: String): BridgeProgressEnvelope? = null
 
     override suspend fun cancel(requestId: String, cancelFilePath: String): BackendSubmission {
         cancellations += requestId to cancelFilePath

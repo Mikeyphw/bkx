@@ -32,15 +32,17 @@ object BkxStorageLocations {
 
     fun defaults(rootAvailable: Boolean): List<StorageLocation> = buildList {
         add(StorageLocation("shared", "Internal storage", SHARED_STORAGE, StorageLocationKind.Shared, false))
-        if (rootAvailable) {
-            add(StorageLocation("termux-files", "Termux files", TERMUX_FILES, StorageLocationKind.RootPrivate, true))
-            add(StorageLocation("termux-home", "Termux home", TERMUX_HOME, StorageLocationKind.TermuxHome, true))
-            add(StorageLocation("termux-storage", "Termux storage links", TERMUX_STORAGE, StorageLocationKind.TermuxHome, true))
-            add(StorageLocation("termux-prefix", "Termux prefix", TERMUX_PREFIX, StorageLocationKind.TermuxPrefix, true))
-            add(StorageLocation("data-adb", "Root modules and state", DATA_ADB, StorageLocationKind.RootPrivate, true))
-            add(StorageLocation("app-data", "Application private data", APP_DATA_ROOT, StorageLocationKind.RootPrivate, true))
-        }
+        if (rootAvailable) addAll(rootPrivateDefaults())
     }
+
+    fun rootPrivateDefaults(): List<StorageLocation> = listOf(
+        StorageLocation("termux-files", "Termux files", TERMUX_FILES, StorageLocationKind.RootPrivate, true),
+        StorageLocation("termux-home", "Termux home", TERMUX_HOME, StorageLocationKind.TermuxHome, true),
+        StorageLocation("termux-storage", "Termux storage links", TERMUX_STORAGE, StorageLocationKind.TermuxHome, true),
+        StorageLocation("termux-prefix", "Termux prefix", TERMUX_PREFIX, StorageLocationKind.TermuxPrefix, true),
+        StorageLocation("data-adb", "Root modules and state", DATA_ADB, StorageLocationKind.RootPrivate, true),
+        StorageLocation("app-data", "Application private data", APP_DATA_ROOT, StorageLocationKind.RootPrivate, true),
+    )
 }
 
 object RootPathPolicy {

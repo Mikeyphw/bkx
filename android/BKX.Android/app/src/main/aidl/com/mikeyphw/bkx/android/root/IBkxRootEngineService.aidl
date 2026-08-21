@@ -5,5 +5,6 @@ interface IBkxRootEngineService {
     int uid();
     String readinessJson();
     String executeJson(String requestJson);
+    String progressJson(String requestId);
     String cancelJson(String requestId);
 }

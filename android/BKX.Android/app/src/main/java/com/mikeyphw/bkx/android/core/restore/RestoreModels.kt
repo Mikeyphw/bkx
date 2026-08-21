@@ -22,6 +22,48 @@ data class RestoreDestinationSelection(
     }
 }
 
+
+object RestoreDestinationPolicy {
+    private val blockedRoots = tupleOf(
+        "/",
+        "/proc",
+        "/sys",
+        "/dev",
+        "/system",
+        "/vendor",
+        "/product",
+        "/apex",
+        "/metadata",
+        "/data/system",
+        "/data/misc",
+        "/data/vendor",
+        "/data/property",
+    )
+    private val privilegedRoots = tupleOf("/data/data", "/data/user", "/data/adb")
+
+    fun blockedReason(path: String): String? {
+        val normalized = normalize(path)
+        val root = blockedRoots.firstOrNull { candidate -> contains(candidate, normalized) } ?: return null
+        return "BKX refuses restore writes into protected Android system path $root."
+    }
+
+    fun requiresRootConfirmation(path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        val normalized = normalize(path)
+        return privilegedRoots.any { root -> contains(root, normalized) } && blockedReason(normalized) == null
+    }
+
+    private fun normalize(path: String): String {
+        val collapsed = path.trim().replace('\\', '/').replace(Regex("/+"), "/")
+        return if (collapsed.length > 1) collapsed.trimEnd('/') else collapsed.ifBlank { "/" }
+    }
+
+    private fun contains(root: String, path: String): Boolean =
+        root == "/" && path == "/" || path == root || (root != "/" && path.startsWith("$root/"))
+
+    private fun tupleOf(vararg values: String): List<String> = values.toList()
+}
+
 sealed interface RestoreSubsetSelection {
     val selectedPaths: List<String>
 
@@ -57,11 +99,14 @@ data class RestoreDraft(
 
     fun validationIssues(): List<RestoreValidationIssue> = buildList {
         if (archive == null) add(RestoreValidationIssue.MissingArchive)
-        if (outputMode == RestoreOutputMode.ExistingDirectory && destination == null) {
+        if (destination == null) {
             add(RestoreValidationIssue.MissingDestination)
         }
         if (destination != null && !destination.stagedDirectoryPath.startsWith("/")) {
             add(RestoreValidationIssue.UnsafeDestination("Restore destination must be an absolute staged/shared path."))
+        }
+        destination?.stagedDirectoryPath?.let(RestoreDestinationPolicy::blockedReason)?.let { reason ->
+            add(RestoreValidationIssue.UnsafeDestination(reason))
         }
         if (archive != null && archive.stagedPath == destination?.stagedDirectoryPath) {
             add(RestoreValidationIssue.UnsafeDestination("Restore destination must not be the same path as the selected archive."))
@@ -95,7 +140,7 @@ sealed interface RestoreValidationIssue {
 
     data object MissingDestination : RestoreValidationIssue {
         override val code = "restore_destination_missing"
-        override val message = "Select a destination before restoring into an existing directory."
+        override val message = "Choose the exact destination path before reviewing the restore."
     }
 
     data class UnsafeDestination(override val message: String) : RestoreValidationIssue {
@@ -163,7 +208,9 @@ data class RestoreExtractionConfirmation(
         require(draftFingerprint.isNotBlank()) { "Restore confirmation draft fingerprint must not be blank." }
         require(planToken.isNotBlank()) { "Restore confirmation plan token must not be blank." }
         require(acknowledgedOverwriteCount >= 0) { "Restore confirmation overwrite count must not be negative." }
-        require(confirmationPhrase == CONFIRMATION_PHRASE) { "Type $CONFIRMATION_PHRASE to confirm destructive restore." }
+        require(confirmationPhrase in setOf(CONFIRMATION_PHRASE, ROOT_CONFIRMATION_PHRASE)) {
+            "Restore confirmation phrase is not recognized."
+        }
         require(confirmedAtEpochMillis > 0L) { "Restore confirmation timestamp must be positive." }
     }
 
@@ -171,10 +218,16 @@ data class RestoreExtractionConfirmation(
         draftFingerprint == draft.fingerprint() &&
             draftFingerprint == preview.draftFingerprint &&
             planToken == preview.planToken &&
-            acknowledgedOverwriteCount == preview.overwriteSummary.totalOverwrites
+            acknowledgedOverwriteCount == preview.overwriteSummary.totalOverwrites &&
+            confirmationPhrase == requiredPhrase(draft)
 
     companion object {
         const val CONFIRMATION_PHRASE = "RESTORE"
+        const val ROOT_CONFIRMATION_PHRASE = "RESTORE ROOT"
+
+        fun requiredPhrase(draft: RestoreDraft): String = if (
+            RestoreDestinationPolicy.requiresRootConfirmation(draft.destination?.stagedDirectoryPath)
+        ) ROOT_CONFIRMATION_PHRASE else CONFIRMATION_PHRASE
     }
 }
 
@@ -198,7 +251,9 @@ fun canExtractRestore(
     if (preview == null) return false
     if (preview.draftFingerprint != draft.fingerprint()) return false
     if (!preview.isExecutable) return false
-    if (!preview.requiresDestructiveConfirmation) return true
+    val confirmationRequired = preview.requiresDestructiveConfirmation ||
+        RestoreDestinationPolicy.requiresRootConfirmation(draft.destination?.stagedDirectoryPath)
+    if (!confirmationRequired) return true
     return confirmation?.matches(draft, preview) == true
 }
 

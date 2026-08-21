@@ -57,11 +57,18 @@ class ArchiveEntry:
     is_dir: bool
     size: int
     mtime_ns: int
+    entry_type: str | None = None
 
     def __post_init__(self) -> None:
         require_nonnegative(size=self.size, mtime_ns=self.mtime_ns)
         if not self.path:
             raise ValueError("archive entry path must not be empty")
+        entry_type = self.entry_type or ("directory" if self.is_dir else "file")
+        if entry_type not in {"file", "directory", "symlink", "special"}:
+            raise ValueError(f"unsupported archive entry type: {entry_type}")
+        if self.is_dir != (entry_type == "directory"):
+            raise ValueError("archive entry is_dir must agree with entry_type")
+        object.__setattr__(self, "entry_type", entry_type)
 
     @property
     def human_size(self) -> str: return _human_bytes(self.size)

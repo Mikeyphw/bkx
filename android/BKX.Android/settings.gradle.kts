@@ -11,6 +11,13 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            name = "JitPack"
+            url = uri("https://jitpack.io")
+            content {
+                includeGroup("com.github.topjohnwu.libsu")
+            }
+        }
         gradlePluginPortal()
     }
 }

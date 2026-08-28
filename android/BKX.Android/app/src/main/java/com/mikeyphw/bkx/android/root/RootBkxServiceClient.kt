@@ -28,7 +28,7 @@ import kotlin.coroutines.resumeWithException
 class RootBkxServiceClient(
     context: Context,
 ) {
-    private val appContext = context.applicationContext
+    private val appContext = context.applicationContext ?: context
     private val bindMutex = Mutex()
     private val executeMutex = Mutex()
     private val stateLock = Any()

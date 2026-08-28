@@ -18,6 +18,8 @@ import com.mikeyphw.bkx.android.root.RootBkxServiceClient
 import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
 
 /** Process-scoped graph: one root client/backend/coordinator per Android process. */
+private fun Context.stableApplicationContext(): Context = applicationContext ?: this
+
 object DefaultBackendGraph {
     @Volatile private var backendInstance: BackendPort? = null
     @Volatile private var runStoreInstance: RunSummaryStore? = null
@@ -28,7 +30,7 @@ object DefaultBackendGraph {
 
     fun backendPort(context: Context): BackendPort = backendInstance ?: synchronized(this) {
         backendInstance ?: run {
-            val appContext = context.applicationContext
+            val appContext = context.stableApplicationContext()
             val settings = sharedSettingsStore(appContext)
             val local = ChaquopyPythonGateway(appContext)
             val root = RootBkxServiceClient(appContext)
@@ -43,34 +45,34 @@ object DefaultBackendGraph {
     }
 
     fun runSummaryStore(context: Context): RunSummaryStore = runStoreInstance ?: synchronized(this) {
-        runStoreInstance ?: SharedPreferencesRunSummaryStore(context.applicationContext).also { runStoreInstance = it }
+        runStoreInstance ?: SharedPreferencesRunSummaryStore(context.stableApplicationContext()).also { runStoreInstance = it }
     }
 
     fun operationStateStore(context: Context): OperationStateStore = operationStoreInstance ?: synchronized(this) {
-        operationStoreInstance ?: SharedPreferencesOperationStateStore(context.applicationContext).also { operationStoreInstance = it }
+        operationStoreInstance ?: SharedPreferencesOperationStateStore(context.stableApplicationContext()).also { operationStoreInstance = it }
     }
 
-    fun settingsStore(context: Context): SettingsStore = sharedSettingsStore(context.applicationContext)
+    fun settingsStore(context: Context): SettingsStore = sharedSettingsStore(context.stableApplicationContext())
 
     fun providerStaging(context: Context): ProviderStagingPort = providerStagingInstance ?: synchronized(this) {
-        providerStagingInstance ?: AndroidProviderStagingManager(context.applicationContext).also { providerStagingInstance = it }
+        providerStagingInstance ?: AndroidProviderStagingManager(context.stableApplicationContext()).also { providerStagingInstance = it }
     }
 
     fun archiveSearchRoots(context: Context, rootAvailable: Boolean): List<String> =
-        AndroidStorageAccessManager(context.applicationContext).archiveSearchRoots(rootAvailable)
+        AndroidStorageAccessManager(context.stableApplicationContext()).archiveSearchRoots(rootAvailable)
 
     fun operationCoordinator(context: Context): BkxOperationCoordinator = coordinatorInstance ?: synchronized(this) {
         coordinatorInstance ?: BkxOperationCoordinator(
-            context = context.applicationContext,
+            context = context.stableApplicationContext(),
             backendPort = backendPort(context),
             runSummaryStore = runSummaryStore(context),
             operationStateStore = operationStateStore(context),
-            requestBaseDirectoryPath = context.applicationContext.filesDir.resolve("bkx/requests").absolutePath,
-            progressPreferenceProvider = { sharedSettingsStore(context.applicationContext).readNow().progressPreference },
+            requestBaseDirectoryPath = context.stableApplicationContext().filesDir.resolve("bkx/requests").absolutePath,
+            progressPreferenceProvider = { sharedSettingsStore(context.stableApplicationContext()).readNow().progressPreference },
         ).also { coordinatorInstance = it }
     }
 
     private fun sharedSettingsStore(context: Context): SharedPreferencesSettingsStore = settingsStoreInstance ?: synchronized(this) {
-        settingsStoreInstance ?: SharedPreferencesSettingsStore(context.applicationContext).also { settingsStoreInstance = it }
+        settingsStoreInstance ?: SharedPreferencesSettingsStore(context.stableApplicationContext()).also { settingsStoreInstance = it }
     }
 }

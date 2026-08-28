@@ -24,7 +24,7 @@ import kotlinx.coroutines.withContext
 class AndroidProviderStagingManager(
     context: Context,
 ) : ProviderStagingPort {
-    private val appContext = context.applicationContext
+    private val appContext = context.applicationContext ?: context
     private val resolver = appContext.contentResolver
     private val stagingRoot = File(appContext.cacheDir, "bkx/provider-staging")
 

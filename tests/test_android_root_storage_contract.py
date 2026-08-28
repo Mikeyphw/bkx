@@ -58,3 +58,60 @@ def test_aov17_root_service_aidl_is_narrow_json_api() -> None:
     assert "cancelJson" in aidl
     for forbidden in ("exec(", "shell", "commandPath", "arguments"):
         assert forbidden not in aidl
+
+
+def test_root_chaquopy_bootstrap_has_real_application_context() -> None:
+    root_service = text(
+        "android/BKX.Android/app/src/main/java/"
+        "com/mikeyphw/bkx/android/root/BkxRootEngineService.kt"
+    )
+    gateway = text(
+        "android/BKX.Android/app/src/main/java/"
+        "com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt"
+    )
+    graph = text(
+        "android/BKX.Android/app/src/main/java/"
+        "com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt"
+    )
+
+    assert "AndroidPlatform(applicationContext)" not in root_service
+    assert "AndroidPlatform(rootPythonApplication)" in root_service
+    assert "RootChaquopyApplication(baseContext)" in root_service
+    assert (
+        "override fun getApplicationContext(): Context = this"
+        in root_service
+    )
+
+    assert "context.applicationContext ?: context" in gateway
+    assert "context.applicationContext" not in graph
+
+
+def test_root_chaquopy_does_not_inherit_parent_process_runtime_marker() -> None:
+    app = text(
+        "android/BKX.Android/app/src/main/java/"
+        "com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt"
+    )
+    service = text(
+        "android/BKX.Android/app/src/main/java/"
+        "com/mikeyphw/bkx/android/root/BkxRootEngineService.kt"
+    )
+
+    # The normal app process starts Chaquopy before root transport.
+    assert "Python.start(AndroidPlatform(this))" in app
+
+    # A fresh libsu app_process must not inherit Chaquopy's marker and
+    # mistake itself for an already-initialized CPython process.
+    assert "Os.getenv(CHAQUOPY_PROCESS_TYPE_ENV)" in service
+    assert "Os.unsetenv(CHAQUOPY_PROCESS_TYPE_ENV)" in service
+    assert (
+        'CHAQUOPY_PROCESS_TYPE_ENV = "CHAQUOPY_PROCESS_TYPE"'
+        in service
+    )
+
+    # Startup happens before Binder requests can reach Python.
+    assert "override fun onCreate()" in service
+    assert "prepareFreshChaquopyProcess()" in service
+
+    # Previous RootService context fix remains required.
+    assert "AndroidPlatform(rootPythonApplication)" in service
+    assert "AndroidPlatform(applicationContext)" not in service

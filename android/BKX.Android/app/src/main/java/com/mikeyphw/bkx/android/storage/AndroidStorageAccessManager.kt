@@ -18,7 +18,7 @@ sealed interface AllFilesAccessState {
 class AndroidStorageAccessManager(
     context: Context,
 ) {
-    private val appContext = context.applicationContext
+    private val appContext = context.applicationContext ?: context
 
     fun hasAllFilesAccess(): Boolean = state() != AllFilesAccessState.NeedsGrant
 

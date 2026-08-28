@@ -7,7 +7,7 @@ import com.chaquo.python.android.AndroidPlatform
 class ChaquopyPythonGateway(
     context: Context,
 ) : EmbeddedPythonGateway {
-    private val appContext = context.applicationContext
+    private val appContext = context.applicationContext ?: context
 
     private fun python(): Python {
         if (!Python.isStarted()) {

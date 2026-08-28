@@ -18,7 +18,7 @@ class SharedPreferencesRunSummaryStore(
     context: Context,
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) : RunSummaryStore {
-    private val prefs = context.applicationContext.getSharedPreferences("bkx_run_summaries", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("bkx_run_summaries", Context.MODE_PRIVATE)
 
     override suspend fun recentRuns(limit: Int): List<RunSummary> = readAll()
         .sortedByDescending { it.startedAtEpochMillis }
@@ -46,7 +46,7 @@ class SharedPreferencesSettingsStore(
     context: Context,
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) : SettingsStore {
-    private val prefs = context.applicationContext.getSharedPreferences("bkx_settings", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("bkx_settings", Context.MODE_PRIVATE)
 
     fun readNow(): BkxSettings {
         val raw = prefs.getString(KEY_SETTINGS, null) ?: return BkxSettings()
@@ -69,7 +69,7 @@ class SharedPreferencesOperationStateStore(
     context: Context,
     private val json: Json = Json { ignoreUnknownKeys = true; encodeDefaults = true },
 ) : OperationStateStore {
-    private val prefs = context.applicationContext.getSharedPreferences("bkx_active_operations", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences("bkx_active_operations", Context.MODE_PRIVATE)
 
     override suspend fun read(): OperationRuntimeState {
         val raw = prefs.getString(KEY_STATE, null) ?: return OperationRuntimeState()

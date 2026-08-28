@@ -57,7 +57,7 @@ class BkxOperationCoordinator(
     private val requestBaseDirectoryPath: String,
     private val progressPreferenceProvider: () -> ProgressPreference = { ProgressPreference.EventDriven },
 ) {
-    private val appContext = context?.applicationContext
+    private val appContext = context?.let { it.applicationContext ?: it }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stateMutex = Mutex()
     private val foregroundOperationMutex = Mutex()

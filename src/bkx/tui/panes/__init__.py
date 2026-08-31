@@ -52,7 +52,7 @@ __all__ = [
     "ArchiveListPane",
     "ArchivePreviewPane",
     "create_archive_list_items",
-    # Archive details drawer (Step 7B)
+    # Archive details drawer
     "ArchiveDetailsDrawer",
     "DetailsDrawerManager",
     # Progress tracking
@@ -71,13 +71,13 @@ __all__ = [
     "EmptyStatePane",
     "EmptyStatePresets",
     "EmptyStateManager",
-    # Non-blocking operations (Step 8B)
+    # Non-blocking operations
     "ProgressState",
     "ThrottledProgressCallback",
     "AsyncThrottledProgress",
     "create_throttled_progress",
     "run_with_throttled_progress",
-    # Error boundaries (Step 8C)
+    # Error boundaries
     "PaneErrorBoundary",
     "ErrorBoundaryState",
 ]

@@ -11,7 +11,7 @@ def read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_aov25_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> None:
+def test_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> None:
     coordinator = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     gateway = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwarePythonGateway.kt")
@@ -25,7 +25,7 @@ def test_aov25_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> Non
     assert "requestRoutes" in gateway and "requestIdFrom" in gateway
 
 
-def test_aov26_restore_policy_matches_kotlin_and_python() -> None:
+def test_restore_policy_matches_kotlin_and_python() -> None:
     models = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/restore/RestoreModels.kt")
     engine = read("src/bkx/android_api/engine.py")
     archives = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/feature/archives/ArchivesScreen.kt")
@@ -41,7 +41,7 @@ def test_aov26_restore_policy_matches_kotlin_and_python() -> None:
     assert "New destination path" in archives and "Existing destination path" in archives
 
 
-def test_aov27_progress_metrics_and_safe_termux_symlink_behavior_are_sealed() -> None:
+def test_progress_metrics_and_safe_termux_symlink_behavior_are_sealed() -> None:
     engine = read("src/bkx/android_api/engine.py")
     archiver = read("src/bkx/core/impl/archiver.py")
     traversal = read("src/bkx/core/impl/traversal.py")
@@ -59,12 +59,15 @@ def test_aov27_progress_metrics_and_safe_termux_symlink_behavior_are_sealed() ->
     assert '"skip_symlinks"' in backup_schema and '"skip_symlinks"' in archive_schema
 
 
-def test_aov29_to_aov32_release_assets_and_devtool_matrix_exist() -> None:
-    build = read("android/BKX.Android/app/build.gradle.kts")
+def test_release_assets_and_devtool_matrix_exist() -> None:
+    app_build = read("android/BKX.Android/app/build.gradle.kts")
+    verification = read("build-logic/android-verification.gradle.kts")
+    build = app_build + "\n" + verification
     devtool = read(".devtool.toml")
     release = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/release/BkxAndroidReleaseContract.kt")
-    docs = read("android/BKX.Android/docs/AOV_25_32_AUDIT.md")
-    replay = read("android/BKX.Android/docs/AOV_13_32_COMPLETENESS_REPLAY.md")
+    release_contract = read("android/BKX.Android/docs/RELEASE_CONTRACT.md")
+    release_validation = read("android/BKX.Android/docs/RELEASE_VALIDATION.md")
+    architecture = read("android/BKX.Android/docs/ARCHITECTURE.md")
     assert "verifyBkxEmbeddedParitySeal" in build
     assert "verifyBkxReleaseHygiene" in build
     assert "verifyBkxDeviceQualificationContract" in build
@@ -86,14 +89,15 @@ def test_aov29_to_aov32_release_assets_and_devtool_matrix_exist() -> None:
         ":app:verifyBkxFinalReleaseContract",
     ):
         assert task in devtool and task in release
-    assert 'versionCode = 10000' in build and 'versionName = "1.0.0"' in build
-    assert "AOV-32" in docs
-    assert "Direct path browser" in replay and "Repaired in v2" in replay
-    assert "every promise" in replay
+    assert "versionCode = bkxVersionCode" in app_build
+    assert "versionName = bkxVersionName" in app_build
+    assert 'version = "1.0.0"' in read("pyproject.toml")
+    assert "large-tree performance" in release_contract
+    assert "qualify-device.sh" in release_validation
+    assert "protocol-v1" in architecture
     assert (ANDROID / "scripts" / "verify-embedded-parity.py").is_file()
     assert (ANDROID / "scripts" / "qualify-device.sh").is_file()
     assert (ANDROID / "app" / "src" / "androidTest" / "java" / "com" / "mikeyphw" / "bkx" / "android" / "release" / "ReleaseQualificationInstrumentationTest.kt").is_file()
-
 
 def test_release_production_source_has_no_termux_execution_or_generic_root_shell() -> None:
     forbidden = (

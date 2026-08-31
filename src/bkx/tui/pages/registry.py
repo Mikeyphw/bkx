@@ -15,7 +15,7 @@ from bkx.tui.pages.archive import ArchivePage
 from bkx.tui.pages.backup import BackupPage
 from bkx.tui.pages.logs import LogsPage
 from bkx.tui.pages.restore import RestorePage
-from bkx.tui.pages.run_history import RunHistoryPage  # Step 10B
+from bkx.tui.pages.run_history import RunHistoryPage  # feature contract
 from bkx.tui.pages.tools import ToolsPage
 from bkx.tui.pages.transfer import TransferPage
 
@@ -31,7 +31,7 @@ def create_page_registry() -> PageRegistry:
         ),
         PageSpec(route="tools", factory=lambda: ToolsPage(), label="Tools", key="5", icon="🔧", group="Main", group_order=1, order=5),
         PageSpec(route="logs", factory=lambda: LogsPage(), label="Logs", key="6", icon="📋", group="Main", group_order=1, order=6),
-        # Step 10B: Run History page
+        # Run History page
         PageSpec(
             route="run_history", factory=lambda: RunHistoryPage(), label="History", key="7", icon="📊", group="Main", group_order=1, order=7
         ),

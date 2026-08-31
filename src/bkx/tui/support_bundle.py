@@ -1,4 +1,4 @@
-"""Support bundle generator - Step 9A
+"""Support bundle generator - feature contract
 
 Creates comprehensive support bundles for debugging.
 Includes logs, notifications, UI state, intents, configs, and system info.

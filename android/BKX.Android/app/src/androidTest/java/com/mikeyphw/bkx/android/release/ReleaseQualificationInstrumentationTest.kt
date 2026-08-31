@@ -22,7 +22,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * AOV-31 physical-device qualification.
+ * Physical-device qualification.
  *
  * Normal connectedDebugAndroidTest runs skip this test. The explicit release
  * qualification script enables it only after the user has granted All files

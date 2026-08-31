@@ -130,7 +130,7 @@ def run_backup_interactive() -> int:
     renderer = get_renderer(json_output=False)
     _section_header("Interactive Backup")
 
-    # Step 1: Select sources
+    # Select sources
     sources_text = prompt_text(
         "Source paths to back up (space-separated, or leave empty for current directory)",
         default=".",
@@ -142,24 +142,24 @@ def run_backup_interactive() -> int:
     if not sources:
         sources = [Path(".")]
 
-    # Step 2: Destination
+    # Destination
     destination_text = prompt_text(
         "Destination path for archive (optional, will auto-generate if empty)",
         default=None,
     )
     destination = Path(destination_text) if destination_text else None
 
-    # Step 3: Archive name
+    # Archive name
     archive_name = prompt_text("Archive name (optional, auto-generated if empty)", default=None)
 
-    # Step 4: Excludes
+    # Excludes
     excludes_text = prompt_text(
         "Exclude patterns (space-separated, e.g., '*.pyc __pycache__')",
         default="",
     )
     excludes = excludes_text.split() if excludes_text else []
 
-    # Step 5: Compression settings (with config defaults)
+    # Compression settings (with config defaults)
     config = get_config()
     algorithm = prompt_select(
         "Compression algorithm",
@@ -178,13 +178,13 @@ def run_backup_interactive() -> int:
     except ValueError:
         level = config.compression_level
 
-    # Step 6: Verify
+    # Verify
     verify = prompt_confirm(
         "Verify archive after creation?",
         default=config.verify_after_operation,
     )
 
-    # Step 7: Preview and confirm
+    # Preview and confirm
     renderer.render_message("", level="info")
     renderer.render_message("Backup Plan:", level="info")
     renderer.render_message(f"  Sources: {[str(s) for s in sources]}", level="info")
@@ -243,7 +243,7 @@ def run_archive_interactive() -> int:
     renderer = get_renderer(json_output=False)
     _section_header("Interactive Archive")
 
-    # Step 1: Select sources
+    # Select sources
     sources_text = prompt_text(
         "Source paths to archive (space-separated)",
         default=".",
@@ -255,21 +255,21 @@ def run_archive_interactive() -> int:
     if not sources:
         sources = [Path(".")]
 
-    # Step 2: Output path
+    # Output path
     output_text = prompt_text("Output archive path (required)", default=None)
     if output_text is None or not output_text.strip():
         renderer.render_error("Output path is required", {})
         return 2
     output = Path(output_text.strip())
 
-    # Step 3: Excludes
+    # Excludes
     excludes_text = prompt_text(
         "Exclude patterns (space-separated)",
         default="",
     )
     excludes = excludes_text.split() if excludes_text else []
 
-    # Step 4: Compression
+    # Compression
     config = get_config()
     algorithm = prompt_select(
         "Compression algorithm",
@@ -279,7 +279,7 @@ def run_archive_interactive() -> int:
         else 0,
     )
 
-    # Step 5: Verify
+    # Verify
     verify = prompt_confirm(
         "Verify archive after creation?",
         default=config.verify_after_operation,
@@ -336,33 +336,33 @@ def run_restore_interactive() -> int:
     renderer = get_renderer(json_output=False)
     _section_header("Interactive Restore")
 
-    # Step 1: Archive path
+    # Archive path
     archive_text = prompt_text("Archive path to restore from", default=None)
     if archive_text is None:
         return EXIT_OK
     archive = Path(archive_text.strip())
 
-    # Step 2: Destination
+    # Destination
     dest_text = prompt_text(
         "Destination path (optional, will create fresh dir if empty)",
         default=None,
     )
     destination = Path(dest_text) if dest_text else None
 
-    # Step 3: Fresh directory
+    # Fresh directory
     config = get_config()
     fresh_dir = prompt_confirm(
         "Create fresh directory with timestamp?",
         default=config.fresh_restore_dir,
     )
 
-    # Step 4: Overwrite
+    # Overwrite
     overwrite = prompt_confirm(
         "Allow overwriting existing files?",
         default=False,
     )
 
-    # Step 5: Verify
+    # Verify
     verify = prompt_confirm(
         "Verify archive before restore?",
         default=config.verify_after_operation,
@@ -422,7 +422,7 @@ def run_transfer_interactive() -> int:
     renderer = get_renderer(json_output=False)
     _section_header("Interactive Transfer")
 
-    # Step 1: Direction
+    # Direction
     direction = prompt_select(
         "Transfer direction",
         choices=["push", "pull"],
@@ -431,21 +431,21 @@ def run_transfer_interactive() -> int:
     if direction is None:
         return EXIT_OK
 
-    # Step 2: Source
+    # Source
     source_text = prompt_text("Source path", default=None)
     if source_text is None:
         return EXIT_OK
     source_raw = source_text.strip()
     source = source_raw if "://" in source_raw else Path(source_raw)
 
-    # Step 3: Destination
+    # Destination
     dest_text = prompt_text("Destination path", default=None)
     if dest_text is None:
         return EXIT_OK
     destination_raw = dest_text.strip()
     destination = destination_raw if "://" in destination_raw else Path(destination_raw)
 
-    # Step 4: Verify
+    # Verify
     verify = prompt_confirm("Verify after transfer?", default=True)
 
     # Preview

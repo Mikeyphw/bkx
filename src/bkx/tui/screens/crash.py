@@ -2,7 +2,7 @@
 
 Crash screen shown when an unhandled exception escapes the app.
 
-Step 8A enhancements:
+feature contract enhancements:
 - "Restart app" button with route persistence
 - Enhanced "Copy traceback" button
 - Enhanced "Export support bundle" button
@@ -23,7 +23,7 @@ from textual.widgets import Button, RichLog, Static
 class CrashScreen(Screen):
     """Display a traceback and allow exporting debug info.
 
-    Step 8A: Enhanced with restart, guidance, and route persistence.
+    Enhanced with restart, guidance, and route persistence.
     """
 
     BINDINGS = [
@@ -42,7 +42,7 @@ class CrashScreen(Screen):
         with Vertical(classes="bkx-crash"):
             yield Static(self._title, classes="bkx-crash-title")
 
-            # Step 8A: What to do next guidance
+            # What to do next guidance
             yield Static(
                 "An unexpected error occurred. You can:\n• Copy the traceback to share for debugging\n• Export a support bundle with system info\n• Restart the app (your last page will be restored)",
                 classes="bkx-crash-guidance",
@@ -67,7 +67,7 @@ class CrashScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#bkx-crash-traceback", RichLog).write(self._traceback_text)
-        # Step 8A: Update restart button with route info
+        # Update restart button with route info
         restart_btn = self.query_one("#bkx-crash-restart", Button)
         restart_btn.tooltip = f"Restart and return to {self._last_route} page"
 
@@ -75,7 +75,7 @@ class CrashScreen(Screen):
         self.app.exit(1)
 
     def action_restart(self) -> None:
-        """Step 8A: Restart the app with the last route."""
+        """Restart the app with the last route."""
         # Persist the route one more time before restart
         try:
             from bkx.tui.state import load_state, save_state
@@ -107,7 +107,7 @@ class CrashScreen(Screen):
             self.action_quit()
 
     def _copy_traceback(self) -> None:
-        """Step 8A: Enhanced copy traceback with details."""
+        """Enhanced copy traceback with details."""
         full_text = f"""BKX Crash Report
 ==============
 Time: {self._get_timestamp()}
@@ -135,7 +135,7 @@ Traceback:
             self.app.notify("Failed to copy crash report", severity="error")
 
     def _export_bundle(self) -> None:
-        """Step 8A: Export support bundle with enhanced info."""
+        """Export support bundle with enhanced info."""
         try:
             # Check if app has the action_export_support_bundle method
             # Using getattr to avoid pyright attribute access issues

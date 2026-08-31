@@ -119,7 +119,7 @@ class RealArchiver:
                     members = [m for m in members if any(p in m.name for p in spec.paths)]
 
                 for member in members:
-                    tar.extract(member, destination)
+                    tar.extract(member, destination, filter="data")
                     extracted_paths.append(destination / member.name)
 
         return tuple(extracted_paths)

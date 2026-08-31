@@ -1,0 +1,15 @@
+{
+  "framework": "android-instrumentation",
+  "reason": "No usable Android instrumentation target is available: no connected ADB device was found and no usable local privileged Android command is configured.",
+  "runner": "com.mikeyphw.bkx.android.test/androidx.test.runner.AndroidJUnitRunner",
+  "test_package": "com.mikeyphw.bkx.android.test",
+  "returncode": 0,
+  "discovered": 0,
+  "selected": 0,
+  "executed": 0,
+  "passed": 0,
+  "failed": 0,
+  "skipped": 1,
+  "total": 1,
+  "failed_ids": []
+}

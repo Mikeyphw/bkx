@@ -28,5 +28,5 @@
 ## Tests
 - [x] Optional dispatch/parity tests compare semantic Spec hashes
 
-## Phase 7 polish
+## Remaining polish
 - [ ] Additional mikomn FileDirPicker/ConfirmModal polish remains optional enhancement work

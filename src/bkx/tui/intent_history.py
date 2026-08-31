@@ -1,4 +1,4 @@
-"""Intent history tracking - Step 9B
+"""Intent history tracking - feature contract
 
 Provides a circular buffer for tracking user intents/events.
 Used by debug overlay to show last N user actions.

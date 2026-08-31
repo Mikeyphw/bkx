@@ -8,8 +8,6 @@ class BkxAndroidReleaseContractTest {
     @Test
     fun releaseSealDeclaresCompleteFinalValidationMatrix() {
         assertEquals(1, BkxAndroidReleaseContract.REQUIRED_PROTOCOL_VERSION)
-        assertEquals("1.0.0", BkxAndroidReleaseContract.RELEASE_VERSION)
-        assertEquals(10000, BkxAndroidReleaseContract.RELEASE_VERSION_CODE)
         listOf(
             ":app:testDebugUnitTest",
             ":app:lintDebug",

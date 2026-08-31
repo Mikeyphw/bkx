@@ -1,4 +1,3 @@
-# Local validator dependencies that are not assumed to be available from PyPI.
-# Set MIKOMN_ROOT to the local mikomn checkout on this machine before running
-# full optional Interactive/TUI validation.
+# Local-only optional UI dependency. Hosted CI intentionally does not consume this file.
+# scripts/validate-optional-ui.sh verifies MIKOMN_ROOT before invoking pip.
 mikomn[cli,tui] @ file://${MIKOMN_ROOT}

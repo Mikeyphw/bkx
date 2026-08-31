@@ -2,6 +2,147 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "32d7315f8675",
+      "name": "app-debug.apk",
+      "path": "artifacts/android/app-debug.apk",
+      "canonical_path": "artifacts/android/app-debug.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug.apk",
+      "type": "apk",
+      "size": 49934343,
+      "sha256": "0a51c14aca91ba3029380b4d157ff9a06c1618676a29ec34146d68cf9cf7d3af",
+      "commit": "e129312490458323a472ecc3d8bf4dc5bae28ebe",
+      "run_id": "6b09dedd33d142f3a4a4d958891eafe7",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-08-31T17:48:34.631259Z",
+      "registered_at": "2026-08-31T17:48:34.631259Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "6b09dedd33d142f3a4a4d958891eafe7",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 49934343,
+        "sha256": "0a51c14aca91ba3029380b4d157ff9a06c1618676a29ec34146d68cf9cf7d3af",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 49934343,
+          "sha256": "0a51c14aca91ba3029380b4d157ff9a06c1618676a29ec34146d68cf9cf7d3af",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a",
+            "x86_64"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a",
+          "x86_64"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "6b09dedd33d142f3a4a4d958891eafe7:0a51c14aca91ba3029380b4d157ff9a06c1618676a29ec34146d68cf9cf7d3af:32d7315f8675"
+    },
+    {
       "id": "54062d13ba4c",
       "name": "app-debug-2.apk",
       "path": "artifacts/android/app-debug-2.apk",
@@ -324,6 +465,6 @@
       }
     }
   ],
-  "updated_at": "2026-08-28T18:42:05.243430Z",
+  "updated_at": "2026-08-31T17:48:34.632892Z",
   "verifications": []
 }

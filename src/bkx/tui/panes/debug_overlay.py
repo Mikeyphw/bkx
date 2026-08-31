@@ -1,4 +1,4 @@
-"""Enhanced Debug Overlay - Step 9B
+"""Enhanced Debug Overlay - feature contract
 
 Displays debug information including:
 - Focus path (DOM hierarchy)
@@ -23,7 +23,7 @@ from bkx.tui.state import load_state
 class DebugOverlayPane(Container):
     """Debug overlay pane showing internal state.
 
-    Step 9B: Enhanced with focus path, route, archive, filter, intents, progress.
+    Enhanced with focus path, route, archive, filter, intents, progress.
     """
 
     DEFAULT_CLASSES = "bkx-debug-overlay"

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AOV-27/AOV-32 deterministic large-tree performance and memory-pressure seal."""
+"""deterministic large-tree performance and memory-pressure seal."""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,4 @@
-"""Context Switcher Pane - Step 10C
+"""Context switcher pane
 
 Interactive context bar for profile switching and context management.
 """

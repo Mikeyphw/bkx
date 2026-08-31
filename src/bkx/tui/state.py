@@ -37,11 +37,11 @@ class TuiState:
     layout_mode: str = "normal"
     show_toasts: bool = True
 
-    # Step 6A.2: restore archive UX
+    # feature contract.2: restore archive UX
     archive_filter_text: str = ""
     archive_selected_id: str = ""
 
-    # Step 7A: Selection + Focus Restore
+    # Selection + Focus Restore
     archive_scroll_position: int = 0
     last_focused_widget: str = ""
     last_focused_pane: str = ""
@@ -57,7 +57,7 @@ class TuiState:
             show_toasts=bool(data.get("show_toasts", cls.show_toasts)),
             archive_filter_text=str(data.get("archive_filter_text", cls.archive_filter_text)),
             archive_selected_id=str(data.get("archive_selected_id", cls.archive_selected_id)),
-            # Step 7A additions
+            # state additions
             archive_scroll_position=int(data.get("archive_scroll_position", cls.archive_scroll_position)),
             last_focused_widget=str(data.get("last_focused_widget", cls.last_focused_widget)),
             last_focused_pane=str(data.get("last_focused_pane", cls.last_focused_pane)),

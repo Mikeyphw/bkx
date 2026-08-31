@@ -1,4 +1,4 @@
-"""Archive Details Drawer - Step 7B
+"""Archive Details Drawer - feature contract
 
 A right-pane details drawer with tabs:
 - Summary: Archive metadata (name, path, size, modified, ID)

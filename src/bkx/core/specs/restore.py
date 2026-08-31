@@ -53,7 +53,7 @@ class RestoreSpec:
         fallback = absolute_local_path(default_destination) if default_destination is not None else None
         semantic_destination = explicit or fallback
 
-        # Preserve the existing fresh-directory behavior for OV-02: RM-028 owns
+        # Preserve the existing fresh-directory behavior for RM-028 owns
         # the safety-model redesign. Keep timestamp output in derived state only,
         # so semantic equality/hash remain deterministic.
         if self.fresh_dir and explicit is None and fallback is None:

@@ -1,4 +1,4 @@
-"""Loading Spinner Widget - Step 11B
+"""Loading Spinner Widget - feature contract
 
 Provides animated loading indicators for async operations.
 """

@@ -113,35 +113,35 @@ class RunLogPane(Container):
 
     @on(Button.Pressed, "#filter-btn")
     def _on_filter(self) -> None:
-        """Open filter sheet (Step 4B)."""
+        """Open filter sheet."""
         app = getattr(self, "app", None)
         if app is not None and hasattr(app, "open_log_filter_sheet"):
             app.open_log_filter_sheet(self)
             return
 
         # Fallback: keep old cycling behavior.
-        """Open filter sheet (Step 4B)."""
+        """Open filter sheet."""
         app = getattr(self, "app", None)
         if app is not None and hasattr(app, "open_log_filter_sheet"):
             app.open_log_filter_sheet(self)
             return
 
         # Fallback: keep old cycling behavior.
-        """Open filter sheet (Step 4B)."""
+        """Open filter sheet."""
         app = getattr(self, "app", None)
         if app is not None and hasattr(app, "open_log_filter_sheet"):
             app.open_log_filter_sheet(self)
             return
 
         # Fallback: keep old cycling behavior.
-        """Open filter sheet (Step 4B)."""
+        """Open filter sheet."""
         app = getattr(self, "app", None)
         if app is not None and hasattr(app, "open_log_filter_sheet"):
             app.open_log_filter_sheet(self)
             return
 
         # Fallback: keep old cycling behavior.
-        """Open filter sheet (Step 4B)."""
+        """Open filter sheet."""
         app = getattr(self, "app", None)
         if app is not None and hasattr(app, "open_log_filter_sheet"):
             app.open_log_filter_sheet(self)

@@ -1,4 +1,4 @@
-"""Non-blocking operations utilities - Step 8B
+"""Non-blocking operation utilities
 
 Provides utilities for running heavy operations in thread pool with:
 - Throttled progress updates (100ms max frequency)

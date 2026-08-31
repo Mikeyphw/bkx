@@ -1,4 +1,4 @@
-"""Run History Page - Step 10B
+"""Run history page
 
 UI page displaying past operations with filtering and details.
 """

@@ -2,8 +2,6 @@ package com.mikeyphw.bkx.android.core.release
 
 object BkxAndroidReleaseContract {
     const val REQUIRED_PROTOCOL_VERSION = 1
-    const val RELEASE_VERSION = "1.0.0"
-    const val RELEASE_VERSION_CODE = 10000
     const val RELEASE_SEAL_TASK = ":app:bkxAndroidReleaseSeal"
 
     val requiredDevtoolTasks: List<String> = listOf(

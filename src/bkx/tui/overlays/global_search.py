@@ -1,4 +1,4 @@
-"""Global Search Overlay - Step 10A
+"""Global search overlay
 
 Provides global search functionality accessible from any screen via `/` shortcut.
 Searches across archives, commands, pages, and more.

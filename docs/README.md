@@ -1,8 +1,8 @@
-# Docs
+# BKX documentation
 
-Drop the generated contract guide bundle here (or keep it elsewhere).
+The documentation kept in-tree describes current contracts and operating procedures.
+Historical implementation phases, overlay milestones, TODO scaffolding, and generated patches are intentionally not retained.
 
-Suggested:
-- docs/PHASES/
-- docs/checklists/
-- docs/templates/
+- `guide/` — stable architecture, command, service, and UX contracts.
+- `checklists/` — feature-oriented contract checklists.
+- `../android/BKX.Android/docs/` — Android setup, release, signing, SDK, and validation documentation.

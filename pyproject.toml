@@ -4,11 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bkx"
-version = "0.0.1"
-description = "Contract-controlled CLI-first backup/archive tool (skeleton)"
+version = "1.0.0"
+description = "Contract-controlled backup, archive, restore, and transfer tool"
 readme = "README.md"
 license = { text = "MIT" }
-authors = [{ name = "You", email = "you@example.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",

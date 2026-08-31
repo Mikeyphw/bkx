@@ -1,4 +1,4 @@
-"""Error boundary widget - Step 8C
+"""Error boundary widget
 
 Provides per-pane error boundaries that:
 - Catch exceptions within wrapped widgets
@@ -66,7 +66,7 @@ class PaneErrorBoundary(Container):
             # Your widgets here
             MyWidget()
 
-    Step 8C features:
+    Features:
     - Localized error display
     - Recovery options (retry, dismiss)
     - Error counting

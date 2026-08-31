@@ -1,5 +1,5 @@
 /* src/bkx/tui/css/panes/context_switcher.tcss */
-/* Step 10C: Context Switcher Styling */
+/* Context Switcher Styling */
 
 .bkx-context-switcher {
     width: 100%;

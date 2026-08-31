@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """bkx.tui.overlays.help_overlay
 
-Step 4B & 11D:
+feature contract & 11D:
 Wrapper around mikomn HelpOverlay providing a stable BKX class for styling.
 Enhanced with keyboard shortcuts reference.
 """

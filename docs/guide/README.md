@@ -1,43 +1,14 @@
-# Contract-Controlled Rebuild Guide (CLI + Optional Interactive + Optional TUI)
+# BKX contract guide
 
-This folder is a **manual implementation playbook** to rebuild your project from scratch under **contract control**.
+This folder records the stable product contracts which are useful for maintenance and parity testing.
+It is not an implementation roadmap.
 
-## Scope
-- ✅ **Mandatory:** CLI product (always works standalone)
-- ➕ **Optional:** Interactive mode (interactive CLI)
-- ➕ **Optional:** Textual TUI
-- ❌ **Excluded:** WebUI (explicitly out of scope)
+Read in this order:
 
-## Authority
-Treat these as source-of-truth contracts/inputs (you provide them):
-- `docs.md` (contracts/checklists pack)
-- `mikomn.md` (authoritative mikomn source)
-- `FEATURES.md` (target feature set / product idea)
+1. `00_CONTRACTS_SUMMARY.md` — dependency and behavior invariants.
+2. `01_ARCHITECTURE_LAYOUT.md` — current interface/core boundaries.
+3. `02_COMMAND_SURFACE.md` — public CLI grammar.
+4. `03_SPECS_SERVICES.md` — normalized specs, services, ports, and results.
+5. `04_UX_FEATURES.md` — current user-facing behavior.
 
-This guide **does not implement code**. It tells you exactly *what to implement*, *where*, and *how to validate it*.
-
-## How to use this pack
-1. Read `00_CONTRACTS_SUMMARY.md` (non-negotiables)
-2. Set your repo structure following `01_ARCHITECTURE_LAYOUT.md`
-3. Implement phase-by-phase under `phases/`
-4. Use `checklists/` to verify you didn’t violate the rules
-5. Use `templates/` to keep files consistent
-
-## Success criteria
-- CLI works without extras installed.
-- Interactive/TUI can be deleted without breaking core+CLI.
-- Same inputs → same Spec → same service outcome (parity).
-- Core raises typed errors only; CLI maps to stable exit codes.
-
----
-
-## Recommended build flow
-Start here:
-- `phases/PHASE_00_FOUNDATION.md`
-- `phases/PHASE_01_CORE_SKELETON.md`
-- `phases/PHASE_02_CLI_MVP.md`
-
-Optional later:
-- `phases/PHASE_05_INTERACTIVE_MODE.md`
-- `phases/PHASE_06_TUI_MVP.md`
-
+Feature-oriented checklists live in `../checklists/`.

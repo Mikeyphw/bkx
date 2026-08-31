@@ -16,7 +16,7 @@ import java.io.FileOutputStream
 import org.junit.Rule
 import org.junit.Test
 
-/** AOV-28/AOV-31 accessibility semantics plus opt-in real-device visual evidence. */
+/** Accessibility semantics plus opt-in real-device visual evidence. */
 class ProductAccessibilityVisualQualificationTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()

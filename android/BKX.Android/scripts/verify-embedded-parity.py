@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AOV-29: stdlib-only embedded/core parity seal runnable from Gradle/Devtool."""
+"""stdlib-only embedded/core parity seal runnable from Gradle/Devtool."""
 from __future__ import annotations
 
 import json

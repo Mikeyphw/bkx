@@ -2,7 +2,6 @@ from __future__ import annotations
 
 """bkx.tui.overlays
 
-Step 4A:
 BKX wrappers around mikomn overlays/screens.
 These wrappers provide:
 - Stable BKX class names for TCSS

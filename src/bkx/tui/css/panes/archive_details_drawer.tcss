@@ -1,7 +1,7 @@
 /* bkx/tui/css/panes/archive_details_drawer.tcss */
 
 /* ==========================================================================
-   Archive Details Drawer - Step 7B
+   Archive Details Drawer
    ========================================================================== */
 
 .bkx-details-drawer {

@@ -22,8 +22,8 @@ import kotlinx.serialization.decodeFromString
 /**
  * In-process BackendPort backed by the canonical Python bkx.core engine.
  *
- * AOV-13→16 deliberately retains BridgeRequestEnvelope/BridgeResultEnvelope as
- * the migration seam. AOV-17→20 can replace the file-shaped operation runtime
+ * The embedded backend deliberately retains BridgeRequestEnvelope/BridgeResultEnvelope as
+ * the migration seam. A future native runtime can replace the file-shaped operation runtime
  * without changing BKX semantics again.
  */
 class EmbeddedBkxBackend(

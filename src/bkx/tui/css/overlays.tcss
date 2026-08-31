@@ -11,7 +11,7 @@
     height: 80%;
 }
 
-/* Step 10A: Global Search Overlay */
+/* Global Search Overlay */
 .bkx-global-search {
     width: 80%;
     height: auto;
@@ -87,7 +87,7 @@
     max-height: 90%;
 }
 
-/* Step 9B: Debug Overlay */
+/* Debug Overlay */
 .bkx-debug-overlay {
     width: 50%;
     height: auto;

@@ -1,4 +1,4 @@
-"""Profile Dialog - Step 10C
+"""Profile dialog
 
 Dialog for creating and editing profiles.
 """

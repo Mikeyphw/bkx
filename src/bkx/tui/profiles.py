@@ -1,4 +1,4 @@
-"""Profiles/Context Switcher - Step 10C
+"""Profiles and context switching
 
 Profile state management for persistent user configurations.
 Supports multiple profiles with their own settings.

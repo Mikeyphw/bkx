@@ -34,8 +34,9 @@ python -m pip install '.[interactive]'
 python -m pip install '.[tui]'
 ```
 
-Local full validation of optional interfaces also requires `MIKOMN_ROOT` to
-point at the local mikomn checkout used by the validator.
+Hosted CI validates the base package without requiring machine-local checkouts.
+Optional Interactive/TUI validation is explicit and local: set `MIKOMN_ROOT` and run
+`scripts/validate-optional-ui.sh`.
 
 ## Examples
 
@@ -50,6 +51,4 @@ bkx ui start --mode tui
 
 ## Validation
 
-The release gate builds and installs a wheel, smokes both CLI entrypoints,
-verifies packaged schemas/CSS assets, runs base tests across Python 3.11–3.13,
-and runs optional UI tests when local mikomn dependencies are available.
+Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.

@@ -1,5 +1,5 @@
 /* src/bkx/tui/css/pages/run_history.tcss */
-/* Step 10B: Run History Page Styling */
+/* Run History Page Styling */
 
 .bkx-run-history-page {
     width: 100%;

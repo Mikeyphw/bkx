@@ -1,5 +1,4 @@
-/* bkx/src/bkx/tui/css/accessibility.tcss
-   Step 11C: Accessibility improvements
+/* bkx/src/bkx/tui/css/accessibility.tcss Accessibility improvements
    Color contrast compliance and focus management.
 */
 

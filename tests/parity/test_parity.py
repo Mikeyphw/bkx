@@ -15,8 +15,11 @@ Tests cover:
 
 from __future__ import annotations
 
+import importlib.util
 import tempfile
 from pathlib import Path
+
+import pytest
 
 from typer.testing import CliRunner
 
@@ -652,6 +655,7 @@ class TestDryRunParity:
 # =============================================================================
 
 
+@pytest.mark.skipif(importlib.util.find_spec("textual") is None, reason="optional TUI dependency is not installed")
 class TestTUIIntentParity:
     """Tests for TUI intent → spec parity with CLI."""
 

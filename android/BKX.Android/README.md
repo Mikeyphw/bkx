@@ -34,4 +34,4 @@ Termux is never used to execute BKX. There is no RUN_COMMAND permission, wrapper
 - A direct-core/embedded parity script is part of the Gradle release seal.
 - Rooted physical-device qualification is available through `scripts/qualify-device.sh`.
 
-See `docs/AOV_25_32_AUDIT.md` and `docs/FINAL_RELEASE_VALIDATION.md`.
+See `docs/ARCHITECTURE.md`, `docs/RELEASE_CONTRACT.md`, and `docs/RELEASE_VALIDATION.md`.

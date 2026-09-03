@@ -72,15 +72,36 @@ type BridgeContract struct {
 	ArbitraryShell           bool     `json:"arbitraryShell"`
 }
 
+type ContractField struct {
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	DefaultKind      string `json:"defaultKind"`
+	Default          any    `json:"default"`
+	EffectiveDefault any    `json:"effectiveDefault,omitempty"`
+}
+
 type CoreContract struct {
 	ContractSchemaVersion int `json:"contractSchemaVersion"`
 	ContractVersion       int `json:"contractVersion"`
-	Errors                struct {
+	Config                struct {
+		Precedence  []string          `json:"precedence"`
+		Environment map[string]string `json:"environment"`
+		SearchOrder []string          `json:"searchOrder"`
+		Fields      []ContractField   `json:"fields"`
+	} `json:"config"`
+	Errors struct {
+		Types       []string       `json:"types"`
+		ExitCodes   map[string]int `json:"exitCodes"`
 		StableCodes map[string]int `json:"stableCodes"`
 	} `json:"errors"`
 	RunHistory struct {
-		ValidStatuses   []string `json:"validStatuses"`
-		ValidOperations []string `json:"validOperations"`
+		DefaultRelativePath string          `json:"defaultRelativePath"`
+		RecordFields        []ContractField `json:"recordFields"`
+		ValidStatuses       []string        `json:"validStatuses"`
+		ValidOperations     []string        `json:"validOperations"`
+		Encoding            string          `json:"encoding"`
+		LockSuffix          string          `json:"lockSuffix"`
+		QuarantineSuffix    string          `json:"quarantineSuffix"`
 	} `json:"runHistory"`
 	SpecSchemas []string `json:"specSchemas"`
 }
@@ -219,8 +240,20 @@ func (b Bundle) Validate() error {
 	if b.Bridge.ArbitraryShell {
 		return fmt.Errorf("arbitrary shell execution must remain outside protocol-v1")
 	}
-	if b.Core.Errors.StableCodes["success"] != 0 || b.Core.Errors.StableCodes["external"] != 5 {
+	if b.Core.Errors.StableCodes["success"] != 0 || b.Core.Errors.StableCodes["generic"] != 1 || b.Core.Errors.StableCodes["usage"] != 2 || b.Core.Errors.StableCodes["notFound"] != 3 || b.Core.Errors.StableCodes["permission"] != 4 || b.Core.Errors.StableCodes["external"] != 5 {
 		return fmt.Errorf("public exit-code contract drift")
+	}
+	if len(b.Core.Config.Fields) != 12 || len(b.Core.Config.Environment) != 12 || !exactSet(b.Core.Config.Precedence, []string{"cli", "environment", "config_file", "defaults"}) {
+		return fmt.Errorf("GO03 config contract drift")
+	}
+	if !exactSet(b.Core.Config.SearchOrder, []string{"./.bkx.yaml", "./bkx.yaml", "~/.bkx.yaml"}) {
+		return fmt.Errorf("GO03 config search-order drift")
+	}
+	if b.Core.RunHistory.DefaultRelativePath != ".local/share/bkx/runs/runs.jsonl" || b.Core.RunHistory.LockSuffix != ".lock" || b.Core.RunHistory.QuarantineSuffix != ".corrupt" || len(b.Core.RunHistory.RecordFields) != 12 {
+		return fmt.Errorf("GO02 run-history persistence contract drift")
+	}
+	if !exactSet(b.Core.RunHistory.ValidStatuses, []string{"failed", "interrupted", "started", "success"}) || !exactSet(b.Core.RunHistory.ValidOperations, []string{"archive", "backup", "restore", "run", "transfer", "unknown"}) {
+		return fmt.Errorf("GO02 run-history state contract drift")
 	}
 	if len(b.Core.SpecSchemas) != 4 {
 		return fmt.Errorf("expected 4 canonical spec schemas, got %d", len(b.Core.SpecSchemas))

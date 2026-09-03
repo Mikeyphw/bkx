@@ -2,16 +2,20 @@ package main
 
 import "testing"
 
-func TestScaffoldVersion(t *testing.T) {
+func TestScaffoldVersionPath(t *testing.T) {
 	if code := run([]string{"--version"}); code != 0 {
-		t.Fatalf("version returned %d", code)
+		t.Fatalf("run(--version)=%d", code)
 	}
 }
-
 func TestScaffoldRefusesProductionCommands(t *testing.T) {
-	for _, command := range []string{"backup", "archive", "restore", "transfer", "tools", "run", "ui"} {
-		if code := run([]string{command}); code == 0 {
-			t.Fatalf("%s unexpectedly accepted by GO01 scaffold", command)
+	for _, args := range [][]string{{"backup"}, {"archive", "list"}, {"restore"}, {"transfer"}, {"tools"}, {"run"}, {"ui"}} {
+		if code := run(args); code == 0 {
+			t.Fatalf("migration scaffold accepted production command %v", args)
 		}
+	}
+}
+func TestMigrationProbeUsageDoesNotBecomeProductCommand(t *testing.T) {
+	if code := run([]string{"migration", "run-history"}); code == 0 {
+		t.Fatal("incomplete migration probe accepted")
 	}
 }

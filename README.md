@@ -54,14 +54,34 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00 and GO01 establish a compatibility-first migration lane without changing the
+GO00–GO05 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
-canonical operation schemas. `cmd/bkx` is a Go scaffold which can validate that
-baseline and compile for Linux and Android ARM64, but deliberately rejects normal
-backup/archive/restore/transfer commands until later parity gates are complete.
+canonical operation schemas. The Go tree now contains the migration scaffold plus
+an in-place JSONL run-history implementation, frozen model shapes, typed errors,
+configuration layering, and shared validation/path rules.
 
-Use `devtool --target bkx_go validate` for the Go lane. The Android app remains
-Kotlin/Compose and continues to use the production embedded-Python engine during
-GO00/GO01. See `docs/migration/python-to-go.md`.
+GO02/GO03 are guarded by a differential test: Python writes production-format run
+history and configuration state, Go reads/mutates it, and Python reopens the result.
+The Go executable still deliberately rejects normal backup/archive/restore/transfer
+commands until later operation/service parity gates are complete.
 
+Use `devtool --target bkx_go validate` for the Go lane or
+`scripts/validate-go02-go03.sh` for the complete migration gate. The Android app
+remains Kotlin/Compose and continues to use the production embedded-Python engine.
+See `docs/migration/python-to-go.md`.
+
+
+### Go migration GO04
+
+GO04 ports the migration-only filesystem/traversal/hash/tool-detection foundation and
+adds deterministic Android ARM64 ELF/build-metadata validation. Python remains the
+production backend; Go product commands still fail closed until later parity gates.
+
+
+### Go migration GO05
+
+GO05 ports read-only archive operations (`list`, `info`, `browse`, and `verify`) into
+the migration-only Go backend, with Python-Go parity across ZIP, TAR, TAR.GZ, and
+TAR.BZ2 fixtures plus corruption and unsafe-member checks. Normal `bkx archive ...`
+commands remain Python-owned and fail closed in the Go scaffold.

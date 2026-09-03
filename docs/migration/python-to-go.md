@@ -80,8 +80,84 @@ filesystem, archive, root-service, transfer, cancellation, storage, or real-devi
 behavior. Those require later operation-specific implementation and parity/device
 gates.
 
+## GO02 — Run-history persistence compatibility — COMPLETE
+
+BKX persistence is the production JSONL run-history store, not SQLite. GO02 ports
+that persisted surface in place rather than introducing a Go-only database or
+parallel state format.
+
+Delivered:
+
+- the same twelve snake_case persisted fields and canonical one-object-per-line
+  JSON representation;
+- the frozen operation/status sets;
+- `.lock` advisory locking and `.corrupt` quarantine conventions;
+- malformed/duplicate-record quarantine without discarding valid records;
+- atomic same-directory rewrite, file sync, rename, and best-effort directory sync;
+- retention, start/completion, listing/count/get/clear, and interrupted-run recovery;
+- Python → Go → Python differential round-trip verification.
+
+The Go migration probe may mutate a temporary production-format history file, but
+normal product run-history commands still remain Python-owned.
+
+## GO03 — Models, validation, config — COMPLETE
+
+Delivered migration foundations:
+
+- Go structs with frozen snake_case JSON names for the four canonical operation
+  specs and run-history records;
+- typed BKX error kinds and stable exit-code mapping 0–5;
+- defaults/file/environment/CLI configuration precedence and per-field provenance;
+- deterministic config search order and relative file-path resolution;
+- compression-profile, pattern-set, split-size, archive-name/member, containment,
+  overlap, transfer-location, and deterministic-name validation helpers;
+- shape/policy validation for backup, archive-create, restore, and transfer specs;
+- stronger Go decoding of the GO00 core contract so config and run-history drift is
+  rejected before later ports build on it;
+- a differential config probe comparing Python and Go effective values/provenance.
+
+`cmd/bkx` remains fail-closed for production operations. These foundations are
+accepted migration building blocks, not a backend cutover.
+
+## GO04 — Filesystem, traversal, hashing, tool detection — COMPLETE
+
+Delivered migration-only low-level primitives:
+
+- filesystem `stat`/paged `list` semantics aligned with the Android protocol-v1 handlers;
+- deterministic source traversal with include/exclude matching, archive member names,
+  overlap checks, special-file rejection, and reject/skip symlink policies;
+- pure-Go MD5/SHA-256/SHA-512 file hashing, verification, and deterministic directory
+  checksums matching the Python source-manifest algorithm;
+- bounded executable/tool detection with PATH-sensitive cache invalidation, version
+  parsing, capabilities, and configured preference behavior;
+- Python ↔ Go differential fixtures covering filesystem metadata/list ordering,
+  traversal metadata, all built-in hash algorithms, directory checksums, and tool probes;
+- deterministic Android build verification using Go build metadata plus ELF
+  `e_machine=183` (`EM_AARCH64`) rather than `file(1)` wording heuristics.
+
+These primitives remain reachable only through `migration ...` probes in the Go
+scaffold. Production CLI/Android operation ownership remains Python.
+
+## GO05 — Read-only archive operations — COMPLETE
+
+Delivered migration-only archive operations:
+
+- archive list with complete-archive totals, pagination, and Python-style fnmatch filtering;
+- archive info with format, file-size, uncompressed-size, entry-count, timestamp, and ratio parity;
+- archive browse with query/type/size filters, stable sorting, offset/limit, and result totals;
+- archive verify with requested MD5/SHA-256/SHA-512 whole-archive hashes, payload/CRC reads,
+  unsafe member rejection, TAR link rejection, and structural-failure classification;
+- ZIP/TAR/TAR.GZ/TAR.BZ2 differential fixtures, with optional external `xz` streaming for
+  TAR.XZ when the tool is available;
+- corrupted ZIP and traversal-member parity fixtures;
+- migration-only CLI probes under `migration archive ...`.
+
+Normal `bkx archive ...` product commands remain Python-owned and the Go scaffold still
+fails closed. Archive creation and restore/extraction are intentionally deferred because
+they mutate user data and require stronger transactional/device gates.
+
 ## Next gate
 
-The next migration work must consume `migration/contracts/v1/` rather than
-redesigning public behavior. No Go slice becomes production-authoritative merely
-because it compiles.
+GO06 should port archive creation with transactional publication, compression-policy
+parity, shared GO04 traversal, optional verification, and no production cutover until
+Python-Go artifact equivalence and failure rollback are accepted.

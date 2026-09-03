@@ -1,0 +1,1443 @@
+{
+  "commandNodeCount": 23,
+  "commandNodes": [
+    {
+      "command": "archive",
+      "help": "Archive operations",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "archive"
+      ]
+    },
+    {
+      "command": "archive browse",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "query",
+          "nargs": 1,
+          "optionStrings": [
+            "-q",
+            "--query"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "file_type",
+          "nargs": 1,
+          "optionStrings": [
+            "-t",
+            "--type"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "min_size",
+          "nargs": 1,
+          "optionStrings": [
+            "--min-size"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "max_size",
+          "nargs": 1,
+          "optionStrings": [
+            "--max-size"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": 50,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "limit",
+          "nargs": 1,
+          "optionStrings": [
+            "-l",
+            "--limit"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": 0,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "offset",
+          "nargs": 1,
+          "optionStrings": [
+            "--offset"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": "path",
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "sort_by",
+          "nargs": 1,
+          "optionStrings": [
+            "-s",
+            "--sort"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": "asc",
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "sort_order",
+          "nargs": 1,
+          "optionStrings": [
+            "-o",
+            "--order"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "archive",
+        "browse"
+      ]
+    },
+    {
+      "command": "archive create",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "sources",
+          "nargs": -1,
+          "optionStrings": [
+            "sources"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "output",
+          "nargs": 1,
+          "optionStrings": [
+            "-o",
+            "--output"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": [],
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "exclude",
+          "nargs": 1,
+          "optionStrings": [
+            "-e",
+            "--exclude"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": [],
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "include",
+          "nargs": 1,
+          "optionStrings": [
+            "-i",
+            "--include"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": [],
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "exclude_from",
+          "nargs": 1,
+          "optionStrings": [
+            "--exclude-from"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": [],
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "include_from",
+          "nargs": 1,
+          "optionStrings": [
+            "--include-from"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "algorithm",
+          "nargs": 1,
+          "optionStrings": [
+            "--compression"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "level",
+          "nargs": 1,
+          "optionStrings": [
+            "--compression-level"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "split_size",
+          "nargs": 1,
+          "optionStrings": [
+            "--split-size"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "archive",
+        "create"
+      ]
+    },
+    {
+      "command": "archive info",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        }
+      ],
+      "path": [
+        "archive",
+        "info"
+      ]
+    },
+    {
+      "command": "archive list",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "filter_pattern",
+          "nargs": 1,
+          "optionStrings": [
+            "--filter"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": 0,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "page",
+          "nargs": 1,
+          "optionStrings": [
+            "--page"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": 100,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "page_size",
+          "nargs": 1,
+          "optionStrings": [
+            "--page-size"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        }
+      ],
+      "path": [
+        "archive",
+        "list"
+      ]
+    },
+    {
+      "command": "archive verify",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        }
+      ],
+      "path": [
+        "archive",
+        "verify"
+      ]
+    },
+    {
+      "command": "backup",
+      "help": "Backup operations",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "backup"
+      ]
+    },
+    {
+      "command": "backup create",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": "Source paths to back up",
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "sources",
+          "nargs": -1,
+          "optionStrings": [
+            "sources"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": "Final backup destination directory",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "-d",
+            "--destination"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": [],
+          "help": "Exclude glob pattern",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "exclude",
+          "nargs": 1,
+          "optionStrings": [
+            "-e",
+            "--exclude"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": [],
+          "help": "Include glob pattern",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "include",
+          "nargs": 1,
+          "optionStrings": [
+            "-i",
+            "--include"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": [],
+          "help": "Read exclude patterns from file",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "exclude_from",
+          "nargs": 1,
+          "optionStrings": [
+            "--exclude-from"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": [],
+          "help": "Read include patterns from file",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": true,
+          "name": "include_from",
+          "nargs": 1,
+          "optionStrings": [
+            "--include-from"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": "Archive name",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "name",
+          "nargs": 1,
+          "optionStrings": [
+            "-n",
+            "--name"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": "Compression algorithm",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "algorithm",
+          "nargs": 1,
+          "optionStrings": [
+            "--compression"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": "Compression level",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "level",
+          "nargs": 1,
+          "optionStrings": [
+            "--compression-level"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": "Split archive size in bytes",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "split_size",
+          "nargs": 1,
+          "optionStrings": [
+            "--split-size"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": "Verify archive and transfer",
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "backup",
+        "create"
+      ]
+    },
+    {
+      "command": "backup plan",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "sources",
+          "nargs": -1,
+          "optionStrings": [
+            "sources"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "-d",
+            "--destination"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        }
+      ],
+      "path": [
+        "backup",
+        "plan"
+      ]
+    },
+    {
+      "command": "restore",
+      "help": "Restore operations",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "restore"
+      ]
+    },
+    {
+      "command": "restore extract",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "-d",
+            "--destination"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "overwrite",
+          "nargs": 1,
+          "optionStrings": [
+            "-o",
+            "--overwrite"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "optionStrings": [
+            "-y",
+            "--yes"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "fresh_dir",
+          "nargs": 1,
+          "optionStrings": [
+            "--fresh-dir"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-fresh-dir"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "restore",
+        "extract"
+      ]
+    },
+    {
+      "command": "restore pick",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "archive",
+          "nargs": 1,
+          "optionStrings": [
+            "archive"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": null,
+          "help": "Archive member paths to restore",
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "paths",
+          "nargs": -1,
+          "optionStrings": [
+            "paths"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "-d",
+            "--destination"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "path"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "overwrite",
+          "nargs": 1,
+          "optionStrings": [
+            "-o",
+            "--overwrite"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "yes",
+          "nargs": 1,
+          "optionStrings": [
+            "-y",
+            "--yes"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "fresh_dir",
+          "nargs": 1,
+          "optionStrings": [
+            "--fresh-dir"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-fresh-dir"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "restore",
+        "pick"
+      ]
+    },
+    {
+      "command": "run",
+      "help": "View run history",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "run"
+      ]
+    },
+    {
+      "command": "run list",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": 20,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "limit",
+          "nargs": 1,
+          "optionStrings": [
+            "-l",
+            "--limit"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "integer"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "operation",
+          "nargs": 1,
+          "optionStrings": [
+            "-o",
+            "--operation"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "run",
+        "list"
+      ]
+    },
+    {
+      "command": "run show",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "run_id",
+          "nargs": 1,
+          "optionStrings": [
+            "run_id"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "run",
+        "show"
+      ]
+    },
+    {
+      "command": "tools",
+      "help": "Tool management",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "tools"
+      ]
+    },
+    {
+      "command": "tools detect",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": "Optional tool names to detect",
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "tool_name",
+          "nargs": -1,
+          "optionStrings": [
+            "tool_name"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tools",
+        "detect"
+      ]
+    },
+    {
+      "command": "tools explain",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": "Optional categories to explain",
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "category",
+          "nargs": -1,
+          "optionStrings": [
+            "category"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "tools",
+        "explain"
+      ]
+    },
+    {
+      "command": "transfer",
+      "help": "Transfer operations",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "transfer"
+      ]
+    },
+    {
+      "command": "transfer pull",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "source",
+          "nargs": 1,
+          "optionStrings": [
+            "source"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "destination"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "overwrite",
+          "nargs": 1,
+          "optionStrings": [
+            "--overwrite"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "transfer",
+        "pull"
+      ]
+    },
+    {
+      "command": "transfer push",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "source",
+          "nargs": 1,
+          "optionStrings": [
+            "source"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": false,
+          "kind": "argument",
+          "metavar": null,
+          "multiple": false,
+          "name": "destination",
+          "nargs": 1,
+          "optionStrings": [
+            "destination"
+          ],
+          "required": true,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        },
+        {
+          "default": null,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "verify",
+          "nargs": 1,
+          "optionStrings": [
+            "--verify"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [
+            "--no-verify"
+          ],
+          "type": "boolean"
+        },
+        {
+          "default": false,
+          "help": null,
+          "isFlag": true,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "overwrite",
+          "nargs": 1,
+          "optionStrings": [
+            "--overwrite"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "boolean"
+        }
+      ],
+      "path": [
+        "transfer",
+        "push"
+      ]
+    },
+    {
+      "command": "ui",
+      "help": "Optional user interfaces",
+      "isGroup": true,
+      "parameters": [],
+      "path": [
+        "ui"
+      ]
+    },
+    {
+      "command": "ui start",
+      "help": null,
+      "isGroup": false,
+      "parameters": [
+        {
+          "default": "tui",
+          "help": "Interface mode: tui|interactive",
+          "isFlag": false,
+          "kind": "option",
+          "metavar": null,
+          "multiple": false,
+          "name": "mode",
+          "nargs": 1,
+          "optionStrings": [
+            "--mode"
+          ],
+          "required": false,
+          "secondaryOptionStrings": [],
+          "type": "text"
+        }
+      ],
+      "path": [
+        "ui",
+        "start"
+      ]
+    }
+  ],
+  "contractSchemaVersion": 1,
+  "contractVersion": 1,
+  "leafCommandCount": 16,
+  "program": "bkx",
+  "pythonBackendVersion": "1.0.0",
+  "rootParameters": [
+    {
+      "default": false,
+      "help": "Output exactly one JSON document",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "json",
+      "nargs": 1,
+      "optionStrings": [
+        "--json"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "boolean"
+    },
+    {
+      "default": false,
+      "help": "Show what would be done without executing",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "dry_run",
+      "nargs": 1,
+      "optionStrings": [
+        "--dry-run"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "boolean"
+    },
+    {
+      "default": false,
+      "help": "Alias for --dry-run plan rendering",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "plan",
+      "nargs": 1,
+      "optionStrings": [
+        "--plan"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "boolean"
+    },
+    {
+      "default": "auto",
+      "help": "Progress display: auto|plain|off",
+      "isFlag": false,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "progress",
+      "nargs": 1,
+      "optionStrings": [
+        "--progress"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "text"
+    },
+    {
+      "default": false,
+      "help": "Emit diagnostics to stderr",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "verbose",
+      "nargs": 1,
+      "optionStrings": [
+        "--verbose",
+        "-v"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "boolean"
+    },
+    {
+      "default": null,
+      "help": "Show full stack traces on typed errors without changing exit codes",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "trace",
+      "nargs": 1,
+      "optionStrings": [
+        "--trace"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [
+        "--no-trace"
+      ],
+      "type": "boolean"
+    },
+    {
+      "default": false,
+      "help": "Show version and exit",
+      "isFlag": true,
+      "kind": "option",
+      "metavar": null,
+      "multiple": false,
+      "name": "version",
+      "nargs": 1,
+      "optionStrings": [
+        "--version"
+      ],
+      "required": false,
+      "secondaryOptionStrings": [],
+      "type": "boolean"
+    }
+  ]
+}

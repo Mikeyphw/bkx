@@ -1,0 +1,59 @@
+{
+  "$id": "https://bkx.local/schemas/restore-spec.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archive": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+      "type": "string"
+    },
+    "confirm_overwrite": {
+      "default": true,
+      "type": "boolean"
+    },
+    "destination": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dry_run": {
+      "default": false,
+      "type": "boolean"
+    },
+    "fresh_dir": {
+      "default": true,
+      "type": "boolean"
+    },
+    "overwrite": {
+      "default": false,
+      "type": "boolean"
+    },
+    "paths": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "pattern": "^(?!/)(?![A-Za-z]:)(?!.*\u0000)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))\\S(?:.*\\S)?/?$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "verify": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "archive",
+    "destination",
+    "paths",
+    "overwrite",
+    "verify",
+    "dry_run",
+    "fresh_dir",
+    "confirm_overwrite"
+  ],
+  "title": "RestoreSpec",
+  "type": "object"
+}

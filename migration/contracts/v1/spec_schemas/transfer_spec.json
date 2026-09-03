@@ -1,0 +1,59 @@
+{
+  "$id": "https://bkx.local/schemas/transfer-spec.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "checksum": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "destination": {
+      "minLength": 1,
+      "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+      "type": "string"
+    },
+    "direction": {
+      "enum": [
+        "push",
+        "pull"
+      ],
+      "type": "string"
+    },
+    "dry_run": {
+      "default": false,
+      "type": "boolean"
+    },
+    "overwrite": {
+      "default": false,
+      "type": "boolean"
+    },
+    "sources": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "verify": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sources",
+    "destination",
+    "direction",
+    "verify",
+    "checksum",
+    "dry_run",
+    "overwrite"
+  ],
+  "title": "TransferSpec",
+  "type": "object"
+}

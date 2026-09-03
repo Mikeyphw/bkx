@@ -1,0 +1,48 @@
+{
+  "contractSchemaVersion": 1,
+  "contractVersion": 1,
+  "files": [
+    {
+      "path": "bridge.json",
+      "sha256": "e2e06c154942b2ad4515e25bbbcd8881385e7fd1262380df451da88aefa14258",
+      "size": 2143
+    },
+    {
+      "path": "cli.json",
+      "sha256": "7e55cc32529ecebeb6c8c411683c9bfa8920b0bd3a417f822609c2a761c3ddaa",
+      "size": 33569
+    },
+    {
+      "path": "core.json",
+      "sha256": "d6bbb97061ea228bd302a435531fc245bdd26809e92745fa271e228d12d50e8b",
+      "size": 5783
+    },
+    {
+      "path": "release.json",
+      "sha256": "cfbec63e43e5282b5e3c50471c14a7aec05dd37b7ba808cd57921a9a59379a7c",
+      "size": 538
+    },
+    {
+      "path": "spec_schemas/archive_spec.json",
+      "sha256": "8b4ca8d0811544fb4c2dcc28a5cacbba4724a883e0dd2cbd02a2102ad8d720aa",
+      "size": 4448
+    },
+    {
+      "path": "spec_schemas/backup_spec.json",
+      "sha256": "d7408c0e003d813158736eb3ff13f1f33d079c9ddf7ec905f8cb19ca67ef668c",
+      "size": 4637
+    },
+    {
+      "path": "spec_schemas/restore_spec.json",
+      "sha256": "e020b32cf0258a7a187d31aeb51ea736941ffbf3876f7478e88e024767fb1411",
+      "size": 1194
+    },
+    {
+      "path": "spec_schemas/transfer_spec.json",
+      "sha256": "94b8146498853065e200fdfbdeccef5a65d7cab62ed78751addc013a63ab7451",
+      "size": 1136
+    }
+  ],
+  "product": "BKX",
+  "pythonBackendVersion": "1.0.0"
+}

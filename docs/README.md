@@ -5,4 +5,5 @@ Historical implementation phases, overlay milestones, TODO scaffolding, and gene
 
 - `guide/` — stable architecture, command, service, and UX contracts.
 - `checklists/` — feature-oriented contract checklists.
+- `migration/` — staged Python → Go compatibility ledger and cutover gates.
 - `../android/BKX.Android/docs/` — Android setup, release, signing, SDK, and validation documentation.

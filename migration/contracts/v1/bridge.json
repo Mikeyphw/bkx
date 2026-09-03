@@ -1,0 +1,115 @@
+{
+  "advertisedOperationCount": 15,
+  "advertisedOperations": [
+    "archive.browse",
+    "archive.info",
+    "archive.list",
+    "archive.verify",
+    "backup.create",
+    "backup.plan",
+    "filesystem.list",
+    "filesystem.stat",
+    "restore.extract",
+    "restore.preview",
+    "runs.list",
+    "runs.show",
+    "storage.locations",
+    "transfer.plan",
+    "transfer.run"
+  ],
+  "arbitraryShell": false,
+  "capabilities": [
+    "archive.browse",
+    "archive.info",
+    "archive.list",
+    "archive.verify",
+    "backup.create",
+    "backup.plan",
+    "filesystem.list",
+    "filesystem.stat",
+    "readiness.probe",
+    "restore.extract",
+    "restore.preview",
+    "run.cancel.cooperative",
+    "run.progress",
+    "runs.list",
+    "runs.show",
+    "storage.locations",
+    "transfer.plan",
+    "transfer.run"
+  ],
+  "capabilityCount": 18,
+  "contractSchemaVersion": 1,
+  "contractVersion": 1,
+  "entrypoints": [
+    "readiness",
+    "execute",
+    "progress",
+    "cancel"
+  ],
+  "handlerCount": 16,
+  "handlers": [
+    "archive.browse",
+    "archive.info",
+    "archive.list",
+    "archive.verify",
+    "backup.create",
+    "backup.plan",
+    "filesystem.list",
+    "filesystem.stat",
+    "restore.extract",
+    "restore.preview",
+    "run.cancel",
+    "runs.list",
+    "runs.show",
+    "storage.locations",
+    "transfer.plan",
+    "transfer.run"
+  ],
+  "progressEnvelope": {
+    "optional": [
+      "progress"
+    ],
+    "progressRange": [
+      0.0,
+      1.0
+    ],
+    "required": [
+      "protocol_version",
+      "request_id",
+      "seq",
+      "phase",
+      "message"
+    ]
+  },
+  "protocolVersion": 1,
+  "requestEnvelope": {
+    "optional": [
+      "payload"
+    ],
+    "payloadType": "object",
+    "requestIdAlphabet": "A-Za-z0-9._-",
+    "required": [
+      "protocol_version",
+      "request_id",
+      "operation"
+    ]
+  },
+  "resultEnvelope": {
+    "required": [
+      "protocol_version",
+      "request_id",
+      "status",
+      "summary",
+      "errors",
+      "artifacts",
+      "metrics"
+    ],
+    "statuses": [
+      "cancelled",
+      "failure",
+      "success"
+    ]
+  },
+  "runtime": "embedded-cpython"
+}

@@ -1,0 +1,20 @@
+{
+  "android": {
+    "applicationId": "com.mikeyphw.bkx.android",
+    "bridgeProtocolVersion": 1,
+    "versionSource": "pyproject.toml [project].version"
+  },
+  "contractSchemaVersion": 1,
+  "contractVersion": 1,
+  "cutoverRules": {
+    "androidUiRemainsKotlinCompose": true,
+    "noFeatureRedesignDuringBackendMigration": true,
+    "protocolV1RemainsStable": true,
+    "pythonRemainsProductionUntilParity": true
+  },
+  "productVersion": "1.0.0",
+  "productionBackend": {
+    "language": "python",
+    "runtime": "embedded-cpython"
+  }
+}

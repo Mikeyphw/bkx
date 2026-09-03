@@ -15,6 +15,12 @@ manager = "auto"
 type = "python"
 root = "."
 
+# GO01 migration scaffold. This is not the production backend.
+[targets.bkx_go]
+type = "go"
+root = "."
+execution_environment = "auto"
+
 [python]
 manager = ""
 test_framework = "pytest"
@@ -54,6 +60,15 @@ verify_cli = true
 install_dependencies = false
 import_modules = ["bkx"]
 console_scripts = ["bkx"]
+
+[go]
+packages = ["./..."]
+build_target = "./cmd/bkx"
+build_targets = ["./cmd/bkx"]
+run_target = "./cmd/bkx"
+build_directory = ".devtool/build/go"
+package_directory = ".devtool/package/go"
+vet = true
 
 # Standalone BKX Android target; embedded/root engine and product UI are validated in-process.
 [targets.bkx_android]

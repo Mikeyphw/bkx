@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "compression": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "zstd"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 22,
+                "minimum": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "gzip"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 9,
+                "minimum": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "lz4"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 16,
+                "minimum": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "xz"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 9,
+                "minimum": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "bzip2"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 9,
+                "minimum": 1
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "algorithm": {
+                "const": "none"
+              }
+            },
+            "required": [
+              "algorithm"
+            ]
+          },
+          "then": {
+            "properties": {
+              "level": {
+                "maximum": 22,
+                "minimum": 0
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "zstd",
+            "gzip",
+            "lz4",
+            "xz",
+            "bzip2",
+            "none"
+          ],
+          "type": "string"
+        },
+        "level": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "algorithm",
+        "level"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://bkx.local/schemas/backup-spec.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "archive_name": {
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!\\.{1,2}$)(?!.*\u0000)[^/\\\\\\s](?:[^/\\\\\u0000]*[^/\\\\\\s])?$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "compression": {
+      "$ref": "#/$defs/compression"
+    },
+    "destination": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "dry_run": {
+      "default": false,
+      "type": "boolean"
+    },
+    "excludes": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "includes": {
+      "default": [],
+      "items": {
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "skip_symlinks": {
+      "default": false,
+      "type": "boolean"
+    },
+    "sources": {
+      "items": {
+        "minLength": 1,
+        "pattern": "^(?=.*\\S)(?!.*\u0000).+$",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "split_size": {
+      "minimum": 1,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
+    "verify": {
+      "default": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "sources",
+    "destination",
+    "archive_name",
+    "excludes",
+    "includes",
+    "split_size",
+    "compression",
+    "skip_symlinks",
+    "verify",
+    "dry_run"
+  ],
+  "title": "BackupSpec",
+  "type": "object"
+}

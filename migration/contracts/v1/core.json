@@ -1,0 +1,243 @@
+{
+  "config": {
+    "environment": {
+      "BKX_COMPRESSION_ALGORITHM": "compression_algorithm",
+      "BKX_COMPRESSION_LEVEL": "compression_level",
+      "BKX_DESTINATION": "default_destination",
+      "BKX_FRESH_RESTORE_DIR": "fresh_restore_dir",
+      "BKX_HISTORY_ENABLED": "run_history_enabled",
+      "BKX_HISTORY_LIMIT": "run_history_limit",
+      "BKX_PREFERRED_ARCHIVER": "preferred_archiver",
+      "BKX_PREFERRED_COMPRESSOR": "preferred_compressor",
+      "BKX_PREFERRED_HASHER": "preferred_hasher",
+      "BKX_PREFERRED_TRANSFER": "preferred_transfer",
+      "BKX_TRACE": "trace",
+      "BKX_VERIFY": "verify_after_operation"
+    },
+    "fields": [
+      {
+        "default": null,
+        "defaultKind": "value",
+        "effectiveDefault": null,
+        "name": "default_destination",
+        "type": "Path | None"
+      },
+      {
+        "default": true,
+        "defaultKind": "value",
+        "effectiveDefault": true,
+        "name": "verify_after_operation",
+        "type": "bool"
+      },
+      {
+        "default": "zstd",
+        "defaultKind": "value",
+        "effectiveDefault": "zstd",
+        "name": "compression_algorithm",
+        "type": "str"
+      },
+      {
+        "default": 3,
+        "defaultKind": "value",
+        "effectiveDefault": 3,
+        "name": "compression_level",
+        "type": "int"
+      },
+      {
+        "default": true,
+        "defaultKind": "value",
+        "effectiveDefault": true,
+        "name": "fresh_restore_dir",
+        "type": "bool"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "effectiveDefault": null,
+        "name": "preferred_archiver",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "effectiveDefault": null,
+        "name": "preferred_compressor",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "effectiveDefault": null,
+        "name": "preferred_hasher",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "value",
+        "effectiveDefault": null,
+        "name": "preferred_transfer",
+        "type": "str | None"
+      },
+      {
+        "default": true,
+        "defaultKind": "value",
+        "effectiveDefault": true,
+        "name": "run_history_enabled",
+        "type": "bool"
+      },
+      {
+        "default": 50,
+        "defaultKind": "value",
+        "effectiveDefault": 50,
+        "name": "run_history_limit",
+        "type": "int"
+      },
+      {
+        "default": false,
+        "defaultKind": "value",
+        "effectiveDefault": false,
+        "name": "trace",
+        "type": "bool"
+      }
+    ],
+    "precedence": [
+      "cli",
+      "environment",
+      "config_file",
+      "defaults"
+    ],
+    "searchOrder": [
+      "./.bkx.yaml",
+      "./bkx.yaml",
+      "~/.bkx.yaml"
+    ]
+  },
+  "contractSchemaVersion": 1,
+  "contractVersion": 1,
+  "errors": {
+    "exitCodes": {
+      "BkxError": 1,
+      "ExternalToolError": 5,
+      "NotFoundError": 3,
+      "OptionalFeatureError": 5,
+      "PermissionDeniedError": 4,
+      "ValidationError": 2
+    },
+    "stableCodes": {
+      "external": 5,
+      "generic": 1,
+      "notFound": 3,
+      "permission": 4,
+      "success": 0,
+      "usage": 2
+    },
+    "types": [
+      "BkxError",
+      "ValidationError",
+      "NotFoundError",
+      "PermissionDeniedError",
+      "ExternalToolError",
+      "OptionalFeatureError"
+    ]
+  },
+  "runHistory": {
+    "defaultRelativePath": ".local/share/bkx/runs/runs.jsonl",
+    "encoding": "utf-8 JSONL; canonical keys sorted; one record per line",
+    "lockSuffix": ".lock",
+    "quarantineSuffix": ".corrupt",
+    "recordFields": [
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "run_id",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "started_at",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "completed_at",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "operation",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "status",
+        "type": "str"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "source_paths",
+        "type": "list[str]"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "destination_path",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "archive_path",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "files_count",
+        "type": "int | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "bytes_processed",
+        "type": "int | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "error_message",
+        "type": "str | None"
+      },
+      {
+        "default": null,
+        "defaultKind": "required",
+        "name": "spec_snapshot",
+        "type": "dict[str, Any] | None"
+      }
+    ],
+    "validOperations": [
+      "archive",
+      "backup",
+      "restore",
+      "run",
+      "transfer",
+      "unknown"
+    ],
+    "validStatuses": [
+      "failed",
+      "interrupted",
+      "started",
+      "success"
+    ]
+  },
+  "specSchemas": [
+    "spec_schemas/backup_spec.json",
+    "spec_schemas/archive_spec.json",
+    "spec_schemas/restore_spec.json",
+    "spec_schemas/transfer_spec.json"
+  ]
+}

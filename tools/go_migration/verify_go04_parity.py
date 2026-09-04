@@ -33,7 +33,7 @@ def main()->int:
 
         # Filesystem stat/list parity used by Android filesystem.stat/list.
         pstat=(root/'A.txt').lstat()
-        py_stat={'path':str(root/'A.txt'),'name':'A.txt','kind':py_kind(pstat.st_mode),'size_bytes':max(0,pstat.st_size),'modified_at_epoch_millis':max(0,int(pstat.st_mtime*1000)),'mode':stat.S_IMODE(pstat.st_mode),'uid':pstat.st_uid,'gid':pstat.st_gid}
+        py_stat={'path':str(root/'A.txt'),'name':'A.txt','kind':py_kind(pstat.st_mode),'size_bytes':max(0,pstat.st_size),'modified_at_epoch_millis':max(0,pstat.st_mtime_ns//1_000_000),'mode':stat.S_IMODE(pstat.st_mode),'uid':pstat.st_uid,'gid':pstat.st_gid}
         go_stat=run_json(binary,'migration','filesystem','stat',str(root/'A.txt'))
         assert go_stat == py_stat, (go_stat,py_stat)
 
@@ -41,7 +41,7 @@ def main()->int:
         py_entries=[p for p in py_entries if not p.name.startswith('.')]
         py_list=[]
         for p in py_entries:
-            st=p.lstat(); py_list.append({'path':str(p),'name':p.name,'kind':py_kind(st.st_mode),'size_bytes':max(0,st.st_size),'modified_at_epoch_millis':max(0,int(st.st_mtime*1000)),'mode':stat.S_IMODE(st.st_mode),'uid':st.st_uid,'gid':st.st_gid})
+            st=p.lstat(); py_list.append({'path':str(p),'name':p.name,'kind':py_kind(st.st_mode),'size_bytes':max(0,st.st_size),'modified_at_epoch_millis':max(0,st.st_mtime_ns//1_000_000),'mode':stat.S_IMODE(st.st_mode),'uid':st.st_uid,'gid':st.st_gid})
         go_list=run_json(binary,'migration','filesystem','list',str(root),'false','250','0')
         assert go_list['entries']==py_list, (go_list['entries'],py_list)
         assert go_list['total_count']==len(py_list) and not go_list['more']

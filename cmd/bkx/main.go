@@ -182,6 +182,33 @@ func run(args []string) int {
 		return printJSON(info)
 	}
 
+	if len(args) == 4 && args[0] == "migration" && args[1] == "restore" {
+		spec, err := archiveio.ParseRestoreSpecJSON(args[3])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		switch args[2] {
+		case "preview":
+			result, err := archiveio.PreviewRestore(spec)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
+		case "extract":
+			result, err := archiveio.ExtractRestore(spec, nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx migration restore {preview|extract} SPEC_JSON")
+			return 64
+		}
+	}
+
 	if len(args) >= 4 && args[0] == "migration" && args[1] == "archive" {
 		switch args[2] {
 		case "create":

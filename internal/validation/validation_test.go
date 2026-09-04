@@ -29,6 +29,9 @@ func TestCompressionProfileParity(t *testing.T) {
 }
 
 func TestArchiveNameAndMemberParity(t *testing.T) {
+	if got, err := NormalizeArchiveMember("dir/"); err != nil || got != "dir/" {
+		t.Fatalf("directory member = %q, %v; want dir/", got, err)
+	}
 	for _, name := range []string{"../escape", "a/b", `a\\b`, "/absolute", "C:drive", ".", "..", " "} {
 		if _, err := NormalizeArchiveName(name); err == nil {
 			t.Fatalf("archive name accepted %q", name)

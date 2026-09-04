@@ -175,7 +175,27 @@ Delivered migration-only archive creation:
   split rejection;
 - migration-only `migration archive create` probe; normal product archive creation remains Python-owned.
 
+## GO07 — Restore preview and safe extraction — COMPLETE
+
+Delivered migration-only restore operations:
+
+- restore preview with Python-compatible selector matching, file counts, byte totals, existing-target
+  counts, destination paths, and confirmation warnings;
+- shared archive-member validation corrected to preserve legal trailing-slash directory members
+  from the frozen schema (`dir/`) while still rejecting traversal/absolute/NUL spellings;
+- extraction rejects traversal, ZIP symlink encodings, TAR links, and unsupported special members;
+- destination-root and existing-target symlink traversal are rejected before mutation;
+- all payloads are extracted and fsynced in a same-parent staging tree before publication;
+- merge publication preflights every target before mutation, refuses collisions unless overwrite is
+  explicit, and keeps a rollback tree so an injected mid-publication failure restores prior files
+  and removes newly-created output;
+- absent destinations publish through one same-filesystem rename;
+- optional pre-extraction archive verification reuses GO05;
+- Python ↔ Go differential fixtures cover ZIP/TAR, full/partial selectors, dry-run, verification,
+  confirmation, collisions, unsafe traversal/link behavior, and final extracted content;
+- migration-only `migration restore preview|extract` probes; normal product restore remains Python-owned.
+
 ## Next gate
 
-GO07 should port safe restore preview/extraction with staged publication, traversal/link/special-member
-rejection, overwrite policy parity, selector matching, and cross-language extraction fixtures.
+GO08 should port backup planning/create orchestration over the GO04/GO06 primitives, including run-history
+integration, destination/name policy, progress/cancellation checkpoints, and Python differential parity.

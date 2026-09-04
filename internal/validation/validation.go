@@ -123,15 +123,20 @@ func NormalizeArchiveMember(path string) (string, error) {
 		raw = strings.TrimPrefix(raw, "./")
 	}
 	parts := strings.Split(raw, "/")
-	if len(parts) == 0 {
-		return "", berror.Validation("Archive member path contains traversal or empty components", map[string]any{"path": path})
-	}
-	for _, part := range parts {
+	cleaned := make([]string, 0, len(parts))
+	for i, part := range parts {
+		if part == "" && directory && i == len(parts)-1 {
+			continue
+		}
 		if part == "" || part == "." || part == ".." {
 			return "", berror.Validation("Archive member path contains traversal or empty components", map[string]any{"path": path})
 		}
+		cleaned = append(cleaned, part)
 	}
-	normalized := strings.Join(parts, "/")
+	if len(cleaned) == 0 {
+		return "", berror.Validation("Archive member path must be relative and non-empty", map[string]any{"path": path})
+	}
+	normalized := strings.Join(cleaned, "/")
 	if directory {
 		normalized += "/"
 	}

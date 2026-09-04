@@ -54,7 +54,7 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00–GO06 establish a compatibility-first migration lane without changing the
+GO00–GO07 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
 canonical operation schemas. The Go tree now contains the migration scaffold plus
@@ -67,7 +67,7 @@ The Go executable still deliberately rejects normal backup/archive/restore/trans
 commands until later operation/service parity gates are complete.
 
 Use `devtool --target bkx_go validate` for the Go lane or
-`scripts/validate-go06.sh` for the complete migration gate. The Android app
+`scripts/validate-go07.sh` for the complete migration gate. The Android app
 remains Kotlin/Compose and continues to use the production embedded-Python engine.
 See `docs/migration/python-to-go.md`.
 
@@ -95,3 +95,12 @@ on failure), reuses GO04 traversal/filter/symlink safety, and preserves Python's
 implicit-default compression compatibility. TAR and ZIP creation support none/gzip
 directly and BZIP2/XZ through explicitly detected optional tools where required.
 The normal Go `bkx archive create` product command remains fail-closed.
+
+### Go migration GO07
+
+GO07 ports restore preview/extraction into the migration-only Go backend. It preserves
+Python selector/preview semantics, rejects traversal and unsafe link/special members at
+extraction, refuses destination symlink traversal, stages all payloads before publication,
+preflights merge collisions, and rolls back partially published overwrite merges on failure.
+Normal Go `bkx restore ...` product commands remain fail-closed.
+

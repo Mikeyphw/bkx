@@ -5,6 +5,7 @@ import (
 	"archive/zip"
 	"compress/bzip2"
 	"compress/gzip"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -306,7 +307,7 @@ func verifyZip(path string, checksums map[string]string) VerifyResult {
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		rc, err := file.Open()
+		rc, err := openZipPayload(file)
 		if err == nil {
 			_, err = io.Copy(io.Discard, rc)
 			closeErr := rc.Close()
@@ -371,6 +372,57 @@ func verifyTar(path string, checksums map[string]string) VerifyResult {
 	return result
 }
 
+func openZipPayload(file *zip.File) (io.ReadCloser, error) {
+	switch file.Method {
+	case zip.Store, zip.Deflate:
+		return file.Open()
+	case zipMethodBzip2:
+		raw, err := file.OpenRaw()
+		if err != nil {
+			return nil, err
+		}
+		return io.NopCloser(bzip2.NewReader(raw)), nil
+	case zipMethodLZMA:
+		raw, err := file.OpenRaw()
+		if err != nil {
+			return nil, err
+		}
+		header := make([]byte, 9)
+		if _, err := io.ReadFull(raw, header); err != nil {
+			return nil, fmt.Errorf("zip LZMA header: %w", err)
+		}
+		if header[0] != 9 || header[1] != 4 || binary.LittleEndian.Uint16(header[2:4]) != 5 {
+			return nil, fmt.Errorf("unsupported zip LZMA properties header")
+		}
+		prop := int(header[4])
+		lc := prop % 9
+		rest := prop / 9
+		lp := rest % 5
+		pb := rest / 5
+		if lc > 8 || lp > 4 || pb > 4 {
+			return nil, fmt.Errorf("invalid zip LZMA properties")
+		}
+		dictSize := binary.LittleEndian.Uint32(header[5:9])
+		xz, err := exec.LookPath("xz")
+		if err != nil {
+			return nil, berror.External("LZMA-compressed ZIP requires the optional xz tool during GO06 migration", map[string]any{"archive_path": file.Name, "tool": "xz"})
+		}
+		filter := fmt.Sprintf("--lzma1=lc=%d,lp=%d,pb=%d,dict=%d", lc, lp, pb, dictSize)
+		cmd := exec.Command(xz, "--format=raw", "--decompress", filter, "-c")
+		cmd.Stdin = raw
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			return nil, err
+		}
+		if err := cmd.Start(); err != nil {
+			return nil, err
+		}
+		return &commandReadCloser{ReadCloser: stdout, cmd: cmd}, nil
+	default:
+		return nil, zip.ErrAlgorithm
+	}
+}
+
 func readEntries(path string, payload bool) ([]Entry, string, error) {
 	format, err := detectFormat(path)
 	if err != nil {
@@ -395,7 +447,7 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 			}
 			entries = append(entries, Entry{Path: file.Name, IsDir: info.IsDir(), Size: int64(file.UncompressedSize64), MtimeNS: zipMtimeNS(file), EntryType: entryType})
 			if payload && !info.IsDir() {
-				rc, err := file.Open()
+				rc, err := openZipPayload(file)
 				if err != nil {
 					return nil, "", err
 				}

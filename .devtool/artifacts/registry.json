@@ -2,6 +2,124 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "b590fa578ae9",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6273606,
+      "sha256": "2c6888fc1886f48d4cac25f77c022e24a60fa10be03c2a7840028dded08f58bc",
+      "commit": "6ec7a0bb9c82e8d36cedc4c20856303e52641f9e",
+      "run_id": "c20ea8fd5aba4524b44fa33fcc39f5ed",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-04T14:34:10.711004Z",
+      "registered_at": "2026-09-04T14:34:10.711004Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "c20ea8fd5aba4524b44fa33fcc39f5ed",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6273606,
+        "sha256": "2c6888fc1886f48d4cac25f77c022e24a60fa10be03c2a7840028dded08f58bc",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260903184141-6ec7a0bb9c82+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "6ec7a0bb9c82e8d36cedc4c20856303e52641f9e",
+              "vcs.time": "2026-09-03T18:41:41Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "6ec7a0bb9c82e8d36cedc4c20856303e52641f9e",
+            "vcs_time": "2026-09-03T18:41:41Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260903184141-6ec7a0bb9c82+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "6ec7a0bb9c82e8d36cedc4c20856303e52641f9e",
+            "vcs.time": "2026-09-03T18:41:41Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "6ec7a0bb9c82e8d36cedc4c20856303e52641f9e",
+          "vcs_time": "2026-09-03T18:41:41Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "c20ea8fd5aba4524b44fa33fcc39f5ed:2c6888fc1886f48d4cac25f77c022e24a60fa10be03c2a7840028dded08f58bc:b590fa578ae9"
+    },
+    {
       "id": "349772418a39",
       "name": "bkx",
       "path": ".devtool/build/go/bkx",
@@ -937,6 +1055,6 @@
       }
     }
   ],
-  "updated_at": "2026-09-03T18:26:42.703602Z",
+  "updated_at": "2026-09-04T14:34:10.711967Z",
   "verifications": []
 }

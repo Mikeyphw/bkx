@@ -156,8 +156,26 @@ Normal `bkx archive ...` product commands remain Python-owned and the Go scaffol
 fails closed. Archive creation and restore/extraction are intentionally deferred because
 they mutate user data and require stronger transactional/device gates.
 
+## GO06 — Archive creation — COMPLETE
+
+Delivered migration-only archive creation:
+
+- same-directory temporary publication with cleanup on every pre-publication failure;
+- GO04 source traversal, include/exclude filtering, empty-directory preservation, overlap
+  rejection, and reject/skip symlink policy reuse;
+- no-overwrite behavior plus split-archive fail-closed behavior matching the builtin Python archiver;
+- optional pre-publication verification through the GO05 reader before fsync + rename;
+- Python-compatible implicit default zstd fallback (plain TAR or ZIP deflate) while explicit
+  unsupported zstd/lz4 requests remain rejected;
+- TAR and ZIP creation for none/gzip, plus optional-tool BZIP2/XZ creation;
+- GO05 ZIP payload reading extended for BZIP2 and ZIP-LZMA so Python and Go artifacts can
+  verify each other;
+- Python ↔ Go artifact semantic equivalence fixtures across member names, empty directories,
+  payload hashes, filters, dry-run behavior, default compatibility, explicit rejection, and
+  split rejection;
+- migration-only `migration archive create` probe; normal product archive creation remains Python-owned.
+
 ## Next gate
 
-GO06 should port archive creation with transactional publication, compression-policy
-parity, shared GO04 traversal, optional verification, and no production cutover until
-Python-Go artifact equivalence and failure rollback are accepted.
+GO07 should port safe restore preview/extraction with staged publication, traversal/link/special-member
+rejection, overwrite policy parity, selector matching, and cross-language extraction fixtures.

@@ -54,7 +54,7 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00–GO05 establish a compatibility-first migration lane without changing the
+GO00–GO06 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
 canonical operation schemas. The Go tree now contains the migration scaffold plus
@@ -67,7 +67,7 @@ The Go executable still deliberately rejects normal backup/archive/restore/trans
 commands until later operation/service parity gates are complete.
 
 Use `devtool --target bkx_go validate` for the Go lane or
-`scripts/validate-go02-go03.sh` for the complete migration gate. The Android app
+`scripts/validate-go06.sh` for the complete migration gate. The Android app
 remains Kotlin/Compose and continues to use the production embedded-Python engine.
 See `docs/migration/python-to-go.md`.
 
@@ -85,3 +85,13 @@ GO05 ports read-only archive operations (`list`, `info`, `browse`, and `verify`)
 the migration-only Go backend, with Python-Go parity across ZIP, TAR, TAR.GZ, and
 TAR.BZ2 fixtures plus corruption and unsafe-member checks. Normal `bkx archive ...`
 commands remain Python-owned and fail closed in the Go scaffold.
+
+
+### Go migration GO06
+
+GO06 ports archive creation into the migration-only Go backend. Publication is
+transactional (same-directory staging, optional verification, fsync, rename, cleanup
+on failure), reuses GO04 traversal/filter/symlink safety, and preserves Python's
+implicit-default compression compatibility. TAR and ZIP creation support none/gzip
+directly and BZIP2/XZ through explicitly detected optional tools where required.
+The normal Go `bkx archive create` product command remains fail-closed.

@@ -21,7 +21,7 @@ import (
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// GO04 remains migration-only. Product commands remain Python-owned; only
+// GO06 remains migration-only. Product commands remain Python-owned; only
 // explicit contract/parity probes are accepted by this executable.
 func run(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
@@ -115,7 +115,7 @@ func run(args []string) int {
 		return 0
 	}
 
-	// GO04 migration probes expose only low-level parity evidence. They are not
+	// GO04+ migration probes expose parity evidence only. They are not
 	// aliases for product commands and intentionally remain under "migration".
 	if len(args) == 4 && args[0] == "migration" && args[1] == "filesystem" && args[2] == "stat" {
 		entry, err := fsutil.Stat(args[3])
@@ -184,6 +184,27 @@ func run(args []string) int {
 
 	if len(args) >= 4 && args[0] == "migration" && args[1] == "archive" {
 		switch args[2] {
+		case "create":
+			if len(args) != 5 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration archive create SPEC_JSON IMPLICIT_DEFAULT")
+				return 64
+			}
+			implicitDefault, err := strconv.ParseBool(args[4])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration archive create SPEC_JSON IMPLICIT_DEFAULT")
+				return 64
+			}
+			spec, embeddedImplicit, err := archiveio.ParseCreateSpecJSON(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			result, err := archiveio.Create(spec, implicitDefault || embeddedImplicit, nil)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
 		case "list":
 			if len(args) != 7 {
 				fmt.Fprintln(os.Stderr, "usage: bkx migration archive list PATH PAGE PAGE_SIZE FILTER_OR_DASH")

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bkx/internal/archiveio"
+	"bkx/internal/backupops"
 	"bkx/internal/config"
 	"bkx/internal/contracts"
 	"bkx/internal/fsutil"
@@ -21,7 +22,7 @@ import (
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// GO06 remains migration-only. Product commands remain Python-owned; only
+// GO08 remains migration-only. Product commands remain Python-owned; only
 // explicit contract/parity probes are accepted by this executable.
 func run(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
@@ -180,6 +181,67 @@ func run(args []string) int {
 			return 1
 		}
 		return printJSON(info)
+	}
+
+	if len(args) >= 3 && args[0] == "migration" && args[1] == "backup" {
+		switch args[2] {
+		case "plan":
+			if len(args) != 4 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration backup plan SPEC_JSON")
+				return 64
+			}
+			spec, err := backupops.ParseSpecJSON(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			plan, err := backupops.PlanBackup(spec)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(plan)
+		case "create":
+			if len(args) != 7 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration backup create SPEC_JSON IMPLICIT_DEFAULT RUNS_OR_DASH CANCEL_FILE_OR_DASH")
+				return 64
+			}
+			implicitDefault, err := strconv.ParseBool(args[4])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration backup create SPEC_JSON IMPLICIT_DEFAULT RUNS_OR_DASH CANCEL_FILE_OR_DASH")
+				return 64
+			}
+			spec, err := backupops.ParseSpecJSON(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			options := backupops.Options{}
+			if args[5] != "-" {
+				store, storeErr := runstore.New(args[5], 0, false)
+				if storeErr != nil {
+					fmt.Fprintln(os.Stderr, storeErr)
+					return 1
+				}
+				options.RunStore = store
+			}
+			if args[6] != "-" {
+				cancelPath := args[6]
+				options.Cancelled = func() bool {
+					_, statErr := os.Stat(cancelPath)
+					return statErr == nil
+				}
+			}
+			result, err := backupops.Create(spec, implicitDefault, options)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx migration backup {plan|create} ...")
+			return 64
+		}
 	}
 
 	if len(args) == 4 && args[0] == "migration" && args[1] == "restore" {

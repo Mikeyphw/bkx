@@ -195,7 +195,28 @@ Delivered migration-only restore operations:
   confirmation, collisions, unsafe traversal/link behavior, and final extracted content;
 - migration-only `migration restore preview|extract` probes; normal product restore remains Python-owned.
 
+## GO08 — Backup planning/create orchestration — COMPLETE
+
+Delivered migration-only backup orchestration:
+
+- strict frozen `BackupSpec` JSON parsing plus Python-compatible source normalization, deterministic
+  archive naming, destination resolution, and overlap rejection;
+- Python-compatible execution-plan projection for archive/transfer/verification steps and source totals;
+- backup creation composed from GO06 archive creation rather than a duplicate writer;
+- destination-backed backups stage locally, hash their staged artifact, then publish through a
+  same-directory no-overwrite transfer path with fsync and optional SHA-256 verification;
+- GO02 JSONL run-history start/completion records include normalized backup sources, destination,
+  archive path, spec snapshot, files, bytes, success/failure, and interrupted cancellation state;
+- cooperative `archiving`, `publishing`, and `complete` progress events plus cancellation checks before
+  final publication, with regression proof that cancellation leaves no destination artifact;
+- split backups remain fail-closed while GO06 builtin splitting is intentionally unsupported;
+- Python ↔ Go differential fixtures cover plan shape, create truth, dry-run, run-history semantics,
+  logical archive members/payloads, self-consistent checksums/byte counts, malformed spec rejection,
+  split rejection, and cancellation;
+- migration-only `migration backup plan|create` probes; normal product backup remains Python-owned.
+
 ## Next gate
 
-GO08 should port backup planning/create orchestration over the GO04/GO06 primitives, including run-history
-integration, destination/name policy, progress/cancellation checkpoints, and Python differential parity.
+GO09 should port the local transfer operations used beyond backup orchestration (`transfer.plan` /
+`transfer.run`) as first-class Go operations, reusing GO08's safe publication semantics while adding
+full multi-source mapping, checksum policy, progress, cancellation, and Python differential parity.

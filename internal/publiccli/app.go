@@ -97,7 +97,7 @@ func IsInternalInvocation(args []string) bool {
 		return false
 	}
 	switch args[0] {
-	case "migration", "android-runtime", "contract", "version":
+	case "android-runtime", "contract":
 		return true
 	default:
 		return false

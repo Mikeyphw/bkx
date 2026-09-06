@@ -1,0 +1,38 @@
+{
+  "canonical_validator": "scripts/validate.sh",
+  "post_migration_phase": "GO20",
+  "product": "BKX",
+  "product_version": "1.0.0",
+  "retained_evidence": [
+    "migration/contracts/v1",
+    "migration/fixtures/v1",
+    "migration/archive/bkx-python-reference-1.0.0-go16.tar.gz",
+    "migration/audit/v1/final_audit.json"
+  ],
+  "retained_internal_routes": [
+    "contract check",
+    "android-runtime bridge-session"
+  ],
+  "retired_scaffolding": [
+    {
+      "name": "hidden migration CLI probes",
+      "status": "retired"
+    },
+    {
+      "name": "go-native-migration bridge identity/constructor",
+      "status": "retired"
+    },
+    {
+      "name": "phase-numbered validator wrappers",
+      "status": "retired"
+    }
+  ],
+  "runtime_policy": {
+    "abi": "arm64-v8a",
+    "android_engine": "go-native-android",
+    "android_ui": "Kotlin/Compose",
+    "cli": "Go",
+    "ndk": "29.0.14206865"
+  },
+  "schema_version": 1
+}

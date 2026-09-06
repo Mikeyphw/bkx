@@ -47,7 +47,7 @@ bkx ui start --mode tui
 
 ## Validation
 
-`bash ./scripts/validate-go19.sh` runs the complete Go-only compatibility/release seal plus the GO19 final roadmap audit. The 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
+`bash ./scripts/validate.sh` is the canonical post-migration seal: frozen compatibility evidence, full Go tests/vet, GO19 audit, repository purity, and deterministic host/Android ARM64 releases. The 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
 
 ## Python → Go migration
 
@@ -158,3 +158,7 @@ GO18 removes active Python source, tests, packaging metadata, migration scripts,
 ### Go migration GO19
 
 GO19 is the final roadmap reconciliation seal. It checks the frozen CLI/protocol counts, run-history compatibility evidence, Android root/local Go routing, arm64-v8a + NDK29 policy, repository purity, and deterministic release output. See `docs/migration/FINAL_AUDIT.md`.
+
+### Post-migration GO20
+
+GO20 establishes the maintenance baseline after the GO19 final audit. Migration-only CLI/bridge scaffolding and phase-numbered validators are retired; immutable compatibility/audit evidence remains. Use `bash ./scripts/validate.sh` for the canonical repository seal.

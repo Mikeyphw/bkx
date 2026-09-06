@@ -12,5 +12,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - name: GO19 final migration/release audit seal
-        run: bash ./scripts/validate-go19.sh
+      - name: BKX Go/Kotlin maintenance seal
+        run: bash ./scripts/validate.sh

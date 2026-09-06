@@ -20,7 +20,6 @@ import (
 
 const (
 	ProtocolVersion = 1
-	Runtime         = "go-native-migration"
 	AndroidRuntime  = "go-native-android"
 	maxRuntimeDocs  = 128
 )
@@ -101,21 +100,10 @@ type RuntimeAdapter struct {
 	order     []string
 }
 
-func New(store *runstore.Store) *RuntimeAdapter {
-	return NewWithRuntime(store, Runtime)
-}
-
 func NewAndroid(store *runstore.Store) *RuntimeAdapter {
-	return NewWithRuntime(store, AndroidRuntime)
-}
-
-func NewWithRuntime(store *runstore.Store, runtime string) *RuntimeAdapter {
-	if strings.TrimSpace(runtime) == "" {
-		runtime = Runtime
-	}
 	return &RuntimeAdapter{
 		services:  services.New(store),
-		runtime:   runtime,
+		runtime:   AndroidRuntime,
 		cancelled: map[string]struct{}{},
 		progress:  map[string]Progress{},
 		seq:       map[string]int64{},

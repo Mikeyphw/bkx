@@ -10,11 +10,11 @@ archive under `migration/archive/`; they are not executable production or valida
 paths.
 
 Do not regenerate `v1` during normal development. Validate it with the production Go
-CLI or the GO18 seal:
+CLI or the canonical maintenance seal:
 
 ```bash
 go run ./cmd/bkx contract check migration/contracts/v1
-bash ./scripts/validate-go19.sh
+bash ./scripts/validate.sh
 ```
 
 A future intentional contract revision must be introduced as a new versioned contract

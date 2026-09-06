@@ -364,3 +364,8 @@ build, test, package, release, Devtool, and Android ownership.
 GO19 reconciles HG01–GO18 against the active repository. `migration/audit/v1/final_audit.json` is checked against live Go CLI/bridge registries and Android production source. The seal verifies the frozen 16-leaf/seven-global CLI contract, protocol-v1 15-advertised/16-handler boundary, run-history compatibility evidence, root/local `go-native-android` routing, arm64-v8a + NDK29 policy, Go/Kotlin-only repository ownership, and deterministic release output.
 
 The audit leaves no open migration promises. It identifies only bounded post-migration cleanup for GO20: retire hidden migration probes and the migration-only bridge identity, then replace phase-numbered validator wrappers with one canonical maintenance validator.
+
+
+## GO20 — Post-migration maintenance baseline
+
+GO20 executes the bounded retirement set identified by GO19. Hidden `migration ...` probes and the `go-native-migration` bridge constructor/identity are removed, while the Android `android-runtime bridge-session` and immutable `contract check` maintenance route remain. Phase-numbered GO17–GO19 validator wrappers are replaced by one canonical `scripts/validate.sh` seal. Frozen contracts, compatibility fixtures, historical reference archive, and GO19 audit evidence remain versioned and active only as evidence/tests, not runtime alternatives.

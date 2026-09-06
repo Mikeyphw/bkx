@@ -34,3 +34,7 @@ Instrumentation remains `when-device-present`; lack of a connected device does n
 ## GO20 retirement set
 
 The audit identified only three migration-era scaffolding groups that can now be retired without touching production behavior or frozen evidence: hidden `migration ...` CLI probes, the `go-native-migration` bridge constructor/identity, and phase-numbered validator wrappers after a canonical maintenance validator replaces them.
+
+## GO20 disposition
+
+All three GO20 retirement candidates identified by this audit were retired. The canonical maintenance seal is now `scripts/validate.sh`; the frozen contracts, oracle, archive, and this audit remain preserved evidence.

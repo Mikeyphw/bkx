@@ -12,44 +12,41 @@ func runPublicSilently(args []string) int {
 	return publiccli.Run(args, &stdout, &stderr)
 }
 
-func TestGO15PublicVersionPath(t *testing.T) {
+func TestProductionVersionPath(t *testing.T) {
 	if code := runPublicSilently([]string{"--version"}); code != 0 {
 		t.Fatalf("run(--version)=%d", code)
 	}
 }
 
-func TestGO15PublicGroupsAreOwnedByGoCLI(t *testing.T) {
+func TestPublicGroupsAreOwnedByGoCLI(t *testing.T) {
 	for _, args := range [][]string{{"backup"}, {"archive"}, {"restore"}, {"transfer"}, {"tools"}, {"run"}, {"ui"}} {
 		if code := runPublicSilently(args); code != 0 {
-			t.Fatalf("GO15 public group %v returned %d", args, code)
+			t.Fatalf("public group %v returned %d", args, code)
 		}
 	}
 }
 
-func TestMigrationProbeUsageDoesNotBecomeProductCommand(t *testing.T) {
-	if code := run([]string{"migration", "run-history"}); code == 0 {
-		t.Fatal("incomplete migration probe accepted")
+func TestGO20MigrationProbeNamespaceIsRetired(t *testing.T) {
+	if publiccli.IsInternalInvocation([]string{"migration", "bridge", "readiness"}) {
+		t.Fatal("retired migration namespace is still claimed as an internal route")
 	}
-}
-
-func TestGO10ServiceProbeDoesNotBecomeProductCommand(t *testing.T) {
-	if code := run([]string{"migration", "service", "operations"}); code != 0 {
-		t.Fatalf("GO10 service operations probe failed: %d", code)
-	}
-	for _, args := range [][]string{{"service"}, {"service", "dispatch"}} {
+	for _, args := range [][]string{{"migration", "bridge"}, {"migration", "service"}, {"version"}} {
 		if code := runPublicSilently(args); code == 0 {
-			t.Fatalf("GO10 service probe leaked into product command %v", args)
+			t.Fatalf("retired internal command unexpectedly accepted: %v", args)
 		}
 	}
 }
 
-func TestGO11BridgeProbeDoesNotBecomeProductCommand(t *testing.T) {
-	if code := run([]string{"migration", "bridge", "readiness"}); code != 0 {
-		t.Fatalf("GO11 bridge readiness probe failed: %d", code)
+func TestGO20OnlyMaintenanceAndAndroidRootsRemainInternal(t *testing.T) {
+	if !publiccli.IsInternalInvocation([]string{"contract", "check"}) {
+		t.Fatal("contract check maintenance route is not internal")
 	}
-	for _, args := range [][]string{{"bridge"}, {"bridge", "execute"}, {"bridge", "readiness"}} {
-		if code := runPublicSilently(args); code == 0 {
-			t.Fatalf("GO11 bridge probe leaked into product command %v", args)
+	if !publiccli.IsInternalInvocation([]string{"android-runtime", "bridge-session", "-"}) {
+		t.Fatal("Android runtime transport route is not internal")
+	}
+	for _, args := range [][]string{{"service"}, {"bridge"}, {"migration"}, {"version"}} {
+		if publiccli.IsInternalInvocation(args) {
+			t.Fatalf("unexpected internal root survives GO20: %v", args)
 		}
 	}
 }

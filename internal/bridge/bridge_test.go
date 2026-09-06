@@ -46,8 +46,8 @@ func TestFrozenBridgeRegistryAndReadiness(t *testing.T) {
 	if !reflect.DeepEqual(gotHandlers, frozen.Handlers) {
 		t.Fatalf("handler registry drift: %#v != %#v", gotHandlers, frozen.Handlers)
 	}
-	ready := New(nil).Readiness()
-	if ready.ProtocolVersion != 1 || ready.Runtime != Runtime || ready.BackendVersion == "" {
+	ready := NewAndroid(nil).Readiness()
+	if ready.ProtocolVersion != 1 || ready.Runtime != AndroidRuntime || ready.BackendVersion == "" {
 		t.Fatalf("unexpected readiness: %#v", ready)
 	}
 	capset := map[string]bool{}
@@ -80,7 +80,7 @@ func TestExecuteSuccessEnvelopeMetricsAndProgressSequence(t *testing.T) {
 	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	result := rt.Execute(requestJSON(t, "stat-1", "filesystem.stat", map[string]any{"path": path}))
 	if result.Status != "success" || result.RequestID != "stat-1" || result.ProtocolVersion != 1 {
 		t.Fatalf("unexpected result: %#v", result)
@@ -101,7 +101,7 @@ func TestExecuteSuccessEnvelopeMetricsAndProgressSequence(t *testing.T) {
 }
 
 func TestMalformedRequestsFailClosedWithProtocolEnvelope(t *testing.T) {
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	cases := []struct {
 		name string
 		raw  string
@@ -135,7 +135,7 @@ func TestMalformedRequestsFailClosedWithProtocolEnvelope(t *testing.T) {
 }
 
 func TestUnknownOperationAndTypedNotFoundMapping(t *testing.T) {
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	unknown := rt.Execute(requestJSON(t, "no-shell", "shell.exec", map[string]any{}))
 	if unknown.RequestID != "no-shell" || unknown.Status != "failure" || len(unknown.Errors) != 1 || unknown.Errors[0].Code != "validation_error" {
 		t.Fatalf("unexpected unknown-op mapping: %#v", unknown)
@@ -155,7 +155,7 @@ func TestUnknownOperationAndTypedNotFoundMapping(t *testing.T) {
 }
 
 func TestCancelEndpointAndQueuedCancellationParity(t *testing.T) {
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	ack := rt.Cancel("queued-request")
 	if ack.Status != "success" || ack.RequestID != "queued-request" || ack.Metrics != nil || len(ack.Errors) != 0 || len(ack.Artifacts) != 0 {
 		t.Fatalf("unexpected cancel acknowledgement: %#v", ack)
@@ -174,7 +174,7 @@ func TestCancelEndpointAndQueuedCancellationParity(t *testing.T) {
 }
 
 func TestRunCancelHandlerCancelsAnotherRequestWithoutAdvertisingIt(t *testing.T) {
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	result := rt.Execute(requestJSON(t, "cancel-command", "run.cancel", map[string]any{"target_request_id": "target-request"}))
 	if result.Status != "success" || result.Summary != "Cancellation recorded for target-request." {
 		t.Fatalf("unexpected run.cancel result: %#v", result)
@@ -191,7 +191,7 @@ func TestRunCancelHandlerCancelsAnotherRequestWithoutAdvertisingIt(t *testing.T)
 }
 
 func TestProgressSequenceContinuesWhenRequestIDIsReused(t *testing.T) {
-	rt := New(nil)
+	rt := NewAndroid(nil)
 	raw := requestJSON(t, "repeat", "storage.locations", map[string]any{})
 	if first := rt.Execute(raw); first.Status != "success" {
 		t.Fatal(first.Summary)

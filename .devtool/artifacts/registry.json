@@ -2,6 +2,1413 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "4552a66bf42d",
+      "name": "app-debug-5.apk",
+      "path": "artifacts/android/app-debug-5.apk",
+      "canonical_path": "artifacts/android/app-debug-5.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug-5.apk",
+      "type": "apk",
+      "size": 16284346,
+      "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+      "commit": "b4ee3cceba9259e96feae70465475f67a35920e9",
+      "run_id": "2e36572be26a464a95859e3cc5424db6",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "reused",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T16:59:18.966860Z",
+      "registered_at": "2026-09-06T16:59:18.966860Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "2e36572be26a464a95859e3cc5424db6",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 16284346,
+        "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+        "valid": true,
+        "state": "reused",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 16284346,
+          "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "2e36572be26a464a95859e3cc5424db6:e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d:4552a66bf42d"
+    },
+    {
+      "id": "472e1ddbcf42",
+      "name": "app-debug-4.apk",
+      "path": "artifacts/android/app-debug-4.apk",
+      "canonical_path": "artifacts/android/app-debug-4.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug-4.apk",
+      "type": "apk",
+      "size": 16284346,
+      "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+      "commit": "b4ee3cceba9259e96feae70465475f67a35920e9",
+      "run_id": "512f2b3534fb443788b8f1741cb11856",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "reused",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T16:42:03.704682Z",
+      "registered_at": "2026-09-06T16:42:03.704682Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "512f2b3534fb443788b8f1741cb11856",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 16284346,
+        "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+        "valid": true,
+        "state": "reused",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 16284346,
+          "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "512f2b3534fb443788b8f1741cb11856:e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d:472e1ddbcf42"
+    },
+    {
+      "id": "954078e5410e",
+      "name": "app-debug-3.apk",
+      "path": "artifacts/android/app-debug-3.apk",
+      "canonical_path": "artifacts/android/app-debug-3.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug-3.apk",
+      "type": "apk",
+      "size": 16284346,
+      "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+      "commit": "b4ee3cceba9259e96feae70465475f67a35920e9",
+      "run_id": "b7eb1786d895496aa2c4c54ee4314d06",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T04:42:17.374480Z",
+      "registered_at": "2026-09-06T04:42:17.374480Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "b7eb1786d895496aa2c4c54ee4314d06",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 16284346,
+        "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 16284346,
+          "sha256": "e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "b7eb1786d895496aa2c4c54ee4314d06:e2d0973cf1304a680ce0262095f034059396ccbf440c7c2cfbf2c6ecbe14e41d:954078e5410e"
+    },
+    {
+      "id": "d6412cb7c5ef",
+      "name": "app-debug-2.apk",
+      "path": "artifacts/android/app-debug-2.apk",
+      "canonical_path": "artifacts/android/app-debug-2.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug-2.apk",
+      "type": "apk",
+      "size": 36385530,
+      "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+      "commit": "69472b5af5ee2bf6cdadcaa79bd31df3ae20b05f",
+      "run_id": "4aee946294b948d5924f110fb5d9053a",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "reused",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T04:05:59.023779Z",
+      "registered_at": "2026-09-06T04:05:59.023779Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "4aee946294b948d5924f110fb5d9053a",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 36385530,
+        "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+        "valid": true,
+        "state": "reused",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 36385530,
+          "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a",
+            "x86_64"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a",
+          "x86_64"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "4aee946294b948d5924f110fb5d9053a:0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da:d6412cb7c5ef"
+    },
+    {
+      "id": "2f3d6a417696",
+      "name": "app-debug.apk",
+      "path": "artifacts/android/app-debug.apk",
+      "canonical_path": "artifacts/android/app-debug.apk",
+      "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+      "exported_path": "artifacts/android/app-debug.apk",
+      "type": "apk",
+      "size": 36385530,
+      "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+      "commit": "69472b5af5ee2bf6cdadcaa79bd31df3ae20b05f",
+      "run_id": "0eb0e3d00fb64397aa2fef1d615c1a6f",
+      "producer": "android",
+      "command": "android-validation-build",
+      "target": "bkx_android",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T03:50:43.470537Z",
+      "registered_at": "2026-09-06T03:50:43.470537Z",
+      "valid": true,
+      "metadata": {
+        "producer": "android",
+        "command": "android-validation-build",
+        "target": "bkx_android",
+        "variant": "",
+        "run_id": "0eb0e3d00fb64397aa2fef1d615c1a6f",
+        "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "source_path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+        "type": "apk",
+        "size": 36385530,
+        "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "zip_integrity",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "member:AndroidManifest.xml",
+            "status": "passed",
+            "detail": "present"
+          },
+          {
+            "name": "aapt2_badging",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "signature",
+            "status": "skipped",
+            "detail": "apksigner not found"
+          }
+        ],
+        "metadata": {
+          "path": "android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk",
+          "type": "apk",
+          "variant": "debug",
+          "module": "app",
+          "size": 36385530,
+          "sha256": "0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da",
+          "valid": true,
+          "package_id": "com.mikeyphw.bkx.android",
+          "version_code": "10000",
+          "version_name": "1.0.0",
+          "min_sdk": "",
+          "target_sdk": "36",
+          "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+          "signed": null,
+          "abis": [
+            "arm64-v8a",
+            "x86_64"
+          ],
+          "checks": [
+            {
+              "name": "exists",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "non_empty",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "zip_integrity",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "member:AndroidManifest.xml",
+              "status": "passed",
+              "detail": "present"
+            },
+            {
+              "name": "aapt2_badging",
+              "status": "passed",
+              "detail": ""
+            },
+            {
+              "name": "signature",
+              "status": "skipped",
+              "detail": "apksigner not found"
+            }
+          ]
+        },
+        "module": "app",
+        "package_id": "com.mikeyphw.bkx.android",
+        "version_code": "10000",
+        "version_name": "1.0.0",
+        "min_sdk": "",
+        "target_sdk": "36",
+        "launchable_activity": "com.mikeyphw.bkx.android.app.MainActivity",
+        "signed": null,
+        "abis": [
+          "arm64-v8a",
+          "x86_64"
+        ],
+        "gradle_tasks": [
+          ":app:assembleDebug"
+        ],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "0eb0e3d00fb64397aa2fef1d615c1a6f:0a184572fd8d57d59589b8b6074fdfebe0290a418590439aae8c1135f36614da:2f3d6a417696"
+    },
+    {
+      "id": "a76b450734f6",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6986517,
+      "sha256": "3fdab918ca18ac96d254f2163712d0fcaea82b4ec93f8b18dc0eb229380fe8d0",
+      "commit": "6b89a1245eb2897966aaef3d3d8dc304426349d2",
+      "run_id": "a47d85ed80874fbabfc07ea2df14f903",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T02:50:36.516759Z",
+      "registered_at": "2026-09-06T02:50:36.516759Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "a47d85ed80874fbabfc07ea2df14f903",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6986517,
+        "sha256": "3fdab918ca18ac96d254f2163712d0fcaea82b4ec93f8b18dc0eb229380fe8d0",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260906022835-6b89a1245eb2+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "6b89a1245eb2897966aaef3d3d8dc304426349d2",
+              "vcs.time": "2026-09-06T02:28:35Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "6b89a1245eb2897966aaef3d3d8dc304426349d2",
+            "vcs_time": "2026-09-06T02:28:35Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260906022835-6b89a1245eb2+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "6b89a1245eb2897966aaef3d3d8dc304426349d2",
+            "vcs.time": "2026-09-06T02:28:35Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "6b89a1245eb2897966aaef3d3d8dc304426349d2",
+          "vcs_time": "2026-09-06T02:28:35Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "a47d85ed80874fbabfc07ea2df14f903:3fdab918ca18ac96d254f2163712d0fcaea82b4ec93f8b18dc0eb229380fe8d0:a76b450734f6"
+    },
+    {
+      "id": "65e9a33ff4b8",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6981470,
+      "sha256": "112b3992929200cd6e5a9d20347909f44a49233f8a665dbf322f1ca0e9cb9581",
+      "commit": "a711751816ee410c295ddb8ecd73d052f818aa6c",
+      "run_id": "7c1bdbf7892445198955ee41a3a9fd8d",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T02:27:39.489795Z",
+      "registered_at": "2026-09-06T02:27:39.489795Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "7c1bdbf7892445198955ee41a3a9fd8d",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6981470,
+        "sha256": "112b3992929200cd6e5a9d20347909f44a49233f8a665dbf322f1ca0e9cb9581",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260906021519-a711751816ee+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "a711751816ee410c295ddb8ecd73d052f818aa6c",
+              "vcs.time": "2026-09-06T02:15:19Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "a711751816ee410c295ddb8ecd73d052f818aa6c",
+            "vcs_time": "2026-09-06T02:15:19Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260906021519-a711751816ee+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "a711751816ee410c295ddb8ecd73d052f818aa6c",
+            "vcs.time": "2026-09-06T02:15:19Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "a711751816ee410c295ddb8ecd73d052f818aa6c",
+          "vcs_time": "2026-09-06T02:15:19Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "7c1bdbf7892445198955ee41a3a9fd8d:112b3992929200cd6e5a9d20347909f44a49233f8a665dbf322f1ca0e9cb9581:65e9a33ff4b8"
+    },
+    {
+      "id": "90921b4634d8",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6891990,
+      "sha256": "5897283c895690c234d111e86ae5ff63b8e0bae17e4f59aeee4d222e989dbc6d",
+      "commit": "f3c400e5aad08dd33ebef2328b0acd91eba3c9f1",
+      "run_id": "2204d268ee8741ca87c053b3b9445b8e",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T02:14:29.635202Z",
+      "registered_at": "2026-09-06T02:14:29.635202Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "2204d268ee8741ca87c053b3b9445b8e",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6891990,
+        "sha256": "5897283c895690c234d111e86ae5ff63b8e0bae17e4f59aeee4d222e989dbc6d",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260906015131-f3c400e5aad0+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "f3c400e5aad08dd33ebef2328b0acd91eba3c9f1",
+              "vcs.time": "2026-09-06T01:51:31Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "f3c400e5aad08dd33ebef2328b0acd91eba3c9f1",
+            "vcs_time": "2026-09-06T01:51:31Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260906015131-f3c400e5aad0+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "f3c400e5aad08dd33ebef2328b0acd91eba3c9f1",
+            "vcs.time": "2026-09-06T01:51:31Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "f3c400e5aad08dd33ebef2328b0acd91eba3c9f1",
+          "vcs_time": "2026-09-06T01:51:31Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "2204d268ee8741ca87c053b3b9445b8e:5897283c895690c234d111e86ae5ff63b8e0bae17e4f59aeee4d222e989dbc6d:90921b4634d8"
+    },
+    {
+      "id": "af727703e96a",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6713399,
+      "sha256": "a7ee25f981fedcab6b3f6a96bd8b17af0693b0a5fccd93f146d413ab8ae63afb",
+      "commit": "30b385752ba2a86d1a99b6197399811fe2dab122",
+      "run_id": "938666390f774ee59c6003b5c5309653",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T01:50:46.746080Z",
+      "registered_at": "2026-09-06T01:50:46.746080Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "938666390f774ee59c6003b5c5309653",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6713399,
+        "sha256": "a7ee25f981fedcab6b3f6a96bd8b17af0693b0a5fccd93f146d413ab8ae63afb",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260906013045-30b385752ba2+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "30b385752ba2a86d1a99b6197399811fe2dab122",
+              "vcs.time": "2026-09-06T01:30:45Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "30b385752ba2a86d1a99b6197399811fe2dab122",
+            "vcs_time": "2026-09-06T01:30:45Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260906013045-30b385752ba2+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "30b385752ba2a86d1a99b6197399811fe2dab122",
+            "vcs.time": "2026-09-06T01:30:45Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "30b385752ba2a86d1a99b6197399811fe2dab122",
+          "vcs_time": "2026-09-06T01:30:45Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "938666390f774ee59c6003b5c5309653:a7ee25f981fedcab6b3f6a96bd8b17af0693b0a5fccd93f146d413ab8ae63afb:af727703e96a"
+    },
+    {
+      "id": "7547c05859e5",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6539992,
+      "sha256": "d0b59b28b5e654044371bb892c1533323e2ac26d334faf1d917417477e12b8fe",
+      "commit": "7785cd108a2c602312ed635025c457a33e78b801",
+      "run_id": "ed605c4372f44962b03fc78c08fba755",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T01:30:08.043303Z",
+      "registered_at": "2026-09-06T01:30:08.043303Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "ed605c4372f44962b03fc78c08fba755",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6539992,
+        "sha256": "d0b59b28b5e654044371bb892c1533323e2ac26d334faf1d917417477e12b8fe",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260904190146-7785cd108a2c+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "7785cd108a2c602312ed635025c457a33e78b801",
+              "vcs.time": "2026-09-04T19:01:46Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "7785cd108a2c602312ed635025c457a33e78b801",
+            "vcs_time": "2026-09-04T19:01:46Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260904190146-7785cd108a2c+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "7785cd108a2c602312ed635025c457a33e78b801",
+            "vcs.time": "2026-09-04T19:01:46Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "7785cd108a2c602312ed635025c457a33e78b801",
+          "vcs_time": "2026-09-04T19:01:46Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "ed605c4372f44962b03fc78c08fba755:d0b59b28b5e654044371bb892c1533323e2ac26d334faf1d917417477e12b8fe:7547c05859e5"
+    },
+    {
+      "id": "986ac43f4600",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 6537324,
+      "sha256": "46fd60984aba93f1f00cca79b3ef630789f508687408167c4a5d8251ac2a6b52",
+      "commit": "7785cd108a2c602312ed635025c457a33e78b801",
+      "run_id": "80eb4a9a95fa412f87a02fd97067f4d2",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx_go",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-06T01:23:42.999580Z",
+      "registered_at": "2026-09-06T01:23:42.999580Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx_go",
+        "variant": "",
+        "run_id": "80eb4a9a95fa412f87a02fd97067f4d2",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 6537324,
+        "sha256": "46fd60984aba93f1f00cca79b3ef630789f508687408167c4a5d8251ac2a6b52",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260904190146-7785cd108a2c+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "7785cd108a2c602312ed635025c457a33e78b801",
+              "vcs.time": "2026-09-04T19:01:46Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "7785cd108a2c602312ed635025c457a33e78b801",
+            "vcs_time": "2026-09-04T19:01:46Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260904190146-7785cd108a2c+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "7785cd108a2c602312ed635025c457a33e78b801",
+            "vcs.time": "2026-09-04T19:01:46Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "7785cd108a2c602312ed635025c457a33e78b801",
+          "vcs_time": "2026-09-04T19:01:46Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "80eb4a9a95fa412f87a02fd97067f4d2:46fd60984aba93f1f00cca79b3ef630789f508687408167c4a5d8251ac2a6b52:986ac43f4600"
+    },
+    {
       "id": "7150fe404cd0",
       "name": "bkx",
       "path": ".devtool/build/go/bkx",
@@ -1291,6 +2698,6 @@
       }
     }
   ],
-  "updated_at": "2026-09-04T15:32:42.011131Z",
+  "updated_at": "2026-09-06T16:59:18.968353Z",
   "verifications": []
 }

@@ -16,4 +16,4 @@ The release gate is feature-oriented rather than milestone-oriented. It must pro
 - manifest and signing-placeholder checks;
 - unit tests, lint, debug/release packaging, and connected instrumentation when a device is available.
 
-The canonical application version is read from repository-root `pyproject.toml`. Android derives its `versionCode` from the semantic version, so Python and Android cannot silently drift.
+The canonical application version is read from repository-root `internal/version/version.go`. Android derives its `versionCode` from that semantic version, so the Go CLI and Android package cannot silently drift.

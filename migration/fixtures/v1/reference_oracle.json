@@ -1,0 +1,622 @@
+{
+  "bridge_expectations": {
+    "advertised_operation_count": 15,
+    "capability_minimum": [
+      "backup.plan",
+      "archive.info",
+      "run.cancel.cooperative",
+      "run.progress",
+      "filesystem.direct"
+    ],
+    "handler_count": 16,
+    "protocol_version": 1,
+    "python_version": "none",
+    "runtime": "go-native-android"
+  },
+  "canonicalization": {
+    "$HOME": "temporary isolated home",
+    "$WORK": "temporary fixture workspace",
+    "<archive-created-at>": "archive filesystem timestamp excluded from semantic parity",
+    "source_<id>.bakery": "path-derived deterministic backup name"
+  },
+  "cli_cases": [
+    {
+      "args": [
+        "--json",
+        "archive",
+        "list",
+        "$WORK/fixture.zip"
+      ],
+      "exit_code": 0,
+      "name": "archive-list",
+      "stderr": "",
+      "stdout": {
+        "archive_path": "$WORK/fixture.zip",
+        "entries": [
+          {
+            "entry_type": "file",
+            "is_dir": false,
+            "mtime_ns": 1577934246000000000,
+            "path": "alpha.txt",
+            "size": 6
+          },
+          {
+            "entry_type": "file",
+            "is_dir": false,
+            "mtime_ns": 1577934246000000000,
+            "path": "nested/beta.bin",
+            "size": 52
+          }
+        ],
+        "errors": [],
+        "filter_pattern": null,
+        "page": 0,
+        "page_size": 100,
+        "success": true,
+        "total_entries": 2,
+        "type": "archive_list",
+        "warnings": []
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "archive",
+        "info",
+        "$WORK/fixture.zip"
+      ],
+      "exit_code": 0,
+      "name": "archive-info",
+      "stderr": "",
+      "stdout": {
+        "archive_path": "$WORK/fixture.zip",
+        "compression_ratio": 4.827586206896552,
+        "created_at": "<archive-created-at>",
+        "errors": [],
+        "format": "zip",
+        "success": true,
+        "total_entries": 2,
+        "total_size": 280,
+        "type": "archive_info",
+        "uncompressed_size": 58,
+        "warnings": []
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "archive",
+        "browse",
+        "$WORK/fixture.zip",
+        "--query",
+        "beta",
+        "--sort",
+        "size",
+        "--order",
+        "desc"
+      ],
+      "exit_code": 0,
+      "name": "archive-browse",
+      "stderr": "",
+      "stdout": {
+        "archive_path": "$WORK/fixture.zip",
+        "directories_count": 0,
+        "entries": [
+          {
+            "entry_type": "file",
+            "is_dir": false,
+            "mtime_ns": 1577934246000000000,
+            "path": "nested/beta.bin",
+            "size": 52
+          }
+        ],
+        "file_type": null,
+        "files_count": 1,
+        "limit": 50,
+        "max_size": null,
+        "min_size": null,
+        "offset": 0,
+        "query": "beta",
+        "sort_by": "size",
+        "sort_order": "desc",
+        "success": true,
+        "total_matches": 1,
+        "total_size": 52,
+        "type": "archive_browse"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "archive",
+        "verify",
+        "$WORK/fixture.zip"
+      ],
+      "exit_code": 0,
+      "name": "archive-verify",
+      "stderr": "",
+      "stdout": {
+        "archive_checksums": {
+          "sha256": "ad021cc98de306b878aeb4c3dd599649be101518ffa27bb5e2c58782fe128e8b"
+        },
+        "archive_path": "$WORK/fixture.zip",
+        "checksums_valid": true,
+        "entries_checked": 2,
+        "entries_failed": 0,
+        "errors": [],
+        "failed_entries": [],
+        "structure_valid": true,
+        "success": true,
+        "type": "archive_verify",
+        "warnings": []
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "--plan",
+        "archive",
+        "create",
+        "$WORK/source",
+        "-o",
+        "$WORK/new.tar.gz",
+        "--exclude-from",
+        "$WORK/exclude.txt"
+      ],
+      "exit_code": 0,
+      "name": "archive-create-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "archive create",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": 58,
+              "description": "Create archive new.tar.gz",
+              "destination": "$WORK/new.tar.gz",
+              "details": {
+                "compression": "zstd",
+                "split_size": null
+              },
+              "files_affected": 2,
+              "source": "$WORK/source",
+              "step_type": "archive",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Verify archive integrity",
+              "destination": null,
+              "details": {},
+              "files_affected": 1,
+              "source": "$WORK/new.tar.gz",
+              "step_type": "verify",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": 58,
+          "total_files": 2,
+          "warnings": []
+        },
+        "spec_type": "archive",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "backup",
+        "plan",
+        "$WORK/source",
+        "-d",
+        "$WORK/backups"
+      ],
+      "exit_code": 0,
+      "name": "backup-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "backup plan",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": 58,
+              "description": "Create archive source_<id>.bakery",
+              "destination": "$WORK/backups/source_<id>.bakery",
+              "details": {
+                "compression": "zstd",
+                "split_size": null
+              },
+              "files_affected": 2,
+              "source": "$WORK/source",
+              "step_type": "archive",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Transfer archive to $WORK/backups",
+              "destination": "$WORK/backups",
+              "details": {},
+              "files_affected": 1,
+              "source": "$WORK/backups/source_<id>.bakery",
+              "step_type": "transfer",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Verify backup archive integrity",
+              "destination": null,
+              "details": {
+                "requested": true
+              },
+              "files_affected": 1,
+              "source": "$WORK/backups/source_<id>.bakery",
+              "step_type": "verify",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": 58,
+          "total_files": 2,
+          "warnings": []
+        },
+        "spec_type": "backup",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "--dry-run",
+        "backup",
+        "create",
+        "$WORK/source",
+        "-d",
+        "$WORK/backups2",
+        "--name",
+        "manual"
+      ],
+      "exit_code": 0,
+      "name": "backup-create-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "backup create",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": 58,
+              "description": "Create archive manual.bakery",
+              "destination": "$WORK/backups2/manual.bakery",
+              "details": {
+                "compression": "zstd",
+                "split_size": null
+              },
+              "files_affected": 2,
+              "source": "$WORK/source",
+              "step_type": "archive",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Transfer archive to $WORK/backups2",
+              "destination": "$WORK/backups2",
+              "details": {},
+              "files_affected": 1,
+              "source": "$WORK/backups2/manual.bakery",
+              "step_type": "transfer",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Verify backup archive integrity",
+              "destination": null,
+              "details": {
+                "requested": true
+              },
+              "files_affected": 1,
+              "source": "$WORK/backups2/manual.bakery",
+              "step_type": "verify",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": 58,
+          "total_files": 2,
+          "warnings": []
+        },
+        "spec_type": "backup",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "--plan",
+        "transfer",
+        "push",
+        "$WORK/source/alpha.txt",
+        "$WORK/copy.txt"
+      ],
+      "exit_code": 0,
+      "name": "transfer-push-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "transfer push",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": 6,
+              "description": "push to $WORK/copy.txt",
+              "destination": "$WORK/copy.txt",
+              "details": {
+                "direction": "push",
+                "source_count": 1
+              },
+              "files_affected": 1,
+              "source": "$WORK/source/alpha.txt",
+              "step_type": "transfer",
+              "warnings": []
+            },
+            {
+              "bytes_affected": 6,
+              "description": "Verify transfer integrity",
+              "destination": "$WORK/copy.txt",
+              "details": {},
+              "files_affected": 1,
+              "source": null,
+              "step_type": "verify",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": 6,
+          "total_files": 1,
+          "warnings": []
+        },
+        "spec_type": "transfer",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "--plan",
+        "restore",
+        "extract",
+        "$WORK/fixture.zip",
+        "-d",
+        "$WORK/restore"
+      ],
+      "exit_code": 0,
+      "name": "restore-extract-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "restore extract",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": null,
+              "description": "Verify archive before restore",
+              "destination": null,
+              "details": {},
+              "files_affected": 1,
+              "source": "$WORK/fixture.zip",
+              "step_type": "verify",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Extract from fixture.zip",
+              "destination": "$WORK/restore",
+              "details": {
+                "confirm_overwrite": true,
+                "fresh_dir": true,
+                "full_restore": true,
+                "overwrite": false,
+                "requires_confirmation": false,
+                "selected_paths": []
+              },
+              "files_affected": null,
+              "source": "$WORK/fixture.zip",
+              "step_type": "restore",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": null,
+          "total_files": null,
+          "warnings": []
+        },
+        "spec_type": "restore",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "--plan",
+        "restore",
+        "pick",
+        "$WORK/fixture.zip",
+        "alpha.txt",
+        "-d",
+        "$WORK/pick"
+      ],
+      "exit_code": 0,
+      "name": "restore-pick-plan",
+      "stderr": "",
+      "stdout": {
+        "spec": {
+          "command": "restore pick",
+          "dry_run": true,
+          "steps": [
+            {
+              "bytes_affected": null,
+              "description": "Verify archive before restore",
+              "destination": null,
+              "details": {},
+              "files_affected": 1,
+              "source": "$WORK/fixture.zip",
+              "step_type": "verify",
+              "warnings": []
+            },
+            {
+              "bytes_affected": null,
+              "description": "Extract from fixture.zip",
+              "destination": "$WORK/pick",
+              "details": {
+                "confirm_overwrite": true,
+                "fresh_dir": true,
+                "full_restore": false,
+                "overwrite": false,
+                "requires_confirmation": false,
+                "selected_paths": [
+                  "alpha.txt"
+                ]
+              },
+              "files_affected": 1,
+              "source": "$WORK/fixture.zip",
+              "step_type": "restore",
+              "warnings": []
+            }
+          ],
+          "timing_estimate": "unknown",
+          "total_bytes": null,
+          "total_files": 1,
+          "warnings": []
+        },
+        "spec_type": "restore",
+        "success": true,
+        "type": "plan"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "tools",
+        "explain"
+      ],
+      "exit_code": 0,
+      "name": "tools-explain",
+      "stderr": "",
+      "stdout": {
+        "preferred": {
+          "archiver": "tar",
+          "compression": "zstd",
+          "hashing": "sha256sum",
+          "transfer": "rsync"
+        },
+        "type": "tools_explain"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "run",
+        "list"
+      ],
+      "exit_code": 0,
+      "name": "run-list",
+      "stderr": "",
+      "stdout": {
+        "limit": 20,
+        "runs": [],
+        "total_count": 0,
+        "type": "run_list"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "archive",
+        "info",
+        "$WORK/missing.zip"
+      ],
+      "exit_code": 3,
+      "name": "not-found",
+      "stderr": "",
+      "stdout": {
+        "details": {
+          "path": "$WORK/missing.zip"
+        },
+        "message": "Archive not found: $WORK/missing.zip",
+        "success": false,
+        "type": "error"
+      }
+    },
+    {
+      "args": [
+        "--json",
+        "ui",
+        "start",
+        "--mode",
+        "invalid"
+      ],
+      "exit_code": 2,
+      "name": "typed-ui-error",
+      "stderr": "",
+      "stdout": {
+        "details": {
+          "mode": "invalid",
+          "valid": [
+            "tui",
+            "interactive"
+          ]
+        },
+        "message": "Unsupported UI mode",
+        "success": false,
+        "type": "error"
+      }
+    }
+  ],
+  "contract_version": 1,
+  "frozen_from": {
+    "evidence": "GO02-GO13 differential parity plus GO15 14 JSON + 3 usage Python/Go parity, accepted before GO17",
+    "migration_phase": "GO16",
+    "python_reference_version": "1.0.0"
+  },
+  "schema_version": 1,
+  "usage_cases": [
+    {
+      "args": [
+        "archive",
+        "info"
+      ],
+      "exit_code": 2,
+      "name": "missing-archive",
+      "stderr": "Error: missing argument: ARCHIVE\nTry 'bkx --help' for help.\n",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "unknown"
+      ],
+      "exit_code": 2,
+      "name": "unknown-root",
+      "stderr": "Error: no such command: unknown\nTry 'bkx --help' for help.\n",
+      "stdout": ""
+    },
+    {
+      "args": [
+        "--progress",
+        "loud",
+        "tools",
+        "detect"
+      ],
+      "exit_code": 2,
+      "name": "bad-progress",
+      "stderr": "Error: progress must be one of: auto, plain, off\nTry 'bkx --help' for help.\n",
+      "stdout": ""
+    }
+  ]
+}

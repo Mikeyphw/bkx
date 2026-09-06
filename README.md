@@ -1,9 +1,7 @@
 # BKX
 
 BKX is a contract-controlled backup/archive tool whose **production CLI is Go**.
-The Python package under `src/bkx` remains an explicit **Python reference** and
-differential-parity oracle through GO17; it no longer owns the production
-`bkx` console command.
+GO17 freezes the accepted Python↔Go differential evidence into immutable Go-owned fixtures. The Python implementation remains only as archival/reference evidence and is no longer executed by normal CI, release, Devtool, or Android validation.
 
 ## Current verified capabilities
 
@@ -12,7 +10,7 @@ differential-parity oracle through GO17; it no longer owns the production
 - Android is Go-only `arm64-v8a`, with NDK 29 retained as the release floor.
 - `ui start` launches optional external `bkx-tui` or `bkx-interactive` plugins; missing plugins fail with a typed actionable error.
 - Host and Android release artifacts are built deterministically and sealed by `SHA256SUMS`.
-- The Python package remains installable only as a reference/testing lane and carries the historical schemas/TUI assets needed by parity tests.
+- The accepted Python reference is preserved as a deterministic audit archive under `migration/archive/`; compatibility validation runs only Go-owned fixtures.
 
 ## Build / install
 
@@ -30,12 +28,7 @@ Or produce the sealed host + Android release bundle:
 cat ./dist/go-release/SHA256SUMS
 ```
 
-The reference Python implementation is explicit rather than production packaging:
-
-```bash
-python -m pip install '.[reference]'
-python -m bkx --help
-```
+The historical Python implementation is retained only as the deterministic audit archive in `migration/archive/`; normal product validation does not install or execute it.
 
 Optional UI implementations are external plugins named `bkx-tui` and
 `bkx-interactive`. Their executable paths may be overridden with
@@ -54,10 +47,7 @@ bkx ui start --mode tui
 
 ## Validation
 
-`./scripts/validate-go16.sh` runs the cumulative GO00–GO16 migration/release
-seal. CI separately keeps a Python 3.11–3.13 reference lane, including a wheel
-smoke test that proves the reference wheel does **not** install a `bkx` console
-script.
+`./scripts/validate-go17.sh` runs the Go-owned compatibility and release seal. CI no longer installs Python for parity; the 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
 
 ## Python → Go migration
 

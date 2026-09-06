@@ -327,3 +327,8 @@ Delivered the repository/package ownership cutover after GO15 CLI parity:
 
 GO17 may retire or archive the Python reference implementation only after the frozen differential corpus is replaced by durable Go-owned contract fixtures and release evidence. Until then, Python remains reference-only and must not regain production console, Android, or Devtool ownership.
 
+
+
+## GO17 — immutable reference oracle
+
+GO17 retires dynamic Python parity from normal validation. The accepted GO02–GO13 differential evidence and GO15 public CLI parity are frozen into `migration/fixtures/v1/`, including the same 14 JSON and 3 parser/usage cases. `internal/compatfixtures` executes those fixtures directly against the Go production surface. The historical Python tree is preserved only as the deterministic archive in `migration/archive/`; CI, Devtool production validation, release building, and Android release gates do not import or launch it. Android verification now checks the Go bridge/archive/restore/transfer implementation directly and derives the product version from `internal/version/version.go`.

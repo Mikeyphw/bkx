@@ -16,7 +16,7 @@ type = "go"
 root = "."
 execution_environment = "auto"
 
-# GO16 keeps Python only as an explicit reference/parity oracle through GO17.
+# GO17 keeps the archived/reference target only for manual archaeology; production validation no longer executes it.
 [targets.bkx_reference]
 type = "python"
 root = "."

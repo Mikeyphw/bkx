@@ -338,26 +338,28 @@ tasks.register("verifyBkxRuntimeHardeningContract") {
 
 tasks.register("verifyBkxRestoreSafetySeal") {
     group = "verification"
-    description = "Verify root-sensitive restore confirmation, protected Android destinations, and exact destination semantics."
+    description = "Verify privileged restore confirmation, protected Android destinations, and Go restore publication semantics."
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val restoreModels = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/restore/RestoreModels.kt").asFile
+    val restoreRequest = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/restore/RestoreRequestBuilder.kt").asFile
     val restoreUi = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/feature/archives/ArchivesScreen.kt").asFile
-    val engine = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
-    inputs.files(restoreModels, restoreUi, engine)
+    val goRestore = repositoryRootDir.resolve("internal/archiveio/restore.go")
+    inputs.files(restoreModels, restoreRequest, restoreUi, goRestore)
     doLast {
         val models = restoreModels.readText()
+        val request = restoreRequest.readText()
         val ui = restoreUi.readText()
-        val python = engine.readText()
+        val go = goRestore.readText()
         listOf("/proc", "/sys", "/dev", "/system", "/metadata", "/data/system", "/data/misc").forEach { root ->
-            check(root in models && root in python) { "Protected restore root drifted between Kotlin/Python policy: $root" }
+            check(root in models) { "Protected restore root missing from Kotlin policy: $root" }
         }
-        check("ROOT_CONFIRMATION_PHRASE = \"RESTORE ROOT\"" in models && "root_confirmation" in python) {
+        check("ROOT_CONFIRMATION_PHRASE = "RESTORE ROOT"" in models && "root_confirmation" in request) {
             "Root-sensitive restore must require explicit RESTORE ROOT evidence."
         }
         check("if (destination == null)" in models) { "Every Android restore mode must require an explicit destination." }
-        check("does not already exist" in python && "requires an existing directory" in python) {
-            "Fresh/existing restore destination semantics must fail closed in the canonical embedded boundary."
+        check("Restore destination already exists and requires explicit confirmation" in go && "Restore destination must be a real directory when it already exists" in go) {
+            "Go restore destination semantics must remain fail-closed."
         }
         check("New destination path" in ui && "Existing destination path" in ui) { "Restore UI must collect an exact path for both output modes." }
     }
@@ -365,35 +367,33 @@ tasks.register("verifyBkxRestoreSafetySeal") {
 
 tasks.register("verifyBkxPerformanceAndProgressContract") {
     group = "verification"
-    description = "Verify bounded runtime state, operation duration metrics, and cooperative progress/cancellation callbacks."
+    description = "Verify bounded Android state plus Go duration/progress/cancellation paths."
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val operations = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/operations/OperationModels.kt").asFile
-    val bridge = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeModels.kt").asFile
-    val engine = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
-    val archiver = repositoryRootDir.resolve("src/bkx/core/impl/archiver.py")
+    val bridgeModels = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeModels.kt").asFile
+    val goBridge = repositoryRootDir.resolve("internal/bridge/bridge.go")
+    val goArchive = repositoryRootDir.resolve("internal/archiveio/create.go")
+    val goRestore = repositoryRootDir.resolve("internal/archiveio/restore.go")
+    val goTransfer = repositoryRootDir.resolve("internal/transferops/transfer.go")
     val coordinator = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt").asFile
     val foregroundService = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/service/BkxOperationForegroundService.kt").asFile
-    inputs.files(operations, bridge, engine, archiver, coordinator, foregroundService)
+    inputs.files(operations, bridgeModels, goBridge, goArchive, goRestore, goTransfer, coordinator, foregroundService)
     doLast {
         val operationText = operations.readText()
-        val bridgeText = bridge.readText()
-        val engineText = engine.readText()
-        val archiverText = archiver.readText()
+        val bridgeText = bridgeModels.readText()
+        val goBridgeText = goBridge.readText()
+        val archiveText = goArchive.readText()
+        val restoreText = goRestore.readText()
+        val transferText = goTransfer.readText()
         val coordinatorText = coordinator.readText()
         val serviceText = foregroundService.readText()
-        check("maxOperations: Int = 64" in operationText && "maxEventsPerRequest: Int = 200" in operationText) {
-            "Operation persistence must remain bounded."
-        }
-        check("duration_ms" in bridgeText && "duration_ms" in engineText) { "Embedded results must retain measured duration metrics." }
-        check("run.progress" in engineText && "run.cancel.cooperative" in engineText) { "Embedded runtime must advertise progress and cooperative cancellation." }
-        check("progress_callback" in archiverText) { "Archive create/verify/restore paths must keep incremental progress callbacks." }
-        check("MutableStateFlow(OperationRuntimeState())" in coordinatorText && "progressPreferenceProvider" in coordinatorText) {
-            "Live runtime progress and user-selected polling cadence must remain production-wired."
-        }
-        check("override fun onTimeout" in serviceText && "operationCoordinator(this@BkxOperationForegroundService).cancel" in serviceText) {
-            "Foreground-service timeout must cooperatively cancel rather than leave unprotected filesystem work running."
-        }
+        check("maxOperations: Int = 64" in operationText && "maxEventsPerRequest: Int = 200" in operationText) { "Operation persistence must remain bounded." }
+        check("duration_ms" in bridgeText && "DurationMS" in goBridgeText) { "Go embedded results must retain measured duration metrics." }
+        check("run.progress" in goBridgeText && "run.cancel.cooperative" in goBridgeText) { "Go runtime must advertise progress and cooperative cancellation." }
+        check("progress != nil" in archiveText && "progress != nil" in restoreText && "progress != nil" in transferText) { "Archive/restore/transfer paths must keep incremental progress callbacks." }
+        check("MutableStateFlow(OperationRuntimeState())" in coordinatorText && "progressPreferenceProvider" in coordinatorText) { "Live runtime progress and user-selected polling cadence must remain production-wired." }
+        check("override fun onTimeout" in serviceText && "operationCoordinator(this@BkxOperationForegroundService).cancel" in serviceText) { "Foreground-service timeout must cooperatively cancel." }
     }
 }
 
@@ -422,15 +422,14 @@ tasks.register("verifyBkxUxHardeningContract") {
 
 val verifyBkxEmbeddedParitySeal = tasks.register<Exec>("verifyBkxEmbeddedParitySeal") {
     group = "verification"
-    description = "Run the stdlib-only direct bkx.core versus embedded Android API parity seal."
+    description = "Run the GO17 immutable compatibility oracle and Go bridge/service seals."
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
-    val script = androidRootDir.resolve("scripts/verify-embedded-parity.py")
-    inputs.files(script, repositoryRootDir.resolve("src/bkx/android_api"), repositoryRootDir.resolve("src/bkx/core"))
+    val oracle = repositoryRootDir.resolve("migration/fixtures/v1/reference_oracle.json")
+    val goSources = repositoryRootDir.resolve("internal")
+    inputs.files(oracle, goSources)
     workingDir(repositoryRootDir)
-    environment("PYTHONPATH", repositoryRootDir.resolve("src").absolutePath)
-    environment("PYTHONDONTWRITEBYTECODE", "1")
-    commandLine(System.getenv("PYTHON")?.takeIf { it.isNotBlank() } ?: "python3", script.absolutePath)
+    commandLine("go", "test", "./internal/compatfixtures", "./internal/bridge", "./internal/services")
 }
 
 tasks.register("verifyBkxReleaseHygiene") {
@@ -440,7 +439,8 @@ tasks.register("verifyBkxReleaseHygiene") {
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val productionRoots = listOf(
         androidRootDir.resolve("app/src/main"),
-        repositoryRootDir.resolve("src/bkx/android_api"),
+        repositoryRootDir.resolve("cmd"),
+        repositoryRootDir.resolve("internal"),
     )
     inputs.files(productionRoots)
     doLast {
@@ -448,7 +448,7 @@ tasks.register("verifyBkxReleaseHygiene") {
             if (!root.exists()) emptyList() else root.walkTopDown().filter { it.isFile }.toList()
         }
         val forbiddenText = listOf("com.termux.permission.RUN_COMMAND", "com.termux.RUN_COMMAND", "TermuxBridgeAdapter(", "termux_run_command", "TermuxRunCommand", "su -c", "eval(", "exec(")
-        sourceFiles.filter { it.extension in setOf("kt", "kts", "java", "xml", "py", "aidl") }.forEach { file ->
+        sourceFiles.filter { it.extension in setOf("kt", "kts", "java", "xml", "go", "aidl") }.forEach { file ->
             val text = file.readText()
             forbiddenText.forEach { token -> check(token !in text) { "Release hygiene rejected '$token' in ${file.relativeTo(repositoryRootDir)}" } }
             if ("ProcessBuilder(" in text) {
@@ -491,15 +491,12 @@ tasks.register("verifyBkxDeviceQualificationContract") {
 
 val verifyBkxLargeTreePerformanceSeal = tasks.register<Exec>("verifyBkxLargeTreePerformanceSeal") {
     group = "verification"
-    description = "Profile a representative nested Android backup tree and enforce bounded Python memory/time."
+    description = "Run the Go large-tree archive/verify performance seal."
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
-    val script = androidRootDir.resolve("scripts/verify-large-tree-profile.py")
-    inputs.files(script, repositoryRootDir.resolve("src/bkx/android_api"), repositoryRootDir.resolve("src/bkx/core"))
+    inputs.files(repositoryRootDir.resolve("internal/compatfixtures/large_tree_test.go"), repositoryRootDir.resolve("internal/archiveio"))
     workingDir(repositoryRootDir)
-    environment("PYTHONPATH", repositoryRootDir.resolve("src").absolutePath)
-    environment("PYTHONDONTWRITEBYTECODE", "1")
-    commandLine(System.getenv("PYTHON")?.takeIf { it.isNotBlank() } ?: "python3", script.absolutePath)
+    commandLine("go", "test", "./internal/compatfixtures", "-run", "^TestGoLargeTreeReleaseSeal$", "-count=1")
 }
 
 tasks.register("verifyBkxStorageCompletenessContract") {
@@ -515,10 +512,10 @@ tasks.register("verifyBkxStorageCompletenessContract") {
     val more = root.resolve("feature/more/MoreScreen.kt")
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
-    val engine = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
-    val archiveResults = repositoryRootDir.resolve("src/bkx/core/results/archive.py")
-    val archiver = repositoryRootDir.resolve("src/bkx/core/impl/archiver.py")
-    inputs.files(viewModel, storage, provider, browser, backup, archives, more, engine, archiveResults, archiver)
+    val goDispatcher = repositoryRootDir.resolve("internal/services/dispatcher.go")
+    val goArchive = repositoryRootDir.resolve("internal/archiveio/archiveio.go")
+    val goRestore = repositoryRootDir.resolve("internal/archiveio/restore.go")
+    inputs.files(viewModel, storage, provider, browser, backup, archives, more, goDispatcher, goArchive, goRestore)
     doLast {
         val vm = viewModel.readText()
         check("filesystem.list" in vm && "OpenFilesystemBrowser" in vm) { "Product filesystem browser must execute canonical filesystem.list." }
@@ -531,8 +528,8 @@ tasks.register("verifyBkxStorageCompletenessContract") {
             "Provider fallback must be reachable from backup, archive, and transfer product workflows."
         }
         check("FilesystemBrowserDialog" in browser.readText()) { "Reusable root-aware filesystem selector is missing." }
-        check("entry_type" in archiveResults.readText() && "member.issym()" in archiver.readText() && "archive_entry_symlink" in engine.readText() && "archive_entry_special" in engine.readText()) {
-            "Archive Link/Special product filters must be backed by canonical archive-entry type metadata."
+        check("EntryType string `json:"entry_type"`" in goArchive.readText() && "Archive link members are unsafe for restore" in goRestore.readText() && "archive_entry_symlink" in goDispatcher.readText() && "archive_entry_special" in goDispatcher.readText()) {
+            "Archive Link/Special product filters must be backed by canonical Go archive-entry type metadata."
         }
     }
 }
@@ -663,7 +660,7 @@ tasks.register("verifyBkxGoOnlyAndroidRuntimeContract") {
         val scriptText = buildScript.readText()
         val phaseText = phaseFile.readText()
 
-        check("MigrationPhase = \"GO14\"" in phaseText) { "GO14 phase identity is missing." }
+        check(Regex("""MigrationPhase\s*=\s*"GO(1[4-9]|[2-9][0-9]+)"""").containsMatchIn(phaseText)) { "GO14+ phase identity is missing." }
         check("chaquopy" !in catalogText.lowercase() && "libs.plugins.chaquopy" !in rootBuildText && "libs.plugins.chaquopy" !in appText) {
             "GO14 Android still has a Chaquopy Gradle/plugin dependency."
         }
@@ -709,16 +706,16 @@ tasks.register("verifyBkxFinalReleaseContract") {
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val appBuild = layout.projectDirectory.file("build.gradle.kts").asFile
-    val pyproject = repositoryRootDir.resolve("pyproject.toml")
+    val versionFile = repositoryRootDir.resolve("internal/version/version.go")
     val releaseContract = androidRootDir.resolve("docs/RELEASE_CONTRACT.md")
     val validation = androidRootDir.resolve("docs/RELEASE_VALIDATION.md")
     val architecture = androidRootDir.resolve("docs/ARCHITECTURE.md")
-    inputs.files(appBuild, pyproject, releaseContract, validation, architecture)
+    inputs.files(appBuild, versionFile, releaseContract, validation, architecture)
     doLast {
         val buildText = appBuild.readText()
-        val pyprojectText = pyproject.readText()
-        check(Regex("""(?m)^version\s*=\s*"1\.0\.0"\s*$""").containsMatchIn(pyprojectText)) {
-            "Repository-root pyproject.toml must remain the canonical BKX 1.0.0 version source for this release."
+        val versionText = versionFile.readText()
+        check(Regex("""(?m)^\s*Version\s*=\s*"1\.0\.0"\s*$""").containsMatchIn(versionText)) {
+            "internal/version/version.go must remain the canonical BKX 1.0.0 version source for this release."
         }
         check("versionName = bkxVersionName" in buildText && "versionCode = bkxVersionCode" in buildText) {
             "Android must derive versionName/versionCode from the canonical repository version."

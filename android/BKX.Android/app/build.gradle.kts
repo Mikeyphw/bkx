@@ -46,12 +46,12 @@ val bkxNdkVersion = "29.0.14206865"
 val bkxGoRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-go-runtime/jniLibs")
 
 val bkxRepositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
-val bkxPyprojectFile = bkxRepositoryRoot.resolve("pyproject.toml")
-val bkxVersionName = Regex("""(?m)^version\s*=\s*"([^"]+)"\s*$""")
-    .find(bkxPyprojectFile.readText())
+val bkxVersionFile = bkxRepositoryRoot.resolve("internal/version/version.go")
+val bkxVersionName = Regex("""(?m)^\s*Version\s*=\s*"([^"]+)"\s*$""")
+    .find(bkxVersionFile.readText())
     ?.groupValues
     ?.get(1)
-    ?: error("BKX version is missing from repository-root pyproject.toml")
+    ?: error("BKX version is missing from internal/version/version.go")
 val bkxVersionParts = bkxVersionName.split(".").map { part ->
     part.toIntOrNull() ?: error("BKX Android requires a numeric major.minor.patch version; found $bkxVersionName")
 }

@@ -332,3 +332,28 @@ GO17 may retire or archive the Python reference implementation only after the fr
 ## GO17 — immutable reference oracle
 
 GO17 retires dynamic Python parity from normal validation. The accepted GO02–GO13 differential evidence and GO15 public CLI parity are frozen into `migration/fixtures/v1/`, including the same 14 JSON and 3 parser/usage cases. `internal/compatfixtures` executes those fixtures directly against the Go production surface. The historical Python tree is preserved only as the deterministic archive in `migration/archive/`; CI, Devtool production validation, release building, and Android release gates do not import or launch it. Android verification now checks the Go bridge/archive/restore/transfer implementation directly and derives the product version from `internal/version/version.go`.
+
+## GO17 — Frozen reference oracle and dynamic parity retirement
+
+GO17 accepted the final dynamic differential corpus and converted it into immutable,
+Go-owned repository fixtures. `migration/fixtures/v1/reference_oracle.json` freezes the
+14 JSON and 3 usage public-CLI cases plus protocol/readiness expectations that were
+previously checked by executing both implementations. Go tests now execute that corpus
+directly through `internal/publiccli` and the Go bridge. The accepted GO16 reference
+source/tooling was captured in a deterministic audit archive under `migration/archive/`.
+Normal CI, release, Devtool production validation, and Android checks no longer execute
+that archive or require a Python interpreter.
+
+## GO18 — Active Python source/package purge
+
+GO18 removes the active reference source tree, Python tests and migration tooling,
+Python project/package configuration, Python Devtool target/settings, and historical
+Python-dependent validators from normal repository paths. CI runs
+`scripts/validate-go18.sh`, which composes the GO17 immutable compatibility and
+reproducible-release seal with a Go-owned repository-purity test.
+
+The historical `migration/contracts/v1/` fields retain their original semantics and
+must not be rewritten merely to remove historical naming. Likewise the protocol-v1
+`python_version` readiness field remains a wire-compatibility field with value `none`.
+The deterministic archive is evidence only: it is excluded from all active source,
+build, test, package, release, Devtool, and Android ownership.

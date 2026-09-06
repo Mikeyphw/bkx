@@ -1,62 +1,29 @@
-# Canonical repository layout (CLI mandatory, interactive/TUI optional)
+# BKX architecture layout
 
-This layout is designed to enforce contracts by construction.
+BKX is Go-first in the repository and Kotlin/Compose on Android. The accepted Python
+implementation is retained only as a deterministic historical archive under
+`migration/archive/` and is not an active source, test, package, Devtool, CI, release,
+or Android runtime path.
 
 ```text
-project/
-├─ pyproject.toml
-├─ src/<tool>/
-│  ├─ core/
-│  │  ├─ domain/          # pure models + invariants
-│  │  ├─ specs/           # frozen Specs (normalized intent)
-│  │  ├─ services/        # use cases
-│  │  ├─ ports/           # interfaces for IO/tooling
-│  │  ├─ impl/            # concrete adapters (fs/subprocess/etc)
-│  │  ├─ errors.py        # typed errors
-│  │  └─ results.py       # result types
-│  │
-│  ├─ cli/                # REQUIRED
-│  │  ├─ app.py
-│  │  ├─ nouns/           # noun groups (each contains verbs)
-│  │  ├─ render/          # stdout renderer + json schema emit
-│  │  ├─ exit_codes.py
-│  │  └─ spec_builders.py # args → Spec (shared with interactive)
-│  │
-│  ├─ interactive/        # OPTIONAL (extra)
-│  │  ├─ app.py
-│  │  ├─ flows/           # wizards/menus (no logic)
-│  │  └─ pickers.py       # runtime tool selection + fallback
-│  │
-│  └─ tui/                # OPTIONAL (extra)
-│     ├─ app.py
-│     ├─ messages.py
-│     ├─ screens/
-│     ├─ panes/
-│     ├─ widgets/
-│     └─ css/
-│
-└─ tests/
-   ├─ core/
-   ├─ cli/
-   ├─ interactive/
-   ├─ tui/
-   └─ parity/
+.
+├─ cmd/bkx/                    # production Go CLI
+├─ internal/                   # Go engines, services, bridge, contracts, fixtures tests
+├─ migration/
+│  ├─ contracts/v1/           # immutable historical compatibility contract
+│  ├─ fixtures/v1/            # GO17 Go-owned compatibility oracle/data
+│  └─ archive/                # deterministic historical Python evidence only
+├─ scripts/
+│  ├─ build-go-android-runtime.sh
+│  ├─ build-go-release.sh
+│  ├─ validate-go17.sh        # immutable compatibility + deterministic release seal
+│  └─ validate-go18.sh        # GO18 repository purity + GO17 seal
+├─ build-logic/                # Android verification Gradle logic
+├─ android/BKX.Android/        # Kotlin/Compose app; packaged ARM64 Go runtime
+├─ go.mod
+└─ .devtool.toml              # Go production and Android targets only
 ```
 
-## Packaging rules
-- Base install includes: `core + cli`
-- Extras:
-  - `.[interactive]` installs interactive dependencies
-  - `.[tui]` installs textual + tui dependencies
-
-## Forbidden shortcuts
-- Do not import `interactive` or `tui` from `cli`.
-- Do not import `cli` from `core`.
-
-## One Spec builder
-All interfaces must call **the same Spec builder functions** to ensure parity.
-
-Recommended pattern:
-- `cli/spec_builders.py` contains `build_<verb>_spec(...)` functions
-- interactive/tui call those builders (or call into a shared `spec_builders` module)
-
+The protocol-v1 Android bridge and public CLI ultimately call the same Go service
+implementation. Optional `bkx-tui` and `bkx-interactive` UIs are external executables,
+not embedded alternative runtimes.

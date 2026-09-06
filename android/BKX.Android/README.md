@@ -42,7 +42,7 @@ Termux is never used to execute BKX. There is no RUN_COMMAND permission, wrapper
 - Android backup skips symlinks rather than following them.
 - Restore requires an exact destination; sensitive root writes require `RESTORE ROOT`; protected Android system roots are blocked.
 - Operation history is bounded.
-- Python↔Go parity remains a repository migration/reference gate, but Python is not packaged into Android.
+- GO17 immutable Go-owned compatibility parity remains a repository migration/reference gate, but Python is not packaged into Android.
 - Rooted physical-device qualification is available through `scripts/qualify-device.sh`.
 
 See `docs/ARCHITECTURE.md`, `docs/RELEASE_CONTRACT.md`, and `docs/RELEASE_VALIDATION.md`.

@@ -1,7 +1,7 @@
 # BKX
 
 BKX is a contract-controlled backup/archive tool whose **production CLI is Go**.
-GO17 freezes the accepted Python↔Go differential evidence into immutable Go-owned fixtures. The Python implementation remains only as archival/reference evidence and is no longer executed by normal CI, release, Devtool, or Android validation.
+GO18 completes the active repository purge: the accepted differential evidence is frozen in immutable Go-owned fixtures, while the former Python implementation exists only inside a deterministic historical archive. Normal source, tests, packaging, Devtool, CI, release, and Android paths are Go/Kotlin only.
 
 ## Current verified capabilities
 
@@ -10,7 +10,7 @@ GO17 freezes the accepted Python↔Go differential evidence into immutable Go-ow
 - Android is Go-only `arm64-v8a`, with NDK 29 retained as the release floor.
 - `ui start` launches optional external `bkx-tui` or `bkx-interactive` plugins; missing plugins fail with a typed actionable error.
 - Host and Android release artifacts are built deterministically and sealed by `SHA256SUMS`.
-- The accepted Python reference is preserved as a deterministic audit archive under `migration/archive/`; compatibility validation runs only Go-owned fixtures.
+- The accepted pre-GO18 implementation is preserved only as a deterministic audit archive under `migration/archive/`; compatibility validation runs only Go-owned fixtures.
 
 ## Build / install
 
@@ -28,7 +28,7 @@ Or produce the sealed host + Android release bundle:
 cat ./dist/go-release/SHA256SUMS
 ```
 
-The historical Python implementation is retained only as the deterministic audit archive in `migration/archive/`; normal product validation does not install or execute it.
+The retired implementation is retained only inside the deterministic audit archive in `migration/archive/`; it is not an active repository source/package/test/runtime path.
 
 Optional UI implementations are external plugins named `bkx-tui` and
 `bkx-interactive`. Their executable paths may be overridden with
@@ -47,7 +47,7 @@ bkx ui start --mode tui
 
 ## Validation
 
-`./scripts/validate-go17.sh` runs the Go-owned compatibility and release seal. CI no longer installs Python for parity; the 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
+`./scripts/validate-go18.sh` runs the GO17 Go-owned compatibility/release seal plus the GO18 repository-purity gate. The 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
 
 ## Python → Go migration
 
@@ -145,3 +145,12 @@ GO14 retires Python from the Android APK. Chaquopy, build-Python probing, the Py
 ### Go migration GO15
 
 GO15 cuts the frozen 23-node/16-leaf human CLI over to Go while keeping the repository Python package as the production packaging/reference lane for one final phase. Global flags, typed exit codes, JSON plans/results/errors, config defaults, run history, tools, archive/backup/restore/transfer commands, and `--version` precedence are owned by the Go public dispatcher. Migration, bridge, contract, and Android-runtime probes remain hidden/internal. `ui start` is the sole temporary Python-reference exception until GO16. The GO15 validator is flattened: one host binary runs GO02–GO13 differential regressions plus public CLI parity, and one Android ARM64 runtime build seals the intentional `arm64-v8a`/NDK 29 policy. The inapplicable ChromeOS alternate-ABI lint is suppressed explicitly rather than fabricating an unsupported ABI.
+
+
+### Go migration GO17
+
+GO17 converts the accepted dynamic differential evidence into immutable Go-owned fixtures. The same 14 JSON + 3 usage public-CLI cases and protocol/readiness expectations are enforced without importing or executing the retired implementation. A deterministic audit archive preserves the accepted GO16 reference source/tooling for historical evidence only, and normal CI/release/Android validation becomes pure Go/Kotlin.
+
+### Go migration GO18
+
+GO18 removes active Python source, tests, packaging metadata, migration scripts, Python Devtool ownership, and Python-specific production validation paths. `validate-go18.sh` composes the GO17 compatibility/release seal with a repository-purity gate. The immutable GO00 contract and GO17 oracle remain versioned evidence; the archived reference bundle is explicitly excluded from runtime and build ownership.

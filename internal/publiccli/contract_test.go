@@ -102,7 +102,7 @@ func TestInternalProbesStayOutOfPublicHelp(t *testing.T) {
 }
 
 func TestRootHelpGolden(t *testing.T) {
-	path := filepath.Join("..", "..", "tests", "fixtures", "go15", "root_help.txt")
+	path := filepath.Join("..", "..", "migration", "fixtures", "v1", "go_cli", "root_help.txt")
 	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestInvalidArgumentGolden(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout.String(), stderr.String())
 	}
-	path := filepath.Join("..", "..", "tests", "fixtures", "go15", "missing_archive.stderr")
+	path := filepath.Join("..", "..", "migration", "fixtures", "v1", "go_cli", "missing_archive.stderr")
 	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)

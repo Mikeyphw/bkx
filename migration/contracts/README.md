@@ -1,33 +1,21 @@
-# GO00 frozen compatibility contracts
+# Frozen migration contracts
 
-`v1/` is the machine-readable baseline for BKX at the start of the Python → Go
-migration. It is generated from the production Python implementation and consumed
-by both Python drift tests and Go invariant tests.
+`migration/contracts/v1/` is the immutable GO00 compatibility snapshot used by the
+Go contract checker. It records the historical CLI/config/protocol/release baseline
+that the migration was required to preserve.
 
-Contents:
+The original exporter belonged to the Python migration lane and was retired in GO18.
+Its accepted GO16 source and tooling are preserved only inside the deterministic audit
+archive under `migration/archive/`; they are not executable production or validation
+paths.
 
-- `cli.json` — Typer/Click command tree, options, arguments, defaults and counts.
-- `bridge.json` — protocol-v1 runtime identity, capabilities, handler set, and
-  request/result/progress envelope invariants.
-- `core.json` — configuration precedence/environment/defaults, public typed-error
-  exit codes, run-history persistence, and canonical schema inventory.
-- `release.json` — product/backend/Android identity and migration cutover rules.
-- `spec_schemas/*.json` — canonical backup/archive/restore/transfer JSON Schemas.
-- `manifest.json` — SHA-256 and byte size for every frozen payload above.
+Do not regenerate `v1` during normal development. Validate it with the production Go
+CLI or the GO18 seal:
 
-Regenerate intentionally with:
-
-```sh
-PYTHONPATH=src python3 tools/go_migration/export_contracts.py
-```
-
-Verify drift with:
-
-```sh
-PYTHONPATH=src python3 tools/go_migration/export_contracts.py --check
+```bash
 go run ./cmd/bkx contract check migration/contracts/v1
+./scripts/validate-go18.sh
 ```
 
-An intentional contract change must update the Python implementation, regenerated
-fixtures, the affected Go parity implementation/tests, and the migration ledger in
-the same change. Incidental drift is a failure.
+A future intentional contract revision must be introduced as a new versioned contract
+directory rather than rewriting the accepted `v1` evidence.

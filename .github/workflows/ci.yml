@@ -12,5 +12,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - name: GO17 production compatibility and release seal
-        run: ./scripts/validate-go17.sh
+      - name: GO18 Go-only repository, compatibility, and release seal
+        run: ./scripts/validate-go18.sh

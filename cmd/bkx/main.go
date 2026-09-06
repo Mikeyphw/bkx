@@ -39,7 +39,7 @@ func run(args []string) int {
 // them in public help. Human product commands are owned by publiccli.Run.
 func runInternal(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
-		fmt.Printf("bkx %s (Go migration scaffold %s, commit %s; Python baseline %s)\n", version.Version, version.MigrationPhase, version.Commit, version.PythonBaseline)
+		fmt.Printf("bkx %s (Go migration scaffold %s, commit %s; compatibility baseline %s)\n", version.Version, version.MigrationPhase, version.Commit, version.CompatibilityBaseline)
 		return 0
 	}
 	if len(args) >= 2 && args[0] == "contract" && args[1] == "check" {

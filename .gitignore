@@ -2,9 +2,8 @@
 /artifacts/
 /dist/
 /build/
-*.egg-info/
 
-# Python runtime/test state
+# Legacy/generated interpreter residue (not an active Python source lane)
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -16,6 +15,7 @@ coverage.xml
 htmlcov/
 .venv/
 venv/
+*.egg-info/
 
 # Devtool runtime state
 /.devtool/

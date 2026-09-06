@@ -1,7 +1,7 @@
 package models
 
 // GO03 keeps JSON names aligned with the frozen Python contracts. These structs
-// are shared production models. Python remains only the reference/parity oracle through GO17.
+// are shared production models and are validated against the immutable v1 compatibility fixtures.
 
 type CompressionProfile struct {
 	Algorithm string `json:"algorithm"`

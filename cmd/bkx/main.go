@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"bkx/internal/archiveio"
 	"bkx/internal/backupops"
+	"bkx/internal/bridge"
 	"bkx/internal/config"
 	"bkx/internal/contracts"
 	"bkx/internal/fsutil"
@@ -116,6 +118,42 @@ func run(args []string) int {
 		}
 		fmt.Println("BKX GO02 retention probe complete.")
 		return 0
+	}
+
+	if len(args) >= 3 && args[0] == "migration" && args[1] == "bridge" {
+		switch args[2] {
+		case "readiness":
+			if len(args) != 3 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration bridge readiness")
+				return 64
+			}
+			return printJSON(bridge.New(nil).Readiness())
+		case "execute":
+			if len(args) != 5 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration bridge execute REQUEST_JSON RUNS_OR_DASH")
+				return 64
+			}
+			store, err := optionalRunStore(args[4])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(bridge.New(store).Execute(args[3]))
+		case "session":
+			if len(args) != 4 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration bridge session RUNS_OR_DASH")
+				return 64
+			}
+			store, err := optionalRunStore(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return runBridgeSession(bridge.New(store))
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx migration bridge {readiness|execute|session} ...")
+			return 64
+		}
 	}
 
 	if len(args) >= 3 && args[0] == "migration" && args[1] == "service" {
@@ -477,6 +515,62 @@ func run(args []string) int {
 
 	fmt.Fprintln(os.Stderr, "bkx: Go migration scaffold is not the production backend yet; use the Python BKX CLI until parity gates pass")
 	return 64
+}
+
+func optionalRunStore(path string) (*runstore.Store, error) {
+	if path == "-" {
+		return nil, nil
+	}
+	return runstore.New(path, 0, false)
+}
+
+func runBridgeSession(rt *bridge.RuntimeAdapter) int {
+	scanner := bufio.NewScanner(os.Stdin)
+	buffer := make([]byte, 0, 64*1024)
+	scanner.Buffer(buffer, 4*1024*1024)
+	encoder := json.NewEncoder(os.Stdout)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var command struct {
+			Entrypoint string          `json:"entrypoint"`
+			RequestID  string          `json:"request_id"`
+			Request    json.RawMessage `json:"request"`
+		}
+		if err := json.Unmarshal([]byte(line), &command); err != nil {
+			_ = encoder.Encode(map[string]any{"session_error": err.Error()})
+			continue
+		}
+		var value any
+		switch command.Entrypoint {
+		case "readiness":
+			value = rt.Readiness()
+		case "execute":
+			value = rt.Execute(string(command.Request))
+		case "progress":
+			progress, err := rt.Progress(command.RequestID)
+			if err != nil {
+				value = map[string]any{"session_error": err.Error()}
+			} else {
+				value = progress
+			}
+		case "cancel":
+			value = rt.Cancel(command.RequestID)
+		default:
+			value = map[string]any{"session_error": "unknown bridge session entrypoint"}
+		}
+		if err := encoder.Encode(value); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
 }
 
 func printJSON(value any) int {

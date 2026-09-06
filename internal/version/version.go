@@ -3,7 +3,7 @@ package version
 const (
 	Version        = "1.0.0"
 	PythonBaseline = "1.0.0"
-	MigrationPhase = "GO10"
+	MigrationPhase = "GO11"
 )
 
 var Commit = "dev"

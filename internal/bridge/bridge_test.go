@@ -1,0 +1,197 @@
+package bridge
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sort"
+	"testing"
+)
+
+func requestJSON(t *testing.T, requestID, operation string, payload any) string {
+	t.Helper()
+	doc := map[string]any{
+		"protocol_version": 1,
+		"request_id":       requestID,
+		"operation":        operation,
+		"payload":          payload,
+	}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestFrozenBridgeRegistryAndReadiness(t *testing.T) {
+	contractPath := filepath.Join("..", "..", "migration", "contracts", "v1", "bridge.json")
+	data, err := os.ReadFile(contractPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frozen struct {
+		Advertised []string `json:"advertisedOperations"`
+		Handlers   []string `json:"handlers"`
+		Caps       []string `json:"capabilities"`
+	}
+	if err := json.Unmarshal(data, &frozen); err != nil {
+		t.Fatal(err)
+	}
+	if got := SupportedOperations(); !reflect.DeepEqual(got, frozen.Advertised) {
+		t.Fatalf("advertised registry drift: %#v != %#v", got, frozen.Advertised)
+	}
+	gotHandlers := HandlerOperations()
+	sort.Strings(frozen.Handlers)
+	if !reflect.DeepEqual(gotHandlers, frozen.Handlers) {
+		t.Fatalf("handler registry drift: %#v != %#v", gotHandlers, frozen.Handlers)
+	}
+	ready := New(nil).Readiness()
+	if ready.ProtocolVersion != 1 || ready.Runtime != Runtime || ready.BackendVersion == "" {
+		t.Fatalf("unexpected readiness: %#v", ready)
+	}
+	capset := map[string]bool{}
+	for _, cap := range ready.Capabilities {
+		capset[cap] = true
+	}
+	for _, cap := range frozen.Caps {
+		if !capset[cap] {
+			t.Fatalf("readiness missing frozen capability %q", cap)
+		}
+	}
+	if !capset["filesystem.direct"] {
+		t.Fatal("readiness must expose direct filesystem capability")
+	}
+}
+
+func TestExecuteSuccessEnvelopeMetricsAndProgressSequence(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "hello.txt")
+	if err := os.WriteFile(path, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt := New(nil)
+	result := rt.Execute(requestJSON(t, "stat-1", "filesystem.stat", map[string]any{"path": path}))
+	if result.Status != "success" || result.RequestID != "stat-1" || result.ProtocolVersion != 1 {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if result.Metrics == nil || result.Metrics.DurationMS < 0 {
+		t.Fatalf("missing metrics: %#v", result.Metrics)
+	}
+	if result.Errors == nil || result.Artifacts == nil || len(result.Artifacts) != 1 {
+		t.Fatalf("envelope arrays are not canonical: %#v", result)
+	}
+	progress, err := rt.Progress("stat-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if progress == nil || progress.Seq < 2 || progress.Phase != "success" || progress.Progress == nil || *progress.Progress != 1 {
+		t.Fatalf("unexpected final progress: %#v", progress)
+	}
+}
+
+func TestMalformedRequestsFailClosedWithProtocolEnvelope(t *testing.T) {
+	rt := New(nil)
+	cases := []struct {
+		name string
+		raw  string
+		code string
+	}{
+		{"empty", "", "validation_error"},
+		{"array", "[]", "validation_error"},
+		{"bad-json", "{bad", "validation_error"},
+		{"wrong-protocol", `{"protocol_version":2,"request_id":"x","operation":"filesystem.stat","payload":{}}`, "validation_error"},
+		{"unsafe-id", `{"protocol_version":1,"request_id":"bad id","operation":"filesystem.stat","payload":{}}`, "validation_error"},
+		{"bad-payload", `{"protocol_version":1,"request_id":"x","operation":"filesystem.stat","payload":[]}`, "validation_error"},
+		{"trailing", `{"protocol_version":1,"request_id":"x","operation":"filesystem.stat","payload":{}} {}`, "validation_error"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := rt.Execute(tc.raw)
+			if result.Status != "failure" || result.ProtocolVersion != 1 || result.RequestID != "unknown" {
+				t.Fatalf("unexpected failure envelope: %#v", result)
+			}
+			if result.Metrics == nil || len(result.Errors) != 1 || result.Errors[0].Code != tc.code || len(result.Artifacts) != 0 {
+				t.Fatalf("unexpected typed failure: %#v", result)
+			}
+		})
+	}
+
+	// Python accepts numeric 1.0 because 1.0 == 1. Keep that protocol edge.
+	good := rt.Execute(`{"protocol_version":1.0,"request_id":"numeric-one","operation":"storage.locations","payload":{}}`)
+	if good.Status != "success" {
+		t.Fatalf("numeric protocol 1.0 must be accepted: %#v", good)
+	}
+}
+
+func TestUnknownOperationAndTypedNotFoundMapping(t *testing.T) {
+	rt := New(nil)
+	unknown := rt.Execute(requestJSON(t, "no-shell", "shell.exec", map[string]any{}))
+	if unknown.RequestID != "no-shell" || unknown.Status != "failure" || len(unknown.Errors) != 1 || unknown.Errors[0].Code != "validation_error" {
+		t.Fatalf("unexpected unknown-op mapping: %#v", unknown)
+	}
+	if unknown.Errors[0].Action != "Review the selected files and operation options." {
+		t.Fatalf("unexpected validation action: %#v", unknown.Errors[0])
+	}
+
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	notFound := rt.Execute(requestJSON(t, "missing", "filesystem.stat", map[string]any{"path": missing}))
+	if notFound.Status != "failure" || len(notFound.Errors) != 1 || notFound.Errors[0].Code != "not_found" {
+		t.Fatalf("unexpected not-found mapping: %#v", notFound)
+	}
+	if notFound.Errors[0].Action != "Choose an existing source, archive, or destination." {
+		t.Fatalf("unexpected not-found action: %#v", notFound.Errors[0])
+	}
+}
+
+func TestCancelEndpointAndQueuedCancellationParity(t *testing.T) {
+	rt := New(nil)
+	ack := rt.Cancel("queued-request")
+	if ack.Status != "success" || ack.RequestID != "queued-request" || ack.Metrics != nil || len(ack.Errors) != 0 || len(ack.Artifacts) != 0 {
+		t.Fatalf("unexpected cancel acknowledgement: %#v", ack)
+	}
+	if p, err := rt.Progress("queued-request"); err != nil || p != nil {
+		t.Fatalf("cancel endpoint must not create progress: %#v %v", p, err)
+	}
+	result := rt.Execute(requestJSON(t, "queued-request", "storage.locations", map[string]any{}))
+	if result.Status != "cancelled" || result.RequestID != "queued-request" {
+		t.Fatalf("queued cancellation did not stop execution: %#v", result)
+	}
+	p, err := rt.Progress("queued-request")
+	if err != nil || p == nil || p.Phase != "cancelled" || p.Progress != nil || p.Seq != 2 {
+		t.Fatalf("unexpected cancellation progress: %#v %v", p, err)
+	}
+}
+
+func TestRunCancelHandlerCancelsAnotherRequestWithoutAdvertisingIt(t *testing.T) {
+	rt := New(nil)
+	result := rt.Execute(requestJSON(t, "cancel-command", "run.cancel", map[string]any{"target_request_id": "target-request"}))
+	if result.Status != "success" || result.Summary != "Cancellation recorded for target-request." {
+		t.Fatalf("unexpected run.cancel result: %#v", result)
+	}
+	for _, op := range SupportedOperations() {
+		if op == "run.cancel" {
+			t.Fatal("run.cancel must not become an advertised operation")
+		}
+	}
+	cancelledResult := rt.Execute(requestJSON(t, "target-request", "storage.locations", map[string]any{}))
+	if cancelledResult.Status != "cancelled" {
+		t.Fatalf("run.cancel target was not cancelled: %#v", cancelledResult)
+	}
+}
+
+func TestProgressSequenceContinuesWhenRequestIDIsReused(t *testing.T) {
+	rt := New(nil)
+	raw := requestJSON(t, "repeat", "storage.locations", map[string]any{})
+	if first := rt.Execute(raw); first.Status != "success" {
+		t.Fatal(first.Summary)
+	}
+	p1, _ := rt.Progress("repeat")
+	if second := rt.Execute(raw); second.Status != "success" {
+		t.Fatal(second.Summary)
+	}
+	p2, _ := rt.Progress("repeat")
+	if p1 == nil || p2 == nil || p2.Seq <= p1.Seq {
+		t.Fatalf("sequence did not continue: %#v -> %#v", p1, p2)
+	}
+}

@@ -30,3 +30,14 @@ func TestGO10ServiceProbeDoesNotBecomeProductCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestGO11BridgeProbeDoesNotBecomeProductCommand(t *testing.T) {
+	if code := run([]string{"migration", "bridge", "readiness"}); code != 0 {
+		t.Fatalf("GO11 bridge readiness probe failed: %d", code)
+	}
+	for _, args := range [][]string{{"bridge"}, {"bridge", "execute"}, {"bridge", "readiness"}} {
+		if code := run(args); code == 0 {
+			t.Fatalf("GO11 bridge probe leaked into product command %v", args)
+		}
+	}
+}

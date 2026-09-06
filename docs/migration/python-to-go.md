@@ -244,6 +244,20 @@ Delivered migration-only service composition:
 
 The Android app still routes protocol-v1 requests to embedded Python, and normal Go product commands remain fail-closed.
 
+## GO11 — Protocol-v1 Go bridge adapter — COMPLETE
+
+Delivered migration-only bridge transport:
+
+- strict protocol-v1 request parsing with the frozen request-id alphabet, object-only payloads, one-document JSON enforcement, protocol-version checks, and fail-closed unsupported operations;
+- protocol-v1 result envelopes with status/summary/errors/artifacts plus runtime-owned duration metrics;
+- typed BKX error mapping for validation, not-found, permission, external/optional capability, and unexpected-runtime failures;
+- readiness exposes the frozen capability set plus direct/root runtime capabilities while explicitly identifying this pre-cutover runtime as `go-native-migration`;
+- in-process monotonic progress sequencing, final success/cancel/failure progress documents, bounded runtime progress state, and request-id reuse semantics matching embedded Python;
+- cooperative cancellation through both the `cancel` entrypoint and the non-advertised `run.cancel` handler without expanding the frozen 15-operation advertised surface;
+- a migration-only NDJSON session probe exercises readiness/execute/progress/cancel against one persistent Go runtime instance;
+- Python ↔ Go differential fixtures cover success envelopes, malformed/unsupported requests, typed error actions, queued cancellation, `run.cancel`, final progress, and runtime capability parity;
+- normal Go product commands remain fail-closed and Android production routing remains embedded Python.
+
 ## Next gate
 
-GO11 should implement the protocol-v1 Go bridge adapter over the GO10 service layer, including strict request envelopes, response/error mapping, progress sequencing, and cooperative cancellation parity, while still leaving the Android production route on Python until the bridge differential gate is sealed.
+GO12 should integrate the sealed Go protocol adapter into the Android runtime behind an explicit migration/cutover boundary, update readiness/runtime identity for Go without breaking protocol v1, and prove Kotlin ↔ Go request/result/progress/cancel compatibility before Python fallback removal is considered.

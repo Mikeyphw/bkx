@@ -4,7 +4,7 @@ repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo"
 
 # GO17 is intentionally retained as the pure-Go compatibility/release seal.
-./scripts/validate-go17.sh
+bash ./scripts/validate-go17.sh
 
 echo '==> GO18 repository Python source/package purge seal'
 go test ./internal/compatfixtures -run '^TestRepositoryPythonPurgeSeal$' -count=1

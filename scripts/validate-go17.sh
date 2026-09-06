@@ -3,8 +3,7 @@ set -euo pipefail
 repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo"
 export TZ=UTC
-probe_root="${TMPDIR:-/tmp}/bkx-go17-$$"
-mkdir -p "$probe_root"
+probe_root="$(mktemp -d "$repo/.bkx-go17-validation.XXXXXX")"
 trap 'rm -rf "$probe_root"' EXIT HUP INT TERM
 
 echo '==> GO17 immutable fixture/archive integrity'

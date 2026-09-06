@@ -9,58 +9,6 @@ import (
 )
 
 func TestRepositoryPythonPurgeSeal(t *testing.T) {
-	// Temporary GO18 repair batch 2/3 allowlist. The final repair batch removes it.
-	repairAllowedFiles := map[string]bool{
-		"src/bkx/tui/css/animations.tcss":                   true,
-		"src/bkx/tui/css/help.tcss":                         true,
-		"src/bkx/tui/css/overlays.tcss":                     true,
-		"src/bkx/tui/css/pages/run_history.tcss":            true,
-		"src/bkx/tui/css/panes/archive_details_drawer.tcss": true,
-		"src/bkx/tui/css/panes/archive_list.tcss":           true,
-		"src/bkx/tui/css/panes/archive_preview.tcss":        true,
-		"src/bkx/tui/css/panes/context_switcher.tcss":       true,
-		"src/bkx/tui/css/panes/empty_state.tcss":            true,
-		"src/bkx/tui/css/panes/error_boundary.tcss":         true,
-		"src/bkx/tui/css/panes/log.tcss":                    true,
-		"src/bkx/tui/css/panes/navigation.tcss":             true,
-		"src/bkx/tui/css/panes/progress.tcss":               true,
-		"src/bkx/tui/css/panes/status.tcss":                 true,
-		"src/bkx/tui/css/panes/status_bar.tcss":             true,
-		"src/bkx/tui/css/panes/status_cards.tcss":           true,
-		"src/bkx/tui/css/panes/theme_settings.tcss":         true,
-		"src/bkx/tui/css/panes/tools_dashboard.tcss":        true,
-		"src/bkx/tui/css/panes/transfer_progress.tcss":      true,
-		"src/bkx/tui/css/registry.py":                       true,
-		"src/bkx/tui/css/shell.tcss":                        true,
-		"src/bkx/tui/intent_history.py":                     true,
-		"src/bkx/tui/legacy.py":                             true,
-		"src/bkx/tui/messages.py":                           true,
-		"src/bkx/tui/overlays/__init__.py":                  true,
-		"src/bkx/tui/overlays/command_palette.py":           true,
-		"src/bkx/tui/overlays/filter_sheet.py":              true,
-		"src/bkx/tui/overlays/global_search.py":             true,
-		"src/bkx/tui/overlays/help_overlay.py":              true,
-		"src/bkx/tui/overlays/notifications.py":             true,
-		"src/bkx/tui/overlays/profile_dialog.py":            true,
-		"src/bkx/tui/pages/__init__.py":                     true,
-		"src/bkx/tui/pages/archive.py":                      true,
-		"src/bkx/tui/pages/backup.py":                       true,
-		"src/bkx/tui/pages/logs.py":                         true,
-		"src/bkx/tui/pages/registry.py":                     true,
-		"src/bkx/tui/pages/restore.py":                      true,
-		"src/bkx/tui/pages/run_history.py":                  true,
-		"src/bkx/tui/pages/tools.py":                        true,
-		"src/bkx/tui/pages/transfer.py":                     true,
-		"src/bkx/tui/panes/__init__.py":                     true,
-		"src/bkx/tui/panes/archive_details_drawer.py":       true,
-		"src/bkx/tui/panes/archive_list.py":                 true,
-		"src/bkx/tui/panes/context_switcher.py":             true,
-		"src/bkx/tui/panes/debug_overlay.py":                true,
-		"src/bkx/tui/panes/empty":                           true,
-		"src/bkx/tui/panes/empty_state.py":                  true,
-		"src/bkx/tui/panes/error_boundary.py":               true,
-		"src/bkx/tui/panes/log.py":                          true,
-	}
 	root := filepath.Clean(filepath.Join("..", ".."))
 
 	forbiddenFiles := map[string]bool{
@@ -101,9 +49,6 @@ func TestRepositoryPythonPurgeSeal(t *testing.T) {
 		}
 		rel = filepath.ToSlash(rel)
 		if rel == "." {
-			return nil
-		}
-		if repairAllowedFiles[rel] {
 			return nil
 		}
 		if entry.IsDir() {

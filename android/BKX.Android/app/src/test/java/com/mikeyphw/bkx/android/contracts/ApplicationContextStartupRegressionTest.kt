@@ -23,6 +23,10 @@ class ApplicationContextStartupRegressionTest {
         "src/main/java/com/mikeyphw/bkx/android/app/store/AndroidJsonStores.kt",
     ).readText()
 
+    private val applicationSource = File(
+        "src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt",
+    ).readText()
+
     @Test
     fun backendGraphFallsBackWhenApplicationContextIsUnavailable() {
         assertTrue(
@@ -34,27 +38,11 @@ class ApplicationContextStartupRegressionTest {
     }
 
     @Test
-    fun rootServiceProvidesChaquopyARealApplicationContext() {
-        assertFalse(
-            rootServiceSource.contains(
-                "AndroidPlatform(applicationContext)",
-            ),
-        )
-        assertTrue(
-            rootServiceSource.contains(
-                "AndroidPlatform(rootPythonApplication)",
-            ),
-        )
-        assertTrue(
-            rootServiceSource.contains(
-                "RootChaquopyApplication(baseContext)",
-            ),
-        )
-        assertTrue(
-            rootServiceSource.contains(
-                "override fun getApplicationContext(): Context = this",
-            ),
-        )
+    fun rootServiceUsesAppOwnedGoWithoutChaquopyBootstrap() {
+        assertTrue(rootServiceSource.contains("GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)"))
+        assertTrue(rootServiceSource.contains("Os.getuid() == ROOT_UID"))
+        assertFalse(rootServiceSource.contains("AndroidPlatform("))
+        assertFalse(rootServiceSource.contains("getModule(\"bkx.android_api\")"))
     }
 
     @Test
@@ -64,6 +52,12 @@ class ApplicationContextStartupRegressionTest {
                 "context.applicationContext ?: context",
             ),
         )
+    }
+
+    @Test
+    fun pythonRollbackRuntimeStartsLazilyAfterGoCutover() {
+        assertFalse(applicationSource.contains("Python.start("))
+        assertTrue(gatewaySource.contains("Python.start(AndroidPlatform(appContext))"))
     }
 
     @Test

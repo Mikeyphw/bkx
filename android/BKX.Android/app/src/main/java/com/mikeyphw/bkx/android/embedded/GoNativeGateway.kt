@@ -23,8 +23,13 @@ import kotlinx.serialization.json.jsonPrimitive
  */
 class GoNativeGateway(
     context: Context,
-) : EmbeddedRuntimeGateway {
+    private val stateNamespace: String = LOCAL_STATE_NAMESPACE,
+) : AvailableEmbeddedRuntimeGateway {
     private val appContext = context.applicationContext ?: context
+
+    init {
+        require(stateNamespace in ALLOWED_STATE_NAMESPACES) { "Unsupported BKX Go runtime state namespace." }
+    }
     private val stateLock = Any()
     private val writeLock = Any()
     private val sequence = AtomicLong()
@@ -33,7 +38,7 @@ class GoNativeGateway(
     @Volatile private var process: Process? = null
     @Volatile private var writer: BufferedWriter? = null
 
-    fun isAvailable(): Boolean =
+    override fun isAvailable(): Boolean =
         Build.SUPPORTED_ABIS.any { it == ABI } && runtimeFile().let { it.isFile && it.canExecute() }
 
     override suspend fun readinessJson(): String = request("readiness")
@@ -80,9 +85,9 @@ class GoNativeGateway(
         val currentWriter = writer
         if (current != null && isAlive(current) && currentWriter != null) return@synchronized currentWriter
 
-        val home = appContext.filesDir.resolve("bkx/go-home").apply { mkdirs() }
-        val tmp = appContext.cacheDir.resolve("bkx-go-tmp").apply { mkdirs() }
-        val state = appContext.filesDir.resolve("bkx/go").apply { mkdirs() }
+        val home = appContext.filesDir.resolve("bkx/$stateNamespace/home").apply { mkdirs() }
+        val tmp = appContext.cacheDir.resolve("bkx-$stateNamespace-tmp").apply { mkdirs() }
+        val state = appContext.filesDir.resolve("bkx/$stateNamespace").apply { mkdirs() }
         val stderr = state.resolve("runtime.stderr.log")
         val runHistory = state.resolve("runs.jsonl")
         val builder = ProcessBuilder(
@@ -163,10 +168,19 @@ class GoNativeGateway(
         pending.values.forEach { deferred -> deferred.completeExceptionally(error) }
     }
 
+    fun close() = synchronized(stateLock) {
+        writer = null
+        process?.destroy()
+        process = null
+        failPending(IllegalStateException("BKX Go runtime session closed."))
+    }
+
     private fun runtimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RUNTIME_LIBRARY)
 
     private companion object {
         const val ABI = "arm64-v8a"
+        const val LOCAL_STATE_NAMESPACE = "go-local"
+        val ALLOWED_STATE_NAMESPACES = setOf(LOCAL_STATE_NAMESPACE, "go-root")
         const val RUNTIME_LIBRARY = "libbkxgo.so"
         const val DEFAULT_TIMEOUT_MS = 20_000L
         const val PROGRESS_TIMEOUT_MS = 10_000L

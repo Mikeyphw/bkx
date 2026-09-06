@@ -20,3 +20,8 @@ The runtime implementation may change (for example, to Go) without changing prot
 
 The frozen compatibility bundle remains under `migration/contracts/v1/`. GO12 now packages the Go bridge runtime and gives Kotlin a protocol-v1 process transport, but `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT=false` preserves the Python production contract. ARM64 instrumentation is the acceptance path for the packaged Go runtime before a later phase enables it for normal traffic.
 
+
+
+## GO13 production cutover
+
+On supported ARM64 devices the local route selects the packaged `libbkxgo.so` by default. The libsu RootService launches that same app-owned runtime as UID 0. Local and root runtime state use separate namespaces to avoid UID ownership conflicts. Python remains only a controlled local fallback until GO14.

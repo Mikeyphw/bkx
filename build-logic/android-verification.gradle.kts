@@ -72,9 +72,9 @@ tasks.register("verifyBkxRootStorageContract") {
     val rootService = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
     val rootClient = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/RootBkxServiceClient.kt")
     val storage = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/storage/StorageAccessModels.kt")
-    val androidApi = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
+    val goBridge = repositoryRootDir.resolve("internal/bridge/bridge.go")
 
-    inputs.files(manifest, catalog, graph, rootService, rootClient, storage, androidApi)
+    inputs.files(manifest, catalog, graph, rootService, rootClient, storage, goBridge)
 
     doLast {
         val manifestText = manifest.readText()
@@ -83,7 +83,7 @@ tasks.register("verifyBkxRootStorageContract") {
         val rootServiceText = rootService.readText()
         val rootClientText = rootClient.readText()
         val storageText = storage.readText()
-        val engineText = androidApi.readText()
+        val bridgeText = goBridge.readText()
 
         check(catalogText.contains("libsu = \"6.0.0\"")) {
             "Root transport requires the audited libsu 6.0.0 lane."
@@ -97,13 +97,13 @@ tasks.register("verifyBkxRootStorageContract") {
         check(!manifestText.contains("com.termux.permission.RUN_COMMAND") && !manifestText.contains("com.termux.RUN_COMMAND")) {
             "Termux RUN_COMMAND must not return as an execution dependency."
         }
-        check(graphText.contains("RootAwarePythonGateway") && graphText.contains("RootBkxServiceClient")) {
+        check(graphText.contains("RootAwareGateway") && graphText.contains("RootBkxServiceClient")) {
             "Production embedded backend must be root-aware."
         }
-        check(rootServiceText.contains("RootService") && rootServiceText.contains("Os.getuid()") && rootServiceText.contains("bkx.android_api")) {
-            "Root service must run the canonical embedded BKX API and verify UID 0."
+        check(rootServiceText.contains("RootService") && rootServiceText.contains("Os.getuid()") && rootServiceText.contains("GoNativeGateway")) {
+            "Root service must run the canonical Go protocol runtime and verify UID 0."
         }
-        check(!rootServiceText.contains("ProcessBuilder(") && !rootServiceText.contains("su -c")) {
+        check(!rootServiceText.contains("ProcessBuilder(") && !rootServiceText.contains("su -c") && !rootServiceText.contains("com.chaquo.python")) {
             "Root transport must not expose a shell-command implementation."
         }
         check(rootClientText.contains("Shell.getShell().isRoot") && rootClientText.contains("RootService.bind")) {
@@ -117,8 +117,8 @@ tasks.register("verifyBkxRootStorageContract") {
         ) {
             "Termux private files/home/storage/prefix locations must remain first-class root storage targets."
         }
-        check(engineText.contains("root.filesystem") && engineText.contains("storage.termux.private")) {
-            "Root BKX Python runtime must advertise root and Termux-private capabilities."
+        check(bridgeText.contains("root.filesystem") && bridgeText.contains("storage.termux.private")) {
+            "Root BKX Go runtime must advertise root and Termux-private capabilities."
         }
     }
 }
@@ -304,7 +304,7 @@ tasks.register("verifyBkxRuntimeHardeningContract") {
     val coordinator = sourceRoot.resolve("app/runtime/BkxOperationCoordinator.kt")
     val application = sourceRoot.resolve("app/BkxAndroidApplication.kt")
     val graph = sourceRoot.resolve("app/di/DefaultBackendGraph.kt")
-    val gateway = sourceRoot.resolve("embedded/RootAwarePythonGateway.kt")
+    val gateway = sourceRoot.resolve("embedded/RootAwareGateway.kt")
     val operations = sourceRoot.resolve("core/operations/OperationModels.kt")
     inputs.files(coordinator, application, graph, gateway, operations)
     doLast {
@@ -548,6 +548,82 @@ tasks.register("verifyBkxAccessibilityVisualContract") {
     }
 }
 
+
+
+tasks.register("verifyBkxGoProductionCutoverContract") {
+    group = "verification"
+    description = "Verify GO13 production Go cutover, privileged Go route, packaged ARM64 runtime, and device-test evidence sources."
+    dependsOn("buildBkxGoAndroidRuntime")
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val policy = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+    val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
+    val application = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt")
+    val selector = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
+    val rootGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwareGateway.kt")
+    val rootService = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
+    val goGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
+    val localDeviceTest = androidRootDir.resolve("app/src/androidTest/java/com/mikeyphw/bkx/android/embedded/GoProductionCutoverInstrumentationTest.kt")
+    val qualificationTest = androidRootDir.resolve("app/src/androidTest/java/com/mikeyphw/bkx/android/release/ReleaseQualificationInstrumentationTest.kt")
+    val runtime = layout.buildDirectory.file("generated/bkx-go-runtime/jniLibs/arm64-v8a/libbkxgo.so")
+
+    inputs.files(policy, graph, application, selector, rootGateway, rootService, goGateway, localDeviceTest, qualificationTest)
+    inputs.file(runtime)
+
+    doLast {
+        val policyText = policy.readText()
+        val graphText = graph.readText()
+        val applicationText = application.readText()
+        val selectorText = selector.readText()
+        val rootText = rootService.readText()
+        val gatewayText = goGateway.readText()
+        val localTestText = localDeviceTest.readText()
+        val qualificationText = qualificationTest.readText()
+
+        check("ENABLED_BY_DEFAULT: Boolean = true" in policyText) { "GO13 production Go cutover is not enabled." }
+        check("REQUIRE_GO_ON_ARM64: Boolean = true" in policyText && "TARGET_ABI: String = \"arm64-v8a\"" in policyText) { "GO13 ARM64 production cutover must fail closed when Go is unavailable." }
+        check("RootAwareGateway" in graphText && "NativePreferredGateway" in graphText && "GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT" in graphText) {
+            "GO13 production graph is not routed through the sealed Go cutover boundary."
+        }
+        check("ProductionGoRuntimeUnavailableException" in selectorText && "if (goRequiredProvider()) throw ProductionGoRuntimeUnavailableException()" in selectorText) {
+            "GO13 ARM64 production selector must fail closed instead of silently falling back to Python."
+        }
+        check("Python.start(" !in applicationText) { "GO13 Python rollback runtime must remain lazy after Go cutover." }
+        check("GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)" in rootText) {
+            "GO13 privileged RootService must launch the packaged Go runtime."
+        }
+        check("Os.getuid() == ROOT_UID" in rootText && "check(goGateway.isAvailable())" in rootText) {
+            "GO13 privileged Go route must verify UID 0 and fail closed when the runtime is unavailable."
+        }
+        check("com.chaquo.python" !in rootText && "bkx.android_api" !in rootText && "ProcessBuilder(" !in rootText) {
+            "GO13 privileged service must not retain Python or arbitrary process execution."
+        }
+        check("LOCAL_STATE_NAMESPACE = \"go-local\"" in gatewayText && "setOf(LOCAL_STATE_NAMESPACE, \"go-root\")" in gatewayText) {
+            "GO13 local/root Go state ownership isolation is missing."
+        }
+        check("Python fallback must not be selected on ARM64 GO13" in localTestText && "go-native-android" in localTestText) {
+            "GO13 local production device cutover instrumentation is missing."
+        }
+        check("Privileged production route must be Go-native" in qualificationText && "Local production route must be Go-native" in qualificationText) {
+            "GO13 explicit physical-device qualification must prove both Go production routes."
+        }
+
+        val runtimeFile = runtime.get().asFile
+        check(runtimeFile.isFile && runtimeFile.canExecute()) { "Generated GO13 ARM64 runtime is missing or not executable." }
+        val bytes = runtimeFile.readBytes()
+        check(bytes.size >= 20 && bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() && bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte()) {
+            "Generated GO13 runtime is not ELF."
+        }
+        val littleEndian = bytes[5].toInt() == 1
+        val machine = if (littleEndian) {
+            (bytes[18].toInt() and 0xff) or ((bytes[19].toInt() and 0xff) shl 8)
+        } else {
+            ((bytes[18].toInt() and 0xff) shl 8) or (bytes[19].toInt() and 0xff)
+        }
+        check(machine == 183) { "Generated GO13 runtime ELF e_machine=$machine, expected AArch64 (183)." }
+    }
+}
+
 tasks.register("verifyBkxFinalReleaseContract") {
     group = "verification"
     description = "Verify the canonical version source and current release documentation."
@@ -589,6 +665,7 @@ tasks.named("bkxAndroidReleaseSeal") {
         verifyBkxEmbeddedParitySeal,
         "verifyBkxReleaseHygiene",
         "verifyBkxDeviceQualificationContract",
+        "verifyBkxGoProductionCutoverContract",
         "verifyBkxFinalReleaseContract",
     )
 }

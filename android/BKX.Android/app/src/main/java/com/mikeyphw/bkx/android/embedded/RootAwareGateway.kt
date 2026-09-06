@@ -14,14 +14,14 @@ class RootAccessRequiredException : IllegalStateException(
 )
 
 /**
- * Resolves the root route at call time rather than capturing it at app launch.
+ * Pins every active request to either the local or privileged protocol-v1 route.
  *
- * This matters for the final product: changing Prefer/Require/Disabled in More
- * takes effect on the next readiness/execute/cancel call without recreating the
- * Activity or process. Root is still only a transport/runtime choice; both
- * routes execute the same bkx.android_api -> bkx.core implementation.
+ * GO13 makes both production routes Go-native on supported ARM64 devices. The local
+ * route retains the explicit Python fallback for unsupported development ABIs, while
+ * the privileged libsu route fails closed unless the packaged Go runtime is available
+ * as UID 0. Root preference changes apply to the next request without process restart.
  */
-class RootAwarePythonGateway(
+class RootAwareGateway(
     private val localGateway: EmbeddedRuntimeGateway,
     private val rootClient: RootBkxServiceClient,
     private val modeProvider: () -> RootAccessMode = { RootAccessMode.Preferred },

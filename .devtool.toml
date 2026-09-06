@@ -139,6 +139,7 @@ preflight = [
     ":app:verifyBkxEmbeddedParitySeal",
     ":app:verifyBkxReleaseHygiene",
     ":app:verifyBkxDeviceQualificationContract",
+    ":app:verifyBkxGoProductionCutoverContract",
     ":app:verifyBkxFinalReleaseContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",

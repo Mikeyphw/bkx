@@ -12,11 +12,13 @@ class ArchitectureContractTest {
         .joinToString("\n") { it.readText() }
 
     @Test
-    fun sourceDefinesEmbeddedRootAwareBackendWithoutTermuxExecutionAdapter() {
+    fun sourceDefinesGoNativeRootAwareBackendWithoutTermuxExecutionAdapter() {
         assertTrue(sourceText.contains("interface BackendPort"))
         assertTrue(sourceText.contains("class EmbeddedBkxBackend"))
         assertTrue(sourceText.contains("class ChaquopyPythonGateway"))
-        assertTrue(sourceText.contains("class RootAwarePythonGateway"))
+        assertTrue(sourceText.contains("class RootAwareGateway"))
+        assertTrue(sourceText.contains("class GoNativeGateway"))
+        assertTrue(sourceText.contains("ENABLED_BY_DEFAULT: Boolean = true"))
         assertTrue(sourceText.contains("class RootBkxServiceClient"))
         assertTrue(sourceText.contains("class BkxRootEngineService"))
         assertTrue(sourceText.contains("class FakeBackendPort"))

@@ -19,6 +19,7 @@ object BkxAndroidReleaseContract {
         ":app:verifyBkxEmbeddedParitySeal",
         ":app:verifyBkxReleaseHygiene",
         ":app:verifyBkxDeviceQualificationContract",
+        ":app:verifyBkxGoProductionCutoverContract",
         ":app:verifyBkxFinalReleaseContract",
         ":app:testDebugUnitTest",
         ":app:lintDebug",
@@ -30,6 +31,8 @@ object BkxAndroidReleaseContract {
     )
 
     val requiredAdversarialCases: List<String> = listOf(
+        "production local route selects packaged Go runtime",
+        "privileged root route selects packaged Go runtime as UID 0",
         "root denied with local fallback",
         "root-required mode without grant",
         "root policy changed while another request is active",

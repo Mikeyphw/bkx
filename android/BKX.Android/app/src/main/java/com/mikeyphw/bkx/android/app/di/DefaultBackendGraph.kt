@@ -15,7 +15,7 @@ import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
 import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.mikeyphw.bkx.android.embedded.GoRuntimeCutoverPolicy
 import com.mikeyphw.bkx.android.embedded.NativePreferredGateway
-import com.mikeyphw.bkx.android.embedded.RootAwarePythonGateway
+import com.mikeyphw.bkx.android.embedded.RootAwareGateway
 import com.mikeyphw.bkx.android.files.AndroidProviderStagingManager
 import com.mikeyphw.bkx.android.root.RootBkxServiceClient
 import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
@@ -43,7 +43,7 @@ object DefaultBackendGraph {
             )
             val root = RootBkxServiceClient(appContext)
             EmbeddedBkxBackend(
-                gateway = RootAwarePythonGateway(
+                gateway = RootAwareGateway(
                     localGateway = local,
                     rootClient = root,
                     modeProvider = { settings.readNow().rootAccessMode },

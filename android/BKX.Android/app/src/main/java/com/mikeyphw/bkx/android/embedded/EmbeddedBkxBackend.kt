@@ -20,11 +20,10 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 
 /**
- * In-process BackendPort backed by the canonical Python bkx.core engine.
+ * In-process BackendPort backed by the canonical protocol-v1 embedded runtime.
  *
- * The embedded backend deliberately retains BridgeRequestEnvelope/BridgeResultEnvelope as
- * the migration seam. A future native runtime can replace the file-shaped operation runtime
- * without changing BKX semantics again.
+ * GO13 prefers the packaged Go runtime on supported ARM64 devices while preserving the
+ * BridgeRequestEnvelope/BridgeResultEnvelope contract and an explicit development fallback.
  */
 class EmbeddedBkxBackend(
     private val gateway: EmbeddedRuntimeGateway,

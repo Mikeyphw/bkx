@@ -272,6 +272,20 @@ Delivered without enabling the production cutover by default:
 - a real Android instrumentation test bypasses the disabled cutover flag and probes the packaged Go readiness, execute, progress, and queued cancellation entrypoints on ARM64;
 - Linux validation proves the Android session can service progress/cancel concurrently with a long transfer execute request.
 
+## GO13 — Android production Go cutover — COMPLETE
+
+Delivered production routing and device gates:
+
+- `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT=true` selects the packaged Go runtime on supported ARM64 devices;
+- the local route retains Chaquopy only as a controlled unsupported-ABI/runtime rollback path;
+- the libsu RootService launches the same app-owned `libbkxgo.so` from its UID-0 process and contains no Chaquopy/Python execution path;
+- local/root Go state directories are isolated (`go-local` / `go-root`) so UID-0 run-history files cannot break non-root runtime ownership;
+- the request router is transport-neutral (`RootAwareGateway`) and keeps active request routes pinned for progress/cancellation;
+- normal ARM64 instrumentation proves the production local selector cannot fall back to Python;
+- explicit physical-device qualification now requires both privileged and local readiness identities to be `go-native-android`, in addition to root and Termux-private storage access;
+- Android preflight/release tasks require the generated AArch64 runtime and GO13 cutover source contract before packaging.
+
 ## Next gate
 
-GO13 should consume real-device GO12 evidence, move the privileged/root route onto the same Go runtime, flip the production cutover only when both local and root lanes pass, and retain Python solely as a controlled rollback path until the subsequent removal phase.
+GO14 should remove the controlled Android Python fallback/Chaquopy packaging once GO13 Android-target and physical-device evidence has been collected successfully, then update release/tooling identities to Go-only without changing protocol v1.
+

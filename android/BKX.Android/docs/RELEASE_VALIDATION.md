@@ -47,3 +47,6 @@ Exercise backup, archive browse/verify, fresh restore, a deliberately chosen roo
 ## Chaquopy build Python
 
 Chaquopy 17 requires the build interpreter major/minor to match the packaged runtime. BKX accepts Python 3.13 or 3.14 and supports `-Pbkx.buildPython=/path/to/python` or `BKX_BUILD_PYTHON`.
+
+
+GO13 acceptance additionally requires `verifyBkxGoProductionCutoverContract`, Android unit/compile/package gates, normal ARM64 Go cutover instrumentation, and explicit `qualify-device.sh` evidence proving both local and privileged readiness report `go-native-android`.

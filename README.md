@@ -54,7 +54,7 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00–GO12 establish a compatibility-first migration lane without changing the
+GO00–GO13 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
 canonical operation schemas. The Go tree now contains the migration scaffold plus

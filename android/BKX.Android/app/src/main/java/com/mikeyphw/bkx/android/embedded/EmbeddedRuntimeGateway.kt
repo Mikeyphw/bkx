@@ -7,3 +7,9 @@ interface EmbeddedRuntimeGateway {
     suspend fun progressJson(requestId: String): String
     suspend fun cancelJson(requestId: String): String
 }
+
+
+/** Runtime boundary with an explicit packaged-runtime availability probe. */
+interface AvailableEmbeddedRuntimeGateway : EmbeddedRuntimeGateway {
+    fun isAvailable(): Boolean
+}

@@ -21,25 +21,27 @@ def test_libsu_all_files_and_root_service_contract() -> None:
     assert ".root.BkxRootEngineService" in manifest
     assert "RootService" in root_service
     assert "Os.getuid()" in root_service
-    assert 'getModule("bkx.android_api")' in root_service
+    assert 'GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)' in root_service
+    assert 'runBlocking { goGateway.readinessJson() }' in root_service
+    assert 'getModule("bkx.android_api")' not in root_service
     assert "Shell.getShell().isRoot" in root_client
     assert "RootService.bind" in root_client
-    for forbidden in ("ProcessBuilder(", "su -c", "Runtime.getRuntime().exec"):
+    for forbidden in ("ProcessBuilder(", "su -c", "Runtime.getRuntime().exec", "com.chaquo.python"):
         assert forbidden not in root_service
         assert forbidden not in root_client
 
 
 def test_termux_private_storage_is_a_first_class_root_location() -> None:
     storage = text("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/storage/StorageAccessModels.kt")
-    engine = text("src/bkx/android_api/engine.py")
+    bridge = text("internal/bridge/bridge.go")
     assert "/data/data/com.termux/files" in storage
     assert "/data/data/com.termux/files/home" in storage
     assert "/data/data/com.termux/files/home/storage" in storage
     assert "/data/data/com.termux/files/usr" in storage
-    assert '"root.filesystem"' in engine
-    assert '"storage.termux.private"' in engine
-    assert '"filesystem.list"' in engine
-    assert '"filesystem.stat"' in engine
+    assert '"root.filesystem"' in bridge
+    assert '"storage.termux.private"' in bridge
+    assert '"filesystem.list"' in text("migration/contracts/v1/bridge.json")
+    assert '"filesystem.stat"' in text("migration/contracts/v1/bridge.json")
 
 
 def test_termux_is_storage_only_not_an_execution_dependency() -> None:
@@ -47,7 +49,8 @@ def test_termux_is_storage_only_not_an_execution_dependency() -> None:
     graph = text("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     assert "com.termux.permission.RUN_COMMAND" not in manifest
     assert "com.termux.RUN_COMMAND" not in manifest
-    assert "RootAwarePythonGateway" in graph
+    assert "RootAwareGateway" in graph
+    assert "GoRuntimeCutoverPolicy" in graph
     assert "TermuxBridgeAdapter(" not in graph
 
 
@@ -60,58 +63,21 @@ def test_root_service_aidl_is_narrow_json_api() -> None:
         assert forbidden not in aidl
 
 
-def test_root_chaquopy_bootstrap_has_real_application_context() -> None:
+def test_root_go_runtime_is_app_owned_and_fail_closed() -> None:
     root_service = text(
         "android/BKX.Android/app/src/main/java/"
         "com/mikeyphw/bkx/android/root/BkxRootEngineService.kt"
     )
     gateway = text(
         "android/BKX.Android/app/src/main/java/"
-        "com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt"
+        "com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt"
     )
-    graph = text(
+    policy = text(
         "android/BKX.Android/app/src/main/java/"
-        "com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt"
+        "com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"
     )
-
-    assert "AndroidPlatform(applicationContext)" not in root_service
-    assert "AndroidPlatform(rootPythonApplication)" in root_service
-    assert "RootChaquopyApplication(baseContext)" in root_service
-    assert (
-        "override fun getApplicationContext(): Context = this"
-        in root_service
-    )
-
-    assert "context.applicationContext ?: context" in gateway
-    assert "context.applicationContext" not in graph
-
-
-def test_root_chaquopy_does_not_inherit_parent_process_runtime_marker() -> None:
-    app = text(
-        "android/BKX.Android/app/src/main/java/"
-        "com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt"
-    )
-    service = text(
-        "android/BKX.Android/app/src/main/java/"
-        "com/mikeyphw/bkx/android/root/BkxRootEngineService.kt"
-    )
-
-    # The normal app process starts Chaquopy before root transport.
-    assert "Python.start(AndroidPlatform(this))" in app
-
-    # A fresh libsu app_process must not inherit Chaquopy's marker and
-    # mistake itself for an already-initialized CPython process.
-    assert "Os.getenv(CHAQUOPY_PROCESS_TYPE_ENV)" in service
-    assert "Os.unsetenv(CHAQUOPY_PROCESS_TYPE_ENV)" in service
-    assert (
-        'CHAQUOPY_PROCESS_TYPE_ENV = "CHAQUOPY_PROCESS_TYPE"'
-        in service
-    )
-
-    # Startup happens before Binder requests can reach Python.
-    assert "override fun onCreate()" in service
-    assert "prepareFreshChaquopyProcess()" in service
-
-    # Previous RootService context fix remains required.
-    assert "AndroidPlatform(rootPythonApplication)" in service
-    assert "AndroidPlatform(applicationContext)" not in service
+    assert 'GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)' in root_service
+    assert 'check(goGateway.isAvailable())' in root_service
+    assert 'applicationInfo.nativeLibraryDir' in gateway
+    assert '"android-runtime"' in gateway and '"bridge-session"' in gateway
+    assert 'ENABLED_BY_DEFAULT: Boolean = true' in policy

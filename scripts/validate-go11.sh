@@ -57,9 +57,11 @@ graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app
 policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
 if "EmbeddedBkxBackend" not in graph or "ChaquopyPythonGateway" not in graph:
     raise SystemExit("Android production backend no longer retains embedded Python")
-if policy.exists() and "ENABLED_BY_DEFAULT: Boolean = false" not in policy.read_text():
-    raise SystemExit("Android Go cutover was enabled before the GO12/GO13 device gate")
-print("GO11 production compatibility remains embedded Python by default")
+phase = Path("internal/version/version.go").read_text()
+if 'MigrationPhase = \"GO11\"' in phase or 'MigrationPhase = \"GO12\"' in phase:
+    if policy.exists() and "ENABLED_BY_DEFAULT: Boolean = false" not in policy.read_text():
+        raise SystemExit("Android Go cutover was enabled before the GO13 device gate")
+print("GO11 production compatibility boundary remains explicit")
 PYANDROID
 
 echo '==> GO11 Android ARM64 deterministic architecture gate'

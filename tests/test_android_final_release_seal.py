@@ -14,7 +14,7 @@ def read(path: str) -> str:
 def test_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> None:
     coordinator = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
-    gateway = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwarePythonGateway.kt")
+    gateway = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwareGateway.kt")
     application = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt")
     assert "SupervisorJob() + Dispatchers.IO" in coordinator
     assert "foregroundOperationMutex" in coordinator
@@ -22,6 +22,7 @@ def test_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> None:
     assert "OperationFailureMapper.interrupted" in coordinator
     assert "recoverInterruptedOperations" in application
     assert "modeProvider = { settings.readNow().rootAccessMode }" in graph
+    assert "GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT" in graph
     assert "requestRoutes" in gateway and "requestIdFrom" in gateway
 
 

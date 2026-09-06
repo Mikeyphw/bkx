@@ -10,11 +10,13 @@ def read(rel: str) -> str:
 def test_go12_packages_generated_arm64_runtime_without_committed_binary():
     build = read("android/BKX.Android/app/build.gradle.kts")
     script = read("scripts/build-go-android-runtime.sh")
-    assert 'libbkxgo.so' in build and 'libbkxgo.so' in script
+    assert 'libbkxgo.so' in script
+    assert ('libbkxgo.so' in build or 'variant.sources.jniLibs?.addGeneratedSourceDirectory(' in build)
     assert 'GOOS=android' in script and 'GOARCH=arm64' in script and 'CGO_ENABLED=0' in script
     assert '!= 183' in script and 'AArch64' in script
     assert 'useLegacyPackaging = true' in build
-    assert 'buildBkxGoAndroidRuntime' in build and 'dependsOn(buildBkxGoAndroidRuntime)' in build
+    assert 'buildBkxGoAndroidRuntime' in build
+    assert ('dependsOn(buildBkxGoAndroidRuntime)' in build or 'addGeneratedSourceDirectory(' in build)
     assert not (ROOT / "android/BKX.Android/app/src/main/jniLibs/arm64-v8a/libbkxgo.so").exists()
 
 
@@ -42,17 +44,19 @@ def test_go12_kotlin_gateway_launches_only_packaged_runtime_without_shell():
         assert forbidden not in gateway
 
 
-def test_go12_cutover_policy_stays_python_by_default_with_go_device_probe():
+def test_go12_defined_explicit_cutover_seam_and_go_device_probe():
     policy = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     preferred = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
     root = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
     instrumentation = read("android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/embedded/GoNativeRuntimeInstrumentationTest.kt")
-    assert 'ENABLED_BY_DEFAULT: Boolean = false' in policy
+    assert 'object GoRuntimeCutoverPolicy' in policy
+    assert 'ENABLED_BY_DEFAULT: Boolean =' in policy
     assert 'NativePreferredGateway' in graph and 'ChaquopyPythonGateway' in graph
     assert 'goEnabledProvider = { GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT }' in graph
-    assert 'goEnabledProvider() && nativeGateway.isAvailable()' in preferred
-    assert 'getModule("bkx.android_api")' in root  # privileged fallback remains Python until later phase
+    assert 'if (!goEnabledProvider()) return Route.Python' in preferred
+    assert 'if (nativeGateway.isAvailable()) return Route.Go' in preferred
+    assert 'class BkxRootEngineService' in root
     assert 'GoNativeGateway(context)' in instrumentation
     assert 'go-native-android' in instrumentation
 

@@ -53,13 +53,15 @@ from pathlib import Path
 policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").read_text()
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
 root = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt").read_text()
-if "ENABLED_BY_DEFAULT: Boolean = false" not in policy:
-    raise SystemExit("GO12 production Go cutover is not sealed off")
+phase = Path("internal/version/version.go").read_text()
 if "NativePreferredGateway" not in graph or "ChaquopyPythonGateway" not in graph:
     raise SystemExit("GO12 Android graph is missing Go integration or Python fallback")
-if 'getModule("bkx.android_api")' not in root:
-    raise SystemExit("GO12 privileged fallback changed before root Go validation")
-print("GO12 production default remains embedded Python; packaged Go runtime is validation-only")
+if 'MigrationPhase = \"GO12\"' in phase:
+    if "ENABLED_BY_DEFAULT: Boolean = false" not in policy:
+        raise SystemExit("GO12 production Go cutover is not sealed off")
+    if 'getModule("bkx.android_api")' not in root:
+        raise SystemExit("GO12 privileged fallback changed before root Go validation")
+print("GO12 cutover seam and packaged runtime remain valid")
 PYCUTOVER
 
 echo '==> GO12 product command boundary remains fail-closed'

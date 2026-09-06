@@ -6,7 +6,7 @@ BKX Android **1.0.0** is a standalone Material 3 application with the canonical 
 Material 3 phone/tablet UI
   -> process-scoped BKX operation coordinator
   -> EmbeddedBkxBackend
-  -> RootAwarePythonGateway
+  -> RootAwareGateway
        |-> libsu RootService (UID 0) -> Chaquopy -> bkx.android_api -> bkx.core
        `-> NativePreferredGateway
             |-> GO12 Go runtime (packaged ARM64, cutover disabled by default)
@@ -37,3 +37,6 @@ Termux is never used to execute BKX. There is no RUN_COMMAND permission, wrapper
 - Rooted physical-device qualification is available through `scripts/qualify-device.sh`.
 
 See `docs/ARCHITECTURE.md`, `docs/RELEASE_CONTRACT.md`, and `docs/RELEASE_VALIDATION.md`.
+
+
+GO13 enables the packaged Go protocol-v1 runtime by default on ARM64 and moves the libsu UID-0 route to the same Go runtime. Chaquopy remains only as a controlled local fallback for unsupported development ABIs until GO14 removal.

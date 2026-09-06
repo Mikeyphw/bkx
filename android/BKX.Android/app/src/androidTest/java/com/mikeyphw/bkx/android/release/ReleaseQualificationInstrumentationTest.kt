@@ -46,6 +46,7 @@ class ReleaseQualificationInstrumentationTest {
         val backend = DefaultBackendGraph.backendPort(context)
         val rooted = backend.checkReadiness()
         assertTrue("Release qualification requires an active libsu root grant: $rooted", rooted is BackendReadiness.Ready && rooted.isRoot)
+        assertTrue("Privileged production route must be Go-native: $rooted", (rooted as BackendReadiness.Ready).runtime == "go-native-android")
 
         val requestId = "device-termux-stat-${System.currentTimeMillis()}"
         val request = BridgeRequestEnvelope(
@@ -68,6 +69,7 @@ class ReleaseQualificationInstrumentationTest {
             val local = backend.checkReadiness()
             assertTrue("Embedded non-root fallback must remain usable: $local", local is BackendReadiness.Ready)
             assertFalse("Disabled root mode must route the next readiness call locally.", (local as BackendReadiness.Ready).isRoot)
+            assertTrue("Local production route must be Go-native on the qualified ARM64 device: $local", local.runtime == "go-native-android")
         } finally {
             settings.update(original)
         }

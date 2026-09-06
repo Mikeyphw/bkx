@@ -2,18 +2,12 @@ package com.mikeyphw.bkx.android.app
 
 import android.app.Application
 import android.os.Process
-import com.chaquo.python.Python
-import com.chaquo.python.android.AndroidPlatform
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 
 class BkxAndroidApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        if (!Python.isStarted()) {
-            Python.start(AndroidPlatform(this))
-        }
-        // libsu's privileged service has its own lifecycle. Only the ordinary
-        // application process reconciles persisted interrupted operations.
+        // GO13 is Go-first on ARM64. Chaquopy remains a lazy rollback/non-ARM64 lane.
         if (Process.myUid() != ROOT_UID) {
             DefaultBackendGraph.operationCoordinator(this).recoverInterruptedOperations()
         }

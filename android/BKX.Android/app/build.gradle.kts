@@ -1,4 +1,12 @@
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.OutputDirectory
+import org.gradle.api.tasks.TaskAction
+import org.gradle.process.ExecOperations
 import org.gradle.util.GradleVersion
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
@@ -7,9 +15,35 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+abstract class BuildBkxGoAndroidRuntimeTask @Inject constructor(
+    private val execOperations: ExecOperations,
+) : DefaultTask() {
+    @get:Input
+    abstract val repositoryRootPath: Property<String>
+
+    @get:Input
+    abstract val buildScriptPath: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun buildRuntime() {
+        execOperations.exec {
+            workingDir(repositoryRootPath.get())
+            commandLine(
+                "bash",
+                buildScriptPath.get(),
+                outputDirectory.get().asFile.absolutePath,
+            )
+        }
+    }
+}
+
 val bkxValidationSdk = 36
 val bkxBuildToolsVersion = "36.0.0"
 val bkxJavaVersion = JavaVersion.VERSION_21
+val bkxNdkVersion = "29.0.14206865"
 val bkxGoRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-go-runtime/jniLibs")
 
 val bkxRepositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
@@ -80,6 +114,8 @@ android {
     namespace = "com.mikeyphw.bkx.android"
     compileSdk = bkxValidationSdk
     buildToolsVersion = bkxBuildToolsVersion
+    // Keep this literal so Devtool project inspection resolves --ndk-version auto to r29.
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
@@ -97,8 +133,6 @@ android {
         compose = true
         aidl = true
     }
-
-    sourceSets.getByName("main").jniLibs.srcDir(bkxGoRuntimeJniDir)
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
@@ -228,6 +262,7 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
     inputs.property("bkxValidationSdk", bkxValidationSdk)
     inputs.property("bkxBuildToolsVersion", bkxBuildToolsVersion)
     inputs.property("bkxJavaVersion", bkxJavaVersion.toString())
+    inputs.property("bkxNdkVersion", bkxNdkVersion)
     inputs.property("bkxBuildPythonCommand", bkxBuildPythonCommand)
     inputs.property("bkxEmbeddedPythonVersion", bkxEmbeddedPythonVersion)
     inputs.properties(bkxSdk36DependencyLane)
@@ -248,6 +283,14 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
         }
         check(bkxJavaVersion == JavaVersion.VERSION_21) {
             "BKX Android JVM policy changed from Java 21; update the fleet toolchain contract deliberately."
+        }
+        val bkxNdkMajor = bkxNdkVersion.substringBefore('.').toIntOrNull()
+            ?: error("BKX Android NDK version is malformed: $bkxNdkVersion")
+        check(bkxNdkMajor >= 29) {
+            "BKX Android requires NDK r29 or newer; found $bkxNdkVersion."
+        }
+        check(bkxNdkVersion == "29.0.14206865") {
+            "BKX Android currently pins NDK 29.0.14206865 so Devtool auto-resolution cannot select AGP 9's older r28 default."
         }
         check(bkxEmbeddedPythonVersion in bkxSupportedEmbeddedPythonVersions) {
             "BKX Android Chaquopy runtime must match a supported build Python (3.13 or 3.14); found $bkxEmbeddedPythonVersion."
@@ -303,24 +346,25 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
 }
 
 
-val buildBkxGoAndroidRuntime by tasks.registering(Exec::class) {
+val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("buildBkxGoAndroidRuntime") {
     group = "build"
     description = "Build the generated ARM64 Go protocol-v1 runtime packaged by BKX Android."
-    workingDir(bkxRepositoryRoot)
+    repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
+    buildScriptPath.set(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh").absolutePath)
+    outputDirectory.set(bkxGoRuntimeJniDir)
     inputs.file(bkxRepositoryRoot.resolve("go.mod"))
     inputs.dir(bkxRepositoryRoot.resolve("cmd/bkx"))
     inputs.dir(bkxRepositoryRoot.resolve("internal"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh"))
-    outputs.file(bkxGoRuntimeJniDir.map { it.file("arm64-v8a/libbkxgo.so") })
-    commandLine(
-        "bash",
-        bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh").absolutePath,
-        bkxGoRuntimeJniDir.get().asFile.absolutePath,
-    )
 }
 
-tasks.named("preBuild").configure {
-    dependsOn(buildBkxGoAndroidRuntime)
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(
+            buildBkxGoAndroidRuntime,
+            BuildBkxGoAndroidRuntimeTask::outputDirectory,
+        )
+    }
 }
 
 // Verification tasks live outside the application build configuration.

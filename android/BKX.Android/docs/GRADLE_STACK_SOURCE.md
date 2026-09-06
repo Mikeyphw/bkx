@@ -7,7 +7,6 @@ Current pinned lane:
 - Android Gradle Plugin: `9.2.1`
 - Devtool-managed Gradle: `9.7.1+`
 - Kotlin / Compose compiler / serialization plugin: `2.4.10`
-- Chaquopy: `17.0.0`
 - Compose BOM: `2026.06.01`
 - Activity Compose: `1.12.4`
 - AppCompat: `1.7.1`
@@ -17,5 +16,9 @@ Current pinned lane:
 - compileSdk / targetSdk: `36`
 - minSdk: `24`
 - Java: `21`
+- Android NDK: `29.0.14206865` (major 29 or newer required)
+- Android packaged ABI: `arm64-v8a`
 
 AGP built-in Kotlin is used instead of the standalone Android Kotlin plugin. Do not accept dependency-version lint suggestions independently of the SDK/validator lane.
+
+GO14 removes the Chaquopy Gradle plugin and all build-Python probing from the Android project.

@@ -17,11 +17,11 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class GoNativeRuntimeInstrumentationTest {
     @Test
-    fun packagedArm64RuntimeSpeaksProtocolV1WithoutCuttingOverProduction() = runBlocking {
+    fun packagedGoRuntimeSpeaksProtocolV1OnSupportedAbi() = runBlocking {
         assumeTrue(Build.SUPPORTED_ABIS.any { it == "arm64-v8a" })
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val gateway = GoNativeGateway(context)
-        assertTrue("Generated Go runtime must be packaged on ARM64", gateway.isAvailable())
+        assertTrue("Generated Go runtime must be packaged on this supported ABI", gateway.isAvailable())
 
         val readiness = Json.parseToJsonElement(gateway.readinessJson()).jsonObject
         assertEquals(BridgeJson.SUPPORTED_PROTOCOL_VERSION, readiness.getValue("protocol_version").jsonPrimitive.content.toInt())
@@ -48,6 +48,5 @@ class GoNativeRuntimeInstrumentationTest {
             ),
         )
         assertEquals("cancelled", cancelled.status.name.lowercase())
-        assertTrue(!GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT)
     }
 }

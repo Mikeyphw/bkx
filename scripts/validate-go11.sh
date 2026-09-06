@@ -54,13 +54,21 @@ fi
 python3 - <<'PYANDROID'
 from pathlib import Path
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
-policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
-if "EmbeddedBkxBackend" not in graph or "ChaquopyPythonGateway" not in graph:
-    raise SystemExit("Android production backend no longer retains embedded Python")
 phase = Path("internal/version/version.go").read_text()
-if 'MigrationPhase = \"GO11\"' in phase or 'MigrationPhase = \"GO12\"' in phase:
-    if policy.exists() and "ENABLED_BY_DEFAULT: Boolean = false" not in policy.read_text():
-        raise SystemExit("Android Go cutover was enabled before the GO13 device gate")
+policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+if "EmbeddedBkxBackend" not in graph:
+    raise SystemExit("Android production backend no longer retains the protocol-v1 embedded backend")
+if 'MigrationPhase = "GO14"' in phase:
+    if "val local = GoNativeGateway(appContext)" not in graph or "ChaquopyPythonGateway" in graph or "NativePreferredGateway" in graph:
+        raise SystemExit("GO14 Android graph is not Go-only")
+    if policy.exists():
+        raise SystemExit("GO14 retained the obsolete cutover policy")
+else:
+    if "ChaquopyPythonGateway" not in graph:
+        raise SystemExit("pre-GO14 Android production backend no longer retains embedded Python")
+    if 'MigrationPhase = "GO11"' in phase or 'MigrationPhase = "GO12"' in phase:
+        if policy.exists() and "ENABLED_BY_DEFAULT: Boolean = false" not in policy.read_text():
+            raise SystemExit("Android Go cutover was enabled before the GO13 device gate")
 print("GO11 production compatibility boundary remains explicit")
 PYANDROID
 

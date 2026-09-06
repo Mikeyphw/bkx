@@ -10,7 +10,6 @@ import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.chaquopy)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -59,57 +58,7 @@ val bkxVersionParts = bkxVersionName.split(".").map { part ->
 check(bkxVersionParts.size == 3) { "BKX Android requires major.minor.patch; found $bkxVersionName" }
 val bkxVersionCode = bkxVersionParts[0] * 10_000 + bkxVersionParts[1] * 100 + bkxVersionParts[2]
 
-// Chaquopy 17 requires buildPython to have the same major/minor version as
-// the Python runtime packaged into the app. Termux may move its python3
-// package between 3.13 and 3.14, so resolve the installed build interpreter
-// first and select the matching Chaquopy runtime instead of hard-coding one.
-val bkxSupportedEmbeddedPythonVersions = setOf("3.13", "3.14")
-val bkxExplicitBuildPython = providers.gradleProperty("bkx.buildPython").orNull
-    ?: providers.environmentVariable("BKX_BUILD_PYTHON").orNull
-val bkxBuildPythonCandidates = bkxExplicitBuildPython
-    ?.takeIf { it.isNotBlank() }
-    ?.let { listOf(it) }
-    ?: listOf(
-        "/data/data/com.termux/files/usr/bin/python3",
-        "python3.14",
-        "python3.13",
-        "python3",
-        "python",
-    )
-
-var bkxDetectedBuildPythonCommand: String? = null
-var bkxDetectedEmbeddedPythonVersion: String? = null
-val bkxBuildPythonAttempts = mutableListOf<String>()
-
-for (candidate in bkxBuildPythonCandidates.distinct()) {
-    try {
-        val process = ProcessBuilder(
-            candidate,
-            "-c",
-            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
-        ).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-        val exitCode = process.waitFor()
-        if (exitCode == 0 && output in bkxSupportedEmbeddedPythonVersions) {
-            bkxDetectedBuildPythonCommand = candidate
-            bkxDetectedEmbeddedPythonVersion = output
-            break
-        }
-        bkxBuildPythonAttempts += "$candidate -> exit=$exitCode version/output=$output"
-    } catch (error: Exception) {
-        bkxBuildPythonAttempts += "$candidate -> ${error.javaClass.simpleName}: ${error.message.orEmpty()}"
-    }
-}
-
-val bkxBuildPythonCommand = bkxDetectedBuildPythonCommand ?: error(
-    "BKX Android requires build Python 3.13 or 3.14 for Chaquopy 17. " +
-        "Install a supported Python or set -Pbkx.buildPython=/path/to/python. " +
-        "Attempts: ${bkxBuildPythonAttempts.joinToString("; ")}"
-)
-val bkxEmbeddedPythonVersion = bkxDetectedEmbeddedPythonVersion ?: error(
-    "BKX Android could not determine the Chaquopy Python runtime version."
-)
-
+// GO14 Android packages only the native Go protocol-v1 runtime.
 android {
     namespace = "com.mikeyphw.bkx.android"
     compileSdk = bkxValidationSdk
@@ -125,7 +74,7 @@ android {
         versionName = bkxVersionName
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += listOf("arm64-v8a")
         }
     }
 
@@ -173,23 +122,6 @@ android {
     }
 }
 
-chaquopy {
-    defaultConfig {
-        version = bkxEmbeddedPythonVersion
-        buildPython(bkxBuildPythonCommand)
-        // BKX core's embedded lane uses only the Python standard library.
-        // Do not install CLI/TUI dependencies into the APK.
-        pyc {
-            src = true
-        }
-    }
-    sourceSets {
-        getByName("main") {
-            // Keep src/bkx as the single canonical Python implementation.
-            srcDir(rootProject.file("../../src"))
-        }
-    }
-}
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
@@ -231,7 +163,6 @@ val bkxSettingsFile = rootProject.layout.projectDirectory.file("settings.gradle.
 
 val bkxSdk36DependencyLane = mapOf(
     "AGP" to libs.versions.agp.get(),
-    "Chaquopy" to libs.versions.chaquopy.get(),
     "Kotlin" to libs.versions.kotlin.get(),
     "Compose BOM" to libs.versions.composeBom.get(),
     "Activity Compose" to libs.versions.activity.get(),
@@ -243,7 +174,6 @@ val bkxSdk36DependencyLane = mapOf(
 
 val expectedBkxSdk36DependencyLane = mapOf(
     "AGP" to "9.2.1",
-    "Chaquopy" to "17.0.0",
     "Kotlin" to "2.4.10",
     // Compose 1.12+ requires compileSdk 37; keep the stable SDK-36 lane here.
     "Compose BOM" to "2026.06.01",
@@ -263,8 +193,6 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
     inputs.property("bkxBuildToolsVersion", bkxBuildToolsVersion)
     inputs.property("bkxJavaVersion", bkxJavaVersion.toString())
     inputs.property("bkxNdkVersion", bkxNdkVersion)
-    inputs.property("bkxBuildPythonCommand", bkxBuildPythonCommand)
-    inputs.property("bkxEmbeddedPythonVersion", bkxEmbeddedPythonVersion)
     inputs.properties(bkxSdk36DependencyLane)
     inputs.file(bkxVersionCatalogFile)
     inputs.file(bkxSettingsFile)
@@ -291,12 +219,6 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
         }
         check(bkxNdkVersion == "29.0.14206865") {
             "BKX Android currently pins NDK 29.0.14206865 so Devtool auto-resolution cannot select AGP 9's older r28 default."
-        }
-        check(bkxEmbeddedPythonVersion in bkxSupportedEmbeddedPythonVersions) {
-            "BKX Android Chaquopy runtime must match a supported build Python (3.13 or 3.14); found $bkxEmbeddedPythonVersion."
-        }
-        check(bkxBuildPythonCommand.isNotBlank()) {
-            "BKX Android buildPython command must resolve explicitly before Chaquopy source merging."
         }
 
         val settingsText = bkxSettingsFile.readText()
@@ -368,6 +290,4 @@ androidComponents {
 }
 
 // Verification tasks live outside the application build configuration.
-extra["bkxEmbeddedPythonVersion"] = bkxEmbeddedPythonVersion
-extra["bkxSupportedEmbeddedPythonVersions"] = bkxSupportedEmbeddedPythonVersions
 apply(from = rootProject.file("../../build-logic/android-verification.gradle.kts"))

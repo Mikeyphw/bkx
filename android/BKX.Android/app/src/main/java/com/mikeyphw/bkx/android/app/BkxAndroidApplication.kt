@@ -7,7 +7,7 @@ import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 class BkxAndroidApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // GO13 is Go-first on ARM64. Chaquopy remains a lazy rollback/non-ARM64 lane.
+        // GO14 Android is Go-only; there is no embedded Python runtime to initialize.
         if (Process.myUid() != ROOT_UID) {
             DefaultBackendGraph.operationCoordinator(this).recoverInterruptedOperations()
         }

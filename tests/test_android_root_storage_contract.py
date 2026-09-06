@@ -50,7 +50,8 @@ def test_termux_is_storage_only_not_an_execution_dependency() -> None:
     assert "com.termux.permission.RUN_COMMAND" not in manifest
     assert "com.termux.RUN_COMMAND" not in manifest
     assert "RootAwareGateway" in graph
-    assert "GoRuntimeCutoverPolicy" in graph
+    assert "val local = GoNativeGateway(appContext)" in graph
+    assert "ChaquopyPythonGateway" not in graph
     assert "TermuxBridgeAdapter(" not in graph
 
 
@@ -72,12 +73,8 @@ def test_root_go_runtime_is_app_owned_and_fail_closed() -> None:
         "android/BKX.Android/app/src/main/java/"
         "com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt"
     )
-    policy = text(
-        "android/BKX.Android/app/src/main/java/"
-        "com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"
-    )
     assert 'GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)' in root_service
     assert 'check(goGateway.isAvailable())' in root_service
     assert 'applicationInfo.nativeLibraryDir' in gateway
     assert '"android-runtime"' in gateway and '"bridge-session"' in gateway
-    assert 'ENABLED_BY_DEFAULT: Boolean = true' in policy
+    assert 'const val ABI = "arm64-v8a"' in gateway

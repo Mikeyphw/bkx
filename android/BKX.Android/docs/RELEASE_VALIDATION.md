@@ -18,6 +18,8 @@ devtool -r ~/Code/bkx validate \
   --task :app:verifyBkxEmbeddedParitySeal \
   --task :app:verifyBkxReleaseHygiene \
   --task :app:verifyBkxDeviceQualificationContract \
+  --task :app:verifyBkxGoProductionCutoverContract \
+  --task :app:verifyBkxGoOnlyAndroidRuntimeContract \
   --task :app:verifyBkxFinalReleaseContract \
   --task :app:verifyBkxAndroidManifestReleaseContract \
   --task :app:verifyBkxAndroidSigningPlaceholders \
@@ -38,15 +40,15 @@ cd ~/Code/bkx/android/BKX.Android
 ./scripts/qualify-device.sh
 ```
 
-It verifies All files access, a real UID-0 libsu RootService, direct Termux-private access, embedded local fallback, navigation semantics, and product screenshots.
+It verifies All files access, a real UID-0 libsu RootService, direct Termux-private access, the packaged local Go runtime, navigation semantics, and product screenshots.
 
 ## Manual operational smoke
 
 Exercise backup, archive browse/verify, fresh restore, a deliberately chosen root-sensitive restore test target, local transfer, cancellation, Activity recreation, notification return, and phone/tablet + light/dark/dynamic-color layouts. Never use protected Android system roots as smoke-test destinations.
 
-## Chaquopy build Python
+## GO14 Go-only Android runtime
 
-Chaquopy 17 requires the build interpreter major/minor to match the packaged runtime. BKX accepts Python 3.13 or 3.14 and supports `-Pbkx.buildPython=/path/to/python` or `BKX_BUILD_PYTHON`.
+The APK no longer applies Chaquopy or packages Python. Release validation requires `verifyBkxGoOnlyAndroidRuntimeContract`, the generated ARM64 ELF, `ndkVersion = "29.0.14206865"`, and the r29+ floor. The Android artifact is intentionally `arm64-v8a` only.
 
 
-GO13 acceptance additionally requires `verifyBkxGoProductionCutoverContract`, Android unit/compile/package gates, normal ARM64 Go cutover instrumentation, and explicit `qualify-device.sh` evidence proving both local and privileged readiness report `go-native-android`.
+GO13/GO14 acceptance requires `verifyBkxGoProductionCutoverContract`, Android unit/compile/package gates, normal ARM64 Go cutover instrumentation, and explicit `qualify-device.sh` evidence proving both local and privileged readiness report `go-native-android`.

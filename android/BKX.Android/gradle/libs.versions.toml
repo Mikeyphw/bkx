@@ -2,7 +2,6 @@
 [versions]
 agp = "9.2.1"
 kotlin = "2.4.10"
-chaquopy = "17.0.0"
 composeBom = "2026.06.01"
 activity = "1.12.4"
 appcompat = "1.7.1"
@@ -47,6 +46,5 @@ libsu-io = { group = "com.github.topjohnwu.libsu", name = "io", version.ref = "l
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-chaquopy = { id = "com.chaquo.python", version.ref = "chaquopy" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

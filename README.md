@@ -138,4 +138,9 @@ GO11 adds the migration-only protocol-v1 Go bridge adapter over GO10. It owns st
 
 ### Go migration GO12
 
-GO12 integrates the sealed protocol-v1 Go adapter into the Android package without flipping production by default. Gradle generates an ARM64 `libbkxgo.so`; Kotlin launches that app-owned executable through a concurrent correlated session capable of progress and cancellation during execute. `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT` remains false, Chaquopy stays the production/local fallback, and the privileged libsu route remains Python. ARM64 instrumentation can exercise Go directly before GO13 considers the actual cutover.
+GO12 integrates the sealed protocol-v1 Go adapter into the Android package without flipping production by default. Gradle generates an ARM64 `libbkxgo.so`; Kotlin launches that app-owned executable through a concurrent correlated session capable of progress and cancellation during execute. `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT` remains false, the packaged Go runtime is the production/local runtime, and the privileged libsu route remains Python. ARM64 instrumentation can exercise Go directly before GO13 considers the actual cutover.
+
+
+### Go migration GO14
+
+GO14 retires Python from the Android APK. Chaquopy, build-Python probing, the Python gateway, and the local fallback selector are removed. Android now packages only the generated `arm64-v8a` Go protocol-v1 runtime; local and libsu UID-0 routes use the same app-owned binary. NDK `29.0.14206865` remains pinned with an r29+ floor. The repository Python CLI/reference implementation remains in place, and human Go product commands still fail closed pending a separate CLI cutover.

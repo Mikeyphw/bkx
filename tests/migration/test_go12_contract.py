@@ -45,27 +45,40 @@ def test_go12_kotlin_gateway_launches_only_packaged_runtime_without_shell():
 
 
 def test_go12_defined_explicit_cutover_seam_and_go_device_probe():
-    policy = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+    phase = read("internal/version/version.go")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
-    preferred = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
     root = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
     instrumentation = read("android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/embedded/GoNativeRuntimeInstrumentationTest.kt")
-    assert 'object GoRuntimeCutoverPolicy' in policy
-    assert 'ENABLED_BY_DEFAULT: Boolean =' in policy
-    assert 'NativePreferredGateway' in graph and 'ChaquopyPythonGateway' in graph
-    assert 'goEnabledProvider = { GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT }' in graph
-    assert 'if (!goEnabledProvider()) return Route.Python' in preferred
-    assert 'if (nativeGateway.isAvailable()) return Route.Go' in preferred
+    if 'MigrationPhase = "GO14"' in phase:
+        assert 'val local = GoNativeGateway(appContext)' in graph
+        assert 'ChaquopyPythonGateway' not in graph and 'NativePreferredGateway' not in graph
+        assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").exists()
+        assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt").exists()
+    else:
+        policy = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+        preferred = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
+        assert 'object GoRuntimeCutoverPolicy' in policy
+        assert 'ENABLED_BY_DEFAULT: Boolean =' in policy
+        assert 'NativePreferredGateway' in graph and 'ChaquopyPythonGateway' in graph
+        assert 'goEnabledProvider = { GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT }' in graph
+        assert 'if (!goEnabledProvider()) return Route.Python' in preferred
+        assert 'if (nativeGateway.isAvailable()) return Route.Go' in preferred
     assert 'class BkxRootEngineService' in root
     assert 'GoNativeGateway(context)' in instrumentation
     assert 'go-native-android' in instrumentation
 
 
 def test_go12_backend_accepts_both_runtime_identities_at_same_protocol():
+    phase = read("internal/version/version.go")
     backend = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
     tests = read("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackendTest.kt")
-    assert 'setOf("embedded-cpython", "go-native-android")' in backend
-    assert 'readinessAcceptsGoNativeAndroidRuntime' in tests
+    if 'MigrationPhase = "GO14"' in phase:
+        assert 'setOf("go-native-android")' in backend
+        assert 'embedded-cpython' not in backend
+        assert 'readinessRejectsRetiredEmbeddedPythonRuntime' in tests
+    else:
+        assert 'setOf("embedded-cpython", "go-native-android")' in backend
+        assert 'readinessAcceptsGoNativeAndroidRuntime' in tests
     assert 'BridgeJson.SUPPORTED_PROTOCOL_VERSION' in backend
 
 

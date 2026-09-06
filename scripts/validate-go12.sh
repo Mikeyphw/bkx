@@ -50,17 +50,24 @@ PYARCH
 echo '==> GO12 production cutover remains sealed off by default'
 python3 - <<'PYCUTOVER'
 from pathlib import Path
-policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").read_text()
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
 root = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt").read_text()
 phase = Path("internal/version/version.go").read_text()
-if "NativePreferredGateway" not in graph or "ChaquopyPythonGateway" not in graph:
-    raise SystemExit("GO12 Android graph is missing Go integration or Python fallback")
-if 'MigrationPhase = \"GO12\"' in phase:
-    if "ENABLED_BY_DEFAULT: Boolean = false" not in policy:
-        raise SystemExit("GO12 production Go cutover is not sealed off")
-    if 'getModule("bkx.android_api")' not in root:
-        raise SystemExit("GO12 privileged fallback changed before root Go validation")
+policy_path = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+if 'MigrationPhase = "GO14"' in phase:
+    if "val local = GoNativeGateway(appContext)" not in graph or "ChaquopyPythonGateway" in graph or "NativePreferredGateway" in graph:
+        raise SystemExit("GO14 Android graph is not Go-only")
+    if policy_path.exists():
+        raise SystemExit("GO14 retained the obsolete Go cutover policy")
+else:
+    policy = policy_path.read_text()
+    if "NativePreferredGateway" not in graph or "ChaquopyPythonGateway" not in graph:
+        raise SystemExit("GO12 Android graph is missing Go integration or Python fallback")
+    if 'MigrationPhase = "GO12"' in phase:
+        if "ENABLED_BY_DEFAULT: Boolean = false" not in policy:
+            raise SystemExit("GO12 production Go cutover is not sealed off")
+        if 'getModule("bkx.android_api")' not in root:
+            raise SystemExit("GO12 privileged fallback changed before root Go validation")
 print("GO12 cutover seam and packaged runtime remain valid")
 PYCUTOVER
 

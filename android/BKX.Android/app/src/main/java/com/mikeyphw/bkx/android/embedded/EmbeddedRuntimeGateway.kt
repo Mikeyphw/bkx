@@ -1,6 +1,6 @@
 package com.mikeyphw.bkx.android.embedded
 
-/** JSON-only runtime boundary shared by embedded Python and the generated Go runtime. */
+/** JSON-only protocol-v1 boundary for the packaged Go runtime and privileged proxy. */
 interface EmbeddedRuntimeGateway {
     suspend fun readinessJson(): String
     suspend fun executeJson(requestJson: String): String

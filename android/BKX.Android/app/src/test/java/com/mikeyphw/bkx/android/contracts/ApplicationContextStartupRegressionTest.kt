@@ -15,8 +15,8 @@ class ApplicationContextStartupRegressionTest {
         "src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt",
     ).readText()
 
-    private val gatewaySource = File(
-        "src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt",
+    private val goGatewaySource = File(
+        "src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt",
     ).readText()
 
     private val storesSource = File(
@@ -29,16 +29,12 @@ class ApplicationContextStartupRegressionTest {
 
     @Test
     fun backendGraphFallsBackWhenApplicationContextIsUnavailable() {
-        assertTrue(
-            graphSource.contains("applicationContext ?: this"),
-        )
-        assertFalse(
-            graphSource.contains("context.applicationContext"),
-        )
+        assertTrue(graphSource.contains("applicationContext ?: this"))
+        assertFalse(graphSource.contains("context.applicationContext"))
     }
 
     @Test
-    fun rootServiceUsesAppOwnedGoWithoutChaquopyBootstrap() {
+    fun rootServiceUsesAppOwnedGoWithoutPythonBootstrap() {
         assertTrue(rootServiceSource.contains("GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)"))
         assertTrue(rootServiceSource.contains("Os.getuid() == ROOT_UID"))
         assertFalse(rootServiceSource.contains("AndroidPlatform("))
@@ -46,33 +42,20 @@ class ApplicationContextStartupRegressionTest {
     }
 
     @Test
-    fun localGatewayFallsBackToSuppliedContext() {
-        assertTrue(
-            gatewaySource.contains(
-                "context.applicationContext ?: context",
-            ),
-        )
+    fun localGoGatewayFallsBackToSuppliedContext() {
+        assertTrue(goGatewaySource.contains("context.applicationContext ?: context"))
     }
 
     @Test
-    fun pythonRollbackRuntimeStartsLazilyAfterGoCutover() {
+    fun androidApplicationHasNoEmbeddedPythonStartupPath() {
         assertFalse(applicationSource.contains("Python.start("))
-        assertTrue(gatewaySource.contains("Python.start(AndroidPlatform(appContext))"))
+        assertFalse(graphSource.contains("ChaquopyPythonGateway"))
+        assertFalse(graphSource.contains("NativePreferredGateway"))
     }
 
     @Test
     fun sharedPreferencesStoresDoNotDereferenceApplicationContext() {
-        assertFalse(
-            storesSource.contains(
-                "applicationContext.getSharedPreferences",
-            ),
-        )
-
-        assertEquals(
-            3,
-            Regex(
-                "context\\.getSharedPreferences\\(",
-            ).findAll(storesSource).count(),
-        )
+        assertFalse(storesSource.contains("applicationContext.getSharedPreferences"))
+        assertEquals(3, Regex("context\\.getSharedPreferences\\(").findAll(storesSource).count())
     }
 }

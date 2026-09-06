@@ -8,8 +8,15 @@ def read(rel: str) -> str:
 
 
 def test_go13_enables_go_by_default_but_keeps_controlled_local_fallback():
-    policy = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
+    phase = read("internal/version/version.go")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
+    if 'MigrationPhase = "GO14"' in phase:
+        assert 'val local = GoNativeGateway(appContext)' in graph
+        assert 'NativePreferredGateway' not in graph and 'ChaquopyPythonGateway' not in graph
+        assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").exists()
+        assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt").exists()
+        return
+    policy = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
     preferred = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
     assert "ENABLED_BY_DEFAULT: Boolean = true" in policy
     assert "REQUIRE_GO_ON_ARM64: Boolean = true" in policy
@@ -58,7 +65,7 @@ def test_go13_device_tests_prove_local_and_privileged_go_runtime_identity():
     local = read("android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/embedded/GoProductionCutoverInstrumentationTest.kt")
     qualification = read("android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/release/ReleaseQualificationInstrumentationTest.kt")
     script = read("android/BKX.Android/scripts/qualify-device.sh")
-    assert "Python fallback must not be selected on ARM64 GO13" in local
+    assert "go-native-android" in local
     assert 'assertEquals("go-native-android"' in local
     assert "Privileged production route must be Go-native" in qualification
     assert "Local production route must be Go-native" in qualification
@@ -88,14 +95,23 @@ def test_go13_validator_chains_go12_and_requires_root_runtime_capabilities():
 
 
 def test_go13_python_fallback_is_lazy_after_production_cutover():
+    phase = read("internal/version/version.go")
     app = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt")
-    python = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt")
     assert "Python.start(" not in app
+    if 'MigrationPhase = "GO14"' in phase:
+        assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt").exists()
+        return
+    python = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt")
     assert "Python.start(AndroidPlatform(appContext))" in python
 
 
 def test_go13_native_selector_unit_contract_covers_failclosed_and_rollback_lanes():
-    test = read("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/embedded/NativePreferredGatewayTest.kt")
+    phase = read("internal/version/version.go")
+    path = ROOT / "android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/embedded/NativePreferredGatewayTest.kt"
+    if 'MigrationPhase = "GO14"' in phase:
+        assert not path.exists()
+        return
+    test = path.read_text(encoding="utf-8")
     assert "arm64CutoverFailsClosedWhenPackagedGoRuntimeIsMissing" in test
     assert "nonArm64RollbackLaneMayUsePythonWhenGoIsUnavailable" in test
     assert "explicitRollbackSealDisablesGo" in test

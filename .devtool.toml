@@ -140,6 +140,7 @@ preflight = [
     ":app:verifyBkxReleaseHygiene",
     ":app:verifyBkxDeviceQualificationContract",
     ":app:verifyBkxGoProductionCutoverContract",
+    ":app:verifyBkxGoOnlyAndroidRuntimeContract",
     ":app:verifyBkxFinalReleaseContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",

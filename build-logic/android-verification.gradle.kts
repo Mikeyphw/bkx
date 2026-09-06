@@ -1,59 +1,68 @@
-val bkxEmbeddedPythonVersion = extra["bkxEmbeddedPythonVersion"] as String
-@Suppress("UNCHECKED_CAST")
-val bkxSupportedEmbeddedPythonVersions = extra["bkxSupportedEmbeddedPythonVersions"] as Set<String>
-
 tasks.register("verifyBkxEmbeddedEngineContract") {
     group = "verification"
-    description = "Fail closed when the embedded BKX/Chaquopy contract drifts."
+    description = "Fail closed when the packaged Android BKX engine is not Go-only."
 
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val versionCatalog = androidRootDir.resolve("gradle/libs.versions.toml")
+    val rootBuild = androidRootDir.resolve("build.gradle.kts")
     val appBuild = androidRootDir.resolve("app/build.gradle.kts")
     val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     val embeddedBackend = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
-    val androidApi = repositoryRootDir.resolve("src/bkx/android_api/engine.py")
+    val goGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
+    val buildScript = repositoryRootDir.resolve("scripts/build-go-android-runtime.sh")
+    val retired = listOf(
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedPythonGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"),
+    )
 
-    inputs.files(versionCatalog, appBuild, graph, embeddedBackend, androidApi)
+    inputs.files(versionCatalog, rootBuild, appBuild, graph, embeddedBackend, goGateway, buildScript)
 
     doLast {
         val catalogText = versionCatalog.readText()
+        val rootBuildText = rootBuild.readText()
         val appText = appBuild.readText()
         val graphText = graph.readText()
-        val engineText = androidApi.readText()
+        val backendText = embeddedBackend.readText()
+        val gatewayText = goGateway.readText()
+        val scriptText = buildScript.readText()
 
-        check(catalogText.contains("chaquopy = \"17.0.0\"")) {
-            "Embedded runtime requires Chaquopy 17.0.0."
+        check("chaquopy" !in catalogText.lowercase()) {
+            "GO14 Android must not retain a Chaquopy version or plugin alias."
         }
-        check(catalogText.contains("agp = \"9.2.1\"")) {
-            "Embedded runtime pins AGP 9.2.1, inside Chaquopy 17's tested 9.2.x lane."
+        check("libs.plugins.chaquopy" !in rootBuildText && "libs.plugins.chaquopy" !in appText) {
+            "GO14 Android must not apply the Chaquopy Gradle plugin."
         }
-        check(appText.contains("minSdk = 24")) {
-            "Embedded CPython requires minSdk 24."
+        listOf("chaquopy {", "buildPython(", "bkxEmbeddedPythonVersion", "bkxBuildPythonCommand").forEach { forbidden ->
+            check(forbidden !in appText) { "GO14 Android build still contains retired Python packaging token '$forbidden'." }
         }
-        check(bkxEmbeddedPythonVersion in bkxSupportedEmbeddedPythonVersions) {
-            "Embedded BKX must use a Chaquopy 17 runtime matched to build Python 3.13 or 3.14."
+        check(appText.contains("minSdk = 24")) { "BKX Android minSdk policy unexpectedly changed during GO14." }
+        check(appText.contains("abiFilters += listOf(\"arm64-v8a\")") && "x86_64" !in appText) {
+            "GO14 Android must be explicitly arm64-v8a-only after Python fallback retirement."
         }
-        check(appText.contains("version = bkxEmbeddedPythonVersion")) {
-            "Embedded BKX must derive the packaged Python runtime from the resolved build interpreter."
+        check(graphText.contains("EmbeddedBkxBackend") && graphText.contains("GoNativeGateway(appContext)")) {
+            "Production BackendPort must resolve directly to the packaged Go runtime."
         }
-        check(appText.contains("buildPython(bkxBuildPythonCommand)")) {
-            "Chaquopy must receive the explicitly resolved buildPython command."
+        check("ChaquopyPythonGateway" !in graphText && "NativePreferredGateway" !in graphText) {
+            "GO14 production graph still contains an Android Python fallback selector."
         }
-        check(appText.contains("arm64-v8a") && appText.contains("x86_64")) {
-            "Embedded CPython ABI lane must include arm64-v8a and x86_64."
+        check(retired.none { it.exists() }) {
+            "GO14 Android still contains retired Python/fallback gateway source files: " +
+                retired.filter { it.exists() }.joinToString { it.name }
         }
-        check(graphText.contains("EmbeddedBkxBackend") && graphText.contains("ChaquopyPythonGateway")) {
-            "Production BackendPort must resolve to the embedded BKX backend."
+        check("setOf(\"go-native-android\")" in backendText && "embedded-cpython" !in backendText) {
+            "GO14 backend must accept only the go-native-android runtime identity."
         }
-        check(!graphText.contains("TermuxBridgeAdapter(")) {
-            "Production graph must not instantiate the legacy Termux adapter."
+        check("const val ABI = \"arm64-v8a\"" in gatewayText) {
+            "GO14 Go gateway must be sealed to the packaged arm64-v8a ABI."
         }
-        check(embeddedBackend.isFile && androidApi.isFile) {
-            "Embedded Kotlin/Python boundary files are missing."
+        check("GOOS=android GOARCH=arm64" in scriptText && "expected AArch64 (183)" in scriptText) {
+            "GO14 runtime builder is missing the ARM64/AArch64 lane."
         }
-        check(!engineText.contains("bkx.__main__") && !engineText.contains("argparse") && !engineText.contains("textual")) {
-            "Android embedded engine must call bkx.core directly, never the CLI/TUI entrypoint."
+        check("GOARCH=amd64" !in scriptText && "x86_64" !in scriptText) {
+            "GO14 must not claim an unsupported CGO-free Android x86_64 runtime lane."
         }
     }
 }
@@ -552,14 +561,12 @@ tasks.register("verifyBkxAccessibilityVisualContract") {
 
 tasks.register("verifyBkxGoProductionCutoverContract") {
     group = "verification"
-    description = "Verify GO13 production Go cutover, privileged Go route, packaged ARM64 runtime, and device-test evidence sources."
+    description = "Verify the production Go route, privileged Go route, and packaged ARM64 runtime."
     dependsOn("buildBkxGoAndroidRuntime")
 
     val androidRootDir = rootProject.layout.projectDirectory.asFile
-    val policy = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
     val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     val application = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt")
-    val selector = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt")
     val rootGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwareGateway.kt")
     val rootService = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
     val goGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
@@ -567,52 +574,48 @@ tasks.register("verifyBkxGoProductionCutoverContract") {
     val qualificationTest = androidRootDir.resolve("app/src/androidTest/java/com/mikeyphw/bkx/android/release/ReleaseQualificationInstrumentationTest.kt")
     val runtime = layout.buildDirectory.file("generated/bkx-go-runtime/jniLibs/arm64-v8a/libbkxgo.so")
 
-    inputs.files(policy, graph, application, selector, rootGateway, rootService, goGateway, localDeviceTest, qualificationTest)
+    inputs.files(graph, application, rootGateway, rootService, goGateway, localDeviceTest, qualificationTest)
     inputs.file(runtime)
 
     doLast {
-        val policyText = policy.readText()
         val graphText = graph.readText()
         val applicationText = application.readText()
-        val selectorText = selector.readText()
         val rootText = rootService.readText()
         val gatewayText = goGateway.readText()
         val localTestText = localDeviceTest.readText()
         val qualificationText = qualificationTest.readText()
 
-        check("ENABLED_BY_DEFAULT: Boolean = true" in policyText) { "GO13 production Go cutover is not enabled." }
-        check("REQUIRE_GO_ON_ARM64: Boolean = true" in policyText && "TARGET_ABI: String = \"arm64-v8a\"" in policyText) { "GO13 ARM64 production cutover must fail closed when Go is unavailable." }
-        check("RootAwareGateway" in graphText && "NativePreferredGateway" in graphText && "GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT" in graphText) {
-            "GO13 production graph is not routed through the sealed Go cutover boundary."
+        check("RootAwareGateway" in graphText && "val local = GoNativeGateway(appContext)" in graphText) {
+            "Production graph is not routed directly through the packaged Go runtime."
         }
-        check("ProductionGoRuntimeUnavailableException" in selectorText && "if (goRequiredProvider()) throw ProductionGoRuntimeUnavailableException()" in selectorText) {
-            "GO13 ARM64 production selector must fail closed instead of silently falling back to Python."
+        check("ChaquopyPythonGateway" !in graphText && "NativePreferredGateway" !in graphText) {
+            "Production graph still contains a retired Python/fallback route."
         }
-        check("Python.start(" !in applicationText) { "GO13 Python rollback runtime must remain lazy after Go cutover." }
+        check("Python.start(" !in applicationText) { "Android Application must not initialize embedded Python." }
         check("GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)" in rootText) {
-            "GO13 privileged RootService must launch the packaged Go runtime."
+            "Privileged RootService must launch the packaged Go runtime."
         }
         check("Os.getuid() == ROOT_UID" in rootText && "check(goGateway.isAvailable())" in rootText) {
-            "GO13 privileged Go route must verify UID 0 and fail closed when the runtime is unavailable."
+            "Privileged Go route must verify UID 0 and fail closed when the runtime is unavailable."
         }
         check("com.chaquo.python" !in rootText && "bkx.android_api" !in rootText && "ProcessBuilder(" !in rootText) {
-            "GO13 privileged service must not retain Python or arbitrary process execution."
+            "Privileged service must not retain Python or arbitrary process execution."
         }
         check("LOCAL_STATE_NAMESPACE = \"go-local\"" in gatewayText && "setOf(LOCAL_STATE_NAMESPACE, \"go-root\")" in gatewayText) {
-            "GO13 local/root Go state ownership isolation is missing."
+            "Local/root Go state ownership isolation is missing."
         }
-        check("Python fallback must not be selected on ARM64 GO13" in localTestText && "go-native-android" in localTestText) {
-            "GO13 local production device cutover instrumentation is missing."
+        check("go-native-android" in localTestText) {
+            "Local production Go instrumentation is missing."
         }
         check("Privileged production route must be Go-native" in qualificationText && "Local production route must be Go-native" in qualificationText) {
-            "GO13 explicit physical-device qualification must prove both Go production routes."
+            "Physical-device qualification must prove both Go production routes."
         }
 
         val runtimeFile = runtime.get().asFile
-        check(runtimeFile.isFile && runtimeFile.canExecute()) { "Generated GO13 ARM64 runtime is missing or not executable." }
+        check(runtimeFile.isFile && runtimeFile.canExecute()) { "Generated ARM64 Go runtime is missing or not executable." }
         val bytes = runtimeFile.readBytes()
         check(bytes.size >= 20 && bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() && bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte()) {
-            "Generated GO13 runtime is not ELF."
+            "Generated ARM64 runtime is not ELF."
         }
         val littleEndian = bytes[5].toInt() == 1
         val machine = if (littleEndian) {
@@ -620,7 +623,83 @@ tasks.register("verifyBkxGoProductionCutoverContract") {
         } else {
             ((bytes[18].toInt() and 0xff) shl 8) or (bytes[19].toInt() and 0xff)
         }
-        check(machine == 183) { "Generated GO13 runtime ELF e_machine=$machine, expected AArch64 (183)." }
+        check(machine == 183) { "Generated ARM64 runtime ELF e_machine=$machine, expected AArch64 (183)." }
+    }
+}
+
+tasks.register("verifyBkxGoOnlyAndroidRuntimeContract") {
+    group = "verification"
+    description = "GO14 seal: Android is arm64-v8a Go-only with no Chaquopy fallback."
+    dependsOn("buildBkxGoAndroidRuntime")
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val appBuild = androidRootDir.resolve("app/build.gradle.kts")
+    val rootBuild = androidRootDir.resolve("build.gradle.kts")
+    val catalog = androidRootDir.resolve("gradle/libs.versions.toml")
+    val graph = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
+    val backend = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
+    val gateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
+    val buildScript = repositoryRootDir.resolve("scripts/build-go-android-runtime.sh")
+    val phaseFile = repositoryRootDir.resolve("internal/version/version.go")
+    val arm64Runtime = layout.buildDirectory.file("generated/bkx-go-runtime/jniLibs/arm64-v8a/libbkxgo.so")
+    val retired = listOf(
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedPythonGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt"),
+        androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"),
+    )
+
+    inputs.files(appBuild, rootBuild, catalog, graph, backend, gateway, buildScript, phaseFile)
+    inputs.file(arm64Runtime)
+
+    doLast {
+        val appText = appBuild.readText()
+        val rootBuildText = rootBuild.readText()
+        val catalogText = catalog.readText()
+        val graphText = graph.readText()
+        val backendText = backend.readText()
+        val gatewayText = gateway.readText()
+        val scriptText = buildScript.readText()
+        val phaseText = phaseFile.readText()
+
+        check("MigrationPhase = \"GO14\"" in phaseText) { "GO14 phase identity is missing." }
+        check("chaquopy" !in catalogText.lowercase() && "libs.plugins.chaquopy" !in rootBuildText && "libs.plugins.chaquopy" !in appText) {
+            "GO14 Android still has a Chaquopy Gradle/plugin dependency."
+        }
+        check(retired.none { it.exists() }) {
+            "GO14 Android still contains retired Python/fallback source files: " + retired.filter { it.exists() }.joinToString { it.name }
+        }
+        check("val local = GoNativeGateway(appContext)" in graphText && "NativePreferredGateway" !in graphText && "ChaquopyPythonGateway" !in graphText) {
+            "GO14 local production graph is not Go-only."
+        }
+        check("setOf(\"go-native-android\")" in backendText && "embedded-cpython" !in backendText) {
+            "GO14 backend runtime allowlist is not Go-only."
+        }
+        check("const val ABI = \"arm64-v8a\"" in gatewayText) {
+            "GO14 gateway is not sealed to arm64-v8a."
+        }
+        check("GOOS=android GOARCH=arm64" in scriptText && "GOARCH=amd64" !in scriptText) {
+            "GO14 runtime builder must produce only the CGO-free Android ARM64 runtime."
+        }
+        check("ndkVersion = \"29.0.14206865\"" in appText) { "GO14 must retain NDK 29.0.14206865." }
+        check("check(bkxNdkMajor >= 29)" in appText) { "GO14 must retain the NDK r29+ floor." }
+
+        fun elfMachine(file: java.io.File): Int {
+            check(file.isFile && file.canExecute()) { "Generated Go runtime missing or not executable: ${file.absolutePath}" }
+            val bytes = file.readBytes()
+            check(bytes.size >= 20 && bytes[0] == 0x7f.toByte() && bytes[1] == 'E'.code.toByte() && bytes[2] == 'L'.code.toByte() && bytes[3] == 'F'.code.toByte()) {
+                "Generated Go runtime is not ELF: ${file.absolutePath}"
+            }
+            val littleEndian = bytes[5].toInt() == 1
+            return if (littleEndian) {
+                (bytes[18].toInt() and 0xff) or ((bytes[19].toInt() and 0xff) shl 8)
+            } else {
+                ((bytes[18].toInt() and 0xff) shl 8) or (bytes[19].toInt() and 0xff)
+            }
+        }
+
+        check(elfMachine(arm64Runtime.get().asFile) == 183) { "GO14 arm64-v8a runtime is not AArch64 ELF." }
     }
 }
 
@@ -666,6 +745,7 @@ tasks.named("bkxAndroidReleaseSeal") {
         "verifyBkxReleaseHygiene",
         "verifyBkxDeviceQualificationContract",
         "verifyBkxGoProductionCutoverContract",
+        "verifyBkxGoOnlyAndroidRuntimeContract",
         "verifyBkxFinalReleaseContract",
     )
 }

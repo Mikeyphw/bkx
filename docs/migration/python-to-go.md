@@ -34,7 +34,7 @@ Python implementation and checked for byte-for-byte drift. It freezes:
 | Advertised bridge operations | 15 |
 | Canonical operation schemas | 4 |
 | Product/Python backend version | 1.0.0 |
-| Current Android backend runtime | `embedded-cpython` |
+| Current Android backend runtime | `go-native-android` (GO14 Android APK is Go-only) |
 
 The bridge handler set contains backup planning/creation, archive
 list/info/browse/verify, restore preview/extract, transfer plan/run, run
@@ -285,7 +285,20 @@ Delivered production routing and device gates:
 - explicit physical-device qualification now requires both privileged and local readiness identities to be `go-native-android`, in addition to root and Termux-private storage access;
 - Android preflight/release tasks require the generated AArch64 runtime and GO13 cutover source contract before packaging.
 
+## GO14 — Android Python/Chaquopy retirement — COMPLETE
+
+Delivered the Android runtime cleanup after GO13 production cutover:
+
+- removed the Chaquopy Gradle plugin/version and all build-Python probing/source packaging from the Android project;
+- deleted `ChaquopyPythonGateway`, `EmbeddedPythonGateway`, `NativePreferredGateway`, `GoRuntimeCutoverPolicy`, and the selector unit test;
+- production local routing now instantiates `GoNativeGateway` directly while `RootAwareGateway` continues to pin local/root routes per request;
+- `EmbeddedBkxBackend` now accepts only `go-native-android`; protocol-v1 retains the historical `python_version` field with value `none` for wire compatibility;
+- Android is intentionally `arm64-v8a` only. CGO-free Android/amd64 executable linking is not supported by the current Go toolchain, and GO14 refuses to reintroduce a host-NDK/CGo runtime build dependency merely to preserve the old Python fallback ABI;
+- NDK remains pinned to `29.0.14206865` with a hard r29+ validator floor;
+- AGP generated-JNI source wiring, root UID-0 execution, progress/cancellation, and Python↔Go repository parity gates remain sealed;
+- human Go product CLI commands remain fail-closed pending their own explicit cutover phase.
+
 ## Next gate
 
-GO14 should remove the controlled Android Python fallback/Chaquopy packaging once GO13 Android-target and physical-device evidence has been collected successfully, then update release/tooling identities to Go-only without changing protocol v1.
+GO15 should address the human CLI cutover: map the already-migrated service/bridge operations onto the public Go CLI surface, prove CLI output/exit-code parity, then decide when the Python package can stop being the production CLI implementation.
 

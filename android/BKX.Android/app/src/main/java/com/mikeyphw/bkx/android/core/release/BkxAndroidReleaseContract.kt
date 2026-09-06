@@ -20,6 +20,7 @@ object BkxAndroidReleaseContract {
         ":app:verifyBkxReleaseHygiene",
         ":app:verifyBkxDeviceQualificationContract",
         ":app:verifyBkxGoProductionCutoverContract",
+        ":app:verifyBkxGoOnlyAndroidRuntimeContract",
         ":app:verifyBkxFinalReleaseContract",
         ":app:testDebugUnitTest",
         ":app:lintDebug",

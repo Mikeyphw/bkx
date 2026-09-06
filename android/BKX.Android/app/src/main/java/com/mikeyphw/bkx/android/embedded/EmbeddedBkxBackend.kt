@@ -22,8 +22,8 @@ import kotlinx.serialization.decodeFromString
 /**
  * In-process BackendPort backed by the canonical protocol-v1 embedded runtime.
  *
- * GO13 prefers the packaged Go runtime on supported ARM64 devices while preserving the
- * BridgeRequestEnvelope/BridgeResultEnvelope contract and an explicit development fallback.
+ * GO14 uses the packaged Go runtime for every supported Android ABI while preserving the
+ * BridgeRequestEnvelope/BridgeResultEnvelope protocol-v1 contract.
  */
 class EmbeddedBkxBackend(
     private val gateway: EmbeddedRuntimeGateway,
@@ -67,7 +67,7 @@ class EmbeddedBkxBackend(
         try {
             val requestJson = BridgeJson.encodeRequest(request)
             val resultJson = gateway.executeJson(requestJson)
-            // Parse before publishing so malformed Python output can never become a final result.
+            // Parse before publishing so malformed runtime output can never become a final result.
             val result = BridgeJson.parseFinalResult(resultJson)
             require(result.requestId == request.requestId) { "embedded result request id mismatch" }
             publish(files.requestFilePath, requestJson)
@@ -135,7 +135,7 @@ class EmbeddedBkxBackend(
     }
 
     private companion object {
-        val SUPPORTED_RUNTIMES = setOf("embedded-cpython", "go-native-android")
+        val SUPPORTED_RUNTIMES = setOf("go-native-android")
     }
 }
 

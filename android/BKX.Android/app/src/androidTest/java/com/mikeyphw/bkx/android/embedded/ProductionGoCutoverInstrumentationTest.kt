@@ -21,7 +21,7 @@ import org.junit.runner.RunWith
 class ProductionGoCutoverInstrumentationTest {
     @Test
     fun productionBackendReportsGoNativeAndroidOnArm64() = runBlocking {
-        assumeTrue(Build.SUPPORTED_ABIS.any { it == GoRuntimeCutoverPolicy.TARGET_ABI })
+        assumeTrue(Build.SUPPORTED_ABIS.any { it == "arm64-v8a" })
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val readiness = DefaultBackendGraph.backendPort(context).checkReadiness()
         assertTrue(readiness is BackendReadiness.Ready)
@@ -31,7 +31,7 @@ class ProductionGoCutoverInstrumentationTest {
 
     @Test
     fun privilegedRouteUsesSameGoRuntimeWhenRootIsGranted() = runBlocking {
-        assumeTrue(Build.SUPPORTED_ABIS.any { it == GoRuntimeCutoverPolicy.TARGET_ABI })
+        assumeTrue(Build.SUPPORTED_ABIS.any { it == "arm64-v8a" })
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val root = RootBkxServiceClient(context)
         assumeTrue("Root manager did not grant BKX; root Go lane skipped", root.rootAvailable())

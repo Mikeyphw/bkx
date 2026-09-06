@@ -22,7 +22,9 @@ def test_process_scoped_runtime_and_dynamic_root_route_are_sealed() -> None:
     assert "OperationFailureMapper.interrupted" in coordinator
     assert "recoverInterruptedOperations" in application
     assert "modeProvider = { settings.readNow().rootAccessMode }" in graph
-    assert "GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT" in graph
+    assert "val local = GoNativeGateway(appContext)" in graph
+    assert "ChaquopyPythonGateway" not in graph
+    assert "NativePreferredGateway" not in graph
     assert "requestRoutes" in gateway and "requestIdFrom" in gateway
 
 
@@ -87,6 +89,8 @@ def test_release_assets_and_devtool_matrix_exist() -> None:
         ":app:verifyBkxEmbeddedParitySeal",
         ":app:verifyBkxReleaseHygiene",
         ":app:verifyBkxDeviceQualificationContract",
+        ":app:verifyBkxGoProductionCutoverContract",
+        ":app:verifyBkxGoOnlyAndroidRuntimeContract",
         ":app:verifyBkxFinalReleaseContract",
     ):
         assert task in devtool and task in release

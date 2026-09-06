@@ -13,26 +13,8 @@ import org.junit.Test
 
 class EmbeddedBkxBackendTest {
     @Test
-    fun readinessMapsEmbeddedRuntimeWithoutTermux() = runTest {
+    fun readinessMapsGoRuntimeWithoutTermux() = runTest {
         val backend = EmbeddedBkxBackend(FakeGateway(), StandardTestDispatcher(testScheduler))
-
-        val readiness = backend.checkReadiness()
-
-        assertTrue(readiness is BackendReadiness.Ready)
-        readiness as BackendReadiness.Ready
-        assertEquals("embedded-cpython", readiness.runtime)
-        assertEquals(1, readiness.bridgeProtocolVersion)
-        assertTrue("backup.plan" in readiness.capabilities)
-        assertTrue(readiness.message.contains("embedded"))
-    }
-
-
-    @Test
-    fun readinessAcceptsGoNativeAndroidRuntime() = runTest {
-        val gateway = FakeGateway(
-            readinessDocument = """{"protocol_version":1,"backend_version":"1.0.0","runtime":"go-native-android","python_version":"none","capabilities":["backup.plan"]}""",
-        )
-        val backend = EmbeddedBkxBackend(gateway, StandardTestDispatcher(testScheduler))
 
         val readiness = backend.checkReadiness()
 
@@ -40,6 +22,21 @@ class EmbeddedBkxBackendTest {
         readiness as BackendReadiness.Ready
         assertEquals("go-native-android", readiness.runtime)
         assertEquals(1, readiness.bridgeProtocolVersion)
+        assertTrue("backup.plan" in readiness.capabilities)
+        assertTrue(readiness.message.contains("embedded"))
+    }
+
+
+    @Test
+    fun readinessRejectsRetiredEmbeddedPythonRuntime() = runTest {
+        val gateway = FakeGateway(
+            readinessDocument = """{"protocol_version":1,"backend_version":"1.0.0","runtime":"embedded-cpython","python_version":"3.14","capabilities":["backup.plan"]}""",
+        )
+        val backend = EmbeddedBkxBackend(gateway, StandardTestDispatcher(testScheduler))
+
+        val readiness = backend.checkReadiness()
+
+        assertTrue(readiness is BackendReadiness.ProbeFailed)
     }
 
     @Test
@@ -69,7 +66,7 @@ class EmbeddedBkxBackendTest {
     }
 
     @Test
-    fun malformedPythonResultFailsClosedBeforePublication() = runTest {
+    fun malformedRuntimeResultFailsClosedBeforePublication() = runTest {
         val gateway = FakeGateway(resultJson = "not-json")
         val backend = EmbeddedBkxBackend(gateway, StandardTestDispatcher(testScheduler))
         val root = Files.createTempDirectory("bkx-embedded-test").toFile()
@@ -107,8 +104,8 @@ class EmbeddedBkxBackendTest {
 
     private class FakeGateway(
         private val resultJson: String = """{"protocol_version":1,"request_id":"req-1","status":"success","summary":"embedded ok","errors":[],"artifacts":[]}""",
-        private val readinessDocument: String = """{"protocol_version":1,"backend_version":"0.0.1","runtime":"embedded-cpython","python_version":"3.13.9","capabilities":["backup.plan"]}""",
-    ) : EmbeddedPythonGateway {
+        private val readinessDocument: String = """{"protocol_version":1,"backend_version":"0.0.1","runtime":"go-native-android","python_version":"none","capabilities":["backup.plan"]}""",
+    ) : EmbeddedRuntimeGateway {
         var lastRequestJson: String? = null
         var cancelledRequestId: String? = null
 

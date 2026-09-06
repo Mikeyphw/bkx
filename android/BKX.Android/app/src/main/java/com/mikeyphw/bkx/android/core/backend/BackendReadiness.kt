@@ -17,7 +17,7 @@ sealed interface BackendReadiness {
         val backendVersion: String,
         val bridgeProtocolVersion: Int,
         val capabilities: Set<String>,
-        val runtime: String = "embedded-cpython",
+        val runtime: String = "go-native-android",
     ) : BackendReadiness {
         val isRoot: Boolean get() = "root.filesystem" in capabilities
 

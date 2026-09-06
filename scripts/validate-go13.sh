@@ -75,20 +75,34 @@ PYTOOLCHAIN
 echo '==> GO13 production Go cutover static seal'
 python3 - <<'PYCUTOVER'
 from pathlib import Path
-policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").read_text()
-selector = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt").read_text()
+phase = Path("internal/version/version.go").read_text()
 root = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt").read_text()
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
 app = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt").read_text()
-assert "ENABLED_BY_DEFAULT: Boolean = true" in policy
-assert "REQUIRE_GO_ON_ARM64: Boolean = true" in policy
-assert "ProductionGoRuntimeUnavailableException" in selector
-assert "if (goRequiredProvider()) throw ProductionGoRuntimeUnavailableException()" in selector
+gateway = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt").read_text()
+if 'MigrationPhase = "GO14"' in phase:
+    retired = [
+        Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"),
+        Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt"),
+        Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt"),
+        Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedPythonGateway.kt"),
+    ]
+    assert "val local = GoNativeGateway(appContext)" in graph
+    assert "NativePreferredGateway" not in graph and "ChaquopyPythonGateway" not in graph
+    assert not any(path.exists() for path in retired)
+    assert 'const val ABI = "arm64-v8a"' in gateway
+else:
+    policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").read_text()
+    selector = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt").read_text()
+    assert "ENABLED_BY_DEFAULT: Boolean = true" in policy
+    assert "REQUIRE_GO_ON_ARM64: Boolean = true" in policy
+    assert "ProductionGoRuntimeUnavailableException" in selector
+    assert "if (goRequiredProvider()) throw ProductionGoRuntimeUnavailableException()" in selector
+    assert "RootAwareGateway" in graph and "NativePreferredGateway" in graph
 assert "GoNativeGateway(baseContext, stateNamespace = ROOT_STATE_NAMESPACE)" in root
 assert 'getModule("bkx.android_api")' not in root and "com.chaquo.python" not in root
-assert "RootAwareGateway" in graph and "NativePreferredGateway" in graph
 assert "Python.start(" not in app
-print("GO13 production local/root routing is fail-closed Go-native on ARM64")
+print("GO13 production local/root routing remains fail-closed Go-native")
 PYCUTOVER
 
 echo '==> GO13 human product command boundary remains fail-closed'

@@ -1,27 +1,23 @@
 # BKX Android architecture
 
-BKX Android is a Kotlin/Compose application over the same BKX engine used by the CLI.
-The Android boundary is protocol-v1 JSON (`readiness`, `execute`, `progress`, and `cancel`) and must remain narrower than the public CLI.
+BKX Android is a Kotlin/Compose application over the protocol-v1 Go engine. The Android boundary is JSON (`readiness`, `execute`, `progress`, and `cancel`) and remains narrower than the public CLI.
 
 ## Current runtime
 
-GO12 packages a generated ARM64 Go protocol-v1 runtime alongside the existing Chaquopy engine. The Go executable is app-owned (`nativeLibraryDir/libbkxgo.so`) and is launched directly without a shell. The explicit cutover seal remains disabled by default, so production continues to use Chaquopy; privileged filesystem work still routes through the libsu RootService and Python until the root Go lane is separately proven. The production graph must not execute arbitrary root shell commands or depend on Termux `RUN_COMMAND`.
+GO14 is **Go-only on Android**. Gradle generates an Android/AArch64 PIE executable named `libbkxgo.so`, registers its generated JNI directory through the AGP Variant API, and packages it as an extracted app-owned native library. `GoNativeGateway` launches only `ApplicationInfo.nativeLibraryDir/libbkxgo.so` directly; no shell or arbitrary executable path is exposed.
+
+The local application process and the libsu UID-0 process launch the same binary. Their runtime state is namespaced separately (`go-local` / `go-root`) to avoid cross-UID ownership conflicts. The Android APK contains no Chaquopy plugin/runtime, embedded Python source package, Python gateway, or Python fallback selector.
+
+The APK is intentionally `arm64-v8a` only. NDK `29.0.14206865` is pinned and validation rejects an NDK major below 29.
 
 ## Stable boundaries
 
 - UI code builds typed requests and renders typed results; it does not implement backup/archive algorithms.
-- `BridgeRequestEnvelope`, result, progress, and cancellation envelopes are the runtime migration seam.
+- `BridgeRequestEnvelope`, result, progress, and cancellation envelopes remain the runtime seam.
+- `EmbeddedBkxBackend` is a transport adapter despite its historical name; it accepts only the `go-native-android` runtime identity in GO14.
 - Root access is capability-scoped and request routing stays pinned for the lifetime of an active request.
 - Shared-storage, direct/root filesystem, removable-volume, and provider-staged SAF paths are explicit product paths.
 - Restore policy is fail-closed for protected Android roots, traversal/link members, and root-sensitive destinations.
+- Human Go CLI commands remain a separate migration/cutover concern and are not exposed merely because Android runs Go.
 
-The runtime implementation may change (for example, to Go) without changing protocol-v1 semantics.
-## Go runtime migration status
-
-The frozen compatibility bundle remains under `migration/contracts/v1/`. GO12 now packages the Go bridge runtime and gives Kotlin a protocol-v1 process transport, but `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT=false` preserves the Python production contract. ARM64 instrumentation is the acceptance path for the packaged Go runtime before a later phase enables it for normal traffic.
-
-
-
-## GO13 production cutover
-
-On supported ARM64 devices the local route selects the packaged `libbkxgo.so` by default. The libsu RootService launches that same app-owned runtime as UID 0. Local and root runtime state use separate namespaces to avoid UID ownership conflicts. Python remains only a controlled local fallback until GO14.
+The frozen compatibility bundle remains under `migration/contracts/v1/`. Historical Python↔Go parity fixtures continue to protect protocol behavior, but Python is no longer an Android runtime dependency.

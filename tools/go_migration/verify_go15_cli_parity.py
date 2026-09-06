@@ -15,18 +15,37 @@ from typer.testing import CliRunner
 
 from bkx.cli.app import app
 import bkx.core.config as python_config
+import bkx.core.impl.run_store as python_run_store
+
+
+def _reset_python_state(home: Path) -> None:
+    python_config._config = None
+    python_run_store.DEFAULT_RUNS_DIR = home / ".local" / "share" / "bkx" / "runs"
+    python_run_store.RUNS_FILE = python_run_store.DEFAULT_RUNS_DIR / "runs.jsonl"
+    python_run_store._default_store = None
+    python_run_store._default_store_key = None
 
 
 def invoke_python(args: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int, str, str]:
     old = Path.cwd()
+    home = Path(env["HOME"])
     try:
         os.chdir(cwd)
-        python_config._config = None
+        _reset_python_state(home)
         result = CliRunner().invoke(app, args, env=env)
-        return result.exit_code, result.stdout, result.stderr
+        # Click/Typer compatibility: Click 8.3 may not capture stderr
+        # separately and raises ValueError when Result.stderr is accessed.
+        # GO15 parity compares exit codes and stdout/JSON; stderr is only
+        # diagnostic context, so preserve it when available and otherwise
+        # use an empty string instead of failing the verifier itself.
+        try:
+            stderr = result.stderr
+        except ValueError:
+            stderr = ""
+        return result.exit_code, result.stdout, stderr
     finally:
         os.chdir(old)
-        python_config._config = None
+        _reset_python_state(home)
 
 
 def invoke_go(binary: Path, args: list[str], *, cwd: Path, env: dict[str, str]) -> tuple[int, str, str]:
@@ -39,8 +58,15 @@ def load_json(text: str) -> object:
 
 
 def compare(name: str, binary: Path, args: list[str], *, cwd: Path, env: dict[str, str], normalize=None) -> None:
-    py = invoke_python(args, cwd=cwd, env=env)
-    go = invoke_go(binary, args, cwd=cwd, env=env)
+    state_root = cwd / ".parity-state" / name
+    py_env = dict(env)
+    go_env = dict(env)
+    py_env["HOME"] = str(state_root / "python-home")
+    go_env["HOME"] = str(state_root / "go-home")
+    Path(py_env["HOME"]).mkdir(parents=True, exist_ok=True)
+    Path(go_env["HOME"]).mkdir(parents=True, exist_ok=True)
+    py = invoke_python(args, cwd=cwd, env=py_env)
+    go = invoke_go(binary, args, cwd=cwd, env=go_env)
     if py[0] != go[0]:
         raise AssertionError(f"{name}: exit mismatch Python={py[0]} Go={go[0]}\nPY={py}\nGO={go}")
     if "--json" in args:

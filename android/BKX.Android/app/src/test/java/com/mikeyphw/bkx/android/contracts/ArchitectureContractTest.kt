@@ -28,7 +28,6 @@ class ArchitectureContractTest {
     fun sourceDoesNotUseArbitraryShellExecutionApis() {
         val forbidden = listOf(
             "Runtime.getRuntime().exec",
-            "ProcessBuilder(",
             "sh -c",
             "bash -c",
             "/system/bin/sh",
@@ -36,6 +35,18 @@ class ArchitectureContractTest {
         )
         forbidden.forEach { token ->
             assertFalse("Forbidden shell execution token found: $token", sourceText.contains(token))
+        }
+    }
+
+    @Test
+    fun goRuntimeProcessBuilderIsNarrowAndAppOwned() {
+        val gateway = File(sourceRoot, "com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt").readText()
+        assertTrue(gateway.contains("ProcessBuilder("))
+        assertTrue(gateway.contains("applicationInfo.nativeLibraryDir"))
+        assertTrue(gateway.contains("android-runtime"))
+        assertTrue(gateway.contains("bridge-session"))
+        listOf("/system/bin/sh", "sh -c", "bash -c", "su -c", "Runtime.getRuntime().exec").forEach { token ->
+            assertFalse("Native Go launcher must not expose shell token: $token", gateway.contains(token))
         }
     }
 }

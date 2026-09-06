@@ -258,6 +258,20 @@ Delivered migration-only bridge transport:
 - Python ↔ Go differential fixtures cover success envelopes, malformed/unsupported requests, typed error actions, queued cancellation, `run.cancel`, final progress, and runtime capability parity;
 - normal Go product commands remain fail-closed and Android production routing remains embedded Python.
 
+## GO12 — Android Go runtime integration boundary — COMPLETE
+
+Delivered without enabling the production cutover by default:
+
+- the Go bridge now has a distinct `go-native-android` readiness identity while retaining the GO11 `go-native-migration` parity identity;
+- `bkx android-runtime bridge-session` is an internal concurrent NDJSON process transport with correlated replies, so progress and cancellation are serviced while execute is still running;
+- Android Gradle generates an ARM64 PIE `libbkxgo.so` from `cmd/bkx`, verifies Android/ARM64 ELF metadata, and packages it as an extracted app-owned native library;
+- Kotlin `GoNativeGateway` launches only `ApplicationInfo.nativeLibraryDir/libbkxgo.so` directly, never a shell or arbitrary executable, and multiplexes readiness/execute/progress/cancel over one persistent runtime process;
+- `EmbeddedBkxBackend` accepts both `embedded-cpython` and `go-native-android` at protocol v1;
+- `NativePreferredGateway` plus `GoRuntimeCutoverPolicy` define the explicit cutover seam, with `ENABLED_BY_DEFAULT=false` so the frozen production backend remains Python until the next device gate;
+- the libsu UID-0 path deliberately remains Chaquopy-backed in GO12; root Go execution is not silently introduced;
+- a real Android instrumentation test bypasses the disabled cutover flag and probes the packaged Go readiness, execute, progress, and queued cancellation entrypoints on ARM64;
+- Linux validation proves the Android session can service progress/cancel concurrently with a long transfer execute request.
+
 ## Next gate
 
-GO12 should integrate the sealed Go protocol adapter into the Android runtime behind an explicit migration/cutover boundary, update readiness/runtime identity for Go without breaking protocol v1, and prove Kotlin ↔ Go request/result/progress/cancel compatibility before Python fallback removal is considered.
+GO13 should consume real-device GO12 evidence, move the privileged/root route onto the same Go runtime, flip the production cutover only when both local and root lanes pass, and retain Python solely as a controlled rollback path until the subsequent removal phase.

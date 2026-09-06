@@ -10,6 +10,7 @@ plugins {
 val bkxValidationSdk = 36
 val bkxBuildToolsVersion = "36.0.0"
 val bkxJavaVersion = JavaVersion.VERSION_21
+val bkxGoRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-go-runtime/jniLibs")
 
 val bkxRepositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
 val bkxPyprojectFile = bkxRepositoryRoot.resolve("pyproject.toml")
@@ -97,6 +98,8 @@ android {
         aidl = true
     }
 
+    sourceSets.getByName("main").jniLibs.srcDir(bkxGoRuntimeJniDir)
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = bkxJavaVersion
@@ -104,6 +107,11 @@ android {
     }
 
     packaging {
+        jniLibs {
+            // The Go runtime is executed as an app-owned PIE from nativeLibraryDir.
+            // Force extraction so ProcessBuilder receives a real executable filesystem path.
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
@@ -295,7 +303,25 @@ tasks.register("verifyBkxAndroidSdk36DependencyLane") {
 }
 
 
+val buildBkxGoAndroidRuntime by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Build the generated ARM64 Go protocol-v1 runtime packaged by BKX Android."
+    workingDir(bkxRepositoryRoot)
+    inputs.file(bkxRepositoryRoot.resolve("go.mod"))
+    inputs.dir(bkxRepositoryRoot.resolve("cmd/bkx"))
+    inputs.dir(bkxRepositoryRoot.resolve("internal"))
+    inputs.file(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh"))
+    outputs.file(bkxGoRuntimeJniDir.map { it.file("arm64-v8a/libbkxgo.so") })
+    commandLine(
+        "bash",
+        bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh").absolutePath,
+        bkxGoRuntimeJniDir.get().asFile.absolutePath,
+    )
+}
 
+tasks.named("preBuild").configure {
+    dependsOn(buildBkxGoAndroidRuntime)
+}
 
 // Verification tasks live outside the application build configuration.
 extra["bkxEmbeddedPythonVersion"] = bkxEmbeddedPythonVersion

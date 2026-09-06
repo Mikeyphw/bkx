@@ -5,7 +5,7 @@ The Android boundary is protocol-v1 JSON (`readiness`, `execute`, `progress`, an
 
 ## Current runtime
 
-The current application embeds the Python BKX core with Chaquopy and can route operations through a libsu RootService when privileged filesystem access is required. The production graph must not execute arbitrary root shell commands or depend on Termux `RUN_COMMAND`.
+GO12 packages a generated ARM64 Go protocol-v1 runtime alongside the existing Chaquopy engine. The Go executable is app-owned (`nativeLibraryDir/libbkxgo.so`) and is launched directly without a shell. The explicit cutover seal remains disabled by default, so production continues to use Chaquopy; privileged filesystem work still routes through the libsu RootService and Python until the root Go lane is separately proven. The production graph must not execute arbitrary root shell commands or depend on Termux `RUN_COMMAND`.
 
 ## Stable boundaries
 
@@ -16,12 +16,7 @@ The current application embeds the Python BKX core with Chaquopy and can route o
 - Restore policy is fail-closed for protected Android roots, traversal/link members, and root-sensitive destinations.
 
 The runtime implementation may change (for example, to Go) without changing protocol-v1 semantics.
-## GO00/GO01 migration status
+## Go runtime migration status
 
-The repository now contains a non-production Go scaffold under `cmd/bkx` and a
-frozen compatibility bundle under `migration/contracts/v1/`. The scaffold is not
-packaged into the Android app and cannot execute product operations. The current
-Android runtime remains embedded CPython until later phases prove operation-level
-parity against the frozen contracts. This preserves protocol-v1 and keeps the
-Kotlin/Compose product layer independent from the backend-language migration.
+The frozen compatibility bundle remains under `migration/contracts/v1/`. GO12 now packages the Go bridge runtime and gives Kotlin a protocol-v1 process transport, but `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT=false` preserves the Python production contract. ARM64 instrumentation is the acceptance path for the packaged Go runtime before a later phase enables it for normal traffic.
 

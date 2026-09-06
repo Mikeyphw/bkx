@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"bkx/internal/archiveio"
@@ -118,6 +119,25 @@ func run(args []string) int {
 		}
 		fmt.Println("BKX GO02 retention probe complete.")
 		return 0
+	}
+
+	if len(args) >= 2 && args[0] == "android-runtime" {
+		switch args[1] {
+		case "bridge-session":
+			if len(args) != 3 {
+				fmt.Fprintln(os.Stderr, "usage: bkx android-runtime bridge-session RUNS_OR_DASH")
+				return 64
+			}
+			store, err := optionalRunStore(args[2])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return runConcurrentBridgeSession(bridge.NewAndroid(store))
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx android-runtime bridge-session RUNS_OR_DASH")
+			return 64
+		}
 	}
 
 	if len(args) >= 3 && args[0] == "migration" && args[1] == "bridge" {
@@ -522,6 +542,81 @@ func optionalRunStore(path string) (*runstore.Store, error) {
 		return nil, nil
 	}
 	return runstore.New(path, 0, false)
+}
+
+type concurrentBridgeCommand struct {
+	ID         string          `json:"id"`
+	Entrypoint string          `json:"entrypoint"`
+	RequestID  string          `json:"request_id"`
+	Request    json.RawMessage `json:"request"`
+}
+
+type concurrentBridgeReply struct {
+	ID    string `json:"id"`
+	Value any    `json:"value"`
+}
+
+// runConcurrentBridgeSession is the Android process transport. Unlike the
+// migration-only session, execute runs in its own goroutine so progress and
+// cancellation requests can be serviced while a long operation is active.
+func runConcurrentBridgeSession(rt *bridge.RuntimeAdapter) int {
+	scanner := bufio.NewScanner(os.Stdin)
+	buffer := make([]byte, 0, 64*1024)
+	scanner.Buffer(buffer, 4*1024*1024)
+	encoder := json.NewEncoder(os.Stdout)
+	var writeMu sync.Mutex
+	var wg sync.WaitGroup
+
+	write := func(reply concurrentBridgeReply) {
+		writeMu.Lock()
+		defer writeMu.Unlock()
+		_ = encoder.Encode(reply)
+	}
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var command concurrentBridgeCommand
+		if err := json.Unmarshal([]byte(line), &command); err != nil {
+			write(concurrentBridgeReply{ID: "unknown", Value: map[string]any{"session_error": err.Error()}})
+			continue
+		}
+		if strings.TrimSpace(command.ID) == "" {
+			write(concurrentBridgeReply{ID: "unknown", Value: map[string]any{"session_error": "missing command id"}})
+			continue
+		}
+		wg.Add(1)
+		go func(command concurrentBridgeCommand) {
+			defer wg.Done()
+			var value any
+			switch command.Entrypoint {
+			case "readiness":
+				value = rt.Readiness()
+			case "execute":
+				value = rt.Execute(string(command.Request))
+			case "progress":
+				progress, err := rt.Progress(command.RequestID)
+				if err != nil {
+					value = map[string]any{"session_error": err.Error()}
+				} else {
+					value = progress
+				}
+			case "cancel":
+				value = rt.Cancel(command.RequestID)
+			default:
+				value = map[string]any{"session_error": "unknown bridge session entrypoint"}
+			}
+			write(concurrentBridgeReply{ID: command.ID, Value: value})
+		}(command)
+	}
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	wg.Wait()
+	return 0
 }
 
 func runBridgeSession(rt *bridge.RuntimeAdapter) int {

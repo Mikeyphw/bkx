@@ -27,7 +27,7 @@ import kotlinx.serialization.decodeFromString
  * without changing BKX semantics again.
  */
 class EmbeddedBkxBackend(
-    private val gateway: EmbeddedPythonGateway,
+    private val gateway: EmbeddedRuntimeGateway,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : BackendPort {
     override suspend fun checkReadiness(): BackendReadiness = withContext(ioDispatcher) {
@@ -38,7 +38,7 @@ class EmbeddedBkxBackend(
                     expected = BridgeJson.SUPPORTED_PROTOCOL_VERSION,
                     actual = document.protocolVersion,
                 )
-            } else if (document.runtime != EMBEDDED_RUNTIME) {
+            } else if (document.runtime !in SUPPORTED_RUNTIMES) {
                 BackendReadiness.ProbeFailed("Unexpected embedded BKX runtime '${document.runtime}'.")
             } else {
                 BackendReadiness.Ready(
@@ -136,7 +136,7 @@ class EmbeddedBkxBackend(
     }
 
     private companion object {
-        const val EMBEDDED_RUNTIME = "embedded-cpython"
+        val SUPPORTED_RUNTIMES = setOf("embedded-cpython", "go-native-android")
     }
 }
 

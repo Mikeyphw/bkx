@@ -64,6 +64,16 @@ func TestFrozenBridgeRegistryAndReadiness(t *testing.T) {
 	}
 }
 
+func TestAndroidRuntimeReadinessIdentity(t *testing.T) {
+	ready := NewAndroid(nil).Readiness()
+	if ready.Runtime != AndroidRuntime {
+		t.Fatalf("unexpected Android runtime identity: %#v", ready)
+	}
+	if ready.ProtocolVersion != 1 || ready.PythonVersion != "none" {
+		t.Fatalf("unexpected Android readiness: %#v", ready)
+	}
+}
+
 func TestExecuteSuccessEnvelopeMetricsAndProgressSequence(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "hello.txt")

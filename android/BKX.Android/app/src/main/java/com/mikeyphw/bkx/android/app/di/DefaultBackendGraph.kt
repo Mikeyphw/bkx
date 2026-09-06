@@ -12,6 +12,9 @@ import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.embedded.ChaquopyPythonGateway
 import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
+import com.mikeyphw.bkx.android.embedded.GoNativeGateway
+import com.mikeyphw.bkx.android.embedded.GoRuntimeCutoverPolicy
+import com.mikeyphw.bkx.android.embedded.NativePreferredGateway
 import com.mikeyphw.bkx.android.embedded.RootAwarePythonGateway
 import com.mikeyphw.bkx.android.files.AndroidProviderStagingManager
 import com.mikeyphw.bkx.android.root.RootBkxServiceClient
@@ -32,7 +35,12 @@ object DefaultBackendGraph {
         backendInstance ?: run {
             val appContext = context.stableApplicationContext()
             val settings = sharedSettingsStore(appContext)
-            val local = ChaquopyPythonGateway(appContext)
+            val python = ChaquopyPythonGateway(appContext)
+            val local = NativePreferredGateway(
+                nativeGateway = GoNativeGateway(appContext),
+                pythonFallback = python,
+                goEnabledProvider = { GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT },
+            )
             val root = RootBkxServiceClient(appContext)
             EmbeddedBkxBackend(
                 gateway = RootAwarePythonGateway(

@@ -106,7 +106,6 @@ def test_release_production_source_has_no_termux_execution_or_generic_root_shell
         "TermuxBridgeAdapter(",
         "termux_run_command",
         "TermuxRunCommand",
-        "ProcessBuilder(",
         "su -c",
     )
     source_files = [
@@ -117,3 +116,10 @@ def test_release_production_source_has_no_termux_execution_or_generic_root_shell
         text = path.read_text(encoding="utf-8")
         for token in forbidden:
             assert token not in text, f"{token!r} in {path}"
+
+    go_gateway = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
+    assert "ProcessBuilder(" in go_gateway
+    assert "applicationInfo.nativeLibraryDir" in go_gateway
+    assert '"android-runtime"' in go_gateway and '"bridge-session"' in go_gateway
+    for token in ("/system/bin/sh", "sh -c", "bash -c", "su -c", "Runtime.getRuntime().exec"):
+        assert token not in go_gateway

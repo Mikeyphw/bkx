@@ -22,10 +22,10 @@ class RootAccessRequiredException : IllegalStateException(
  * routes execute the same bkx.android_api -> bkx.core implementation.
  */
 class RootAwarePythonGateway(
-    private val localGateway: EmbeddedPythonGateway,
+    private val localGateway: EmbeddedRuntimeGateway,
     private val rootClient: RootBkxServiceClient,
     private val modeProvider: () -> RootAccessMode = { RootAccessMode.Preferred },
-) : EmbeddedPythonGateway {
+) : EmbeddedRuntimeGateway {
     private val requestRoutes = ConcurrentHashMap<String, RootExecutionRoute>()
 
     override suspend fun readinessJson(): String = when (route()) {

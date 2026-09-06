@@ -54,7 +54,7 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00–GO11 establish a compatibility-first migration lane without changing the
+GO00–GO12 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
 canonical operation schemas. The Go tree now contains the migration scaffold plus
@@ -67,8 +67,7 @@ The Go executable still deliberately rejects normal backup/archive/restore/trans
 commands until later operation/service parity gates are complete.
 
 Use `devtool --target bkx_go validate` for the Go lane or
-`scripts/validate-go11.sh` for the complete migration gate. The Android app
-remains Kotlin/Compose and continues to use the production embedded-Python engine.
+`scripts/validate-go12.sh` for the complete migration gate. The Android app remains Kotlin/Compose. GO12 packages and validates the ARM64 Go runtime behind an explicit disabled-by-default cutover seal, while the production route remains embedded Python until GO13 device evidence is accepted.
 See `docs/migration/python-to-go.md`.
 
 
@@ -135,3 +134,8 @@ remain Python-owned and fail closed.
 ### Go migration GO11
 
 GO11 adds the migration-only protocol-v1 Go bridge adapter over GO10. It owns strict request parsing, protocol/result/error envelopes, readiness/capability reporting, final metrics, monotonic progress documents, `cancel` plus the non-advertised `run.cancel` handler, and cooperative cancellation state. A persistent NDJSON migration session probe exercises multiple bridge entrypoints against one runtime instance. Android still routes production requests to embedded Python; normal Go product commands remain fail-closed.
+
+
+### Go migration GO12
+
+GO12 integrates the sealed protocol-v1 Go adapter into the Android package without flipping production by default. Gradle generates an ARM64 `libbkxgo.so`; Kotlin launches that app-owned executable through a concurrent correlated session capable of progress and cancellation during execute. `GoRuntimeCutoverPolicy.ENABLED_BY_DEFAULT` remains false, Chaquopy stays the production/local fallback, and the privileged libsu route remains Python. ARM64 instrumentation can exercise Go directly before GO13 considers the actual cutover.

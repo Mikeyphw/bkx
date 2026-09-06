@@ -21,6 +21,7 @@ import (
 const (
 	ProtocolVersion = 1
 	Runtime         = "go-native-migration"
+	AndroidRuntime  = "go-native-android"
 	maxRuntimeDocs  = 128
 )
 
@@ -91,6 +92,7 @@ type Readiness struct {
 
 type RuntimeAdapter struct {
 	services *services.Dispatcher
+	runtime  string
 
 	mu        sync.Mutex
 	cancelled map[string]struct{}
@@ -100,8 +102,20 @@ type RuntimeAdapter struct {
 }
 
 func New(store *runstore.Store) *RuntimeAdapter {
+	return NewWithRuntime(store, Runtime)
+}
+
+func NewAndroid(store *runstore.Store) *RuntimeAdapter {
+	return NewWithRuntime(store, AndroidRuntime)
+}
+
+func NewWithRuntime(store *runstore.Store, runtime string) *RuntimeAdapter {
+	if strings.TrimSpace(runtime) == "" {
+		runtime = Runtime
+	}
 	return &RuntimeAdapter{
 		services:  services.New(store),
+		runtime:   runtime,
 		cancelled: map[string]struct{}{},
 		progress:  map[string]Progress{},
 		seq:       map[string]int64{},
@@ -118,7 +132,7 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 	return Readiness{
 		ProtocolVersion: ProtocolVersion,
 		BackendVersion:  version.Version,
-		Runtime:         Runtime,
+		Runtime:         r.runtime,
 		PythonVersion:   "none",
 		Capabilities:    caps,
 	}

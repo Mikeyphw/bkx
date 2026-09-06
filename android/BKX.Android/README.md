@@ -1,6 +1,6 @@
 # BKX Android
 
-BKX Android **1.0.0** is a standalone Material 3 application backed by the canonical Python BKX engine.
+BKX Android **1.0.0** is a standalone Material 3 application with the canonical Python engine plus a GO12-packaged ARM64 Go protocol runtime behind a disabled-by-default cutover seal.
 
 ```text
 Material 3 phone/tablet UI
@@ -8,7 +8,9 @@ Material 3 phone/tablet UI
   -> EmbeddedBkxBackend
   -> RootAwarePythonGateway
        |-> libsu RootService (UID 0) -> Chaquopy -> bkx.android_api -> bkx.core
-       `-> Chaquopy app process      -> bkx.android_api -> bkx.core
+       `-> NativePreferredGateway
+            |-> GO12 Go runtime (packaged ARM64, cutover disabled by default)
+            `-> Chaquopy app process -> bkx.android_api -> bkx.core
 ```
 
 Primary navigation: **Home · Backup · Archives · Activity · More**. Restore is contextual to Archives; local transfer is under More.

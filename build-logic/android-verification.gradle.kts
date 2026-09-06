@@ -438,10 +438,16 @@ tasks.register("verifyBkxReleaseHygiene") {
         val sourceFiles = productionRoots.flatMap { root ->
             if (!root.exists()) emptyList() else root.walkTopDown().filter { it.isFile }.toList()
         }
-        val forbiddenText = listOf("com.termux.permission.RUN_COMMAND", "com.termux.RUN_COMMAND", "TermuxBridgeAdapter(", "termux_run_command", "TermuxRunCommand", "ProcessBuilder(", "su -c", "eval(", "exec(")
+        val forbiddenText = listOf("com.termux.permission.RUN_COMMAND", "com.termux.RUN_COMMAND", "TermuxBridgeAdapter(", "termux_run_command", "TermuxRunCommand", "su -c", "eval(", "exec(")
         sourceFiles.filter { it.extension in setOf("kt", "kts", "java", "xml", "py", "aidl") }.forEach { file ->
             val text = file.readText()
             forbiddenText.forEach { token -> check(token !in text) { "Release hygiene rejected '$token' in ${file.relativeTo(repositoryRootDir)}" } }
+            if ("ProcessBuilder(" in text) {
+                check(file.name == "GoNativeGateway.kt") { "ProcessBuilder is allowed only in the app-owned Go runtime launcher." }
+                check("applicationInfo.nativeLibraryDir" in text && "android-runtime" in text && "bridge-session" in text) {
+                    "Go runtime ProcessBuilder must launch only the packaged protocol bridge executable."
+                }
+            }
         }
         val junk = repositoryRootDir.walkTopDown()
             .onEnter { dir -> dir.name !in setOf(".git", ".gradle", "build", "artifacts", ".devtool") }

@@ -53,13 +53,13 @@ if "$probe_root/bkx" backup plan >/dev/null 2>&1; then
 fi
 python3 - <<'PYANDROID'
 from pathlib import Path
-src = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt").read_text()
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
-if 'const val EMBEDDED_RUNTIME = "embedded-cpython"' not in src:
-    raise SystemExit("Android production runtime identity changed before GO12")
+policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
 if "EmbeddedBkxBackend" not in graph or "ChaquopyPythonGateway" not in graph:
-    raise SystemExit("Android production backend changed before GO12")
-print("GO11 Android production route remains embedded Python")
+    raise SystemExit("Android production backend no longer retains embedded Python")
+if policy.exists() and "ENABLED_BY_DEFAULT: Boolean = false" not in policy.read_text():
+    raise SystemExit("Android Go cutover was enabled before the GO12/GO13 device gate")
+print("GO11 production compatibility remains embedded Python by default")
 PYANDROID
 
 echo '==> GO11 Android ARM64 deterministic architecture gate'

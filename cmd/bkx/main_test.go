@@ -19,3 +19,14 @@ func TestMigrationProbeUsageDoesNotBecomeProductCommand(t *testing.T) {
 		t.Fatal("incomplete migration probe accepted")
 	}
 }
+
+func TestGO10ServiceProbeDoesNotBecomeProductCommand(t *testing.T) {
+	if code := run([]string{"migration", "service", "operations"}); code != 0 {
+		t.Fatalf("GO10 service operations probe failed: %d", code)
+	}
+	for _, args := range [][]string{{"service"}, {"service", "dispatch"}} {
+		if code := run(args); code == 0 {
+			t.Fatalf("GO10 service probe leaked into product command %v", args)
+		}
+	}
+}

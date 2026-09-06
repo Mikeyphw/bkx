@@ -229,6 +229,21 @@ Delivered migration-only local transfer operations:
 - Python ↔ Go differential fixtures for plan shape, push/pull, directory/multi-source mappings, dry-run, overwrite/collisions, checksum policy, run history, and remote fail-closed behavior;
 - migration-only `migration transfer plan|run` probes; normal product transfer commands remain Python-owned.
 
+## GO10 — Transport-neutral service/dispatch layer — COMPLETE
+
+Delivered migration-only service composition:
+
+- one typed Go dispatcher composes the migrated filesystem, archive, restore, backup, transfer, run-history, and storage operations without duplicating their domain logic;
+- the service operation registry is exactly the 15 operations advertised by the frozen Android protocol-v1 contract;
+- service results expose the transport-neutral Android result core: status, summary, issues, and artifacts; protocol/request envelopes, metrics, progress sequencing, and cancellation transport remain outside this layer;
+- backup/transfer mutation dispatch reuses GO08/GO09 run-history, progress, cancellation, verification, and safe-publication behavior;
+- archive discovery merges bounded filesystem roots with successful archive paths from GO02 run history while refusing symlink traversal;
+- Python ↔ Go differential fixtures prove exact bridge-result-core parity for filesystem, storage, archive read/verify/list, backup/transfer plans, restore preview, and run-history list/show;
+- end-to-end Go service tests cover backup → archive → restore, local transfer, run-history lookup, archive discovery, cancellation, unknown-operation rejection, and the exact frozen operation registry;
+- migration-only `migration service operations|dispatch` probes expose evidence without creating a product alias.
+
+The Android app still routes protocol-v1 requests to embedded Python, and normal Go product commands remain fail-closed.
+
 ## Next gate
 
-GO10 should connect the migrated operation set to a transport-neutral Go service/dispatch layer and prove protocol-v1 request/response parity without cutting Android over yet.
+GO11 should implement the protocol-v1 Go bridge adapter over the GO10 service layer, including strict request envelopes, response/error mapping, progress sequencing, and cooperative cancellation parity, while still leaving the Android production route on Python until the bridge differential gate is sealed.

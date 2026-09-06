@@ -54,7 +54,7 @@ bkx ui start --mode tui
 Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
 ## Python → Go migration
 
-GO00–GO09 establish a compatibility-first migration lane without changing the
+GO00–GO10 establish a compatibility-first migration lane without changing the
 production backend. `migration/contracts/v1/` freezes the current Python CLI,
 protocol-v1 Android bridge, core configuration/error/run-history contracts, and
 canonical operation schemas. The Go tree now contains the migration scaffold plus
@@ -67,7 +67,7 @@ The Go executable still deliberately rejects normal backup/archive/restore/trans
 commands until later operation/service parity gates are complete.
 
 Use `devtool --target bkx_go validate` for the Go lane or
-`scripts/validate-go09.sh` for the complete migration gate. The Android app
+`scripts/validate-go10.sh` for the complete migration gate. The Android app
 remains Kotlin/Compose and continues to use the production embedded-Python engine.
 See `docs/migration/python-to-go.md`.
 
@@ -121,3 +121,13 @@ product commands remain fail-closed.
 ### Go migration GO09
 
 GO09 ports first-class local transfer planning/run operations into the migration-only Go backend. It preserves Python multi-source mapping and collision rules, local push/pull direction semantics, no-overwrite publication with the Android/Termux-safe GO08 fallback, overwrite behavior, file metadata, checksum/verification policy, progress/cancellation, and GO02 run-history truth. Remote URI transfers remain fail-closed until a later transport phase. Normal Go `bkx transfer ...` product commands remain fail-closed.
+
+### Go migration GO10
+
+GO10 composes the migrated operation set behind one transport-neutral Go dispatcher.
+The service registry is exactly the 15 operations advertised by the frozen Android
+protocol-v1 contract, and Python↔Go differential fixtures prove the bridge-result
+core for read, plan, and run-history surfaces. Request envelopes, protocol versioning,
+progress sequence numbers, cancellation transport, and Android routing remain outside
+the service layer for the next gate. Normal Go product commands and the Android app
+remain Python-owned and fail closed.

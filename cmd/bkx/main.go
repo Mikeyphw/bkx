@@ -16,6 +16,7 @@ import (
 	"bkx/internal/fsutil"
 	"bkx/internal/hashing"
 	"bkx/internal/runstore"
+	"bkx/internal/services"
 	"bkx/internal/tools"
 	"bkx/internal/transferops"
 	"bkx/internal/version"
@@ -23,7 +24,7 @@ import (
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// GO09 remains migration-only. Product commands remain Python-owned; only
+// GO10 remains migration-only. Product commands remain Python-owned; only
 // explicit contract/parity probes are accepted by this executable.
 func run(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
@@ -115,6 +116,45 @@ func run(args []string) int {
 		}
 		fmt.Println("BKX GO02 retention probe complete.")
 		return 0
+	}
+
+	if len(args) >= 3 && args[0] == "migration" && args[1] == "service" {
+		switch args[2] {
+		case "operations":
+			if len(args) != 3 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration service operations")
+				return 64
+			}
+			return printJSON(services.SupportedOperations())
+		case "dispatch":
+			if len(args) != 7 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration service dispatch OPERATION PAYLOAD_JSON RUNS_OR_DASH CANCEL_FILE_OR_DASH")
+				return 64
+			}
+			var store *runstore.Store
+			if args[5] != "-" {
+				var err error
+				store, err = runstore.New(args[5], 0, false)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					return 1
+				}
+			}
+			ctx := services.OperationContext{RequestID: "service-probe"}
+			if args[6] != "-" {
+				cancelPath := args[6]
+				ctx.Cancelled = func() bool { _, err := os.Stat(cancelPath); return err == nil }
+			}
+			result, err := services.New(store).Dispatch(ctx, args[3], json.RawMessage(args[4]))
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx migration service {operations|dispatch} ...")
+			return 64
+		}
 	}
 
 	// GO04+ migration probes expose parity evidence only. They are not

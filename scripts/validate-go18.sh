@@ -50,6 +50,6 @@ if grep -Eq 'bkx_reference|\[python\]|\[python\.package\]|python[[:space:]]*=[[:
 fi
 
 phase="$(sed -nE 's/^[[:space:]]*MigrationPhase[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' internal/version/version.go | head -n1)"
-test "$phase" = GO18
+case "$phase" in GO18|GO19|GO2[0-9]|GO[3-9][0-9]) ;; *) echo "GO18+ phase identity required, got: $phase" >&2; exit 1 ;; esac
 
 echo 'BKX GO18 Python source/package purge and Go-only repository purity gates passed.'

@@ -1,0 +1,139 @@
+{
+  "android": {
+    "abi": [
+      "arm64-v8a"
+    ],
+    "instrumentation_policy": "when-device-present",
+    "local_state_namespace": "go-local",
+    "ndk": "29.0.14206865",
+    "ndk_major_floor": 29,
+    "root_state_namespace": "go-root",
+    "runtime": "go-native-android",
+    "ui": "Kotlin/Compose"
+  },
+  "compatibility": {
+    "bridge": {
+      "advertised_operations": 15,
+      "frozen_capabilities": 18,
+      "handlers": 16,
+      "protocol_version": 1,
+      "python_version": "none",
+      "runtime": "go-native-android"
+    },
+    "cli": {
+      "command_nodes": 23,
+      "leaf_commands": 16,
+      "root_parameter_families": 7
+    },
+    "run_history": {
+      "backward_compatible_jsonl": true,
+      "default_relative_path": ".local/share/bkx/runs/runs.jsonl"
+    }
+  },
+  "go20_retirement_candidates": [
+    "hidden migration CLI probes in cmd/bkx",
+    "go-native-migration bridge constructor/identity",
+    "phase-numbered validate-go17.sh/validate-go18.sh/validate-go19.sh wrappers after a canonical maintenance validator exists"
+  ],
+  "known_constraints": [
+    "Android production runtime is intentionally arm64-v8a only.",
+    "Remote URI transfer remains fail-closed; local push/pull are supported.",
+    "ui start requires an external bkx-tui or bkx-interactive plugin.",
+    "Physical-device instrumentation is conditional on an attached usable device."
+  ],
+  "migration_final_audit_phase": "GO19",
+  "open_promises": [],
+  "product": "BKX",
+  "product_version": "1.0.0",
+  "release": {
+    "artifacts": [
+      "host CLI",
+      "android/arm64-v8a/libbkxgo.so"
+    ],
+    "checksum_file": "SHA256SUMS",
+    "deterministic": true
+  },
+  "roadmap": [
+    {
+      "phase": "HG01-HG03",
+      "status": "complete"
+    },
+    {
+      "phase": "GO00",
+      "status": "complete"
+    },
+    {
+      "phase": "GO01",
+      "status": "complete"
+    },
+    {
+      "phase": "GO02",
+      "status": "complete"
+    },
+    {
+      "phase": "GO03",
+      "status": "complete"
+    },
+    {
+      "phase": "GO04",
+      "status": "complete"
+    },
+    {
+      "phase": "GO05",
+      "status": "complete"
+    },
+    {
+      "phase": "GO06",
+      "status": "complete"
+    },
+    {
+      "phase": "GO07",
+      "status": "complete"
+    },
+    {
+      "phase": "GO08",
+      "status": "complete"
+    },
+    {
+      "phase": "GO09",
+      "status": "complete"
+    },
+    {
+      "phase": "GO10",
+      "status": "complete"
+    },
+    {
+      "phase": "GO11",
+      "status": "complete"
+    },
+    {
+      "phase": "GO12",
+      "status": "complete"
+    },
+    {
+      "phase": "GO13",
+      "status": "complete"
+    },
+    {
+      "phase": "GO14",
+      "status": "complete"
+    },
+    {
+      "phase": "GO15",
+      "status": "complete"
+    },
+    {
+      "phase": "GO16",
+      "status": "complete"
+    },
+    {
+      "phase": "GO17",
+      "status": "complete"
+    },
+    {
+      "phase": "GO18",
+      "status": "complete"
+    }
+  ],
+  "schema_version": 1
+}

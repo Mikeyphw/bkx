@@ -17,7 +17,8 @@ or Android runtime path.
 │  ├─ build-go-android-runtime.sh
 │  ├─ build-go-release.sh
 │  ├─ validate-go17.sh        # immutable compatibility + deterministic release seal
-│  └─ validate-go18.sh        # GO18 repository purity + GO17 seal
+│  ├─ validate-go18.sh        # GO18 repository purity + GO17 seal
+│  └─ validate-go19.sh        # final migration/release audit seal
 ├─ build-logic/                # Android verification Gradle logic
 ├─ android/BKX.Android/        # Kotlin/Compose app; packaged ARM64 Go runtime
 ├─ go.mod

@@ -357,3 +357,10 @@ must not be rewritten merely to remove historical naming. Likewise the protocol-
 `python_version` readiness field remains a wire-compatibility field with value `none`.
 The deterministic archive is evidence only: it is excluded from all active source,
 build, test, package, release, Devtool, and Android ownership.
+
+
+## GO19 — Final migration/release audit seal
+
+GO19 reconciles HG01–GO18 against the active repository. `migration/audit/v1/final_audit.json` is checked against live Go CLI/bridge registries and Android production source. The seal verifies the frozen 16-leaf/seven-global CLI contract, protocol-v1 15-advertised/16-handler boundary, run-history compatibility evidence, root/local `go-native-android` routing, arm64-v8a + NDK29 policy, Go/Kotlin-only repository ownership, and deterministic release output.
+
+The audit leaves no open migration promises. It identifies only bounded post-migration cleanup for GO20: retire hidden migration probes and the migration-only bridge identity, then replace phase-numbered validator wrappers with one canonical maintenance validator.

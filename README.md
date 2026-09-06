@@ -47,7 +47,7 @@ bkx ui start --mode tui
 
 ## Validation
 
-`./scripts/validate-go18.sh` runs the GO17 Go-owned compatibility/release seal plus the GO18 repository-purity gate. The 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
+`bash ./scripts/validate-go19.sh` runs the complete Go-only compatibility/release seal plus the GO19 final roadmap audit. The 14 JSON + 3 usage public-CLI corpus and protocol expectations are frozen under `migration/fixtures/v1/`.
 
 ## Python → Go migration
 
@@ -154,3 +154,7 @@ GO17 converts the accepted dynamic differential evidence into immutable Go-owned
 ### Go migration GO18
 
 GO18 removes active Python source, tests, packaging metadata, migration scripts, Python Devtool ownership, and Python-specific production validation paths. `validate-go18.sh` composes the GO17 compatibility/release seal with a repository-purity gate. The immutable GO00 contract and GO17 oracle remain versioned evidence; the archived reference bundle is explicitly excluded from runtime and build ownership.
+
+### Go migration GO19
+
+GO19 is the final roadmap reconciliation seal. It checks the frozen CLI/protocol counts, run-history compatibility evidence, Android root/local Go routing, arm64-v8a + NDK29 policy, repository purity, and deterministic release output. See `docs/migration/FINAL_AUDIT.md`.

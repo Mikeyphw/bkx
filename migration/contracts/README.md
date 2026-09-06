@@ -14,7 +14,7 @@ CLI or the GO18 seal:
 
 ```bash
 go run ./cmd/bkx contract check migration/contracts/v1
-./scripts/validate-go18.sh
+bash ./scripts/validate-go19.sh
 ```
 
 A future intentional contract revision must be introduced as a new versioned contract

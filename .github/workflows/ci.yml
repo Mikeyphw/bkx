@@ -62,5 +62,5 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - name: GO00-GO08 migration parity gate
-        run: ./scripts/validate-go08.sh
+      - name: GO00-GO09 migration parity gate
+        run: ./scripts/validate-go09.sh

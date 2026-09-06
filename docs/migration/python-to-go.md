@@ -215,8 +215,20 @@ Delivered migration-only backup orchestration:
   split rejection, and cancellation;
 - migration-only `migration backup plan|create` probes; normal product backup remains Python-owned.
 
+## GO09 — Local transfer plan/run — COMPLETE
+
+Delivered migration-only local transfer operations:
+
+- strict frozen `TransferSpec` JSON parsing and local-only push/pull normalization;
+- Python-compatible single-file, directory, and multi-source destination mapping plus complete collision preflight;
+- nested symlink/special-file rejection, destination symlink refusal, and source/destination overlap checks;
+- same-directory staging, fsync, metadata preservation, overwrite policy, and Android/Termux-safe no-overwrite publication using `RENAME_NOREPLACE` with `O_EXCL` fallback;
+- verification/checksum policy for common hashlib algorithms and explicit expected SHA-256 digests;
+- cooperative progress/cancellation with no publication when cancellation arrives before the current file is committed;
+- GO02 JSONL run-history start/completion records for transfer runs;
+- Python ↔ Go differential fixtures for plan shape, push/pull, directory/multi-source mappings, dry-run, overwrite/collisions, checksum policy, run history, and remote fail-closed behavior;
+- migration-only `migration transfer plan|run` probes; normal product transfer commands remain Python-owned.
+
 ## Next gate
 
-GO09 should port the local transfer operations used beyond backup orchestration (`transfer.plan` /
-`transfer.run`) as first-class Go operations, reusing GO08's safe publication semantics while adding
-full multi-source mapping, checksum policy, progress, cancellation, and Python differential parity.
+GO10 should connect the migrated operation set to a transport-neutral Go service/dispatch layer and prove protocol-v1 request/response parity without cutting Android over yet.

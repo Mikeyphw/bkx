@@ -26,7 +26,9 @@ def test_go08_backup_reuses_archive_and_run_history_primitives():
     assert 'operation="backup"' not in source  # Go uses the typed positional run-store API.
     assert '"backup"' in source
     assert "publishFile" in source
-    assert "os.Link(tmp, dst)" in source
+    assert "renameNoReplace" in source
+    assert "os.O_EXCL" in source
+    assert "os.Link(tmp, dst)" not in source
     assert "Transfer destination already exists" in source
 
 

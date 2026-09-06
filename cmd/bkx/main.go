@@ -17,12 +17,13 @@ import (
 	"bkx/internal/hashing"
 	"bkx/internal/runstore"
 	"bkx/internal/tools"
+	"bkx/internal/transferops"
 	"bkx/internal/version"
 )
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// GO08 remains migration-only. Product commands remain Python-owned; only
+// GO09 remains migration-only. Product commands remain Python-owned; only
 // explicit contract/parity probes are accepted by this executable.
 func run(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
@@ -181,6 +182,59 @@ func run(args []string) int {
 			return 1
 		}
 		return printJSON(info)
+	}
+
+	if len(args) >= 3 && args[0] == "migration" && args[1] == "transfer" {
+		switch args[2] {
+		case "plan":
+			if len(args) != 4 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration transfer plan SPEC_JSON")
+				return 64
+			}
+			spec, err := transferops.ParseSpecJSON(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			plan, err := transferops.PlanTransfer(spec)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(plan)
+		case "run":
+			if len(args) != 6 {
+				fmt.Fprintln(os.Stderr, "usage: bkx migration transfer run SPEC_JSON RUNS_OR_DASH CANCEL_FILE_OR_DASH")
+				return 64
+			}
+			spec, err := transferops.ParseSpecJSON(args[3])
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			options := transferops.Options{}
+			if args[4] != "-" {
+				store, storeErr := runstore.New(args[4], 0, false)
+				if storeErr != nil {
+					fmt.Fprintln(os.Stderr, storeErr)
+					return 1
+				}
+				options.RunStore = store
+			}
+			if args[5] != "-" {
+				cancelPath := args[5]
+				options.Cancelled = func() bool { _, statErr := os.Stat(cancelPath); return statErr == nil }
+			}
+			result, err := transferops.Run(spec, options)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				return 1
+			}
+			return printJSON(result)
+		default:
+			fmt.Fprintln(os.Stderr, "usage: bkx migration transfer {plan|run} ...")
+			return 64
+		}
 	}
 
 	if len(args) >= 3 && args[0] == "migration" && args[1] == "backup" {

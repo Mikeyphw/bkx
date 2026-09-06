@@ -73,9 +73,21 @@ PYGOONLY
 
 echo '==> GO14 human product command boundary remains fail-closed'
 go build -o "$probe_root/bkx" ./cmd/bkx
-if "$probe_root/bkx" backup plan >/dev/null 2>&1; then
-  echo 'Go runtime unexpectedly exposed human production backup command' >&2
+phase_num="$(sed -n 's/.*MigrationPhase = "GO\([0-9][0-9]*\)".*/\1/p' internal/version/version.go)"
+if [[ -z "$phase_num" ]]; then
+  echo 'Could not resolve Go migration phase' >&2
   exit 1
+fi
+if (( phase_num < 15 )); then
+  if "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'Pre-GO15 migration binary unexpectedly accepted public backup group' >&2
+    exit 1
+  fi
+else
+  if ! "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'GO15+ binary failed to expose the public backup group' >&2
+    exit 1
+  fi
 fi
 
 echo 'BKX GO14 Android Python-retirement gates passed.'

@@ -80,7 +80,7 @@ root = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root
 graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt").read_text()
 app = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt").read_text()
 gateway = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt").read_text()
-if 'MigrationPhase = "GO14"' in phase:
+if any(f'MigrationPhase = \"GO{n}\"' in phase for n in range(14, 100)):
     retired = [
         Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt"),
         Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/NativePreferredGateway.kt"),
@@ -106,9 +106,21 @@ print("GO13 production local/root routing remains fail-closed Go-native")
 PYCUTOVER
 
 echo '==> GO13 human product command boundary remains fail-closed'
-if "$probe_root/bkx" backup plan >/dev/null 2>&1; then
-  echo 'Go runtime unexpectedly exposed human production backup command' >&2
+phase_num="$(sed -n 's/.*MigrationPhase = "GO\([0-9][0-9]*\)".*/\1/p' internal/version/version.go)"
+if [[ -z "$phase_num" ]]; then
+  echo 'Could not resolve Go migration phase' >&2
   exit 1
+fi
+if (( phase_num < 15 )); then
+  if "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'Pre-GO15 migration binary unexpectedly accepted public backup group' >&2
+    exit 1
+  fi
+else
+  if ! "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'GO15+ binary failed to expose the public backup group' >&2
+    exit 1
+  fi
 fi
 
 echo 'BKX GO13 Android/device cutover source gates passed.'

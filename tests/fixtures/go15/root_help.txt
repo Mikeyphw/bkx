@@ -1,0 +1,23 @@
+Usage: bkx [OPTIONS] COMMAND [ARGS]...
+
+Contract-controlled backup, archive, restore, and transfer tool.
+
+Options:
+  --json              Output exactly one JSON document
+  --dry-run           Show what would be done without executing
+  --plan              Alias for --dry-run plan rendering
+  --progress TEXT     Progress display: auto|plain|off  [default: auto]
+  --verbose, -v       Emit diagnostics to stderr
+  --trace / --no-trace
+                      Show full stack traces on typed errors without changing exit codes
+  --version           Show version and exit
+  --help              Show this message and exit.
+
+Commands:
+  archive   Archive operations
+  backup    Backup operations
+  restore   Restore operations
+  run       View run history
+  tools     Tool management
+  transfer  Transfer operations
+  ui        Optional user interfaces

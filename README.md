@@ -144,3 +144,7 @@ GO12 integrates the sealed protocol-v1 Go adapter into the Android package witho
 ### Go migration GO14
 
 GO14 retires Python from the Android APK. Chaquopy, build-Python probing, the Python gateway, and the local fallback selector are removed. Android now packages only the generated `arm64-v8a` Go protocol-v1 runtime; local and libsu UID-0 routes use the same app-owned binary. NDK `29.0.14206865` remains pinned with an r29+ floor. The repository Python CLI/reference implementation remains in place, and human Go product commands still fail closed pending a separate CLI cutover.
+
+### Go migration GO15
+
+GO15 cuts the frozen 23-node/16-leaf human CLI over to Go while keeping the repository Python package as the production packaging/reference lane for one final phase. Global flags, typed exit codes, JSON plans/results/errors, config defaults, run history, tools, archive/backup/restore/transfer commands, and `--version` precedence are owned by the Go public dispatcher. Migration, bridge, contract, and Android-runtime probes remain hidden/internal. `ui start` is the sole temporary Python-reference exception until GO16. The GO15 validator is flattened: one host binary runs GO02–GO13 differential regressions plus public CLI parity, and one Android ARM64 runtime build seals the intentional `arm64-v8a`/NDK 29 policy. The inapplicable ChromeOS alternate-ABI lint is suppressed explicitly rather than fabricating an unsupported ABI.

@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -8,11 +9,17 @@ def read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def phase_at_least(minimum: int) -> bool:
+    match = re.search(r'MigrationPhase\s*=\s*"GO(\d+)"', read("internal/version/version.go"))
+    assert match is not None
+    return int(match.group(1)) >= minimum
+
+
 def test_go14_phase_identity_and_ci_gate():
-    assert 'MigrationPhase = "GO14"' in read("internal/version/version.go")
+    assert phase_at_least(14)
     ci = read(".github/workflows/ci.yml")
-    assert "GO00-GO14 migration parity gate" in ci
-    assert "./scripts/validate-go14.sh" in ci
+    assert "GO00-GO15 public CLI cutover gate" in ci
+    assert "./scripts/validate-go15.sh" in ci
 
 
 def test_go14_android_removes_chaquopy_plugin_and_build_python_lane():

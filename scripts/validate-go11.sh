@@ -47,9 +47,21 @@ if "$probe_root/bkx" bridge execute '{}' - >/dev/null 2>&1; then
   echo 'Go migration binary unexpectedly accepted product bridge command' >&2
   exit 1
 fi
-if "$probe_root/bkx" backup plan >/dev/null 2>&1; then
-  echo 'Go migration binary unexpectedly accepted production backup command' >&2
+phase_num="$(sed -n 's/.*MigrationPhase = "GO\([0-9][0-9]*\)".*/\1/p' internal/version/version.go)"
+if [[ -z "$phase_num" ]]; then
+  echo 'Could not resolve Go migration phase' >&2
   exit 1
+fi
+if (( phase_num < 15 )); then
+  if "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'Pre-GO15 migration binary unexpectedly accepted public backup group' >&2
+    exit 1
+  fi
+else
+  if ! "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'GO15+ binary failed to expose the public backup group' >&2
+    exit 1
+  fi
 fi
 python3 - <<'PYANDROID'
 from pathlib import Path
@@ -58,7 +70,7 @@ phase = Path("internal/version/version.go").read_text()
 policy = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
 if "EmbeddedBkxBackend" not in graph:
     raise SystemExit("Android production backend no longer retains the protocol-v1 embedded backend")
-if 'MigrationPhase = "GO14"' in phase:
+if any(f'MigrationPhase = \"GO{n}\"' in phase for n in range(14, 100)):
     if "val local = GoNativeGateway(appContext)" not in graph or "ChaquopyPythonGateway" in graph or "NativePreferredGateway" in graph:
         raise SystemExit("GO14 Android graph is not Go-only")
     if policy.exists():

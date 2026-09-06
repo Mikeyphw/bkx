@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -7,10 +8,16 @@ def read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def phase_at_least(minimum: int) -> bool:
+    match = re.search(r'MigrationPhase\s*=\s*"GO(\d+)"', read("internal/version/version.go"))
+    assert match is not None
+    return int(match.group(1)) >= minimum
+
+
 def test_go13_enables_go_by_default_but_keeps_controlled_local_fallback():
     phase = read("internal/version/version.go")
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
-    if 'MigrationPhase = "GO14"' in phase:
+    if phase_at_least(14):
         assert 'val local = GoNativeGateway(appContext)' in graph
         assert 'NativePreferredGateway' not in graph and 'ChaquopyPythonGateway' not in graph
         assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").exists()
@@ -98,7 +105,7 @@ def test_go13_python_fallback_is_lazy_after_production_cutover():
     phase = read("internal/version/version.go")
     app = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAndroidApplication.kt")
     assert "Python.start(" not in app
-    if 'MigrationPhase = "GO14"' in phase:
+    if phase_at_least(14):
         assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt").exists()
         return
     python = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/ChaquopyPythonGateway.kt")
@@ -108,7 +115,7 @@ def test_go13_python_fallback_is_lazy_after_production_cutover():
 def test_go13_native_selector_unit_contract_covers_failclosed_and_rollback_lanes():
     phase = read("internal/version/version.go")
     path = ROOT / "android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/embedded/NativePreferredGatewayTest.kt"
-    if 'MigrationPhase = "GO14"' in phase:
+    if phase_at_least(14):
         assert not path.exists()
         return
     test = path.read_text(encoding="utf-8")

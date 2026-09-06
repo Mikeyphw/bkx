@@ -54,7 +54,7 @@ graph = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app
 root = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt").read_text()
 phase = Path("internal/version/version.go").read_text()
 policy_path = Path("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt")
-if 'MigrationPhase = "GO14"' in phase:
+if any(f'MigrationPhase = \"GO{n}\"' in phase for n in range(14, 100)):
     if "val local = GoNativeGateway(appContext)" not in graph or "ChaquopyPythonGateway" in graph or "NativePreferredGateway" in graph:
         raise SystemExit("GO14 Android graph is not Go-only")
     if policy_path.exists():
@@ -76,9 +76,21 @@ if "$probe_root/bkx" bridge execute '{}' - >/dev/null 2>&1; then
   echo 'Go runtime unexpectedly exposed product bridge command' >&2
   exit 1
 fi
-if "$probe_root/bkx" backup plan >/dev/null 2>&1; then
-  echo 'Go runtime unexpectedly exposed production backup command' >&2
+phase_num="$(sed -n 's/.*MigrationPhase = "GO\([0-9][0-9]*\)".*/\1/p' internal/version/version.go)"
+if [[ -z "$phase_num" ]]; then
+  echo 'Could not resolve Go migration phase' >&2
   exit 1
+fi
+if (( phase_num < 15 )); then
+  if "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'Pre-GO15 migration binary unexpectedly accepted public backup group' >&2
+    exit 1
+  fi
+else
+  if ! "$probe_root/bkx" backup >/dev/null 2>&1; then
+    echo 'GO15+ binary failed to expose the public backup group' >&2
+    exit 1
+  fi
 fi
 
 # A real Android/Kotlin compile is intentionally owned by the bkx_android target,

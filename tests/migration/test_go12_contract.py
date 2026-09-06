@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -5,6 +6,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
+
+
+def phase_at_least(minimum: int) -> bool:
+    match = re.search(r'MigrationPhase\s*=\s*"GO(\d+)"', read("internal/version/version.go"))
+    assert match is not None
+    return int(match.group(1)) >= minimum
 
 
 def test_go12_packages_generated_arm64_runtime_without_committed_binary():
@@ -49,7 +56,7 @@ def test_go12_defined_explicit_cutover_seam_and_go_device_probe():
     graph = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/di/DefaultBackendGraph.kt")
     root = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/root/BkxRootEngineService.kt")
     instrumentation = read("android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/embedded/GoNativeRuntimeInstrumentationTest.kt")
-    if 'MigrationPhase = "GO14"' in phase:
+    if phase_at_least(14):
         assert 'val local = GoNativeGateway(appContext)' in graph
         assert 'ChaquopyPythonGateway' not in graph and 'NativePreferredGateway' not in graph
         assert not (ROOT / "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/GoRuntimeCutoverPolicy.kt").exists()
@@ -72,7 +79,7 @@ def test_go12_backend_accepts_both_runtime_identities_at_same_protocol():
     phase = read("internal/version/version.go")
     backend = read("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
     tests = read("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackendTest.kt")
-    if 'MigrationPhase = "GO14"' in phase:
+    if phase_at_least(14):
         assert 'setOf("go-native-android")' in backend
         assert 'embedded-cpython' not in backend
         assert 'readinessRejectsRetiredEmbeddedPythonRuntime' in tests

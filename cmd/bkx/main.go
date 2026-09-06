@@ -18,6 +18,7 @@ import (
 	"bkx/internal/contracts"
 	"bkx/internal/fsutil"
 	"bkx/internal/hashing"
+	"bkx/internal/publiccli"
 	"bkx/internal/runstore"
 	"bkx/internal/services"
 	"bkx/internal/tools"
@@ -27,9 +28,16 @@ import (
 
 func main() { os.Exit(run(os.Args[1:])) }
 
-// GO10 remains migration-only. Product commands remain Python-owned; only
-// explicit contract/parity probes are accepted by this executable.
 func run(args []string) int {
+	if publiccli.IsInternalInvocation(args) {
+		return runInternal(args)
+	}
+	return publiccli.Run(args, os.Stdout, os.Stderr)
+}
+
+// GO15 keeps migration/bridge probes available for validation without exposing
+// them in public help. Human product commands are owned by publiccli.Run.
+func runInternal(args []string) int {
 	if len(args) == 1 && (args[0] == "--version" || args[0] == "version") {
 		fmt.Printf("bkx %s (Go migration scaffold %s, commit %s; Python baseline %s)\n", version.Version, version.MigrationPhase, version.Commit, version.PythonBaseline)
 		return 0

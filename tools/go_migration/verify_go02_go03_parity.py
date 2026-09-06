@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -131,10 +132,16 @@ def check_config(go_binary: Path, root: Path) -> None:
         assert go_config["sources"][key] == python_config.source_of(key), key
 
 
-def check_fail_closed(go_binary: Path) -> None:
-    for command in (("backup",), ("archive", "list"), ("restore",), ("transfer",), ("run",), ("ui",)):
+def check_product_boundary(go_binary: Path) -> None:
+    identity = _run(go_binary, "version")
+    match = re.search(r"scaffold GO(\d+)", identity.stdout)
+    if match is None:
+        raise AssertionError(f"could not resolve migration phase: {identity.stdout!r}")
+    phase = int(match.group(1))
+    expected = 0 if phase >= 15 else 64
+    for command in (("backup",), ("archive",), ("restore",), ("transfer",), ("tools",), ("run",), ("ui",)):
         result = _run(go_binary, *command)
-        assert result.returncode == 64, (command, result.returncode, result.stdout, result.stderr)
+        assert result.returncode == expected, (phase, command, result.returncode, result.stdout, result.stderr)
 
 
 def main() -> int:
@@ -148,7 +155,7 @@ def main() -> int:
         root = Path(raw)
         check_run_history(binary, root / "history")
         check_config(binary, root / "config")
-        check_fail_closed(binary)
+        check_product_boundary(binary)
     print("BKX GO02-GO03 Python/Go differential parity passed.")
     return 0
 

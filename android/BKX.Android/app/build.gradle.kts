@@ -118,6 +118,9 @@ android {
             "GradleDependency",
             "NewerVersionAvailable",
             "AndroidGradlePluginVersion",
+            // BKX Android is intentionally arm64-v8a only. ChromeOS alternate-ABI
+            // support is outside policy; do not add a fake runtime ABI.
+            "ChromeOsAbiSupport",
         )
     }
 }

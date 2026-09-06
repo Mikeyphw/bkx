@@ -298,7 +298,20 @@ Delivered the Android runtime cleanup after GO13 production cutover:
 - AGP generated-JNI source wiring, root UID-0 execution, progress/cancellation, and Python↔Go repository parity gates remain sealed;
 - human Go product CLI commands remain fail-closed pending their own explicit cutover phase.
 
+## GO15 — Public Go CLI production cutover — COMPLETE
+
+Delivered the human CLI cutover without prematurely deleting the Python oracle:
+
+- a dedicated Go public parser/dispatcher owns all 16 frozen leaf commands and seven frozen global parameter families from `migration/contracts/v1/cli.json`;
+- `--version` is resolved before the no-command help path, public help is deterministic/golden-tested, and migration/bridge/Android probes remain hidden internal routes;
+- archive, backup, restore, transfer, tools, and run-history leaves call the already-migrated Go domain engines directly rather than going through the protocol bridge;
+- JSON plans, results, typed errors, and exit codes are checked against the Python reference with an in-process Typer `CliRunner` parity harness;
+- GO02–GO14 historical contracts/validators are forward-compatible with the GO15 ownership boundary instead of being deleted;
+- `ui start` is the only temporary Python-reference bridge in GO15;
+- Android remains Go-only `arm64-v8a`, with NDK `29.0.14206865`; the inapplicable ChromeOS alternate-ABI lint is explicitly disabled instead of adding a fake runtime ABI;
+- the flattened GO15 validator reuses one host binary for GO02–GO13 differential verification and performs one Android ARM64 runtime build.
+
 ## Next gate
 
-GO15 should address the human CLI cutover: map the already-migrated service/bridge operations onto the public Go CLI surface, prove CLI output/exit-code parity, then decide when the Python package can stop being the production CLI implementation.
+GO16 makes Go the production project/package identity, removes the Python console-script ownership, externalizes optional UI startup into `bkx-tui` / `bkx-interactive` plugins, and adds deterministic host + Android release artifacts with `SHA256SUMS`. Python remains an explicit reference/parity lane until GO17.
 

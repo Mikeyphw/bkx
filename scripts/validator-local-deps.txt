@@ -1,3 +1,0 @@
-# Local-only optional UI dependency. Hosted CI intentionally does not consume this file.
-# scripts/validate-optional-ui.sh verifies MIKOMN_ROOT before invoking pip.
-mikomn[cli,tui] @ file://${MIKOMN_ROOT}

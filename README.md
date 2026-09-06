@@ -1,48 +1,51 @@
 # BKX
 
-BKX is a contract-controlled, CLI-first backup/archive tool. The base package
-keeps runtime backup/archive/restore/transfer logic independent from optional
-Interactive and TUI frontends.
+BKX is a contract-controlled backup/archive tool whose **production CLI is Go**.
+The Python package under `src/bkx` remains an explicit **Python reference** and
+differential-parity oracle through GO17; it no longer owns the production
+`bkx` console command.
 
 ## Current verified capabilities
 
-- Base install/import works without optional UI dependencies.
-- `bkx` and `python -m bkx` both bootstrap the CLI.
-- Strict noun/verb CLI grammar is used for backup, archive, restore, transfer,
-  tools, run history, and optional UI launch.
-- Specs normalize inputs deterministically and are validated against packaged
-  JSON Schemas.
-- Archive create/list/browse/info/verify, restore extract/pick, transfer
-  push/pull, tool detection/explanation, backup orchestration, and run history
-  are routed through service boundaries.
-- JSON output is emitted through one shared renderer as exactly one JSON
-  document per command.
-- Interactive and TUI modules are optional extras. Missing extras fail with a
-  typed, user-actionable message instead of breaking the base CLI.
-- Packaged wheels include core JSON Schemas and TUI `.tcss` assets.
+- The Go production CLI owns the frozen backup/archive/restore/transfer/tools/run grammar.
+- JSON output, dry-run/plan rendering, typed exit codes, configuration defaults, and run history are Go-owned.
+- Android is Go-only `arm64-v8a`, with NDK 29 retained as the release floor.
+- `ui start` launches optional external `bkx-tui` or `bkx-interactive` plugins; missing plugins fail with a typed actionable error.
+- Host and Android release artifacts are built deterministically and sealed by `SHA256SUMS`.
+- The Python package remains installable only as a reference/testing lane and carries the historical schemas/TUI assets needed by parity tests.
 
-## Install
+## Build / install
+
+Build the production CLI directly:
 
 ```bash
-python -m pip install .
+go build -trimpath -buildvcs=false -o bkx ./cmd/bkx
+./bkx --help
 ```
 
-Optional interfaces require their extras:
+Or produce the sealed host + Android release bundle:
 
 ```bash
-python -m pip install '.[interactive]'
-python -m pip install '.[tui]'
+./scripts/build-go-release.sh ./dist/go-release
+cat ./dist/go-release/SHA256SUMS
 ```
 
-Hosted CI validates the base package without requiring machine-local checkouts.
-Optional Interactive/TUI validation is explicit and local: set `MIKOMN_ROOT` and run
-`scripts/validate-optional-ui.sh`.
+The reference Python implementation is explicit rather than production packaging:
+
+```bash
+python -m pip install '.[reference]'
+python -m bkx --help
+```
+
+Optional UI implementations are external plugins named `bkx-tui` and
+`bkx-interactive`. Their executable paths may be overridden with
+`BKX_TUI_COMMAND` and `BKX_INTERACTIVE_COMMAND` respectively. Overrides are
+executable paths/names, not shell command strings.
 
 ## Examples
 
 ```bash
 bkx --help
-python -m bkx --help
 bkx --json --plan backup create ./src --exclude '*.pyc'
 bkx archive list backup.tar --page 0 --page-size 50
 bkx restore pick backup.tar docs/readme.md --destination ./restore --yes
@@ -51,7 +54,11 @@ bkx ui start --mode tui
 
 ## Validation
 
-Hosted CI builds and installs a wheel, smokes both CLI entrypoints, verifies packaged schemas/CSS assets, and runs the base test suite across Python 3.11–3.13. Optional UI parity remains an explicit local gate because it depends on local UI dependencies; base parity tests self-skip only the TUI-specific class when Textual is absent.
+`./scripts/validate-go16.sh` runs the cumulative GO00–GO16 migration/release
+seal. CI separately keeps a Python 3.11–3.13 reference lane, including a wheel
+smoke test that proves the reference wheel does **not** install a `bkx` console
+script.
+
 ## Python → Go migration
 
 GO00–GO13 establish a compatibility-first migration lane without changing the

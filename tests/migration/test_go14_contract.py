@@ -18,8 +18,12 @@ def phase_at_least(minimum: int) -> bool:
 def test_go14_phase_identity_and_ci_gate():
     assert phase_at_least(14)
     ci = read(".github/workflows/ci.yml")
-    assert "GO00-GO15 public CLI cutover gate" in ci
-    assert "./scripts/validate-go15.sh" in ci
+    if phase_at_least(16):
+        assert "GO00-GO16 production Go release gate" in ci
+        assert "./scripts/validate-go16.sh" in ci
+    else:
+        assert "GO00-GO15 public CLI cutover gate" in ci
+        assert "./scripts/validate-go15.sh" in ci
 
 
 def test_go14_android_removes_chaquopy_plugin_and_build_python_lane():

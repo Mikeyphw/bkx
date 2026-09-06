@@ -3,12 +3,17 @@ set -euo pipefail
 repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 out_root="${1:?usage: build-go-android-runtime.sh OUTPUT_JNILIBS_DIR}"
 out="$out_root/arm64-v8a/libbkxgo.so"
+commit="${BKX_BUILD_COMMIT:-dev}"
 mkdir -p "$(dirname -- "$out")"
 tmp="$(mktemp "${TMPDIR:-/tmp}/bkx-go-android-runtime.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT HUP INT TERM
 (
   cd "$repo"
-  CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build -trimpath -o "$tmp" ./cmd/bkx
+  CGO_ENABLED=0 GOOS=android GOARCH=arm64 go build \
+    -trimpath \
+    -buildvcs=false \
+    -ldflags="-buildid= -X bkx/internal/version.Commit=$commit" \
+    -o "$tmp" ./cmd/bkx
 )
 meta="$(go version -m "$tmp")"
 printf '%s\n' "$meta" | grep -Eq '^[[:space:]]*build[[:space:]]+GOOS=android$'

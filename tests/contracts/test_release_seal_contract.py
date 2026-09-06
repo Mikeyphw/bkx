@@ -29,12 +29,14 @@ def test_dev_extra_contains_fail_closed_test_and_release_tools() -> None:
         assert dep.lower() in dev.lower()
 
 
-def test_ci_declares_python_matrix_and_base_wheel_smoke() -> None:
+def test_ci_declares_python_reference_matrix_and_wheel_smoke_without_console_script() -> None:
     ci = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "3.11" in ci and "3.12" in ci and "3.13" in ci
+    assert "python-reference:" in ci
+    assert "go-production:" in ci
     assert "python -m build --wheel" in ci
     assert "python -m bkx --help" in ci
-    assert "/bkx --help" in ci or "bin/bkx --help" in ci
+    assert "assert-reference-has-no-console-script" in ci
     assert "/tmp/bkx-wheel-smoke" in ci
     assert "backup_spec.json" in ci
     assert ".tcss" in ci

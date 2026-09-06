@@ -648,7 +648,7 @@ func uiStart(c *appContext, args []string) int {
 	if mode != "tui" && mode != "interactive" {
 		return commandErr(c, berror.Validation("Unsupported UI mode", map[string]any{"mode": mode, "valid": []string{"tui", "interactive"}}))
 	}
-	return runPythonReferenceUI(c, mode)
+	return runUIPlugin(c, mode)
 }
 
 // Keep filepath referenced here because the public parser intentionally accepts

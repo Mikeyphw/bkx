@@ -106,11 +106,14 @@ def test_optional_tui_request_fails_with_typed_actionable_error() -> None:
     assert "OPTIONAL_FEATURE_TYPED" in result.stdout
 
 
-def test_pyproject_declares_base_and_optional_runtime_dependencies() -> None:
+def test_pyproject_declares_reference_and_optional_ui_dependencies() -> None:
     data = tomllib.loads((ROOT / "pyproject.toml").read_text())
     base = data["project"]["dependencies"]
     optional = data["project"]["optional-dependencies"]
-    assert any(dep.lower().startswith("pyyaml") for dep in base)
+    assert base == []
+    reference = optional["reference"]
+    for dependency in ("typer", "rich", "pyyaml", "jsonschema"):
+        assert any(dep.lower().startswith(dependency) for dep in reference)
     assert any(dep.startswith("mikomn[cli]") for dep in optional["interactive"])
     assert any(dep.startswith("mikomn[tui]") for dep in optional["tui"])
     assert any(dep.lower().startswith("textual") for dep in optional["tui"])

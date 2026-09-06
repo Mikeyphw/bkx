@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -10,8 +11,14 @@ def read(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
+def phase() -> int:
+    match = re.search(r'MigrationPhase\s*=\s*"GO(\d+)"', read("internal/version/version.go"))
+    assert match is not None
+    return int(match.group(1))
+
+
 def test_go15_phase_and_public_dispatcher_own_frozen_cli():
-    assert 'MigrationPhase = "GO15"' in read("internal/version/version.go")
+    assert phase() >= 15
     contract = json.loads(read("migration/contracts/v1/cli.json"))
     assert contract["commandNodeCount"] == 23
     assert contract["leafCommandCount"] == 16
@@ -42,15 +49,21 @@ def test_go15_keeps_migration_and_android_probe_routes_internal():
     assert "contract check" not in help_text
 
 
-def test_go15_python_reference_still_owns_packaging_and_only_ui_exception():
+def test_go15_python_reference_ownership_is_retired_only_at_go16():
     devtool = read(".devtool.toml")
     pyproject = read("pyproject.toml")
-    ui = read("internal/publiccli/ui_reference.go")
-    assert '[targets.bkx]\ntype = "python"' in devtool
-    assert 'bkx = "bkx.cli.app:main"' in pyproject
-    assert "sole Python-reference exception" in ui
-    assert "BKX_PYTHON_REFERENCE" in ui
-    assert "python3" in ui
+    if phase() == 15:
+        ui = read("internal/publiccli/ui_reference.go")
+        assert '[targets.bkx]\ntype = "python"' in devtool
+        assert 'bkx = "bkx.cli.app:main"' in pyproject
+        assert "sole Python-reference exception" in ui
+        assert "BKX_PYTHON_REFERENCE" in ui
+    else:
+        assert '[targets.bkx]\ntype = "go"' in devtool
+        assert '[targets.bkx_reference]\ntype = "python"' in devtool
+        assert 'bkx = "bkx.cli.app:main"' not in pyproject
+        assert not (ROOT / "internal/publiccli/ui_reference.go").exists()
+        assert (ROOT / "internal/publiccli/ui_plugins.go").is_file()
 
 
 def test_go15_cli_parity_and_historical_phase_aware_seals_exist():
@@ -74,7 +87,11 @@ def test_go15_android_arm64_policy_suppresses_only_inapplicable_chromeos_abi_lin
     assert "chaquopy" not in app.lower()
 
 
-def test_go15_ci_uses_flattened_cutover_gate():
+def test_go15_ci_uses_current_flattened_cutover_gate():
     ci = read(".github/workflows/ci.yml")
-    assert "GO00-GO15 public CLI cutover gate" in ci
-    assert "./scripts/validate-go15.sh" in ci
+    if phase() == 15:
+        assert "GO00-GO15 public CLI cutover gate" in ci
+        assert "./scripts/validate-go15.sh" in ci
+    else:
+        assert "GO00-GO16 production Go release gate" in ci
+        assert "./scripts/validate-go16.sh" in ci

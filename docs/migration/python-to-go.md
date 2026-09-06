@@ -311,7 +311,19 @@ Delivered the human CLI cutover without prematurely deleting the Python oracle:
 - Android remains Go-only `arm64-v8a`, with NDK `29.0.14206865`; the inapplicable ChromeOS alternate-ABI lint is explicitly disabled instead of adding a fake runtime ABI;
 - the flattened GO15 validator reuses one host binary for GO02–GO13 differential verification and performs one Android ARM64 runtime build.
 
+## GO16 — Go production identity and deterministic release — COMPLETE
+
+Delivered the repository/package ownership cutover after GO15 CLI parity:
+
+- Devtool project identity and the production `bkx` target are Go; Python is exposed only as the explicit `bkx_reference` target through GO17;
+- the Python distribution has no base runtime dependencies and no `bkx` console script; its CLI dependencies live under the `reference` extra for differential testing;
+- `ui start` no longer starts Python. It resolves external `bkx-tui` / `bkx-interactive` executables, supports path/name overrides through `BKX_TUI_COMMAND` / `BKX_INTERACTIVE_COMMAND`, never evaluates a shell command, and returns the typed optional-feature exit when a plugin is absent;
+- host and Android ARM64 binaries use `-trimpath`, disabled VCS embedding, an empty Go build ID, and an explicit build-commit injection;
+- `scripts/build-go-release.sh` emits the host CLI, `android/arm64-v8a/libbkxgo.so`, and a sorted two-entry `SHA256SUMS`, with the validator proving byte-for-byte reproducibility for a fixed commit;
+- GO15 remains a callable historical regression seal but GO16 reuses the release build for the Android runtime check to avoid redundant native builds;
+- CI now names the Go lane as production and the Python 3.11–3.13 lane as reference, including proof that the Python reference wheel creates no `bkx` executable.
+
 ## Next gate
 
-GO16 makes Go the production project/package identity, removes the Python console-script ownership, externalizes optional UI startup into `bkx-tui` / `bkx-interactive` plugins, and adds deterministic host + Android release artifacts with `SHA256SUMS`. Python remains an explicit reference/parity lane until GO17.
+GO17 may retire or archive the Python reference implementation only after the frozen differential corpus is replaced by durable Go-owned contract fixtures and release evidence. Until then, Python remains reference-only and must not regain production console, Android, or Devtool ownership.
 

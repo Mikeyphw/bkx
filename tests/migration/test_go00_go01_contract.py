@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tomllib
@@ -9,6 +10,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACTS = ROOT / "migration" / "contracts" / "v1"
+
+
+def phase_at_least(minimum: int) -> bool:
+    match = re.search(r'MigrationPhase\s*=\s*"GO(\d+)"', (ROOT / "internal/version/version.go").read_text(encoding="utf-8"))
+    assert match is not None
+    return int(match.group(1)) >= minimum
 
 
 def test_go00_contracts_match_python_backend() -> None:
@@ -40,12 +47,17 @@ def test_go00_baseline_counts_and_runtime_identity_are_frozen() -> None:
     assert release["productionBackend"] == {"language": "python", "runtime": "embedded-cpython"}
 
 
-def test_go01_devtool_lane_does_not_cut_over_production() -> None:
+def test_go01_devtool_lane_does_not_cut_over_production_before_go16() -> None:
     data = tomllib.loads((ROOT / ".devtool.toml").read_text(encoding="utf-8"))
-    assert data["targets"]["bkx"]["type"] == "python"
     assert data["targets"]["bkx_android"]["type"] == "android"
-    assert data["targets"]["bkx_go"]["type"] == "go"
-    assert data["targets"]["bkx_go"]["root"] == "."
+    if phase_at_least(16):
+        assert data["project"]["kind"] == "go"
+        assert data["targets"]["bkx"]["type"] == "go"
+        assert data["targets"]["bkx_reference"]["type"] == "python"
+    else:
+        assert data["targets"]["bkx"]["type"] == "python"
+        assert data["targets"]["bkx_go"]["type"] == "go"
+        assert data["targets"]["bkx_go"]["root"] == "."
     assert data["go"]["packages"] == ["./..."]
     assert data["go"]["build_target"] == "./cmd/bkx"
     assert data["go"]["build_targets"] == ["./cmd/bkx"]

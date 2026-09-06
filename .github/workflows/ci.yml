@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  python:
+  python-reference:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -16,43 +16,45 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install base and test tooling
+      - name: Install Python reference and test tooling
         run: |
           python -m pip install -U pip
-          python -m pip install -e '.[dev]'
-      - name: Lint
+          python -m pip install -e '.[reference,dev]'
+      - name: Lint Python reference
         run: |
           ruff check .
           ruff format --check .
-      - name: Typecheck
+      - name: Typecheck Python reference
         run: pyright
-      - name: GO00 contract drift
+      - name: GO00 contract drift against Python reference
         run: PYTHONPATH=src python tools/go_migration/export_contracts.py --check
-      - name: Base tests
+      - name: Python reference tests
         run: >-
           pytest -q tests
           --ignore=tests/tui
           --ignore=tests/interactive
           --ignore=tests/contracts/test_optional_interface_parity_contract.py
-      - name: Wheel smoke
+      - name: Python reference wheel smoke
         shell: bash
         run: |
           python -m build --wheel
           WHEEL="$(ls dist/*.whl | head -n 1)"
           python -m venv /tmp/bkx-wheel-smoke
           /tmp/bkx-wheel-smoke/bin/python -m pip install -U pip
-          /tmp/bkx-wheel-smoke/bin/python -m pip install "$WHEEL"
+          WHEEL_ABS="$(python -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$WHEEL")"
+          /tmp/bkx-wheel-smoke/bin/python -m pip install "bkx[reference] @ file://$WHEEL_ABS"
           /tmp/bkx-wheel-smoke/bin/python -m bkx --help
-          /tmp/bkx-wheel-smoke/bin/bkx --help
+          test ! -e /tmp/bkx-wheel-smoke/bin/bkx # assert-reference-has-no-console-script
           /tmp/bkx-wheel-smoke/bin/python - <<'PY2'
           from importlib.resources import files
           schema = files('bkx.core.schemas').joinpath('backup_spec.json')
           css_files = [p for p in files('bkx.tui').joinpath('css').rglob('*.tcss') if p.is_file()]
           assert schema.is_file(), schema
           assert len(css_files) >= 21, len(css_files)
-          print('base-package-assets-ok')
+          print('python-reference-package-assets-ok')
           PY2
-  go-migration:
+
+  go-production:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,5 +64,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
-      - name: GO00-GO15 public CLI cutover gate
-        run: ./scripts/validate-go15.sh
+      - name: Install parity/reference dependencies
+        run: python -m pip install -e '.[reference,dev]'
+      - name: GO00-GO16 production Go release gate
+        run: ./scripts/validate-go16.sh

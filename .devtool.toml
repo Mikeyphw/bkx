@@ -1,7 +1,7 @@
 [project]
-kind = "python"
+kind = "go"
 python = "python3"
-run_command = "bkx --help"
+run_command = "go run ./cmd/bkx --help"
 
 [execution]
 environment = "auto"
@@ -12,20 +12,20 @@ device_serial = ""
 manager = "auto"
 
 [targets.bkx]
-type = "python"
-root = "."
-
-# GO01 migration scaffold. This is not the production backend.
-[targets.bkx_go]
 type = "go"
 root = "."
 execution_environment = "auto"
+
+# GO16 keeps Python only as an explicit reference/parity oracle through GO17.
+[targets.bkx_reference]
+type = "python"
+root = "."
 
 [python]
 manager = ""
 test_framework = "pytest"
 groups = []
-extras = ["dev", "tui"]
+extras = ["reference", "dev", "tui"]
 validator_dependencies = [
   "build",
   "-r",
@@ -56,10 +56,10 @@ lint = ["ruff"]
 verify_all_wheels = false
 rebuild_sdist = false
 import_smoke = true
-verify_cli = true
+verify_cli = false
 install_dependencies = false
 import_modules = ["bkx"]
-console_scripts = ["bkx"]
+console_scripts = []
 
 [go]
 packages = ["./..."]

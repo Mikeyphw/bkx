@@ -2,6 +2,124 @@
   "schema_version": 2,
   "items": [
     {
+      "id": "7cd61f34cd56",
+      "name": "bkx",
+      "path": ".devtool/build/go/bkx",
+      "canonical_path": ".devtool/build/go/bkx",
+      "source_path": ".devtool/build/go/bkx",
+      "exported_path": "",
+      "type": "go-binary",
+      "size": 7736575,
+      "sha256": "0affce4e950ea8e8f80dfb29afd6888c0b4e49f2e794dff9aac2f36210f72971",
+      "commit": "edac7261767b713443fc8de1533ebdb5ee76f7df",
+      "run_id": "1ce192ad237943b4bcb827bf07589379",
+      "producer": "go",
+      "command": "build",
+      "target": "bkx",
+      "variant": "",
+      "state": "produced",
+      "producer_task": "bkx/cmd/bkx",
+      "verification_requested": true,
+      "verification_status": "valid",
+      "created_at": "2026-09-07T20:33:01.376746Z",
+      "registered_at": "2026-09-07T20:33:01.376746Z",
+      "valid": true,
+      "metadata": {
+        "producer": "go",
+        "command": "build",
+        "target": "bkx",
+        "variant": "",
+        "run_id": "1ce192ad237943b4bcb827bf07589379",
+        "path": ".devtool/build/go/bkx",
+        "source_path": ".devtool/build/go/bkx",
+        "type": "go-binary",
+        "size": 7736575,
+        "sha256": "0affce4e950ea8e8f80dfb29afd6888c0b4e49f2e794dff9aac2f36210f72971",
+        "valid": true,
+        "state": "produced",
+        "producer_task": "bkx/cmd/bkx",
+        "checks": [
+          {
+            "name": "exists",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "non_empty",
+            "status": "passed",
+            "detail": ""
+          },
+          {
+            "name": "executable_format",
+            "status": "passed",
+            "detail": "elf"
+          },
+          {
+            "name": "go_build_info",
+            "status": "passed",
+            "detail": "go1.27.0"
+          },
+          {
+            "name": "executable_mode",
+            "status": "passed",
+            "detail": "POSIX executable bit"
+          }
+        ],
+        "metadata": {
+          "go_package": "bkx/cmd/bkx",
+          "go_output_name": "bkx",
+          "go_build_info": {
+            "package_path": "bkx/cmd/bkx",
+            "go_version": "go1.27.0",
+            "module_path": "bkx",
+            "module_version": "v0.0.0-20260907174237-edac7261767b+dirty",
+            "settings": {
+              "GOOS": "android",
+              "GOARCH": "arm64",
+              "vcs": "git",
+              "vcs.revision": "edac7261767b713443fc8de1533ebdb5ee76f7df",
+              "vcs.time": "2026-09-07T17:42:37Z",
+              "vcs.modified": "true"
+            },
+            "goos": "android",
+            "goarch": "arm64",
+            "vcs": "git",
+            "vcs_revision": "edac7261767b713443fc8de1533ebdb5ee76f7df",
+            "vcs_time": "2026-09-07T17:42:37Z",
+            "vcs_modified": "true"
+          },
+          "executable_format": "elf"
+        },
+        "go_package": "bkx/cmd/bkx",
+        "go_output_name": "bkx",
+        "go_build_info": {
+          "package_path": "bkx/cmd/bkx",
+          "go_version": "go1.27.0",
+          "module_path": "bkx",
+          "module_version": "v0.0.0-20260907174237-edac7261767b+dirty",
+          "settings": {
+            "GOOS": "android",
+            "GOARCH": "arm64",
+            "vcs": "git",
+            "vcs.revision": "edac7261767b713443fc8de1533ebdb5ee76f7df",
+            "vcs.time": "2026-09-07T17:42:37Z",
+            "vcs.modified": "true"
+          },
+          "goos": "android",
+          "goarch": "arm64",
+          "vcs": "git",
+          "vcs_revision": "edac7261767b713443fc8de1533ebdb5ee76f7df",
+          "vcs_time": "2026-09-07T17:42:37Z",
+          "vcs_modified": "true"
+        },
+        "executable_format": "elf",
+        "gradle_tasks": [],
+        "verification_requested": true,
+        "verification_status": "valid"
+      },
+      "event_key": "1ce192ad237943b4bcb827bf07589379:0affce4e950ea8e8f80dfb29afd6888c0b4e49f2e794dff9aac2f36210f72971:7cd61f34cd56"
+    },
+    {
       "id": "31fb402e01de",
       "name": "app-debug-7.apk",
       "path": "artifacts/android/app-debug-7.apk",
@@ -4510,6 +4628,6 @@
       }
     }
   ],
-  "updated_at": "2026-09-07T01:23:48.315943Z",
+  "updated_at": "2026-09-07T20:33:01.377473Z",
   "verifications": []
 }

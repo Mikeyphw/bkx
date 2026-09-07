@@ -53,8 +53,8 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
     ) {
         BkxPageHeader(
-            title = "Your backups, built in",
-            subtitle = "BKX runs inside the app. Root unlocks private app data and Termux storage.",
+            title = "BKX",
+            subtitle = "Your backups, built in. Root unlocks private app data and Termux storage.",
         )
 
         BkxHeroCard(
@@ -111,6 +111,10 @@ fun HomeScreen(
                     title = operationLabel(active.operation),
                     phase = active.lastMessage.ifBlank { active.lastPhase },
                     progress = active.progress,
+                    filesDone = active.filesDone,
+                    filesTotal = active.filesTotal,
+                    bytesDone = active.bytesDone,
+                    bytesTotal = active.bytesTotal,
                 )
                 Text(
                     text = when (active.status) {
@@ -141,7 +145,12 @@ fun HomeScreen(
                             Text(operationLabel(run.operation), style = MaterialTheme.typography.titleMedium)
                             Text(formatTime(run.finishedAtEpochMillis ?: run.startedAtEpochMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        BkxStatusPill(run.status.name.uppercase())
+                        val accent = when (run.status.name) {
+                            "Failure" -> MaterialTheme.colorScheme.error
+                            "Cancelled" -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                        BkxStatusPill(run.status.name.uppercase(), accent)
                     }
                     if (run.summary.isNotBlank()) {
                         Text(run.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

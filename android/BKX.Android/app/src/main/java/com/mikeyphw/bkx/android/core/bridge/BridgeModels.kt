@@ -69,6 +69,10 @@ data class BridgeProgressEnvelope(
     val phase: String,
     val message: String,
     val progress: Double? = null,
+    @SerialName("files_done") val filesDone: Long? = null,
+    @SerialName("files_total") val filesTotal: Long? = null,
+    @SerialName("bytes_done") val bytesDone: Long? = null,
+    @SerialName("bytes_total") val bytesTotal: Long? = null,
 )
 
 @Serializable

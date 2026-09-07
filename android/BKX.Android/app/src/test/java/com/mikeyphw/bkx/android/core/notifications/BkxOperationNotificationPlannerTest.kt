@@ -18,6 +18,10 @@ class BkxOperationNotificationPlannerTest {
         lastPhase = "copying",
         lastMessage = "Copying files",
         progress = 0.42,
+        filesDone = 42,
+        filesTotal = 100,
+        bytesDone = 42L * 1024L * 1024L,
+        bytesTotal = 100L * 1024L * 1024L,
         cancelFilePath = "/shared/bkx/cancel/req-notify-1.json",
     )
 
@@ -34,6 +38,8 @@ class BkxOperationNotificationPlannerTest {
         assertEquals(42, plan.progressPercent)
         assertTrue(plan.ongoing)
         assertTrue(plan.allowCancelAction)
+        assertTrue(plan.text.contains("42/100 files"))
+        assertTrue(plan.text.contains("42.0 MB/100.0 MB"))
         assertTrue(plan.redacted)
         assertFalse(plan.text.contains(active.requestId))
         assertFalse(plan.text.contains(active.cancelFilePath.orEmpty()))

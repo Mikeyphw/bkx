@@ -79,6 +79,19 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+data class OperationSurfaceFeedback(
+    val requestId: String,
+    val operation: String,
+    val startedAtEpochMillis: Long,
+    val result: OperationResultUiState = OperationResultUiState.NotStarted,
+    val completedAtEpochMillis: Long? = null,
+)
+
+data class BkxUiMessage(
+    val id: Long,
+    val text: String,
+)
+
 data class BkxHomeUiState(
     val title: String = "BKX",
     val readiness: BackendReadiness = BackendReadiness.Checking,
@@ -92,6 +105,8 @@ data class BkxHomeUiState(
     val transfer: TransferUiState = TransferUiState(),
     val operationRuntime: OperationRuntimeState = OperationRuntimeState(),
     val operationResult: OperationResultUiState = OperationResultUiState.NotStarted,
+    val operationFeedback: Map<BkxDestination, OperationSurfaceFeedback> = emptyMap(),
+    val uiMessage: BkxUiMessage? = null,
     val filesystemBrowser: FilesystemBrowserUiState = FilesystemBrowserUiState(),
     val providerImportInProgress: Boolean = false,
     val providerImportMessage: String? = null,
@@ -156,6 +171,7 @@ sealed interface BkxHomeEvent {
     data class ImportProviderTransferTree(val uri: String) : BkxHomeEvent
 
     data class UpdateSettings(val settings: BkxSettings) : BkxHomeEvent
+    data class ConsumeUiMessage(val id: Long) : BkxHomeEvent
 
     data class TrackOperationStarted(
         val requestId: String,
@@ -199,6 +215,7 @@ class BkxAppViewModel(
     private val restoreRequestBuilder = RestoreRequestBuilder()
     private val transferRequestBuilder = TransferRequestBuilder()
     private val requestSequence = AtomicLong(0L)
+    private val messageSequence = AtomicLong(0L)
     private val _state = MutableStateFlow(BkxHomeUiState())
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
 
@@ -295,6 +312,9 @@ class BkxAppViewModel(
             is BkxHomeEvent.ImportProviderTransferTree -> importProviderTransferTree(event.uri)
 
             is BkxHomeEvent.UpdateSettings -> updateSettings(event.settings)
+            is BkxHomeEvent.ConsumeUiMessage -> _state.update { current ->
+                if (current.uiMessage?.id == event.id) current.copy(uiMessage = null) else current
+            }
 
             is BkxHomeEvent.TrackOperationStarted -> updateOperationRuntime { runtime ->
                 operationProgressTracker.trackStarted(
@@ -356,7 +376,7 @@ class BkxAppViewModel(
         val planning = _state.value.backupPlanning
         if (!planning.canCreateBackup) return
         val request = backupRequestBuilder.buildCreateRequest(nextRequestId("backup-create"), planning.draft, planning.preview)
-        executeRequest(request, recordInHistory = true) { result ->
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Backup) { result ->
             if (result.status == BridgeResultStatus.Success) refreshArchives()
         }
     }
@@ -470,7 +490,7 @@ class BkxAppViewModel(
 
     private fun verifyArchive(archive: ArchiveLocation) {
         val request = archiveRequestBuilder.buildVerifyRequest(nextRequestId("archive-verify"), archive)
-        executeRequest(request, recordInHistory = true) { result ->
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Archives) { result ->
             _state.update { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(
@@ -513,7 +533,7 @@ class BkxAppViewModel(
             restore.preview,
             restore.confirmation,
         )
-        executeRequest(request, recordInHistory = true)
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Archives)
     }
 
     private fun requestTransferPreview() {
@@ -558,7 +578,7 @@ class BkxAppViewModel(
         val transfer = _state.value.transfer
         if (!transfer.canRun) return
         val request = transferRequestBuilder.buildRunRequest(nextRequestId("transfer-run"), transfer.draft, transfer.preview)
-        executeRequest(request, recordInHistory = true) { result ->
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.More) { result ->
             _state.update { current -> current.copy(transfer = current.transfer.copy(result = result.toTransferResultUiState())) }
         }
     }
@@ -566,25 +586,89 @@ class BkxAppViewModel(
     private fun executeRequest(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
-        surfaceResult: Boolean = true,
+        feedbackDestination: BkxDestination? = null,
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
+        val startedAt = System.currentTimeMillis()
+        if (feedbackDestination != null) {
+            _state.update { current ->
+                current.copy(
+                    operationFeedback = current.operationFeedback + (
+                        feedbackDestination to OperationSurfaceFeedback(
+                            requestId = request.requestId,
+                            operation = request.operation,
+                            startedAtEpochMillis = startedAt,
+                        )
+                    ),
+                    uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), "${operationLabelForMessage(request.operation)} started"),
+                )
+            }
+        }
         viewModelScope.launch {
             when (val outcome = operationCoordinator.execute(request, recordInHistory)) {
                 is OperationOutcome.Completed -> {
                     val result = outcome.result
-                    if (surfaceResult) _state.update { current -> current.copy(operationResult = result.toOperationResultUiState()) }
+                    val uiResult = result.toOperationResultUiState()
+                    if (feedbackDestination != null) {
+                        updateOperationFeedback(feedbackDestination, request, startedAt, uiResult)
+                    }
                     onResult(result)
                     refreshOperations()
                     if (recordInHistory) refreshRuns()
                 }
                 is OperationOutcome.Failed -> {
-                    if (surfaceResult) _state.update { current -> current.copy(operationResult = OperationResultUiState.Failed(outcome.failure)) }
+                    if (feedbackDestination != null) {
+                        updateOperationFeedback(
+                            feedbackDestination,
+                            request,
+                            startedAt,
+                            OperationResultUiState.Failed(outcome.failure),
+                        )
+                    }
                     refreshOperations()
                 }
                 is OperationOutcome.CancellationAccepted -> refreshOperations()
             }
         }
+    }
+
+    private fun updateOperationFeedback(
+        destination: BkxDestination,
+        request: BridgeRequestEnvelope,
+        startedAt: Long,
+        result: OperationResultUiState,
+    ) {
+        val finishedAt = System.currentTimeMillis()
+        _state.update { current ->
+            current.copy(
+                operationResult = result,
+                operationFeedback = current.operationFeedback + (
+                    destination to OperationSurfaceFeedback(
+                        requestId = request.requestId,
+                        operation = request.operation,
+                        startedAtEpochMillis = startedAt,
+                        result = result,
+                        completedAtEpochMillis = finishedAt,
+                    )
+                ),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), operationResultMessage(request.operation, result)),
+            )
+        }
+    }
+
+    private fun operationLabelForMessage(operation: String): String = when (operation) {
+        "backup.create" -> "Backup"
+        "archive.verify" -> "Archive verification"
+        "restore.extract" -> "Restore"
+        "transfer.run" -> "Transfer"
+        else -> "BKX operation"
+    }
+
+    private fun operationResultMessage(operation: String, result: OperationResultUiState): String = when (result) {
+        OperationResultUiState.NotStarted -> "${operationLabelForMessage(operation)} started"
+        is OperationResultUiState.Success -> "${operationLabelForMessage(operation)} completed"
+        is OperationResultUiState.Cancelled -> "${operationLabelForMessage(operation)} cancelled"
+        is OperationResultUiState.Failed -> "${operationLabelForMessage(operation)} failed: ${result.failure.title}"
     }
 
     private fun submitOperationCancellation(event: BkxHomeEvent.SubmitOperationCancellation) {
@@ -620,7 +704,7 @@ class BkxAppViewModel(
                 put("limit", 500)
             },
         )
-        executeRequest(request, recordInHistory = false, surfaceResult = false) { result ->
+        executeRequest(request, recordInHistory = false) { result ->
             if (result.status == BridgeResultStatus.Success) {
                 val entries = result.artifacts.map { artifact ->
                     FilesystemBrowserEntry(

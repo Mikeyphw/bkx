@@ -1,24 +1,39 @@
 package com.mikeyphw.bkx.android.feature.home
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import com.mikeyphw.bkx.android.R
 import com.mikeyphw.bkx.android.app.BkxAppViewModel
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
@@ -40,28 +55,46 @@ fun BkxAndroidApp(viewModel: BkxAppViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BkxProductApp(
     state: BkxHomeUiState,
     onEvent: (BkxHomeEvent) -> Unit,
 ) {
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    var pendingNotificationEvent by remember { mutableStateOf<BkxHomeEvent?>(null) }
+    var notificationPrompted by rememberSaveable { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) {
+        notificationPrompted = true
+        pendingNotificationEvent?.let(onEvent)
+        pendingNotificationEvent = null
+    }
+
+    fun dispatch(event: BkxHomeEvent) {
+        val needsNotificationPermission = event.requiresOperationNotificationPermission()
+        val canRequest = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        if (needsNotificationPermission && canRequest && !notificationPrompted) {
+            pendingNotificationEvent = event
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            onEvent(event)
+        }
+    }
+
+    state.uiMessage?.let { message ->
+        LaunchedEffect(message.id) {
+            snackbarHostState.showSnackbar(message.text)
+            onEvent(BkxHomeEvent.ConsumeUiMessage(message.id))
+        }
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val wide = maxWidth >= 840.dp
         Scaffold(
-            topBar = {
-                CenterAlignedTopAppBar(
-                    title = {
-                        Text(
-                            text = when (state.selectedDestination) {
-                                BkxDestination.Home -> "BKX"
-                                else -> state.selectedDestination.label
-                            },
-                            style = MaterialTheme.typography.titleLarge,
-                        )
-                    },
-                )
-            },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 if (!wide) {
                     NavigationBar {
@@ -69,8 +102,13 @@ fun BkxProductApp(
                             NavigationBarItem(
                                 modifier = Modifier.testTag("nav-${destination.name.lowercase()}"),
                                 selected = destination == state.selectedDestination,
-                                onClick = { onEvent(BkxHomeEvent.SelectDestination(destination)) },
-                                icon = { Text(destination.glyph()) },
+                                onClick = { dispatch(BkxHomeEvent.SelectDestination(destination)) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(destination.iconRes()),
+                                        contentDescription = destination.label,
+                                    )
+                                },
                                 label = { Text(destination.shortLabel) },
                             )
                         }
@@ -85,19 +123,24 @@ fun BkxProductApp(
                             NavigationRailItem(
                                 modifier = Modifier.testTag("nav-${destination.name.lowercase()}"),
                                 selected = destination == state.selectedDestination,
-                                onClick = { onEvent(BkxHomeEvent.SelectDestination(destination)) },
-                                icon = { Text(destination.glyph()) },
+                                onClick = { dispatch(BkxHomeEvent.SelectDestination(destination)) },
+                                icon = {
+                                    Icon(
+                                        painter = painterResource(destination.iconRes()),
+                                        contentDescription = destination.label,
+                                    )
+                                },
                                 label = { Text(destination.shortLabel) },
                             )
                         }
                     }
-                    DestinationContent(state, onEvent, Modifier.weight(1f))
+                    DestinationContent(state, ::dispatch, Modifier.weight(1f))
                 }
             } else {
-                DestinationContent(state, onEvent, Modifier.fillMaxSize().padding(innerPadding))
+                DestinationContent(state, ::dispatch, Modifier.fillMaxSize().padding(innerPadding))
             }
         }
-        FilesystemBrowserDialog(state.filesystemBrowser, onEvent)
+        FilesystemBrowserDialog(state.filesystemBrowser, ::dispatch)
     }
 }
 
@@ -116,10 +159,19 @@ private fun DestinationContent(
     }
 }
 
-private fun BkxDestination.glyph(): String = when (this) {
-    BkxDestination.Home -> "⌂"
-    BkxDestination.Backup -> "＋"
-    BkxDestination.Archives -> "▣"
-    BkxDestination.Activity -> "↻"
-    BkxDestination.More -> "•••"
+private fun BkxHomeEvent.requiresOperationNotificationPermission(): Boolean = when (this) {
+    BkxHomeEvent.CreateBackup,
+    BkxHomeEvent.ExecuteRestore,
+    BkxHomeEvent.RunTransfer,
+    is BkxHomeEvent.VerifyArchive -> true
+    else -> false
+}
+
+@DrawableRes
+private fun BkxDestination.iconRes(): Int = when (this) {
+    BkxDestination.Home -> R.drawable.ic_nav_home
+    BkxDestination.Backup -> R.drawable.ic_nav_backup
+    BkxDestination.Archives -> R.drawable.ic_nav_archives
+    BkxDestination.Activity -> R.drawable.ic_nav_activity
+    BkxDestination.More -> R.drawable.ic_nav_more
 }

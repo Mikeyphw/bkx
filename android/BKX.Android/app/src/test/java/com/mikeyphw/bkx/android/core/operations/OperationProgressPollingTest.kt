@@ -20,7 +20,7 @@ class OperationProgressPollingTest {
             state = started,
             rawProgress = """
                 {"protocol_version":1,"request_id":"req-1","seq":1,"phase":"scan","message":"Scanning","progress":0.1}
-                {"protocol_version":1,"request_id":"req-1","seq":2,"phase":"write","message":"Writing","progress":0.8}
+                {"protocol_version":1,"request_id":"req-1","seq":2,"phase":"write","message":"Writing","progress":0.8,"files_done":8,"files_total":10,"bytes_done":8192,"bytes_total":10240}
             """.trimIndent(),
             expectedRequestId = "req-1",
             observedAtEpochMillis = 200,
@@ -28,6 +28,10 @@ class OperationProgressPollingTest {
 
         assertEquals("write", next.activeFor("req-1")?.lastPhase)
         assertEquals(2, next.progressEvents["req-1"]?.size)
+        assertEquals(8L, next.activeFor("req-1")?.filesDone)
+        assertEquals(10L, next.activeFor("req-1")?.filesTotal)
+        assertEquals(8192L, next.activeFor("req-1")?.bytesDone)
+        assertEquals(10240L, next.activeFor("req-1")?.bytesTotal)
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -33,6 +33,10 @@ data class ActiveOperation(
     @SerialName("last_phase") val lastPhase: String = "queued",
     @SerialName("last_message") val lastMessage: String = "Queued for BKX backend.",
     val progress: Double? = null,
+    @SerialName("files_done") val filesDone: Long? = null,
+    @SerialName("files_total") val filesTotal: Long? = null,
+    @SerialName("bytes_done") val bytesDone: Long? = null,
+    @SerialName("bytes_total") val bytesTotal: Long? = null,
     @SerialName("last_seq") val lastSeq: Long = 0,
     @SerialName("cancel_file_path") val cancelFilePath: String? = null,
     @SerialName("reconnect_token") val reconnectToken: String = requestId,
@@ -53,6 +57,10 @@ data class ActiveOperation(
             lastPhase = event.phase,
             lastMessage = event.message,
             progress = event.progress ?: progress,
+            filesDone = event.filesDone ?: filesDone,
+            filesTotal = event.filesTotal ?: filesTotal,
+            bytesDone = event.bytesDone ?: bytesDone,
+            bytesTotal = event.bytesTotal ?: bytesTotal,
             lastSeq = event.seq,
         )
     }
@@ -83,6 +91,10 @@ data class OperationProgressEvent(
     val phase: String,
     val message: String,
     val progress: Double? = null,
+    @SerialName("files_done") val filesDone: Long? = null,
+    @SerialName("files_total") val filesTotal: Long? = null,
+    @SerialName("bytes_done") val bytesDone: Long? = null,
+    @SerialName("bytes_total") val bytesTotal: Long? = null,
     @SerialName("observed_at_epoch_millis") val observedAtEpochMillis: Long,
 ) {
     init {
@@ -103,6 +115,10 @@ data class OperationProgressEvent(
             phase = envelope.phase,
             message = envelope.message,
             progress = envelope.progress,
+            filesDone = envelope.filesDone,
+            filesTotal = envelope.filesTotal,
+            bytesDone = envelope.bytesDone,
+            bytesTotal = envelope.bytesTotal,
             observedAtEpochMillis = observedAtEpochMillis,
         )
     }

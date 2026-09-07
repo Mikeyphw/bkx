@@ -255,3 +255,20 @@ func mustFile(t *testing.T, root string) string {
 	}
 	return path
 }
+
+func TestDetailedProgressPreservesCountsAndBytes(t *testing.T) {
+	var got Progress
+	ctx := OperationContext{Progress: func(p Progress) { got = p }}
+	progress := 0.5
+	filesDone, filesTotal := int64(5), int64(10)
+	bytesDone, bytesTotal := int64(512), int64(1024)
+
+	emitDetailed(ctx, "copying", "Copying", &progress, &filesDone, &filesTotal, &bytesDone, &bytesTotal)
+
+	if got.Progress == nil || *got.Progress != 0.5 || got.FilesDone == nil || *got.FilesDone != 5 || got.FilesTotal == nil || *got.FilesTotal != 10 {
+		t.Fatalf("detailed progress lost file counters: %#v", got)
+	}
+	if got.BytesDone == nil || *got.BytesDone != 512 || got.BytesTotal == nil || *got.BytesTotal != 1024 {
+		t.Fatalf("detailed progress lost byte counters: %#v", got)
+	}
+}

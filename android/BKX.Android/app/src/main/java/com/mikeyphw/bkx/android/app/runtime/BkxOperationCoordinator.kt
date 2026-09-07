@@ -185,19 +185,26 @@ class BkxOperationCoordinator(
             startedState.activeFor(request.requestId)?.let(::updateForeground)
         }
         val progressPoller = startProgressPoller(request.requestId)
+        var terminalNotification: Pair<ActiveOperation, OperationResultUiState>? = null
 
         return try {
             val submission = backendPort.submit(request, files)
             if (!submission.accepted) {
                 val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
-                mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
+                val failedState = mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
+                failedState.activeFor(request.requestId)?.let { operation ->
+                    terminalNotification = operation to OperationResultUiState.Failed(failure)
+                }
                 OperationOutcome.Failed(failure)
             } else {
                 val rawResult = File(files.resultFilePath).readText()
                 val result = backendPort.readFinalResult(rawResult)
                 check(result.requestId == request.requestId) { "BKX result request id mismatch." }
                 val completedAt = System.currentTimeMillis()
-                mutateState { state -> progressTracker.finish(state, result, completedAt) }
+                val completedState = mutateState { state -> progressTracker.finish(state, result, completedAt) }
+                completedState.activeFor(request.requestId)?.let { operation ->
+                    terminalNotification = operation to result.toOperationResultUiState()
+                }
                 if (recordInHistory) persistRun(request.operation, startedAt, completedAt, result)
                 OperationOutcome.Completed(result)
             }
@@ -205,11 +212,20 @@ class BkxOperationCoordinator(
             val failure = OperationFailureMapper.fromProtocolException(
                 "BKX execution ended without a trustworthy final result: ${error.message ?: error::class.java.simpleName}",
             )
-            mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
+            val failedState = mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
+            failedState.activeFor(request.requestId)?.let { operation ->
+                terminalNotification = operation to OperationResultUiState.Failed(failure)
+            }
             OperationOutcome.Failed(failure)
         } finally {
             progressPoller.cancel()
-            if (request.operation in FOREGROUND_OPERATIONS) stopForegroundShell()
+            if (request.operation in FOREGROUND_OPERATIONS) {
+                val context = appContext
+                terminalNotification?.let { (operation, result) ->
+                    if (context != null) runCatching { BkxOperationForegroundService.publishTerminal(context, operation, result) }
+                }
+                stopForegroundShell()
+            }
         }
     }
 

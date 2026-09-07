@@ -26,6 +26,7 @@ import com.mikeyphw.bkx.android.app.BkxHomeUiState
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.ui.components.BkxDivider
 import com.mikeyphw.bkx.android.app.ui.components.BkxKeyValue
+import com.mikeyphw.bkx.android.app.ui.components.BkxOperationProgress
 import com.mikeyphw.bkx.android.app.ui.components.BkxPageHeader
 import com.mikeyphw.bkx.android.app.ui.components.BkxSectionHeader
 import com.mikeyphw.bkx.android.app.ui.components.BkxSettingSwitch
@@ -37,6 +38,8 @@ import com.mikeyphw.bkx.android.core.backup.BackupDestinationSelection
 import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
 import com.mikeyphw.bkx.android.core.backup.BackupSplitPolicy
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
+import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.storage.BkxStorageLocations
 
 @Composable
@@ -54,6 +57,10 @@ fun BackupScreen(
     val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderBackupTree(it)) }
     }
+    val activeBackup = state.operationRuntime.activeOperations.values
+        .filter { it.operation == "backup.create" && it.status in setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling) }
+        .maxByOrNull { it.lastSeenEpochMillis }
+    val backupFeedback = state.operationFeedback[BkxDestination.Backup]
 
     Column(
         modifier = modifier
@@ -66,6 +73,60 @@ fun BackupScreen(
             title = "Create a backup",
             subtitle = "Choose real filesystem paths. Root locations work directly when the root engine is active.",
         )
+
+        if (activeBackup != null) {
+            BkxSurfaceCard {
+                BkxOperationProgress(
+                    title = "Backup in progress",
+                    phase = activeBackup.lastMessage.ifBlank { activeBackup.lastPhase },
+                    progress = activeBackup.progress,
+                    filesDone = activeBackup.filesDone,
+                    filesTotal = activeBackup.filesTotal,
+                    bytesDone = activeBackup.bytesDone,
+                    bytesTotal = activeBackup.bytesTotal,
+                )
+                BkxStatusPill(
+                    if (activeBackup.status == ActiveOperationStatus.Cancelling) "CANCELLING" else "RUNNING",
+                    if (activeBackup.status == ActiveOperationStatus.Cancelling) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+                )
+                if (activeBackup.cancelFilePath != null && activeBackup.status != ActiveOperationStatus.Cancelling) {
+                    OutlinedButton(
+                        onClick = {
+                            onEvent(
+                                BkxHomeEvent.SubmitOperationCancellation(
+                                    requestId = activeBackup.requestId,
+                                    cancelFilePath = activeBackup.cancelFilePath,
+                                    cancelRequestId = "cancel-${System.currentTimeMillis()}",
+                                    requestedAtEpochMillis = System.currentTimeMillis(),
+                                ),
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Cancel backup") }
+                }
+            }
+        } else {
+            when (val result = backupFeedback?.result) {
+                is OperationResultUiState.Success -> BkxSurfaceCard {
+                    BkxStatusPill("BACKUP COMPLETE")
+                    Text(result.summary, style = MaterialTheme.typography.bodyLarge)
+                    OutlinedButton(
+                        onClick = { onEvent(BkxHomeEvent.SelectDestination(BkxDestination.Archives)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Open archives") }
+                }
+                is OperationResultUiState.Failed -> BkxSurfaceCard {
+                    BkxStatusPill("BACKUP FAILED", MaterialTheme.colorScheme.error)
+                    Text(result.failure.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+                    Text(result.failure.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                is OperationResultUiState.Cancelled -> BkxSurfaceCard {
+                    BkxStatusPill("BACKUP CANCELLED", MaterialTheme.colorScheme.tertiary)
+                    Text(result.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                OperationResultUiState.NotStarted, null -> Unit
+            }
+        }
 
         BkxSectionHeader("1 · What to protect")
         BkxSurfaceCard {
@@ -268,13 +329,13 @@ fun BackupScreen(
                 ) { Text(if (planning.preview == null) "Review backup" else "Review again") }
                 Button(
                     onClick = { onEvent(BkxHomeEvent.CreateBackup) },
-                    enabled = planning.canCreateBackup && selectedCapabilitiesSupported,
+                    enabled = planning.canCreateBackup && selectedCapabilitiesSupported && activeBackup == null,
                     modifier = Modifier.weight(1f),
                 ) { Text("Create backup") }
             }
             if (planning.canCreateBackup && selectedCapabilitiesSupported) {
                 Text(
-                    "The backup runs through the embedded BKX engine and will appear under Activity.",
+                    "Progress stays visible here and in Android notifications when notifications are allowed.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

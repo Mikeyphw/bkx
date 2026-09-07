@@ -2,12 +2,12 @@ package com.mikeyphw.bkx.android.feature.activity
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -24,7 +24,6 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxStatusPill
 import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
-import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.core.settings.LogPrivacyMode
 import com.mikeyphw.bkx.android.feature.home.formatTime
 import com.mikeyphw.bkx.android.feature.home.operationLabel
@@ -39,28 +38,38 @@ fun ActivityScreen(
         .filter { it.status in setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling) }
         .sortedByDescending { it.lastSeenEpochMillis }
 
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
+    LazyColumn(
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
     ) {
-        BkxPageHeader(
-            title = "Activity",
-            subtitle = if (state.settings.logPrivacyMode == LogPrivacyMode.Private) "Live operations and a private, path-free history of completed BKX work." else "Live operations with diagnostic request identifiers and compact completed history.",
-        )
+        item(key = "header") {
+            BkxPageHeader(
+                title = "Activity",
+                subtitle = if (state.settings.logPrivacyMode == LogPrivacyMode.Private) {
+                    "Live operations and a private, path-free history of completed BKX work."
+                } else {
+                    "Live operations with diagnostic request identifiers and compact completed history."
+                },
+            )
+        }
 
-        BkxSectionHeader("In progress")
+        item(key = "live-header") { BkxSectionHeader("In progress") }
         if (liveOperations.isEmpty()) {
-            BkxEmptyState("Nothing is running", "Start a backup, restore, verification, or transfer and its progress will appear here.")
+            item(key = "live-empty") {
+                BkxEmptyState("Nothing is running", "Start a backup, restore, verification, or transfer and its progress will appear here.")
+            }
         } else {
-            liveOperations.forEach { operation ->
+            items(liveOperations, key = { "live-${it.requestId}" }) { operation ->
                 BkxSurfaceCard {
                     BkxOperationProgress(
                         title = operationLabel(operation.operation),
                         phase = operation.lastMessage.ifBlank { operation.lastPhase },
                         progress = operation.progress,
+                        filesDone = operation.filesDone,
+                        filesTotal = operation.filesTotal,
+                        bytesDone = operation.bytesDone,
+                        bytesTotal = operation.bytesTotal,
                     )
                     if (operation.status == ActiveOperationStatus.Cancelling) {
                         BkxStatusPill("STOP REQUESTED", MaterialTheme.colorScheme.tertiary)
@@ -68,7 +77,11 @@ fun ActivityScreen(
                         BkxStatusPill("RUNNING")
                     }
                     if (state.settings.logPrivacyMode == LogPrivacyMode.Diagnostic) {
-                        Text("Request ${operation.requestId.take(16)} · seq ${operation.lastSeq}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            "Request ${operation.requestId.take(16)} · seq ${operation.lastSeq}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                     if (operation.cancelFilePath != null && operation.status != ActiveOperationStatus.Cancelling) {
                         OutlinedButton(
@@ -93,36 +106,31 @@ fun ActivityScreen(
             }
         }
 
-        when (val result = state.operationResult) {
-            OperationResultUiState.NotStarted -> Unit
-            is OperationResultUiState.Success -> BkxSurfaceCard {
-                BkxStatusPill("COMPLETED")
-                Text(result.summary, style = MaterialTheme.typography.bodyLarge)
-            }
-            is OperationResultUiState.Cancelled -> BkxSurfaceCard {
-                BkxStatusPill("CANCELLED", MaterialTheme.colorScheme.tertiary)
-                Text(result.summary)
-            }
-            is OperationResultUiState.Failed -> BkxSurfaceCard {
-                BkxStatusPill("FAILED", MaterialTheme.colorScheme.error)
-                Text(result.failure.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
-                Text(result.failure.message)
-                result.failure.actions.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-            }
+        item(key = "history-header") {
+            BkxSectionHeader("History", "Refresh") { onEvent(BkxHomeEvent.RefreshRuns) }
         }
-
-        BkxSectionHeader("History", "Refresh") { onEvent(BkxHomeEvent.RefreshRuns) }
         if (state.recentRuns.isEmpty()) {
-            BkxEmptyState("No completed work yet", "BKX stores only a compact activity summary here; full filesystem paths are intentionally omitted.")
+            item(key = "history-empty") {
+                BkxEmptyState("No completed work yet", "BKX stores only a compact activity summary here; full filesystem paths are intentionally omitted.")
+            }
         } else {
-            state.recentRuns.forEach { run ->
+            items(state.recentRuns, key = { "history-${it.requestId}" }) { run ->
                 BkxSurfaceCard {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(operationLabel(run.operation), style = MaterialTheme.typography.titleMedium)
-                            Text(formatTime(run.finishedAtEpochMillis ?: run.startedAtEpochMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                formatTime(run.finishedAtEpochMillis ?: run.startedAtEpochMillis),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
-                        BkxStatusPill(run.status.name.uppercase(), if (run.status.name == "Failure") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                        val accent = when (run.status.name) {
+                            "Failure" -> MaterialTheme.colorScheme.error
+                            "Cancelled" -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.primary
+                        }
+                        BkxStatusPill(run.status.name.uppercase(), accent)
                     }
                     if (run.summary.isNotBlank()) Text(run.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (run.artifacts.isNotEmpty()) {
@@ -133,10 +141,6 @@ fun ActivityScreen(
                     }
                 }
             }
-        }
-
-        OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshBackend) }, modifier = Modifier.fillMaxWidth()) {
-            Text("Check BKX engine")
         }
     }
 }

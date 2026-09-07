@@ -27,12 +27,20 @@ class OperationRuntimeContractTest {
                 phase = "scanning",
                 message = "Scanning sources",
                 progress = 0.5,
+                filesDone = 4,
+                filesTotal = 8,
+                bytesDone = 4096,
+                bytesTotal = 8192,
             ),
             observedAtEpochMillis = 150,
         )
 
         assertEquals("scanning", next.activeFor("req-1")?.lastPhase)
         assertEquals(0.5, next.activeFor("req-1")?.progress)
+        assertEquals(4L, next.activeFor("req-1")?.filesDone)
+        assertEquals(8L, next.activeFor("req-1")?.filesTotal)
+        assertEquals(4096L, next.activeFor("req-1")?.bytesDone)
+        assertEquals(8192L, next.activeFor("req-1")?.bytesTotal)
         assertEquals(1, next.progressEvents["req-1"]?.size)
         assertEquals("/tmp/bkx/req-1/cancel.json", next.activeFor("req-1")?.cancelFilePath)
     }

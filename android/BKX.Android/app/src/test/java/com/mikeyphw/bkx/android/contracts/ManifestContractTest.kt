@@ -15,6 +15,14 @@ class ManifestContractTest {
     }
 
     @Test
+    fun operationNotificationsDeclareForegroundRuntimeAndLiveUpdatePermissions() {
+        assertTrue(manifest.contains("android.permission.POST_NOTIFICATIONS"))
+        assertTrue(manifest.contains("android.permission.POST_PROMOTED_NOTIFICATIONS"))
+        assertTrue(manifest.contains("android.permission.FOREGROUND_SERVICE_DATA_SYNC"))
+        assertTrue(manifest.contains("android:foregroundServiceType=\"dataSync\""))
+    }
+
+    @Test
     fun termuxIsNotAnExecutionDependency() {
         assertFalse(manifest.contains("com.termux.permission.RUN_COMMAND"))
         assertFalse(manifest.contains("com.termux.RUN_COMMAND"))

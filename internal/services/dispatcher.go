@@ -46,9 +46,13 @@ type Result struct {
 	Artifacts []Artifact `json:"artifacts"`
 }
 type Progress struct {
-	Phase    string   `json:"phase"`
-	Message  string   `json:"message"`
-	Progress *float64 `json:"progress,omitempty"`
+	Phase      string   `json:"phase"`
+	Message    string   `json:"message"`
+	Progress   *float64 `json:"progress,omitempty"`
+	FilesDone  *int64   `json:"files_done,omitempty"`
+	FilesTotal *int64   `json:"files_total,omitempty"`
+	BytesDone  *int64   `json:"bytes_done,omitempty"`
+	BytesTotal *int64   `json:"bytes_total,omitempty"`
 }
 type OperationContext struct {
 	RequestID string
@@ -172,7 +176,7 @@ func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Resul
 			v := float64(e.Files) / float64(total)
 			f = &v
 		}
-		emit(ctx, e.Stage, fmt.Sprintf("%s: %d files, %d bytes.", title(e.Stage), e.Files, e.Bytes), f)
+		emitDetailed(ctx, e.Stage, fmt.Sprintf("%s: %d files, %d bytes.", title(e.Stage), e.Files, e.Bytes), f, int64Ptr(e.Files), int64Ptr(plan.TotalFiles), int64Ptr(e.Bytes), int64Ptr(plan.TotalBytes))
 	}})
 	if err != nil {
 		if errors.Is(err, backupops.ErrCancelled) {
@@ -443,7 +447,9 @@ func (d *Dispatcher) restoreExtract(ctx OperationContext, p map[string]any) (Res
 			}
 			f = &v
 		}
-		emit(ctx, phase, fmt.Sprintf("%s: %d of %d files (%d bytes).", title(phase), files, total, bytes), f)
+		filesDone := int64(files)
+		filesTotal := int64(total)
+		emitDetailed(ctx, phase, fmt.Sprintf("%s: %d of %d files (%d bytes).", title(phase), files, total, bytes), f, &filesDone, &filesTotal, int64Ptr(bytes), int64Ptr(preview.TotalSize))
 	})
 	if err != nil {
 		return Result{}, err
@@ -506,7 +512,7 @@ func (d *Dispatcher) transferRun(ctx OperationContext, p map[string]any) (Result
 			v := float64(e.FilesTransferred) / float64(e.TotalFiles)
 			f = &v
 		}
-		emit(ctx, "transferring", fmt.Sprintf("Transferred %d of %d files.", e.FilesTransferred, e.TotalFiles), f)
+		emitDetailed(ctx, "transferring", fmt.Sprintf("Transferred %d of %d files.", e.FilesTransferred, e.TotalFiles), f, int64Ptr(e.FilesTransferred), int64Ptr(e.TotalFiles), int64Ptr(e.BytesTransferred), int64Ptr(e.TotalBytes))
 	}})
 	if err != nil {
 		if errors.Is(err, transferops.ErrCancelled) {
@@ -857,6 +863,10 @@ func requestID(ctx OperationContext) string {
 	return id
 }
 func emit(ctx OperationContext, phase, msg string, f *float64) {
+	emitDetailed(ctx, phase, msg, f, nil, nil, nil, nil)
+}
+
+func emitDetailed(ctx OperationContext, phase, msg string, f *float64, filesDone, filesTotal, bytesDone, bytesTotal *int64) {
 	if ctx.Progress == nil {
 		return
 	}
@@ -870,7 +880,11 @@ func emit(ctx OperationContext, phase, msg string, f *float64) {
 		}
 		f = &v
 	}
-	ctx.Progress(Progress{Phase: phase, Message: msg, Progress: f})
+	ctx.Progress(Progress{
+		Phase: phase, Message: msg, Progress: f,
+		FilesDone: filesDone, FilesTotal: filesTotal,
+		BytesDone: bytesDone, BytesTotal: bytesTotal,
+	})
 }
 func checkCancelled(ctx OperationContext, phase string) error {
 	if ctx.Cancelled != nil && ctx.Cancelled() {
@@ -879,6 +893,7 @@ func checkCancelled(ctx OperationContext, phase string) error {
 	return nil
 }
 func floatPtr(v float64) *float64 { return &v }
+func int64Ptr(v int64) *int64     { return &v }
 func max64(a, b int64) int64 {
 	if a > b {
 		return a

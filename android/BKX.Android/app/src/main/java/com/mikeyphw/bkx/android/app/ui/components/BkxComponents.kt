@@ -3,6 +3,7 @@ package com.mikeyphw.bkx.android.app.ui.components
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,12 +23,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
@@ -57,12 +60,9 @@ fun BkxSectionHeader(
     ) {
         Text(title, style = MaterialTheme.typography.titleLarge)
         if (action != null && onAction != null) {
-            Text(
-                text = action,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.clickable(onClick = onAction).padding(8.dp),
-            )
+            TextButton(onClick = onAction) {
+                Text(text = action, style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
 }
@@ -176,7 +176,15 @@ fun BkxSettingSwitch(
     enabled: Boolean = true,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                enabled = enabled,
+                role = Role.Switch,
+                onValueChange = onCheckedChange,
+            )
+            .padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -184,7 +192,7 @@ fun BkxSettingSwitch(
             Text(title, style = MaterialTheme.typography.titleMedium)
             Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
@@ -193,6 +201,10 @@ fun BkxOperationProgress(
     title: String,
     phase: String,
     progress: Double?,
+    filesDone: Long? = null,
+    filesTotal: Long? = null,
+    bytesDone: Long? = null,
+    bytesTotal: Long? = null,
 ) {
     Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
@@ -202,7 +214,31 @@ fun BkxOperationProgress(
         } else {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
+        val details = buildList {
+            if (filesDone != null) {
+                add(if (filesTotal != null && filesTotal > 0) "$filesDone / $filesTotal files" else "$filesDone files")
+            }
+            if (bytesDone != null) {
+                add(if (bytesTotal != null && bytesTotal > 0) "${formatCompactBytes(bytesDone)} / ${formatCompactBytes(bytesTotal)}" else formatCompactBytes(bytesDone))
+            }
+            if (progress != null) add("${(progress * 100).toInt().coerceIn(0, 100)}%")
+        }
+        if (details.isNotEmpty()) {
+            Text(details.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
+}
+
+private fun formatCompactBytes(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val units = arrayOf("KB", "MB", "GB", "TB")
+    var value = bytes.toDouble()
+    var unit = -1
+    while (value >= 1024.0 && unit < units.lastIndex) {
+        value /= 1024.0
+        unit += 1
+    }
+    return if (value >= 10.0) "%.0f %s".format(value, units[unit]) else "%.1f %s".format(value, units[unit])
 }
 
 @Composable

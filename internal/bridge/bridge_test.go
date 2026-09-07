@@ -213,3 +213,22 @@ func TestProgressSequenceContinuesWhenRequestIDIsReused(t *testing.T) {
 		t.Fatalf("sequence did not continue: %#v -> %#v", p1, p2)
 	}
 }
+
+func TestServiceProgressMetricsCrossAndroidBridge(t *testing.T) {
+	rt := NewAndroid(nil)
+	progress := 0.25
+	filesDone, filesTotal := int64(2), int64(8)
+	bytesDone, bytesTotal := int64(256), int64(2048)
+	rt.emitDetailed("metrics-1", "archiving", "Writing", &progress, &filesDone, &filesTotal, &bytesDone, &bytesTotal)
+
+	got, err := rt.Progress("metrics-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.FilesDone == nil || *got.FilesDone != 2 || got.FilesTotal == nil || *got.FilesTotal != 8 {
+		t.Fatalf("bridge lost file progress metrics: %#v", got)
+	}
+	if got.BytesDone == nil || *got.BytesDone != 256 || got.BytesTotal == nil || *got.BytesTotal != 2048 {
+		t.Fatalf("bridge lost byte progress metrics: %#v", got)
+	}
+}

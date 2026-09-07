@@ -3,6 +3,7 @@ package com.mikeyphw.bkx.android.core.notifications
 
 import com.mikeyphw.bkx.android.core.operations.ActiveOperation
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import java.util.Locale
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -53,6 +54,9 @@ object BkxOperationNotificationChannels {
 
 object BkxNotificationIds {
     const val OPERATION_FOREGROUND = 61001
+    private const val TERMINAL_BASE = 62000
+
+    fun terminalFor(requestId: String): Int = TERMINAL_BASE + (requestId.hashCode() and 0x0fff)
 }
 
 object BkxOperationNotificationPlanner {
@@ -79,16 +83,36 @@ object BkxOperationNotificationPlanner {
             ActiveOperationStatus.Cancelling,
         )
         val progressPercent = operation.progress?.let { (it * 100).toInt().coerceIn(0, 100) }
-        val text = if (policy.privacyMode) {
-            "${operation.status.name.lowercase().replaceFirstChar { it.uppercase() }} • ${operation.lastPhase}"
-        } else {
-            val shortId = operation.requestId.take(12)
-            "${operation.status.name.lowercase().replaceFirstChar { it.uppercase() }} • ${operation.lastPhase} • $shortId"
+        val detail = buildList {
+            if (operation.filesDone != null) {
+                add(
+                    if (operation.filesTotal != null && operation.filesTotal > 0) {
+                        "${operation.filesDone}/${operation.filesTotal} files"
+                    } else {
+                        "${operation.filesDone} files"
+                    },
+                )
+            }
+            if (operation.bytesDone != null) {
+                add(
+                    if (operation.bytesTotal != null && operation.bytesTotal > 0) {
+                        "${compactBytes(operation.bytesDone)}/${compactBytes(operation.bytesTotal)}"
+                    } else {
+                        compactBytes(operation.bytesDone)
+                    },
+                )
+            }
+        }.joinToString(" • ")
+        val base = "${operation.status.name.lowercase().replaceFirstChar { it.uppercase() }} • ${operation.lastPhase}"
+        val text = buildString {
+            append(base)
+            if (detail.isNotBlank()) append(" • ").append(detail)
+            if (!policy.privacyMode) append(" • ").append(operation.requestId.take(12))
         }
         return BkxOperationNotificationDecision.Show(
             BkxOperationNotificationPlan(
                 requestId = operation.requestId,
-                title = "BKX ${operation.operation}",
+                title = "BKX ${displayOperation(operation.operation)}",
                 text = text,
                 ongoing = ongoing,
                 allowCancelAction = operation.cancelFilePath != null && ongoing,
@@ -96,5 +120,20 @@ object BkxOperationNotificationPlanner {
                 redacted = policy.privacyMode,
             ),
         )
+    }
+
+    private fun displayOperation(operation: String): String = when (operation) {
+        "backup.create" -> "backup"
+        "archive.verify" -> "archive verification"
+        "restore.extract" -> "restore"
+        "transfer.run" -> "transfer"
+        else -> "operation"
+    }
+
+    private fun compactBytes(bytes: Long): String = when {
+        bytes >= 1024L * 1024L * 1024L -> String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024.0 * 1024.0))
+        bytes >= 1024L * 1024L -> String.format(Locale.ROOT, "%.1f MB", bytes / (1024.0 * 1024.0))
+        bytes >= 1024L -> String.format(Locale.ROOT, "%.1f KB", bytes / 1024.0)
+        else -> "$bytes B"
     }
 }

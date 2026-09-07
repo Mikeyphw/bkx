@@ -79,6 +79,10 @@ type Progress struct {
 	Phase           string   `json:"phase"`
 	Message         string   `json:"message"`
 	Progress        *float64 `json:"progress,omitempty"`
+	FilesDone       *int64   `json:"files_done,omitempty"`
+	FilesTotal      *int64   `json:"files_total,omitempty"`
+	BytesDone       *int64   `json:"bytes_done,omitempty"`
+	BytesTotal      *int64   `json:"bytes_total,omitempty"`
 }
 
 type Readiness struct {
@@ -200,7 +204,7 @@ func (r *RuntimeAdapter) Execute(raw string) Result {
 			RequestID: requestID,
 			Cancelled: func() bool { return r.isCancelled(requestID) },
 			Progress: func(p services.Progress) {
-				r.emit(requestID, p.Phase, p.Message, p.Progress)
+				r.emitService(requestID, p)
 			},
 		}
 		core, dispatchErr := r.services.Dispatch(ctx, request.Operation, request.Payload)
@@ -252,7 +256,15 @@ func (r *RuntimeAdapter) handleCancelOperation(request Request) Result {
 	return success(request.RequestID, fmt.Sprintf("Cancellation recorded for %s.", target), nil, nil)
 }
 
+func (r *RuntimeAdapter) emitService(requestID string, p services.Progress) {
+	r.emitDetailed(requestID, p.Phase, p.Message, p.Progress, p.FilesDone, p.FilesTotal, p.BytesDone, p.BytesTotal)
+}
+
 func (r *RuntimeAdapter) emit(requestID, phase, message string, progress *float64) {
+	r.emitDetailed(requestID, phase, message, progress, nil, nil, nil, nil)
+}
+
+func (r *RuntimeAdapter) emitDetailed(requestID, phase, message string, progress *float64, filesDone, filesTotal, bytesDone, bytesTotal *int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	seq := r.seq[requestID] + 1
@@ -277,6 +289,10 @@ func (r *RuntimeAdapter) emit(requestID, phase, message string, progress *float6
 		Phase:           phase,
 		Message:         message,
 		Progress:        progress,
+		FilesDone:       filesDone,
+		FilesTotal:      filesTotal,
+		BytesDone:       bytesDone,
+		BytesTotal:      bytesTotal,
 	}
 	r.trimLocked()
 }

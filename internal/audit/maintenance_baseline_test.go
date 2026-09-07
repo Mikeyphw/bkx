@@ -75,3 +75,28 @@ func TestGO20MaintenanceBaseline(t *testing.T) {
 		t.Fatal("migration bridge constructor/identity remains")
 	}
 }
+
+func TestAndroidVerificationKotlinLiteralEscaping(t *testing.T) {
+	root := repoRoot(t)
+	text := string(read(t, root, "build-logic/android-verification.gradle.kts"))
+
+	malformed := []string{
+		`check("ROOT_CONFIRMATION_PHRASE = "RESTORE ROOT""`,
+		`"EntryType string ` + "`" + `json:"entry_type"` + "`" + `"`,
+	}
+	for _, token := range malformed {
+		if strings.Contains(text, token) {
+			t.Fatalf("android verification contains malformed Kotlin string literal: %s", token)
+		}
+	}
+
+	expected := []string{
+		`check("ROOT_CONFIRMATION_PHRASE = \"RESTORE ROOT\"" in models && "root_confirmation" in request)`,
+		`"EntryType string ` + "`" + `json:\"entry_type\"` + "`" + `"`,
+	}
+	for _, token := range expected {
+		if !strings.Contains(text, token) {
+			t.Fatalf("android verification escaped Kotlin contract missing: %s", token)
+		}
+	}
+}

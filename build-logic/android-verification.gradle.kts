@@ -354,7 +354,7 @@ tasks.register("verifyBkxRestoreSafetySeal") {
         listOf("/proc", "/sys", "/dev", "/system", "/metadata", "/data/system", "/data/misc").forEach { root ->
             check(root in models) { "Protected restore root missing from Kotlin policy: $root" }
         }
-        check("ROOT_CONFIRMATION_PHRASE = "RESTORE ROOT"" in models && "root_confirmation" in request) {
+        check("ROOT_CONFIRMATION_PHRASE = \"RESTORE ROOT\"" in models && "root_confirmation" in request) {
             "Root-sensitive restore must require explicit RESTORE ROOT evidence."
         }
         check("if (destination == null)" in models) { "Every Android restore mode must require an explicit destination." }
@@ -528,7 +528,7 @@ tasks.register("verifyBkxStorageCompletenessContract") {
             "Provider fallback must be reachable from backup, archive, and transfer product workflows."
         }
         check("FilesystemBrowserDialog" in browser.readText()) { "Reusable root-aware filesystem selector is missing." }
-        check("EntryType string `json:"entry_type"`" in goArchive.readText() && "Archive link members are unsafe for restore" in goRestore.readText() && "archive_entry_symlink" in goDispatcher.readText() && "archive_entry_special" in goDispatcher.readText()) {
+        check("EntryType string `json:\"entry_type\"`" in goArchive.readText() && "Archive link members are unsafe for restore" in goRestore.readText() && "archive_entry_symlink" in goDispatcher.readText() && "archive_entry_special" in goDispatcher.readText()) {
             "Archive Link/Special product filters must be backed by canonical Go archive-entry type metadata."
         }
     }

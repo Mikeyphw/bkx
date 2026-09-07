@@ -41,3 +41,8 @@ fun BackendReadiness.toSetupActions(): List<SetupRemediationAction> = when (this
         SetupRemediationAction(code = code, title = title, steps = remediationSteps),
     )
 }
+
+
+enum class ArchiveDetailSection { Overview, Contents, Restore }
+
+enum class MoreRoute { Overview, Transfer, Diagnostics }

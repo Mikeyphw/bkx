@@ -232,3 +232,44 @@ func TestServiceProgressMetricsCrossAndroidBridge(t *testing.T) {
 		t.Fatalf("bridge lost byte progress metrics: %#v", got)
 	}
 }
+
+func TestBackupPlanPreflightMetricsSurviveBridgeEnvelope(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "backups")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "data.bin"), []byte("123456789"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rt := NewAndroid(nil)
+	payload := map[string]any{
+		"source":      map[string]any{"path": src},
+		"destination": map[string]any{"path": dst},
+		"filters":     map[string]any{"include_patterns": []string{}, "exclude_patterns": []string{}, "follow_symlinks": false},
+		"archive": map[string]any{
+			"archive_name":      "preflight",
+			"compression":       "gzip",
+			"compression_level": 3,
+			"split":             map[string]any{"enabled": false},
+			"verification":      map[string]any{"verify_after_create": true},
+		},
+	}
+	result := rt.Execute(requestJSON(t, "backup-preflight", "backup.plan", payload))
+	if result.Status != "success" {
+		t.Fatalf("result=%#v", result)
+	}
+	if result.Metrics == nil || result.Metrics.FilesTotal == nil || *result.Metrics.FilesTotal != 1 {
+		t.Fatalf("missing files_total preflight metric: %#v", result.Metrics)
+	}
+	if result.Metrics.BytesTotal == nil || *result.Metrics.BytesTotal != 9 {
+		t.Fatalf("missing bytes_total preflight metric: %#v", result.Metrics)
+	}
+	if result.Metrics.DurationMS < 0 {
+		t.Fatalf("invalid duration: %#v", result.Metrics)
+	}
+}

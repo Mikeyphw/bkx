@@ -97,6 +97,9 @@ func TestBackupArchiveRestoreRunsAndArchiveIndexDispatch(t *testing.T) {
 	if plan.Status != "success" || len(plan.Artifacts) != 1 || plan.Artifacts[0].SHA256 == nil {
 		t.Fatalf("plan=%+v", plan)
 	}
+	if plan.Metrics == nil || plan.Metrics.FilesTotal == nil || *plan.Metrics.FilesTotal != 1 || plan.Metrics.BytesTotal == nil || *plan.Metrics.BytesTotal != 5 {
+		t.Fatalf("backup plan metrics=%+v", plan.Metrics)
+	}
 	var progress []Progress
 	created, err := d.Dispatch(OperationContext{RequestID: "backup-run", Progress: func(p Progress) { progress = append(progress, p) }}, "backup.create", raw(payload))
 	if err != nil {

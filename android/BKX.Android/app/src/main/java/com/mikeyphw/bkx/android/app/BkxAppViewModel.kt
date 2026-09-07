@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
+import com.mikeyphw.bkx.android.app.navigation.ArchiveDetailSection
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
+import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator.OperationOutcome
@@ -98,6 +100,8 @@ data class BkxHomeUiState(
     val isRefreshing: Boolean = false,
     val selectedDestination: BkxDestination = BkxDestination.Home,
     val destinations: List<BkxDestination> = BkxDestination.entries,
+    val archiveDetailSection: ArchiveDetailSection = ArchiveDetailSection.Overview,
+    val moreRoute: MoreRoute = MoreRoute.Overview,
     val recentRuns: List<RunSummary> = emptyList(),
     val backupPlanning: BackupPlanningUiState = BackupPlanningUiState(),
     val archiveReadOnly: ArchiveReadOnlyUiState = ArchiveReadOnlyUiState(),
@@ -132,6 +136,10 @@ sealed interface BkxHomeEvent {
     data object RefreshBackend : BkxHomeEvent
     data object RefreshRuns : BkxHomeEvent
     data class SelectDestination(val destination: BkxDestination) : BkxHomeEvent
+    data class ShowArchiveSection(val section: ArchiveDetailSection) : BkxHomeEvent
+    data object CloseArchiveDetails : BkxHomeEvent
+    data class OpenMoreRoute(val route: MoreRoute) : BkxHomeEvent
+    data object CloseMoreRoute : BkxHomeEvent
 
     data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview) : BkxHomeEvent
@@ -238,7 +246,27 @@ class BkxAppViewModel(
         when (event) {
             BkxHomeEvent.RefreshBackend -> refreshBackend()
             BkxHomeEvent.RefreshRuns -> refreshRuns()
-            is BkxHomeEvent.SelectDestination -> _state.update { it.copy(selectedDestination = event.destination) }
+            is BkxHomeEvent.SelectDestination -> _state.update { current ->
+                current.copy(
+                    selectedDestination = event.destination,
+                    moreRoute = if (event.destination == BkxDestination.More) current.moreRoute else MoreRoute.Overview,
+                )
+            }
+            is BkxHomeEvent.ShowArchiveSection -> _state.update { it.copy(archiveDetailSection = event.section) }
+            BkxHomeEvent.CloseArchiveDetails -> _state.update { current ->
+                current.copy(
+                    archiveReadOnly = current.archiveReadOnly.copy(
+                        selectedArchive = null,
+                        infoState = ArchiveWorkflowUiState.Idle,
+                        browsePage = null,
+                        verification = com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState.NotStarted,
+                    ),
+                    restore = RestoreUiState(),
+                    archiveDetailSection = ArchiveDetailSection.Overview,
+                )
+            }
+            is BkxHomeEvent.OpenMoreRoute -> _state.update { it.copy(moreRoute = event.route) }
+            BkxHomeEvent.CloseMoreRoute -> _state.update { it.copy(moreRoute = MoreRoute.Overview) }
 
             is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
                 current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
@@ -250,7 +278,10 @@ class BkxAppViewModel(
             BkxHomeEvent.CreateBackup -> createBackup()
 
             is BkxHomeEvent.SelectArchive -> _state.update { current ->
-                current.copy(archiveReadOnly = current.archiveReadOnly.copy(selectedArchive = event.archive))
+                current.copy(
+                    archiveReadOnly = current.archiveReadOnly.copy(selectedArchive = event.archive),
+                    archiveDetailSection = ArchiveDetailSection.Overview,
+                )
             }
             is BkxHomeEvent.ApplyArchiveList -> _state.update { current ->
                 current.copy(archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Content(event.archives)))
@@ -271,7 +302,10 @@ class BkxAppViewModel(
             }
             BkxHomeEvent.RefreshArchives -> refreshArchives()
             is BkxHomeEvent.LoadArchiveDetails -> loadArchiveDetails(event.archive)
-            is BkxHomeEvent.BrowseArchive -> browseArchive(event.archive, event.pageToken)
+            is BkxHomeEvent.BrowseArchive -> {
+                _state.update { it.copy(archiveDetailSection = ArchiveDetailSection.Contents) }
+                browseArchive(event.archive, event.pageToken)
+            }
             is BkxHomeEvent.VerifyArchive -> verifyArchive(event.archive)
             is BkxHomeEvent.PrepareRestore -> prepareRestore(event.archive)
 
@@ -358,6 +392,8 @@ class BkxAppViewModel(
                     requestId = result.requestId,
                     planToken = token,
                     draftFingerprint = draft.fingerprint(),
+                    filesTotal = result.metrics?.filesTotal,
+                    bytesTotal = result.metrics?.bytesTotal,
                     warnings = result.errors.map {
                         BackupPlanWarning(it.code, it.message, BackupWarningSeverity.Warning)
                     },
@@ -437,6 +473,7 @@ class BkxAppViewModel(
                     infoState = ArchiveWorkflowUiState.Loading,
                     browsePage = null,
                 ),
+                archiveDetailSection = ArchiveDetailSection.Overview,
             )
         }
         val request = archiveRequestBuilder.buildInfoRequest(nextRequestId("archive-info"), archive)
@@ -508,6 +545,7 @@ class BkxAppViewModel(
             state.copy(
                 selectedDestination = BkxDestination.Archives,
                 archiveReadOnly = state.archiveReadOnly.copy(selectedArchive = archive),
+                archiveDetailSection = ArchiveDetailSection.Restore,
                 restore = RestoreUiState(draft = current.copy(archive = archive)),
             )
         }

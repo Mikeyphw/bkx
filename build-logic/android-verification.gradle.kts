@@ -262,14 +262,15 @@ tasks.register("verifyBkxProductUiContract") {
     val archives = sourceRoot.resolve("feature/archives/ArchivesScreen.kt")
     val activity = sourceRoot.resolve("feature/activity/ActivityScreen.kt")
     val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
+    val transfer = sourceRoot.resolve("feature/transfer/TransferScreen.kt")
     val theme = sourceRoot.resolve("app/ui/theme/BkxTheme.kt")
 
-    inputs.files(navigation, shell, home, backup, archives, activity, more, theme)
+    inputs.files(navigation, shell, home, backup, archives, activity, more, transfer, theme)
 
     doLast {
         val navigationText = navigation.readText()
         val shellText = shell.readText()
-        val productSources = listOf(home, backup, archives, activity, more).associateWith { it.readText() }
+        val productSources = listOf(home, backup, archives, activity, more, transfer).associateWith { it.readText() }
         val themeText = theme.readText()
 
         listOf("Home", "Backup", "Archives", "Activity", "More").forEach { destination ->
@@ -299,8 +300,14 @@ tasks.register("verifyBkxProductUiContract") {
         check("Search archives" in archives.readText() && "ArchiveSort" in archives.readText() && "ArchiveEntryFilter" in archives.readText()) {
             "Archives product screen must provide archive search/sort and loaded-entry filtering."
         }
-        check("RequestTransferPreview" in more.readText() && "RunTransfer" in more.readText()) {
-            "More screen must expose real local transfer review/execution."
+        check("OpenMoreRoute(MoreRoute.Transfer)" in more.readText()) {
+            "More must route to the dedicated transfer workflow instead of embedding the form."
+        }
+        check("RequestTransferPreview" in transfer.readText() && "RunTransfer" in transfer.readText()) {
+            "Dedicated transfer screen must expose real local transfer review/execution."
+        }
+        check("ArchiveDetailPane" in archives.readText() && "ArchiveDetailSection.Restore" in archives.readText()) {
+            "Archives must use the adaptive list/detail restore workflow."
         }
     }
 }
@@ -361,7 +368,9 @@ tasks.register("verifyBkxRestoreSafetySeal") {
         check("Restore destination already exists and requires explicit confirmation" in go && "Restore destination must be a real directory when it already exists" in go) {
             "Go restore destination semantics must remain fail-closed."
         }
-        check("New destination path" in ui && "Existing destination path" in ui) { "Restore UI must collect an exact path for both output modes." }
+        check("Restore destination" in ui && "Manual path · Advanced" in ui && "FilesystemSelectionTarget.RestoreDestination" in ui) {
+            "Restore UI must collect an explicit destination through the picker or advanced exact path."
+        }
     }
 }
 
@@ -412,7 +421,7 @@ tasks.register("verifyBkxUxHardeningContract") {
         val archivesText = archives.readText()
         val activityText = activity.readText()
         check("NavigationBar" in shellText && "NavigationRail" in shellText) { "Phone/tablet adaptive navigation is required." }
-        check("Symbolic links are skipped safely" in backupText && "Follow symbolic links" !in backupText) {
+        check("symbolic links are skipped safely" in backupText.lowercase() && "Follow symbolic links" !in backupText) {
             "Product UI must not claim unsupported link following."
         }
         check("RESTORE ROOT" in archivesText || "requiredPhrase" in archivesText) { "Privileged restore confirmation must be visible in the product flow." }
@@ -510,12 +519,13 @@ tasks.register("verifyBkxStorageCompletenessContract") {
     val backup = root.resolve("feature/backup/BackupScreen.kt")
     val archives = root.resolve("feature/archives/ArchivesScreen.kt")
     val more = root.resolve("feature/more/MoreScreen.kt")
+    val transfer = root.resolve("feature/transfer/TransferScreen.kt")
     val androidRootDir = rootProject.layout.projectDirectory.asFile
     val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
     val goDispatcher = repositoryRootDir.resolve("internal/services/dispatcher.go")
     val goArchive = repositoryRootDir.resolve("internal/archiveio/archiveio.go")
     val goRestore = repositoryRootDir.resolve("internal/archiveio/restore.go")
-    inputs.files(viewModel, storage, provider, browser, backup, archives, more, goDispatcher, goArchive, goRestore)
+    inputs.files(viewModel, storage, provider, browser, backup, archives, more, transfer, goDispatcher, goArchive, goRestore)
     doLast {
         val vm = viewModel.readText()
         check("filesystem.list" in vm && "OpenFilesystemBrowser" in vm) { "Product filesystem browser must execute canonical filesystem.list." }
@@ -524,8 +534,8 @@ tasks.register("verifyBkxStorageCompletenessContract") {
         val providerText = provider.readText()
         check("copyDocument" in providerText && "copyTree" in providerText && "COPY_BUFFER_BYTES" in providerText) { "Provider-only SAF resources must stream into bounded staging." }
         check("totals.entries < MAX_TREE_ENTRIES" in providerText && "totals.entries += 1" in providerText) { "Provider staging must bound total tree entries, including directories." }
-        check("ImportProviderBackupTree" in backup.readText() && "ImportProviderArchive" in archives.readText() && "ImportProviderTransferTree" in more.readText()) {
-            "Provider fallback must be reachable from backup, archive, and transfer product workflows."
+        check("ImportProviderBackupTree" in backup.readText() && "ImportProviderArchive" in archives.readText() && "ImportProviderTransferTree" in transfer.readText()) {
+            "Provider fallback must be reachable from backup, archive, and dedicated transfer workflows."
         }
         check("FilesystemBrowserDialog" in browser.readText()) { "Reusable root-aware filesystem selector is missing." }
         check("EntryType string `json:\"entry_type\"`" in goArchive.readText() && "Archive link members are unsafe for restore" in goRestore.readText() && "archive_entry_symlink" in goDispatcher.readText() && "archive_entry_special" in goDispatcher.readText()) {

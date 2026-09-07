@@ -59,7 +59,9 @@ type ErrorDocument struct {
 }
 
 type Metrics struct {
-	DurationMS int64 `json:"duration_ms"`
+	DurationMS int64  `json:"duration_ms"`
+	FilesTotal *int64 `json:"files_total,omitempty"`
+	BytesTotal *int64 `json:"bytes_total,omitempty"`
 }
 
 type Result struct {
@@ -218,7 +220,10 @@ func (r *RuntimeAdapter) Execute(raw string) Result {
 		}
 	}
 
-	result.Metrics = &Metrics{DurationMS: durationMillis(started)}
+	if result.Metrics == nil {
+		result.Metrics = &Metrics{}
+	}
+	result.Metrics.DurationMS = durationMillis(started)
 	r.finish(requestID, result)
 	return result
 }
@@ -428,12 +433,17 @@ func fromService(requestID string, core services.Result) Result {
 	if arts == nil {
 		arts = []services.Artifact{}
 	}
+	var metrics *Metrics
+	if core.Metrics != nil {
+		metrics = &Metrics{FilesTotal: core.Metrics.FilesTotal, BytesTotal: core.Metrics.BytesTotal}
+	}
 	return Result{
 		ProtocolVersion: ProtocolVersion,
 		RequestID:       requestID,
 		Status:          core.Status,
 		Summary:         core.Summary,
 		Artifacts:       arts,
+		Metrics:         metrics,
 		Errors:          errorsOut,
 	}
 }

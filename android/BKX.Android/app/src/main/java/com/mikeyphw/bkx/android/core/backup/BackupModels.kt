@@ -218,6 +218,8 @@ data class BackupPlanPreview(
     val requestId: String,
     val planToken: String,
     val draftFingerprint: String,
+    val filesTotal: Long? = null,
+    val bytesTotal: Long? = null,
     val warnings: List<BackupPlanWarning> = emptyList(),
     val verificationExpectations: List<BackupVerificationExpectation> = emptyList(),
 ) {

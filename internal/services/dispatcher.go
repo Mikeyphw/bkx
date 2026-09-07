@@ -39,11 +39,16 @@ type Artifact struct {
 	SizeBytes             *int64  `json:"size_bytes,omitempty"`
 	ModifiedAtEpochMillis *int64  `json:"modified_at_epoch_millis,omitempty"`
 }
+type ResultMetrics struct {
+	FilesTotal *int64 `json:"files_total,omitempty"`
+	BytesTotal *int64 `json:"bytes_total,omitempty"`
+}
 type Result struct {
-	Status    string     `json:"status"`
-	Summary   string     `json:"summary"`
-	Errors    []Issue    `json:"errors"`
-	Artifacts []Artifact `json:"artifacts"`
+	Status    string         `json:"status"`
+	Summary   string         `json:"summary"`
+	Errors    []Issue        `json:"errors"`
+	Artifacts []Artifact     `json:"artifacts"`
+	Metrics   *ResultMetrics `json:"metrics,omitempty"`
 }
 type Progress struct {
 	Phase      string   `json:"phase"`
@@ -157,7 +162,9 @@ func (d *Dispatcher) backupPlan(ctx OperationContext, p map[string]any) (Result,
 	for _, w := range plan.Warnings {
 		issues = append(issues, warningIssue("plan_warning", w))
 	}
-	return success(fmt.Sprintf("Backup plan ready: %d files, %d steps.", plan.TotalFiles, len(plan.Steps)), issues, []Artifact{artifact("backup_plan", "embedded://plan/"+requestID(ctx), tok)}), nil
+	result := success(fmt.Sprintf("Backup plan ready: %d files, %d steps.", plan.TotalFiles, len(plan.Steps)), issues, []Artifact{artifact("backup_plan", "embedded://plan/"+requestID(ctx), tok)})
+	result.Metrics = &ResultMetrics{FilesTotal: int64Ptr(plan.TotalFiles), BytesTotal: int64Ptr(plan.TotalBytes)}
+	return result, nil
 }
 func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Result, error) {
 	spec, err := backupSpecFromBridge(p, false)

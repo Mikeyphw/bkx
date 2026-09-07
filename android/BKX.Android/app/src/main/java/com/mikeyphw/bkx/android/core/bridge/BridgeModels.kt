@@ -34,9 +34,13 @@ enum class BridgeResultStatus {
 @Serializable
 data class BridgeMetrics(
     @SerialName("duration_ms") val durationMillis: Long = 0L,
+    @SerialName("files_total") val filesTotal: Long? = null,
+    @SerialName("bytes_total") val bytesTotal: Long? = null,
 ) {
     init {
         require(durationMillis >= 0L) { "duration_ms must be non-negative" }
+        require(filesTotal == null || filesTotal >= 0L) { "files_total must be non-negative" }
+        require(bytesTotal == null || bytesTotal >= 0L) { "bytes_total must be non-negative" }
     }
 }
 

@@ -18,11 +18,14 @@ import (
 	"bkx/internal/fsutil"
 	"bkx/internal/models"
 	"bkx/internal/validation"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 const (
 	zipMethodBzip2 = 12
 	zipMethodLZMA  = 14
+	zipMethodZstd  = 93
 )
 
 type CreateResult struct {
@@ -45,9 +48,6 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 	validated, err := validation.ValidateArchiveCreateSpec(spec)
 	if err != nil {
 		return CreateResult{}, err
-	}
-	if validated.SplitSize != nil {
-		return CreateResult{}, berror.Validation("Split archives are not supported by the builtin archiver", map[string]any{"split_size": *validated.SplitSize})
 	}
 	output, err := validation.CanonicalLocalPath(validated.OutputPath)
 	if err != nil {
@@ -89,24 +89,45 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 		return CreateResult{}, berror.WrapExternal("creating archive staging file", output, "go-os", err)
 	}
 	tmpPath := tmp.Name()
-	if err := tmp.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return CreateResult{}, err
-	}
+	stagedPaths := []string{tmpPath}
 	published := false
 	defer func() {
 		if !published {
-			_ = os.Remove(tmpPath)
+			removeAll(stagedPaths)
 		}
 	}()
 
+	var sink io.WriteCloser = tmp
+	var splitSink *splitStagingWriter
+	if validated.SplitSize != nil {
+		splitSink, err = newSplitStagingWriter(tmpPath, tmp, *validated.SplitSize)
+		if err != nil {
+			_ = tmp.Close()
+			return CreateResult{}, err
+		}
+		sink = splitSink
+	}
+
 	if format == "zip" {
-		err = writeZipArchive(tmpPath, manifest, profile, progress)
+		err = writeZipArchive(sink, manifest, profile, progress)
 	} else {
-		err = writeTarArchive(tmpPath, manifest, profile, progress)
+		err = writeTarArchive(sink, filepath.Dir(output), manifest, profile, progress)
+	}
+	closeErr := sink.Close()
+	if splitSink != nil {
+		stagedPaths = splitSink.Paths()
 	}
 	if err != nil {
 		return CreateResult{}, err
+	}
+	if closeErr != nil {
+		return CreateResult{}, berror.WrapExternal("closing archive staging output", tmpPath, "go-os", closeErr)
+	}
+
+	for _, staged := range stagedPaths {
+		if err := syncFile(staged); err != nil {
+			return CreateResult{}, berror.WrapExternal("syncing archive staging file", staged, "go-os", err)
+		}
 	}
 
 	var verification *bool
@@ -122,27 +143,28 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 		}
 	}
 
-	if err := syncFile(tmpPath); err != nil {
-		return CreateResult{}, berror.WrapExternal("syncing archive staging file", tmpPath, "go-os", err)
-	}
-	if err := os.Rename(tmpPath, output); err != nil {
+	finalPaths := multipartFinalPaths(output, len(stagedPaths))
+	if err := publishMultipart(stagedPaths, finalPaths); err != nil {
 		return CreateResult{}, berror.WrapExternal("publishing archive", output, "go-os", err)
 	}
 	published = true
-	_ = syncDir(filepath.Dir(output))
 
-	st, err := os.Stat(output)
+	written, err := multipartTotalSize(finalPaths)
 	if err != nil {
 		return CreateResult{}, mapPathError(output, err)
 	}
 	original := manifest.TotalSize()
 	ratio := 1.0
 	if original > 0 {
-		ratio = float64(st.Size()) / float64(original)
+		ratio = float64(written) / float64(original)
+	}
+	splitParts := []string{}
+	if validated.SplitSize != nil {
+		splitParts = finalPaths
 	}
 	result := CreateResult{
-		Success: true, DryRun: false, FilesArchived: len(manifest.Files()), BytesWritten: st.Size(), OriginalSize: original,
-		ArchivePath: output, SplitParts: []string{}, VerificationPassed: verification, CompressionRatio: ratio,
+		Success: true, DryRun: false, FilesArchived: len(manifest.Files()), BytesWritten: written, OriginalSize: original,
+		ArchivePath: output, SplitParts: splitParts, VerificationPassed: verification, CompressionRatio: ratio,
 		Warnings: warnings, Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
 	}
 	if progress != nil {
@@ -172,60 +194,68 @@ func detectCreateFormat(path string) string {
 }
 
 func resolveCreateCompression(profile models.CompressionProfile, implicitDefault bool, output, format string) (models.CompressionProfile, []string, error) {
-	if implicitDefault && profile.Algorithm == "zstd" && profile.Level == 3 {
-		lower := strings.ToLower(output)
-		if !strings.HasSuffix(lower, ".zst") && !strings.HasSuffix(lower, ".zstd") {
-			replacement := models.CompressionProfile{Algorithm: "none", Level: 0}
-			if format == "zip" {
-				replacement = models.CompressionProfile{Algorithm: "gzip", Level: 6}
-			}
-			warning := fmt.Sprintf("Implicit default zstd compression requires an external adapter; builtin %s creation used %s compatibility instead", format, replacement.Algorithm)
-			return replacement, []string{warning}, nil
-		}
-	}
+	_ = implicitDefault // retained for protocol-v1 call compatibility; native zstd needs no fallback.
+	_ = output
 	algorithm := profile.Algorithm
 	switch algorithm {
-	case "none", "gzip", "bzip2", "xz":
+	case "none", "gzip", "zstd", "bzip2", "xz":
 		return profile, []string{}, nil
 	default:
 		return models.CompressionProfile{}, nil, berror.Validation(
 			fmt.Sprintf("Compression algorithm is unsupported for builtin %s creation", format),
-			map[string]any{"algorithm": algorithm, "supported": []string{"none", "gzip", "bzip2", "xz"}},
+			map[string]any{"algorithm": algorithm, "supported": []string{"none", "gzip", "zstd", "bzip2", "xz"}},
 		)
 	}
 }
 
-func writeTarArchive(path string, manifest fsutil.SourceManifest, profile models.CompressionProfile, progress func(int, int64)) error {
+func writeTarArchive(out io.Writer, workDir string, manifest fsutil.SourceManifest, profile models.CompressionProfile, progress func(int, int64)) error {
 	if profile.Algorithm == "bzip2" || profile.Algorithm == "xz" {
-		raw, err := os.CreateTemp(filepath.Dir(path), ".bkx-go06-raw-*.tar")
+		raw, err := os.CreateTemp(workDir, ".bkx-go06-raw-*.tar")
 		if err != nil {
 			return err
 		}
 		rawPath := raw.Name()
-		_ = raw.Close()
 		defer os.Remove(rawPath)
-		if err := writeTarStream(rawPath, manifest, "none", 0, progress); err != nil {
+		if err := writeTarStream(raw, manifest, "none", 0, progress); err != nil {
+			_ = raw.Close()
 			return err
 		}
-		return compressFileExternal(rawPath, path, profile)
+		if err := raw.Sync(); err != nil {
+			_ = raw.Close()
+			return err
+		}
+		if err := raw.Close(); err != nil {
+			return err
+		}
+		return compressFileExternal(rawPath, out, profile)
 	}
-	return writeTarStream(path, manifest, profile.Algorithm, profile.Level, progress)
+	return writeTarStream(out, manifest, profile.Algorithm, profile.Level, progress)
 }
 
-func writeTarStream(path string, manifest fsutil.SourceManifest, algorithm string, level int, progress func(int, int64)) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	var writer io.WriteCloser = f
-	if algorithm == "gzip" {
-		gz, err := gzip.NewWriterLevel(f, level)
+func writeTarStream(out io.Writer, manifest fsutil.SourceManifest, algorithm string, level int, progress func(int, int64)) error {
+	writer := out
+	var compressor io.WriteCloser
+	switch algorithm {
+	case "gzip":
+		gz, err := gzip.NewWriterLevel(out, level)
 		if err != nil {
-			_ = f.Close()
 			return err
 		}
-		writer = &multiWriteCloser{Writer: gz, closers: []io.Closer{gz, f}}
+		compressor = gz
+		writer = gz
+	case "zstd":
+		zst, err := zstd.NewWriter(
+			out,
+			zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(level)),
+			zstd.WithEncoderConcurrency(1),
+		)
+		if err != nil {
+			return err
+		}
+		compressor = zst
+		writer = zst
 	}
+
 	tw := tar.NewWriter(writer)
 	filesDone := 0
 	var bytesDone int64
@@ -233,46 +263,60 @@ func writeTarStream(path string, manifest fsutil.SourceManifest, algorithm strin
 		info, err := os.Lstat(entry.Path)
 		if err != nil {
 			_ = tw.Close()
-			_ = writer.Close()
+			if compressor != nil {
+				_ = compressor.Close()
+			}
 			return mapPathError(entry.Path, err)
 		}
 		if entry.IsDir {
 			hdr := &tar.Header{Name: strings.TrimSuffix(entry.ArchiveName, "/") + "/", Typeflag: tar.TypeDir, Mode: 0o644, ModTime: time.Unix(0, entry.MtimeNS), Uid: 0, Gid: 0, Uname: "", Gname: ""}
 			if err := tw.WriteHeader(hdr); err != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return err
 			}
 		} else {
 			hdr, err := tar.FileInfoHeader(info, "")
 			if err != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return err
 			}
 			hdr.Name = entry.ArchiveName
 			hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = 0, 0, "", ""
 			if err := tw.WriteHeader(hdr); err != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return err
 			}
 			src, err := os.Open(entry.Path)
 			if err != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return mapPathError(entry.Path, err)
 			}
 			_, copyErr := io.Copy(tw, src)
 			closeErr := src.Close()
 			if copyErr != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return copyErr
 			}
 			if closeErr != nil {
 				_ = tw.Close()
-				_ = writer.Close()
+				if compressor != nil {
+					_ = compressor.Close()
+				}
 				return closeErr
 			}
 			filesDone++
@@ -283,70 +327,58 @@ func writeTarStream(path string, manifest fsutil.SourceManifest, algorithm strin
 		}
 	}
 	if err := tw.Close(); err != nil {
-		_ = writer.Close()
+		if compressor != nil {
+			_ = compressor.Close()
+		}
 		return err
 	}
-	return writer.Close()
-}
-
-type multiWriteCloser struct {
-	io.Writer
-	closers []io.Closer
-}
-
-func (m *multiWriteCloser) Close() error {
-	var first error
-	for _, c := range m.closers {
-		if err := c.Close(); err != nil && first == nil {
-			first = err
-		}
+	if compressor != nil {
+		return compressor.Close()
 	}
-	return first
+	return nil
 }
 
-func compressFileExternal(rawPath, outputPath string, profile models.CompressionProfile) error {
+func compressFileExternal(rawPath string, out io.Writer, profile models.CompressionProfile) error {
 	program := profile.Algorithm
 	args := []string{"-c", fmt.Sprintf("-%d", profile.Level), "--", rawPath}
-	if program == "xz" {
-		args = []string{"-c", fmt.Sprintf("-%d", profile.Level), "--", rawPath}
-	}
 	exe, err := exec.LookPath(program)
 	if err != nil {
 		return berror.External("Optional compression tool is required during GO06 migration", map[string]any{"tool": program, "algorithm": profile.Algorithm})
-	}
-	out, err := os.OpenFile(outputPath, os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
 	}
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = out
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	runErr := cmd.Run()
-	closeErr := out.Close()
-	if runErr != nil {
+	if err := cmd.Run(); err != nil {
 		return berror.External("External compression failed", map[string]any{"tool": program, "reason": strings.TrimSpace(stderr.String())})
 	}
-	return closeErr
+	return nil
 }
 
-func writeZipArchive(path string, manifest fsutil.SourceManifest, profile models.CompressionProfile, progress func(int, int64)) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	zw := zip.NewWriter(f)
+func writeZipArchive(out io.Writer, manifest fsutil.SourceManifest, profile models.CompressionProfile, progress func(int, int64)) error {
+	zw := zip.NewWriter(out)
 	if profile.Algorithm == "bzip2" {
 		zw.RegisterCompressor(zipMethodBzip2, lazyCommandCompressor("bzip2", []string{"-c", fmt.Sprintf("-%d", profile.Level)}, nil))
 	}
 	if profile.Algorithm == "xz" {
 		zw.RegisterCompressor(zipMethodLZMA, lazyCommandCompressor("xz", []string{"--format=raw", "--lzma1=lc=3,lp=0,pb=2,dict=8MiB", "-c"}, []byte{9, 4, 5, 0, 0x5d, 0, 0, 0x80, 0}))
 	}
+	if profile.Algorithm == "zstd" {
+		zw.RegisterCompressor(zipMethodZstd, func(w io.Writer) (io.WriteCloser, error) {
+			return zstd.NewWriter(
+				w,
+				zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(profile.Level)),
+				zstd.WithEncoderConcurrency(1),
+			)
+		})
+	}
 	method := uint16(zip.Store)
 	switch profile.Algorithm {
 	case "gzip":
 		method = zip.Deflate
 		zw.RegisterCompressor(zip.Deflate, func(w io.Writer) (io.WriteCloser, error) { return flate.NewWriter(w, profile.Level) })
+	case "zstd":
+		method = zipMethodZstd
 	case "bzip2":
 		method = zipMethodBzip2
 	case "xz":
@@ -361,20 +393,17 @@ func writeZipArchive(path string, manifest fsutil.SourceManifest, profile models
 			hdr.SetModTime(time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC))
 			if _, err := zw.CreateHeader(hdr); err != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return err
 			}
 		} else {
 			info, err := os.Stat(entry.Path)
 			if err != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return mapPathError(entry.Path, err)
 			}
 			hdr, err := zip.FileInfoHeader(info)
 			if err != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return err
 			}
 			hdr.Name = entry.ArchiveName
@@ -382,25 +411,21 @@ func writeZipArchive(path string, manifest fsutil.SourceManifest, profile models
 			dst, err := zw.CreateHeader(hdr)
 			if err != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return err
 			}
 			src, err := os.Open(entry.Path)
 			if err != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return mapPathError(entry.Path, err)
 			}
 			_, copyErr := io.Copy(dst, src)
 			closeErr := src.Close()
 			if copyErr != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return copyErr
 			}
 			if closeErr != nil {
 				_ = zw.Close()
-				_ = f.Close()
 				return closeErr
 			}
 			filesDone++
@@ -410,11 +435,7 @@ func writeZipArchive(path string, manifest fsutil.SourceManifest, profile models
 			progress(filesDone, bytesDone)
 		}
 	}
-	if err := zw.Close(); err != nil {
-		_ = f.Close()
-		return err
-	}
-	return f.Close()
+	return zw.Close()
 }
 
 type lazyCommandWriter struct {

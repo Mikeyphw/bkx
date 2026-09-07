@@ -336,6 +336,9 @@ func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
 		}
 		seen[abs] = true
 		sz := info.Size()
+		if logicalSize, sizeErr := archiveio.LogicalSize(abs); sizeErr == nil {
+			sz = logicalSize
+		}
 		mt := max64(0, info.ModTime().UnixNano()/1_000_000)
 		items = append(items, Artifact{Label: "archive", Path: abs, SizeBytes: &sz, ModifiedAtEpochMillis: &mt})
 	}

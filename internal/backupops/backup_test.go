@@ -8,6 +8,7 @@ import (
 	"syscall"
 	"testing"
 
+	"bkx/internal/archiveio"
 	"bkx/internal/models"
 	"bkx/internal/runstore"
 	"bkx/internal/validation"
@@ -244,5 +245,56 @@ func TestParseSpecJSONRequiresFrozenShape(t *testing.T) {
 	extra, _ := json.Marshal(obj)
 	if _, err := ParseSpecJSON(string(extra)); err == nil {
 		t.Fatal("unknown field accepted")
+	}
+}
+
+func TestCreateSplitPublishesAllPartsAndLogicalArchiveVerifies(t *testing.T) {
+	src := fixture(t)
+	// Make the payload large enough to force multiple parts after zstd compression.
+	if err := os.WriteFile(filepath.Join(src, "blob.bin"), make([]byte, 128*1024), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dest := filepath.Join(t.TempDir(), "final")
+	name := "split-fixture"
+	split := int64(512)
+	spec := backupSpec(src, &dest)
+	spec.ArchiveName = &name
+	spec.SplitSize = &split
+	// Incompressible-ish deterministic payload so a small split size definitely rolls.
+	blob := make([]byte, 128*1024)
+	for i := range blob {
+		blob[i] = byte((i*31 + i/7) & 0xff)
+	}
+	if err := os.WriteFile(filepath.Join(src, "blob.bin"), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Create(spec, false, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Success || len(result.ArchivePaths) != 1 {
+		t.Fatalf("result=%+v", result)
+	}
+	base := result.ArchivePaths[0]
+	if base != filepath.Join(dest, name+".bakery") {
+		t.Fatalf("base=%s", base)
+	}
+	parts, err := filepath.Glob(base + ".part*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(parts) == 0 {
+		t.Fatal("expected split sidecars")
+	}
+	if result.Checksums[filepath.Base(base)] == "" || result.Checksums["archive"] == "" {
+		t.Fatalf("logical checksums missing: %v", result.Checksums)
+	}
+	verified, err := archiveio.Verify(base, []string{"sha256"})
+	if err != nil || !verified.Success {
+		t.Fatalf("verify=%+v err=%v", verified, err)
+	}
+	if verified.ArchiveChecksums["sha256"] != result.Checksums["archive"] {
+		t.Fatalf("logical checksum mismatch: verify=%s result=%s", verified.ArchiveChecksums["sha256"], result.Checksums["archive"])
 	}
 }

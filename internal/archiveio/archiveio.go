@@ -19,6 +19,8 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/hashing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 type Entry struct {
@@ -147,6 +149,10 @@ func Info(path string) (InfoResult, error) {
 	if err != nil {
 		return InfoResult{}, mapPathError(target, err)
 	}
+	totalSize, err := LogicalSize(target)
+	if err != nil {
+		return InfoResult{}, err
+	}
 	var uncompressed int64
 	for _, entry := range entries {
 		if !entry.IsDir {
@@ -155,9 +161,9 @@ func Info(path string) (InfoResult, error) {
 	}
 	ratio := 1.0
 	if uncompressed > 0 {
-		ratio = float64(st.Size()) / float64(uncompressed)
+		ratio = float64(totalSize) / float64(uncompressed)
 	}
-	return InfoResult{Success: true, ArchivePath: target, Format: format, CreatedAt: st.ModTime().Unix(), TotalEntries: len(entries), TotalSize: st.Size(), UncompressedSize: uncompressed, CompressionRatio: ratio}, nil
+	return InfoResult{Success: true, ArchivePath: target, Format: format, CreatedAt: st.ModTime().Unix(), TotalEntries: len(entries), TotalSize: totalSize, UncompressedSize: uncompressed, CompressionRatio: ratio}, nil
 }
 
 func Browse(path string, opts BrowseOptions) (BrowseResult, error) {
@@ -264,9 +270,13 @@ func Verify(path string, algorithms []string) (VerifyResult, error) {
 	if err != nil {
 		return VerifyResult{}, err
 	}
+	parts, err := multipartPartPaths(target)
+	if err != nil {
+		return VerifyResult{}, mapPathError(target, err)
+	}
 	checksums := make(map[string]string, len(normalized))
 	for _, algorithm := range normalized {
-		result, hashErr := hashing.File(target, algorithm)
+		result, hashErr := hashing.Files(parts, algorithm)
 		if hashErr != nil {
 			return VerifyResult{}, hashErr
 		}
@@ -284,7 +294,7 @@ func Verify(path string, algorithms []string) (VerifyResult, error) {
 
 func verifyZip(path string, checksums map[string]string) VerifyResult {
 	result := VerifyResult{ArchivePath: path, ChecksumsValid: true, StructureValid: true, ArchiveChecksums: checksums, FailedEntries: []string{}, Warnings: []string{}, Errors: []string{}}
-	zr, err := zip.OpenReader(path)
+	zr, err := openZipArchive(path)
 	if err != nil {
 		result.StructureValid = false
 		result.Errors = append(result.Errors, err.Error())
@@ -376,6 +386,16 @@ func openZipPayload(file *zip.File) (io.ReadCloser, error) {
 	switch file.Method {
 	case zip.Store, zip.Deflate:
 		return file.Open()
+	case zipMethodZstd:
+		raw, err := file.OpenRaw()
+		if err != nil {
+			return nil, err
+		}
+		decoder, err := zstd.NewReader(raw, zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			return nil, err
+		}
+		return &zstdReadCloser{decoder: decoder}, nil
 	case zipMethodBzip2:
 		raw, err := file.OpenRaw()
 		if err != nil {
@@ -429,7 +449,7 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 		return nil, "", err
 	}
 	if format == "zip" {
-		zr, err := zip.OpenReader(path)
+		zr, err := openZipArchive(path)
 		if err != nil {
 			return nil, "", berror.WrapExternal("reading zip archive", path, "go-stdlib", err)
 		}
@@ -524,7 +544,7 @@ func canonicalArchive(path string) (string, error) {
 }
 
 func detectFormat(path string) (string, error) {
-	if zr, err := zip.OpenReader(path); err == nil {
+	if zr, err := openZipArchive(path); err == nil {
 		_ = zr.Close()
 		return "zip", nil
 	}
@@ -554,10 +574,23 @@ func probeTar(path string) (bool, error) {
 
 type commandReadCloser struct {
 	io.ReadCloser
-	cmd *exec.Cmd
+	cmd     *exec.Cmd
+	closers []io.Closer
 }
 
-func (c *commandReadCloser) Close() error { _ = c.ReadCloser.Close(); return c.cmd.Wait() }
+func (c *commandReadCloser) Close() error {
+	_ = c.ReadCloser.Close()
+	var first error
+	if err := c.cmd.Wait(); err != nil {
+		first = err
+	}
+	for _, closer := range c.closers {
+		if err := closer.Close(); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
 
 type joinedReadCloser struct {
 	io.Reader
@@ -574,43 +607,94 @@ func (j *joinedReadCloser) Close() error {
 	return first
 }
 
+type zstdReadCloser struct {
+	decoder *zstd.Decoder
+	source  io.Closer
+}
+
+func (z *zstdReadCloser) Read(p []byte) (int, error) { return z.decoder.Read(p) }
+
+func (z *zstdReadCloser) Close() error {
+	z.decoder.Close()
+	if z.source != nil {
+		return z.source.Close()
+	}
+	return nil
+}
+
+type openedZip struct {
+	*zip.Reader
+	parts *multipartReaderAt
+}
+
+func openZipArchive(path string) (*openedZip, error) {
+	parts, err := openMultipartReaderAt(path)
+	if err != nil {
+		return nil, err
+	}
+	zr, err := zip.NewReader(parts, parts.size)
+	if err != nil {
+		_ = parts.Close()
+		return nil, err
+	}
+	return &openedZip{Reader: zr, parts: parts}, nil
+}
+
+func (z *openedZip) Close() error { return z.parts.Close() }
+
 func openTarStream(path string) (io.ReadCloser, string, error) {
-	f, err := os.Open(path)
+	stream, err := openMultipartStream(path)
 	if err != nil {
 		return nil, "", mapPathError(path, err)
 	}
 	magic := make([]byte, 6)
-	n, _ := io.ReadFull(f, magic)
-	_, _ = f.Seek(0, io.SeekStart)
+	n, _ := io.ReadFull(stream, magic)
+	_ = stream.Close()
 	magic = magic[:n]
+
+	stream, err = openMultipartStream(path)
+	if err != nil {
+		return nil, "", mapPathError(path, err)
+	}
 	if len(magic) >= 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-		gz, err := gzip.NewReader(f)
+		gz, err := gzip.NewReader(stream)
 		if err != nil {
-			_ = f.Close()
+			_ = stream.Close()
 			return nil, "", err
 		}
-		return &joinedReadCloser{Reader: gz, closers: []io.Closer{gz, f}}, "gzip", nil
+		return &joinedReadCloser{Reader: gz, closers: []io.Closer{gz, stream}}, "gzip", nil
+	}
+	if len(magic) >= 4 && magic[0] == 0x28 && magic[1] == 0xb5 && magic[2] == 0x2f && magic[3] == 0xfd {
+		decoder, err := zstd.NewReader(stream, zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			_ = stream.Close()
+			return nil, "", err
+		}
+		return &zstdReadCloser{decoder: decoder, source: stream}, "zstd", nil
 	}
 	if len(magic) >= 3 && string(magic[:3]) == "BZh" {
-		return &joinedReadCloser{Reader: bzip2.NewReader(f), closers: []io.Closer{f}}, "bzip2", nil
+		return &joinedReadCloser{Reader: bzip2.NewReader(stream), closers: []io.Closer{stream}}, "bzip2", nil
 	}
 	if len(magic) >= 6 && string(magic[:6]) == "\xfd7zXZ\x00" {
-		_ = f.Close()
 		xz, lookErr := exec.LookPath("xz")
 		if lookErr != nil {
+			_ = stream.Close()
 			return nil, "", berror.External("XZ-compressed tar requires the optional xz tool during GO05 migration", map[string]any{"archive_path": path, "tool": "xz"})
 		}
-		cmd := exec.Command(xz, "-dc", "--", path)
+		cmd := exec.Command(xz, "-dc")
+		cmd.Stdin = stream
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
+			_ = stream.Close()
 			return nil, "", err
 		}
 		if err := cmd.Start(); err != nil {
+			_ = stream.Close()
 			return nil, "", err
 		}
-		return &commandReadCloser{ReadCloser: stdout, cmd: cmd}, "xz", nil
+		return &commandReadCloser{ReadCloser: stdout, cmd: cmd, closers: []io.Closer{stream}}, "xz", nil
 	}
-	return f, "none", nil
+	return stream, "none", nil
 }
 
 func normalizeAlgorithms(input []string) ([]string, error) {

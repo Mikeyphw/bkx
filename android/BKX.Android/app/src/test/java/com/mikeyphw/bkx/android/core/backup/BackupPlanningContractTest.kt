@@ -21,6 +21,7 @@ class BackupPlanningContractTest {
             label = "Download",
             stagedDirectoryPath = "/shared/bkx/backups",
         ),
+        archiveName = "Photos 2026",
         filters = BackupFilterRules(
             includePatterns = listOf("**/*.jpg"),
             excludePatterns = listOf("cache/**"),
@@ -36,6 +37,7 @@ class BackupPlanningContractTest {
     fun backupDraftCapturesSourceDestinationFiltersCompressionSplitAndVerify() {
         assertEquals("Pictures", draft.source?.label)
         assertEquals("Download", draft.destination?.label)
+        assertEquals("Photos 2026", draft.archiveName)
         assertEquals(listOf("**/*.jpg"), draft.filters.includePatterns)
         assertEquals(listOf("cache/**"), draft.filters.excludePatterns)
         assertEquals(BackupCompression.Zstd, draft.compression)
@@ -87,6 +89,20 @@ class BackupPlanningContractTest {
         )
     }
 
+
+    @Test
+    fun customArchiveNameNormalizesBakeryExtensionCaseInsensitively() {
+        assertEquals("Phone photos", draft.copy(archiveName = " Phone photos.BAKERY ").normalizedArchiveName())
+        assertTrue(draft.copy(archiveName = ".bakery").validationIssues().contains(BackupPlanIssue.InvalidArchiveName))
+    }
+
+    @Test
+    fun invalidCustomArchiveNameBlocksPlanning() {
+        val invalid = draft.copy(archiveName = "folder/name")
+        assertTrue(invalid.validationIssues().contains(BackupPlanIssue.InvalidArchiveName))
+        assertFalse(BackupPlanningUiState(draft = invalid, validationIssues = invalid.validationIssues()).canRequestPlan)
+    }
+
     @Test
     fun planningStateRendersWarningsAndVerificationExpectationsBeforeExecution() {
         val preview = BackupPlanPreview(
@@ -109,6 +125,7 @@ class BackupPlanningContractTest {
         val intent = BackupCliIntent(
             sourcePath = "/home/user/photos",
             destinationPath = "/sdcard/Download/bkx",
+            archiveName = "Phone photos.bakery",
             includePatterns = listOf("**/*.jpg"),
             excludePatterns = listOf("cache/**"),
             includeHidden = false,
@@ -124,7 +141,9 @@ class BackupPlanningContractTest {
         assertEquals("backup.plan", request.operation)
         assertEquals("/home/user/photos", request.payload["source"]?.jsonObject?.get("staged_path")?.jsonPrimitive?.content)
         assertEquals("/sdcard/Download/bkx", request.payload["destination"]?.jsonObject?.get("staged_directory_path")?.jsonPrimitive?.content)
+        assertEquals("Phone photos", request.payload["archive"]?.jsonObject?.get("archive_name")?.jsonPrimitive?.content)
         assertEquals("zstd", request.payload["archive"]?.jsonObject?.get("compression")?.jsonPrimitive?.content)
+        assertEquals("archive.compression.zstd", BackupCompression.Zstd.requiredCapability)
         assertTrue(request.payload["archive"]?.jsonObject?.get("verification")?.jsonObject?.get("verify_after_create")?.jsonPrimitive?.boolean == true)
         assertFalse(request.payload.toString().contains("backup.create"))
     }

@@ -59,8 +59,16 @@ func TestFrozenBridgeRegistryAndReadiness(t *testing.T) {
 			t.Fatalf("readiness missing frozen capability %q", cap)
 		}
 	}
-	if !capset["filesystem.direct"] {
-		t.Fatal("readiness must expose direct filesystem capability")
+	for _, capability := range []string{
+		"filesystem.direct",
+		"archive.compression.none",
+		"archive.compression.gzip",
+		"archive.compression.zstd",
+		"archive.split",
+	} {
+		if !capset[capability] {
+			t.Fatalf("readiness must expose capability %q", capability)
+		}
 	}
 }
 

@@ -29,6 +29,12 @@ func TestCompressionProfileParity(t *testing.T) {
 }
 
 func TestArchiveNameAndMemberParity(t *testing.T) {
+	if got, err := NormalizeArchiveName("  Phone photos.BAKERY  "); err != nil || got != "Phone photos" {
+		t.Fatalf("archive name normalization = %q, %v; want Phone photos", got, err)
+	}
+	if _, err := NormalizeArchiveName(".bakery"); err == nil {
+		t.Fatal("extension-only archive name accepted")
+	}
 	if got, err := NormalizeArchiveMember("dir/"); err != nil || got != "dir/" {
 		t.Fatalf("directory member = %q, %v; want dir/", got, err)
 	}

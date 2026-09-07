@@ -50,27 +50,45 @@ func Bytes(data []byte) string {
 }
 
 func File(path, algorithm string) (Result, error) {
-	target, _, err := fsutil.RequireRegularNonSymlink(path)
-	if err != nil {
-		return Result{}, err
+	return Files([]string{path}, algorithm)
+}
+
+// Files hashes a sequence of regular files as one continuous byte stream.
+// It is used by split archives where base, base.part002, ... are logically one
+// archive and must have the same digest as their concatenation.
+func Files(paths []string, algorithm string) (Result, error) {
+	if len(paths) == 0 {
+		return Result{}, berror.Validation("At least one file is required for hashing", nil)
 	}
-	f, err := os.Open(target)
-	if err != nil {
-		if os.IsPermission(err) {
-			return Result{}, berror.Permission("Permission denied while hashing "+target, map[string]any{"path": target})
-		}
-		return Result{}, berror.WrapExternal("hashing file", target, "go-stdlib", err)
-	}
-	defer f.Close()
 	h, err := newHash(algorithm)
 	if err != nil {
 		return Result{}, err
 	}
-	n, err := io.CopyBuffer(h, f, make([]byte, 64*1024))
-	if err != nil {
-		return Result{}, berror.WrapExternal("hashing file", target, "go-stdlib", err)
+	buf := make([]byte, 64*1024)
+	var total int64
+	for _, path := range paths {
+		target, _, err := fsutil.RequireRegularNonSymlink(path)
+		if err != nil {
+			return Result{}, err
+		}
+		f, err := os.Open(target)
+		if err != nil {
+			if os.IsPermission(err) {
+				return Result{}, berror.Permission("Permission denied while hashing "+target, map[string]any{"path": target})
+			}
+			return Result{}, berror.WrapExternal("hashing file", target, "go-stdlib", err)
+		}
+		n, copyErr := io.CopyBuffer(h, f, buf)
+		closeErr := f.Close()
+		total += n
+		if copyErr != nil {
+			return Result{}, berror.WrapExternal("hashing file", target, "go-stdlib", copyErr)
+		}
+		if closeErr != nil {
+			return Result{}, berror.WrapExternal("closing hashed file", target, "go-stdlib", closeErr)
+		}
 	}
-	return Result{Algorithm: strings.ToLower(strings.TrimSpace(algorithm)), Checksum: hex.EncodeToString(h.Sum(nil)), BytesHashed: n}, nil
+	return Result{Algorithm: strings.ToLower(strings.TrimSpace(algorithm)), Checksum: hex.EncodeToString(h.Sum(nil)), BytesHashed: total}, nil
 }
 
 func Verify(path, expected string) (bool, error) {

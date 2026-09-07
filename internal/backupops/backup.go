@@ -220,9 +220,6 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	if valid.SplitSize != nil {
-		return Result{}, berror.Validation("Split archives are not supported by the builtin archiver", map[string]any{"split_size": *valid.SplitSize})
-	}
 	if valid.DryRun {
 		steps := map[string]bool{"archive": true, "transfer": destination != nil, "verify": valid.Verify}
 		return Result{Success: true, DryRun: true, ArchivePaths: []string{}, Warnings: []string{}, Errors: []string{}, StepResults: steps, Checksums: map[string]string{}, DurationMS: time.Since(started).Milliseconds()}, nil
@@ -293,9 +290,15 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 		complete("failed", nil, err)
 		return Result{}, err
 	}
+	archiveParts := []string{output}
+	if len(archiveResult.SplitParts) > 0 {
+		archiveParts = append([]string(nil), archiveResult.SplitParts...)
+	}
 	if isCancelled(options) {
 		if destination == nil {
-			_ = os.Remove(output)
+			for _, part := range archiveParts {
+				_ = os.Remove(part)
+			}
 		}
 		complete("interrupted", nil, ErrCancelled)
 		return Result{}, ErrCancelled
@@ -313,12 +316,23 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 		}
 	}
 
-	hash, err := hashing.File(output, "sha256")
+	logicalHash, err := hashing.Files(archiveParts, "sha256")
 	if err != nil {
 		complete("failed", nil, err)
 		return Result{}, err
 	}
-	checksums := map[string]string{filepath.Base(output): hash.Checksum, "archive": hash.Checksum}
+	checksums := map[string]string{filepath.Base(output): logicalHash.Checksum, "archive": logicalHash.Checksum}
+	for i, part := range archiveParts {
+		if i == 0 {
+			continue // base name represents the logical concatenated archive digest
+		}
+		partHash, hashErr := hashing.File(part, "sha256")
+		if hashErr != nil {
+			complete("failed", nil, hashErr)
+			return Result{}, hashErr
+		}
+		checksums[filepath.Base(part)] = partHash.Checksum
+	}
 	finalPaths := []string{output}
 	transferredBytes := int64(0)
 	emit(options, "publishing", 0, 0)
@@ -331,16 +345,76 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 			complete("interrupted", nil, ErrCancelled)
 			return Result{}, ErrCancelled
 		}
-		transferredBytes, err = publishFile(output, final, valid.Verify, func(bytes int64) {
-			emit(options, "publishing", 1, bytes)
-		})
-		if err != nil {
-			complete("failed", nil, err)
-			return Result{}, err
+
+		finalParts := make([]string, len(archiveParts))
+		for i, part := range archiveParts {
+			suffix := strings.TrimPrefix(part, output)
+			if i == 0 {
+				suffix = ""
+			}
+			finalParts[i] = final + suffix
+		}
+		for _, candidate := range finalParts {
+			if _, statErr := os.Lstat(candidate); statErr == nil {
+				err = berror.Validation("Transfer destination already exists", map[string]any{"destination": candidate})
+				complete("failed", nil, err)
+				return Result{}, err
+			} else if !os.IsNotExist(statErr) {
+				err = berror.WrapExternal("checking transfer destination", candidate, "go-os", statErr)
+				complete("failed", nil, err)
+				return Result{}, err
+			}
+		}
+
+		// Publish sidecars first and the logical base last so archive discovery
+		// never observes an incomplete split archive.
+		order := make([]int, 0, len(archiveParts))
+		for i := 1; i < len(archiveParts); i++ {
+			order = append(order, i)
+		}
+		order = append(order, 0)
+		published := make([]string, 0, len(order))
+		for _, i := range order {
+			if isCancelled(options) {
+				for _, path := range published {
+					_ = os.Remove(path)
+				}
+				complete("interrupted", nil, ErrCancelled)
+				return Result{}, ErrCancelled
+			}
+			partBytes, publishErr := publishFile(archiveParts[i], finalParts[i], valid.Verify, func(bytes int64) {
+				emit(options, "publishing", 1, transferredBytes+bytes)
+			})
+			if publishErr != nil {
+				for _, path := range published {
+					_ = os.Remove(path)
+				}
+				complete("failed", nil, publishErr)
+				return Result{}, publishErr
+			}
+			transferredBytes += partBytes
+			published = append(published, finalParts[i])
 		}
 		steps["transfer"] = true
 		finalPaths = []string{final}
+		rollbackPublished := func() {
+			for _, path := range published {
+				_ = os.Remove(path)
+			}
+		}
 		if valid.Verify {
+			verifyResult, verifyErr := archiveio.Verify(final, []string{"sha256"})
+			if verifyErr != nil {
+				rollbackPublished()
+				complete("failed", nil, verifyErr)
+				return Result{}, verifyErr
+			}
+			if !verifyResult.Success || !strings.EqualFold(verifyResult.ArchiveChecksums["sha256"], logicalHash.Checksum) {
+				rollbackPublished()
+				err = berror.Validation("Transferred split archive verification failed", map[string]any{"archive_path": final})
+				complete("failed", nil, err)
+				return Result{}, err
+			}
 			steps["verify_transfer"] = true
 		}
 	} else {

@@ -104,6 +104,10 @@ func ValidatePatternSets(includes, excludes []string) ([]string, []string, error
 
 func NormalizeArchiveName(name string) (string, error) {
 	value := strings.TrimSpace(name)
+	const extension = ".bakery"
+	if len(value) >= len(extension) && strings.EqualFold(value[len(value)-len(extension):], extension) {
+		value = strings.TrimSpace(value[:len(value)-len(extension)])
+	}
 	if value == "" || value == "." || value == ".." || strings.ContainsRune(value, '\x00') {
 		return "", berror.Validation("archive_name must be a non-empty file name", map[string]any{"archive_name": name})
 	}

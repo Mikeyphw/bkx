@@ -2,7 +2,6 @@ package archiveio
 
 import (
 	"archive/tar"
-	"archive/zip"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -294,7 +293,7 @@ func safeRestoreMembers(archive string, selectors []string) ([]restoreMember, er
 		return nil, err
 	}
 	if format == "zip" {
-		zr, err := zip.OpenReader(archive)
+		zr, err := openZipArchive(archive)
 		if err != nil {
 			return nil, berror.WrapExternal("reading zip archive", archive, "go-stdlib", err)
 		}
@@ -452,7 +451,7 @@ func extractMembersToStage(archive, stage string, members []restoreMember, progr
 	}
 
 	if format == "zip" {
-		zr, err := zip.OpenReader(archive)
+		zr, err := openZipArchive(archive)
 		if err != nil {
 			return nil, 0, berror.WrapExternal("reading zip archive", archive, "go-stdlib", err)
 		}

@@ -43,10 +43,10 @@ data class BackupFilterRules(
     }
 }
 
-enum class BackupCompression(val protocolValue: String) {
-    None("none"),
-    Zstd("zstd"),
-    Gzip("gzip"),
+enum class BackupCompression(val protocolValue: String, val requiredCapability: String) {
+    None("none", "archive.compression.none"),
+    Zstd("zstd", "archive.compression.zstd"),
+    Gzip("gzip", "archive.compression.gzip"),
 }
 
 data class BackupSplitPolicy(
@@ -79,6 +79,7 @@ data class BackupVerificationPolicy(
 data class BackupPlanDraft(
     val source: BackupSourceSelection? = null,
     val destination: BackupDestinationSelection? = null,
+    val archiveName: String = "",
     val filters: BackupFilterRules = BackupFilterRules(),
     val compression: BackupCompression = BackupCompression.Gzip,
     val split: BackupSplitPolicy = BackupSplitPolicy(),
@@ -88,6 +89,7 @@ data class BackupPlanDraft(
         if (source == null) add(BackupPlanIssue.MissingSource)
         if (destination == null) add(BackupPlanIssue.MissingDestination)
         if (source != null && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
+        if (archiveName.isNotBlank() && normalizedArchiveName() == null) add(BackupPlanIssue.InvalidArchiveName)
         if (filters.followSymlinks) add(BackupPlanIssue.FollowSymlinksUnsupported)
     }
 
@@ -101,6 +103,7 @@ data class BackupPlanDraft(
         source?.stagedPath.orEmpty(),
         destination?.destinationId.orEmpty(),
         destination?.stagedDirectoryPath.orEmpty(),
+        normalizedArchiveName() ?: archiveName.trim(),
         filters.includePatterns.joinToString("\u001f"),
         filters.excludePatterns.joinToString("\u001f"),
         filters.includeHidden.toString(),
@@ -124,6 +127,7 @@ data class BackupPlanDraft(
                 label = intent.destinationPath.substringAfterLast('/').ifBlank { intent.destinationPath },
                 stagedDirectoryPath = intent.destinationPath,
             ),
+            archiveName = intent.archiveName.orEmpty(),
             filters = BackupFilterRules(
                 includePatterns = intent.includePatterns,
                 excludePatterns = intent.excludePatterns,
@@ -140,9 +144,23 @@ data class BackupPlanDraft(
     }
 }
 
+fun BackupPlanDraft.normalizedArchiveName(): String? {
+    val trimmed = archiveName.trim()
+    if (trimmed.isEmpty()) return null
+    val withoutExtension = if (trimmed.endsWith(".bakery", ignoreCase = true)) {
+        trimmed.dropLast(".bakery".length).trim()
+    } else {
+        trimmed
+    }
+    if (withoutExtension.isEmpty() || withoutExtension == "." || withoutExtension == "..") return null
+    if ('/' in withoutExtension || '\\' in withoutExtension || '\u0000' in withoutExtension) return null
+    return withoutExtension
+}
+
 data class BackupCliIntent(
     val sourcePath: String,
     val destinationPath: String,
+    val archiveName: String? = null,
     val includePatterns: List<String> = emptyList(),
     val excludePatterns: List<String> = emptyList(),
     val includeHidden: Boolean = true,
@@ -169,6 +187,11 @@ sealed interface BackupPlanIssue {
     data object SourceEqualsDestination : BackupPlanIssue {
         override val code: String = "source_equals_destination"
         override val message: String = "Source and destination must not resolve to the same staged path."
+    }
+
+    data object InvalidArchiveName : BackupPlanIssue {
+        override val code: String = "invalid_archive_name"
+        override val message: String = "Backup name must be a single file name without path separators."
     }
 
     data object FollowSymlinksUnsupported : BackupPlanIssue {

@@ -47,6 +47,10 @@ fun BackupScreen(
 ) {
     val planning = state.backupPlanning
     val draft = planning.draft
+    val capabilities = state.backendToolState.capabilities.toSet()
+    val splitSupported = "archive.split" in capabilities
+    val compressionSupported = draft.compression.requiredCapability in capabilities
+    val selectedCapabilitiesSupported = compressionSupported && (!draft.split.enabled || splitSupported)
     val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderBackupTree(it)) }
     }
@@ -160,12 +164,23 @@ fun BackupScreen(
 
         BkxSectionHeader("3 · Options")
         BkxSurfaceCard {
+            OutlinedTextField(
+                value = draft.archiveName,
+                onValueChange = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(archiveName = it))) },
+                label = { Text("Backup name (optional)") },
+                supportingText = { Text("A .bakery extension is added automatically. Leave blank for an automatic name.") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+            )
+            BkxDivider()
             Text("Compression", style = MaterialTheme.typography.titleMedium)
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BackupCompression.entries.forEach { compression ->
+                    val supported = compression.requiredCapability in capabilities
                     FilterChip(
                         selected = draft.compression == compression,
                         onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(compression = compression))) },
+                        enabled = supported,
                         label = { Text(compression.displayLabel()) },
                     )
                 }
@@ -194,8 +209,9 @@ fun BackupScreen(
             )
             BkxSettingSwitch(
                 title = "Split large backups",
-                summary = "Create 1 GB parts for easier copying to constrained filesystems.",
+                summary = if (splitSupported) "Create 1 GB parts for easier copying to constrained filesystems." else "This BKX engine does not support split archives.",
                 checked = draft.split.enabled,
+                enabled = splitSupported,
                 onCheckedChange = { enabled ->
                     onEvent(
                         BkxHomeEvent.UpdateBackupDraft(
@@ -212,8 +228,21 @@ fun BackupScreen(
         BkxSurfaceCard {
             BkxKeyValue("Source", draft.source?.label ?: "Not selected")
             BkxKeyValue("Destination", draft.destination?.label ?: "Not selected")
+            BkxKeyValue("Name", draft.archiveName.trim().ifBlank { "Automatic" })
             BkxKeyValue("Compression", draft.compression.displayLabel())
             BkxKeyValue("Verification", if (draft.verification.verifyAfterCreate) "On" else "Off")
+            if (!selectedCapabilitiesSupported) {
+                BkxDivider()
+                Text(
+                    when {
+                        !compressionSupported -> "The connected BKX engine does not support ${draft.compression.displayLabel()} compression."
+                        draft.split.enabled && !splitSupported -> "The connected BKX engine does not support split archives."
+                        else -> "The selected backup options are not supported by this BKX engine."
+                    },
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             if (planning.validationIssues.isNotEmpty()) {
                 BkxDivider()
                 planning.validationIssues.forEach { issue ->
@@ -234,16 +263,16 @@ fun BackupScreen(
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(
                     onClick = { onEvent(BkxHomeEvent.RequestBackupPlan) },
-                    enabled = planning.canRequestPlan,
+                    enabled = planning.canRequestPlan && selectedCapabilitiesSupported,
                     modifier = Modifier.weight(1f),
                 ) { Text(if (planning.preview == null) "Review backup" else "Review again") }
                 Button(
                     onClick = { onEvent(BkxHomeEvent.CreateBackup) },
-                    enabled = planning.canCreateBackup,
+                    enabled = planning.canCreateBackup && selectedCapabilitiesSupported,
                     modifier = Modifier.weight(1f),
                 ) { Text("Create backup") }
             }
-            if (planning.canCreateBackup) {
+            if (planning.canCreateBackup && selectedCapabilitiesSupported) {
                 Text(
                     "The backup runs through the embedded BKX engine and will appear under Activity.",
                     style = MaterialTheme.typography.bodySmall,

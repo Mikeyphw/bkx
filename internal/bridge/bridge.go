@@ -112,7 +112,13 @@ func NewAndroid(store *runstore.Store) *RuntimeAdapter {
 
 func (r *RuntimeAdapter) Readiness() Readiness {
 	caps := append([]string(nil), frozenCapabilities...)
-	caps = append(caps, "filesystem.direct")
+	caps = append(caps,
+		"archive.compression.none",
+		"archive.compression.gzip",
+		"archive.compression.zstd",
+		"archive.split",
+		"filesystem.direct",
+	)
 	if os.Geteuid() == 0 {
 		caps = append(caps, "root.filesystem", "storage.termux.private", "storage.app_private")
 	}

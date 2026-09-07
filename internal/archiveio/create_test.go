@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"bkx/internal/models"
@@ -43,7 +42,7 @@ func TestCreateTarAndZipTransactionalVerified(t *testing.T) {
 		name, alg string
 		level     int
 	}{
-		{"out.tar", "none", 0}, {"out.tar.gz", "gzip", 1}, {"out.zip", "gzip", 6},
+		{"out.tar", "none", 0}, {"out.tar.gz", "gzip", 1}, {"out.tar.zst", "zstd", 3}, {"out.zip", "gzip", 6}, {"out-zstd.zip", "zstd", 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out := filepath.Join(t.TempDir(), tc.name)
@@ -98,7 +97,7 @@ func TestCreateOptionalCodecsWhenToolsPresent(t *testing.T) {
 	}
 }
 
-func TestCreateImplicitDefaultCompatibility(t *testing.T) {
+func TestCreateImplicitZstdUsesNativeCodec(t *testing.T) {
 	src := fixtureTree(t)
 	for _, name := range []string{"default.tar", "default.zip"} {
 		out := filepath.Join(t.TempDir(), name)
@@ -106,27 +105,74 @@ func TestCreateImplicitDefaultCompatibility(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(got.Warnings) != 1 || !strings.Contains(got.Warnings[0], "Implicit default zstd compression") {
-			t.Fatalf("warnings=%v", got.Warnings)
+		if len(got.Warnings) != 0 {
+			t.Fatalf("native zstd must not be downgraded: warnings=%v", got.Warnings)
+		}
+		verified, err := Verify(out, []string{"sha256"})
+		if err != nil || !verified.Success {
+			t.Fatalf("verify=%+v err=%v", verified, err)
 		}
 	}
 }
 
-func TestCreateExplicitUnsupportedAndSplitFailClosed(t *testing.T) {
+func TestCreateUnsupportedFailsClosed(t *testing.T) {
 	src := fixtureTree(t)
 	out := filepath.Join(t.TempDir(), "explicit.tar")
-	if _, err := Create(createSpec(src, out, "zstd", 3), false, nil); err == nil {
-		t.Fatal("explicit zstd unexpectedly succeeded")
+	if _, err := Create(createSpec(src, out, "lz4", 3), false, nil); err == nil {
+		t.Fatal("unsupported lz4 unexpectedly succeeded")
 	}
 	if _, err := os.Stat(out); !os.IsNotExist(err) {
 		t.Fatalf("output should not exist: %v", err)
 	}
+}
 
-	split := int64(1024)
-	spec := createSpec(src, filepath.Join(t.TempDir(), "split.tar"), "none", 0)
-	spec.SplitSize = &split
-	if _, err := Create(spec, false, nil); err == nil {
-		t.Fatal("split archive unexpectedly succeeded")
+func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
+	src := fixtureTree(t)
+	for _, tc := range []struct {
+		name string
+		alg  string
+	}{
+		{name: "split.tar.zst", alg: "zstd"},
+		{name: "split.zip", alg: "zstd"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			split := int64(64)
+			out := filepath.Join(t.TempDir(), tc.name)
+			spec := createSpec(src, out, tc.alg, 3)
+			spec.SplitSize = &split
+			got, err := Create(spec, false, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got.SplitParts) < 2 || got.SplitParts[0] != out {
+				t.Fatalf("split parts=%v", got.SplitParts)
+			}
+			for _, part := range got.SplitParts {
+				info, err := os.Stat(part)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if info.Size() > split {
+					t.Fatalf("part %s is %d bytes, exceeds split size %d", part, info.Size(), split)
+				}
+			}
+			verified, err := Verify(out, []string{"sha256"})
+			if err != nil || !verified.Success {
+				t.Fatalf("verify=%+v err=%v", verified, err)
+			}
+			listed, err := List(out, nil, 0, 100)
+			if err != nil || listed.TotalEntries != 5 {
+				t.Fatalf("list=%+v err=%v", listed, err)
+			}
+
+			restoreDir := filepath.Join(t.TempDir(), "restore")
+			result, err := ExtractRestore(models.RestoreSpec{
+				Archive: out, Destination: &restoreDir, Paths: []string{}, Verify: true, FreshDir: true,
+			}, nil)
+			if err != nil || !result.Success || result.FilesRestored != 2 {
+				t.Fatalf("restore=%+v err=%v", result, err)
+			}
+		})
 	}
 }
 

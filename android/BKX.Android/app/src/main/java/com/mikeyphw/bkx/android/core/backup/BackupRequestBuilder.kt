@@ -71,6 +71,7 @@ fun BackupPlanDraft.toPlanPayload(extra: JsonObject = buildJsonObject { }): Json
             put("follow_symlinks", filters.followSymlinks)
         }
         putJsonObject("archive") {
+            normalizedArchiveName()?.let { put("archive_name", it) }
             put("compression", compression.protocolValue)
             putJsonObject("split") {
                 put("enabled", split.enabled)

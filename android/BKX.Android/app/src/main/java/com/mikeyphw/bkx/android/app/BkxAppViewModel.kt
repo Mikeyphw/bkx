@@ -1,6 +1,7 @@
 package com.mikeyphw.bkx.android.app
 
-import android.net.Uri
+import android.content.Intent
+import androidx.core.net.toUri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -10,6 +11,8 @@ import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
+import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationManager
+import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationOutcome
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator.OperationOutcome
 import com.mikeyphw.bkx.android.core.archives.ArchiveBrowsePage
 import com.mikeyphw.bkx.android.core.archives.ArchiveBrowsePageRequest
@@ -38,6 +41,9 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveConnectionStatus
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveUiState
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserEntry
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
 import com.mikeyphw.bkx.android.core.files.FilesystemEntryKind
@@ -115,6 +121,7 @@ data class BkxHomeUiState(
     val filesystemBrowser: FilesystemBrowserUiState = FilesystemBrowserUiState(),
     val providerImportInProgress: Boolean = false,
     val providerImportMessage: String? = null,
+    val googleDrive: GoogleDriveUiState = GoogleDriveUiState(),
     val settings: BkxSettings = BkxSettings(),
     val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
@@ -179,6 +186,12 @@ sealed interface BkxHomeEvent {
     data class ImportProviderArchive(val uri: String) : BkxHomeEvent
     data class ImportProviderTransferTree(val uri: String) : BkxHomeEvent
 
+    data object ConnectGoogleDrive : BkxHomeEvent
+    data object RefreshGoogleDrive : BkxHomeEvent
+    data object GoogleDriveConsentLaunched : BkxHomeEvent
+    data class CompleteGoogleDriveAuthorization(val data: Intent?) : BkxHomeEvent
+    data object DisconnectGoogleDrive : BkxHomeEvent
+
     data class UpdateSettings(val settings: BkxSettings) : BkxHomeEvent
     data class ConsumeUiMessage(val id: Long) : BkxHomeEvent
 
@@ -207,6 +220,7 @@ class BkxAppViewModel(
     private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
     private val providerStagingPort: ProviderStagingPort? = null,
+    private val googleDriveAuthorizationManager: GoogleDriveAuthorizationManager? = null,
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
     private val operationCoordinator: BkxOperationCoordinator = BkxOperationCoordinator(
@@ -237,6 +251,7 @@ class BkxAppViewModel(
                 }
             }
         }
+        refreshGoogleDriveAuthorization(allowConsent = false)
         refreshBackend()
         refreshRuns()
         refreshOperations()
@@ -346,6 +361,14 @@ class BkxAppViewModel(
             is BkxHomeEvent.ImportProviderArchive -> importProviderArchive(event.uri)
             is BkxHomeEvent.ImportProviderTransferTree -> importProviderTransferTree(event.uri)
 
+            BkxHomeEvent.ConnectGoogleDrive -> refreshGoogleDriveAuthorization(allowConsent = true)
+            BkxHomeEvent.RefreshGoogleDrive -> refreshGoogleDriveAuthorization(allowConsent = false)
+            BkxHomeEvent.GoogleDriveConsentLaunched -> _state.update { current ->
+                current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Connecting, pendingConsent = null, message = "Waiting for Google Drive authorization…"))
+            }
+            is BkxHomeEvent.CompleteGoogleDriveAuthorization -> completeGoogleDriveAuthorization(event.data)
+            BkxHomeEvent.DisconnectGoogleDrive -> disconnectGoogleDrive()
+
             is BkxHomeEvent.UpdateSettings -> updateSettings(event.settings)
             is BkxHomeEvent.ConsumeUiMessage -> _state.update { current ->
                 if (current.uiMessage?.id == event.id) current.copy(uiMessage = null) else current
@@ -419,7 +442,11 @@ class BkxAppViewModel(
     }
 
     private fun refreshArchives() {
-        val request = archiveRequestBuilder.buildListRequest(nextRequestId("archives-list"), roots = archiveRootsProvider(_state.value.rootAvailable))
+        val roots = buildList {
+            addAll(archiveRootsProvider(_state.value.rootAvailable))
+            if (_state.value.googleDrive.connected) add(GoogleDriveRcloneConfig.rootUri)
+        }
+        val request = archiveRequestBuilder.buildListRequest(nextRequestId("archives-list"), roots = roots)
         _state.update { current ->
             current.copy(
                 archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Loading),
@@ -429,7 +456,7 @@ class BkxAppViewModel(
         executeRequest(request, recordInHistory = false) { result ->
             if (result.status == BridgeResultStatus.Success) {
                 val archives = result.artifacts
-                    .filter { it.label == "archive" && it.path.startsWith("/") }
+                    .filter { it.label == "archive" && (it.path.startsWith("/") || it.path.startsWith("rclone://", ignoreCase = true)) }
                     .distinctBy { it.path }
                     .map { artifact ->
                         ArchiveListItem(
@@ -628,6 +655,21 @@ class BkxAppViewModel(
         feedbackDestination: BkxDestination? = null,
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
+        if (requestUsesManagedGoogleDrive(request) && googleDriveAuthorizationManager != null) {
+            authorizeGoogleDriveForOperation { authorized ->
+                if (authorized) executePreparedRequest(request, recordInHistory, feedbackDestination, onResult)
+            }
+            return
+        }
+        executePreparedRequest(request, recordInHistory, feedbackDestination, onResult)
+    }
+
+    private fun executePreparedRequest(
+        request: BridgeRequestEnvelope,
+        recordInHistory: Boolean,
+        feedbackDestination: BkxDestination? = null,
+        onResult: (BridgeResultEnvelope) -> Unit = {},
+    ) {
         val startedAt = System.currentTimeMillis()
         if (feedbackDestination != null) {
             _state.update { current ->
@@ -781,11 +823,11 @@ class BkxAppViewModel(
         when (target) {
             FilesystemSelectionTarget.BackupSource -> {
                 val draft = _state.value.backupPlanning.draft
-                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(source = BackupSourceSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(source = BackupSourceSelection("path-${path.hashCode()}", filesystemDisplayName(path), path))))
             }
             FilesystemSelectionTarget.BackupDestination -> {
                 val draft = _state.value.backupPlanning.draft
-                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(destination = BackupDestinationSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+                onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(destination = BackupDestinationSelection("path-${path.hashCode()}", filesystemDisplayName(path), path))))
             }
             FilesystemSelectionTarget.Archive -> {
                 if (isDirectory) { loadFilesystem(path); return }
@@ -796,7 +838,7 @@ class BkxAppViewModel(
             }
             FilesystemSelectionTarget.RestoreDestination -> {
                 val draft = _state.value.restore.draft
-                onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(destination = RestoreDestinationSelection("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+                onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(destination = RestoreDestinationSelection("path-${path.hashCode()}", filesystemDisplayName(path), path))))
             }
             FilesystemSelectionTarget.TransferSource -> {
                 val draft = _state.value.transfer.draft
@@ -851,6 +893,88 @@ class BkxAppViewModel(
             }
         }
     }
+
+    private fun refreshGoogleDriveAuthorization(allowConsent: Boolean) {
+        val manager = googleDriveAuthorizationManager ?: return
+        val configured = manager.hasManagedConfiguration()
+        if (!configured && !allowConsent) {
+            _state.update { it.copy(googleDrive = GoogleDriveUiState()) }
+            return
+        }
+        _state.update { current ->
+            current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Connecting, pendingConsent = null, message = "Checking Google Drive authorization…"))
+        }
+        manager.authorize { outcome -> applyGoogleDriveOutcome(outcome, allowConsent) }
+    }
+
+    private fun completeGoogleDriveAuthorization(data: Intent?) {
+        val manager = googleDriveAuthorizationManager ?: return
+        _state.update { current -> current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Connecting, pendingConsent = null)) }
+        manager.completeAuthorization(data) { outcome -> applyGoogleDriveOutcome(outcome, allowConsent = false) }
+    }
+
+    private fun disconnectGoogleDrive() {
+        val manager = googleDriveAuthorizationManager ?: return
+        _state.update { current -> current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Disconnecting, pendingConsent = null, message = "Revoking Google Drive access…")) }
+        manager.revoke { result ->
+            result.onSuccess {
+                _state.update { it.copy(googleDrive = GoogleDriveUiState(message = "Google Drive disconnected and BKX access revoked.")) }
+                refreshBackend()
+                refreshArchives()
+            }.onFailure { error ->
+                _state.update { current -> current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Error, message = error.message ?: "Could not revoke Google Drive access.")) }
+            }
+        }
+    }
+
+    private fun applyGoogleDriveOutcome(outcome: GoogleDriveAuthorizationOutcome, allowConsent: Boolean) {
+        when (outcome) {
+            GoogleDriveAuthorizationOutcome.Connected -> {
+                _state.update { current ->
+                    current.copy(googleDrive = GoogleDriveUiState(status = GoogleDriveConnectionStatus.Connected, message = "Google Drive is ready for BKX backup and restore.", lastAuthorizedAtEpochMillis = System.currentTimeMillis()))
+                }
+                refreshBackend()
+            }
+            is GoogleDriveAuthorizationOutcome.NeedsConsent -> {
+                _state.update { current ->
+                    current.copy(googleDrive = current.googleDrive.copy(
+                        status = GoogleDriveConnectionStatus.NeedsConsent,
+                        pendingConsent = outcome.pendingIntent.takeIf { allowConsent },
+                        message = if (allowConsent) "Google Drive needs your approval." else "Google Drive needs to be reconnected before cloud operations can continue.",
+                    ))
+                }
+            }
+            is GoogleDriveAuthorizationOutcome.Failed -> _state.update { current ->
+                current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Error, pendingConsent = null, message = outcome.message))
+            }
+        }
+    }
+
+    private fun authorizeGoogleDriveForOperation(onReady: (Boolean) -> Unit) {
+        val manager = googleDriveAuthorizationManager ?: run { onReady(true); return }
+        _state.update { current -> current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Connecting, pendingConsent = null, message = "Refreshing Google Drive access…")) }
+        manager.authorize { outcome ->
+            when (outcome) {
+                GoogleDriveAuthorizationOutcome.Connected -> {
+                    applyGoogleDriveOutcome(outcome, allowConsent = false)
+                    onReady(true)
+                }
+                is GoogleDriveAuthorizationOutcome.NeedsConsent -> {
+                    applyGoogleDriveOutcome(outcome, allowConsent = true)
+                    _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), "Reconnect Google Drive to continue.")) }
+                    onReady(false)
+                }
+                is GoogleDriveAuthorizationOutcome.Failed -> {
+                    applyGoogleDriveOutcome(outcome, allowConsent = false)
+                    _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), outcome.message)) }
+                    onReady(false)
+                }
+            }
+        }
+    }
+
+    private fun requestUsesManagedGoogleDrive(request: BridgeRequestEnvelope): Boolean =
+        request.payload.toString().contains("rclone://bkx-google-drive/", ignoreCase = true)
 
     private fun refreshBackend() {
         viewModelScope.launch {
@@ -935,8 +1059,8 @@ class BkxAppViewModel(
 
     private fun filesystemDisplayName(path: String): String {
         if (path.startsWith("rclone://", ignoreCase = true)) {
-            val uri = Uri.parse(path)
-            return uri.lastPathSegment?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+            val uri = path.toUri()
+            return uri.lastPathSegment?.takeIf { it.isNotBlank() }
                 ?: uri.host?.takeIf { it.isNotBlank() }
                 ?: "Remote"
         }
@@ -945,7 +1069,7 @@ class BkxAppViewModel(
 
     private fun archiveLocation(path: String): ArchiveLocation = ArchiveLocation(
         archiveId = "archive-${path.hashCode().toUInt().toString(16)}",
-        displayName = path.substringAfterLast('/').ifBlank { "Archive" },
+        displayName = filesystemDisplayName(path).ifBlank { "Archive" },
         stagedPath = path,
     )
 }
@@ -957,6 +1081,7 @@ class BkxAppViewModelFactory(
     private val operationStateStore: OperationStateStore,
     private val settingsStore: SettingsStore,
     private val providerStagingPort: ProviderStagingPort? = null,
+    private val googleDriveAuthorizationManager: GoogleDriveAuthorizationManager? = null,
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
 ) : ViewModelProvider.Factory {
@@ -969,6 +1094,7 @@ class BkxAppViewModelFactory(
                 operationStateStore = operationStateStore,
                 settingsStore = settingsStore,
                 providerStagingPort = providerStagingPort,
+                googleDriveAuthorizationManager = googleDriveAuthorizationManager,
                 archiveRootsProvider = archiveRootsProvider,
                 requestBaseDirectoryPath = requestBaseDirectoryPath,
                 operationCoordinator = operationCoordinator,

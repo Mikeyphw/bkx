@@ -169,6 +169,7 @@ dependencies {
     implementation(libs.libsu.core)
     implementation(libs.libsu.service)
     implementation(libs.libsu.io)
+    implementation(libs.google.play.services.auth)
 
     coreLibraryDesugaring(libs.desugar.jdk.libs)
 
@@ -199,6 +200,7 @@ val bkxSdk36DependencyLane = mapOf(
     "Core KTX" to libs.versions.coreKtx.get(),
     "Lifecycle Compose" to libs.versions.lifecycle.get(),
     "libsu" to libs.versions.libsu.get(),
+    "Play Services Auth" to libs.versions.playServicesAuth.get(),
 )
 
 val expectedBkxSdk36DependencyLane = mapOf(
@@ -211,6 +213,7 @@ val expectedBkxSdk36DependencyLane = mapOf(
     "Core KTX" to "1.17.0",
     "Lifecycle Compose" to "2.10.0",
     "libsu" to "6.0.0",
+    "Play Services Auth" to "21.6.0",
 )
 
 tasks.register("verifyBkxAndroidSdk36DependencyLane") {

@@ -376,3 +376,146 @@ esac
 		t.Fatalf("stat=%+v", stat)
 	}
 }
+
+func TestRemoteArchiveProductOperationsListInspectVerifyAndRestore(t *testing.T) {
+	root := t.TempDir()
+	remoteRoot := filepath.Join(root, "remote")
+	remoteBkx := filepath.Join(remoteRoot, "BKX")
+	if err := os.MkdirAll(remoteBkx, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "cloud.txt"), []byte("cloud-payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	localArchive := filepath.Join(root, "cloud.bakery")
+	_, err := archiveio.Create(models.ArchiveCreateSpec{
+		Sources: []string{source}, OutputPath: localArchive,
+		Compression: models.CompressionProfile{Algorithm: "none", Level: 0}, Verify: true, SkipSymlinks: true,
+	}, false, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(localArchive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(remoteBkx, "cloud.bakery"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	rclone := filepath.Join(root, "rclone")
+	script := `#!/bin/sh
+set -eu
+remote_root="$RCLONE_TEST_REMOTE_ROOT"
+map_path() { case "$1" in drive:*) printf '%s/%s' "$remote_root" "${1#drive:}" ;; *) printf '%s' "$1" ;; esac; }
+size_of() { wc -c < "$1" | tr -d ' '; }
+cmd="$1"; shift
+case "$cmd" in
+  lsjson)
+    loc="$1"; shift; p="$(map_path "$loc")"
+    case " $* " in
+      *" --stat "*)
+        [ -e "$p" ] || { echo 'object not found' >&2; exit 1; }
+        b="$(basename "$p")"
+        if [ -d "$p" ]; then printf '{"Path":"%s","Name":"%s","Size":0,"ModTime":"2026-01-01T00:00:00Z","IsDir":true}\n' "$b" "$b";
+        else n="$(size_of "$p")"; printf '{"Path":"%s","Name":"%s","Size":%s,"ModTime":"2026-01-01T00:00:00Z","IsDir":false}\n' "$b" "$b" "$n"; fi
+        ;;
+      *)
+        [ -d "$p" ] || { echo 'directory not found' >&2; exit 1; }
+        first=1; printf '['
+        for f in "$p"/*; do
+          [ -e "$f" ] || continue; b="$(basename "$f")"; [ $first -eq 1 ] || printf ','; first=0
+          if [ -d "$f" ]; then printf '{"Path":"%s","Name":"%s","Size":0,"ModTime":"2026-01-01T00:00:00Z","IsDir":true}' "$b" "$b";
+          else n="$(size_of "$f")"; printf '{"Path":"%s","Name":"%s","Size":%s,"ModTime":"2026-01-01T00:00:00Z","IsDir":false}' "$b" "$b" "$n"; fi
+        done
+        printf ']\n'
+        ;;
+    esac
+    ;;
+  copyto)
+    src="$1"; dst="$2"; srcp="$(map_path "$src")"; dstp="$(map_path "$dst")"; mkdir -p "$(dirname "$dstp")"; cp "$srcp" "$dstp"; n="$(size_of "$dstp")"; printf '{"stats":{"bytes":%s,"transfers":1,"totalBytes":%s,"totalTransfers":1}}\n' "$n" "$n" >&2
+    ;;
+  check) ;;
+  size) p="$(map_path "$1")"; n="$(size_of "$p")"; printf '{"count":1,"bytes":%s}\n' "$n" ;;
+  *) echo "unexpected command: $cmd" >&2; exit 3 ;;
+esac
+`
+	if err := os.WriteFile(rclone, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+	t.Setenv("RCLONE_TEST_REMOTE_ROOT", remoteRoot)
+
+	d := New(nil)
+	remoteArchive := "rclone://drive/BKX/cloud.bakery"
+	indexed, err := d.Dispatch(OperationContext{}, "archive.list", raw(map[string]any{"roots": []string{"rclone://drive/BKX"}, "limit": 20, "max_depth": 2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(indexed.Artifacts) != 1 || indexed.Artifacts[0].Path != remoteArchive {
+		t.Fatalf("indexed=%+v", indexed)
+	}
+	for _, operation := range []string{"archive.info", "archive.browse", "archive.verify"} {
+		payload := map[string]any{"archive": map[string]any{"path": remoteArchive}}
+		if operation == "archive.browse" {
+			payload["page"] = map[string]any{"page_size": 20}
+		}
+		result, dispatchErr := d.Dispatch(OperationContext{RequestID: operation}, operation, raw(payload))
+		if dispatchErr != nil {
+			t.Fatalf("%s: %v", operation, dispatchErr)
+		}
+		if result.Status != "success" {
+			t.Fatalf("%s result=%+v", operation, result)
+		}
+	}
+	restoreDir := filepath.Join(root, "restored")
+	restorePayload := map[string]any{"archive": remoteArchive, "destination_path": restoreDir, "paths": []string{}, "overwrite": false, "verify": true, "fresh_dir": true, "confirm_overwrite": false}
+	preview, err := d.Dispatch(OperationContext{RequestID: "remote-restore-preview"}, "restore.preview", raw(restorePayload))
+	if err != nil || preview.Status != "success" {
+		t.Fatalf("preview=%+v err=%v", preview, err)
+	}
+	restored, err := d.Dispatch(OperationContext{RequestID: "remote-restore"}, "restore.extract", raw(restorePayload))
+	if err != nil || restored.Status != "success" {
+		t.Fatalf("restored=%+v err=%v", restored, err)
+	}
+	got, err := os.ReadFile(filepath.Join(restoreDir, filepath.Base(source), "cloud.txt"))
+	if err != nil || string(got) != "cloud-payload" {
+		t.Fatalf("restored content=%q err=%v", got, err)
+	}
+}
+
+func TestArchiveListTreatsMissingFreshRemoteRootAsEmpty(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	if err := os.WriteFile(rclone, []byte(`#!/bin/sh
+set -eu
+case "$1" in
+  lsjson) echo 'directory not found' >&2; exit 1 ;;
+  *) exit 0 ;;
+esac
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+	result, err := New(nil).Dispatch(OperationContext{}, "archive.list", raw(map[string]any{"roots": []string{"rclone://drive/BKX"}, "limit": 20, "max_depth": 2}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "success" || len(result.Artifacts) != 0 {
+		t.Fatalf("result=%+v", result)
+	}
+}

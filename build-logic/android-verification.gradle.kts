@@ -212,6 +212,7 @@ tasks.register("verifyBkxAndroidManifestReleaseContract") {
         val manifest = manifestFile.readText()
 
         val required = listOf(
+            "android.permission.INTERNET",
             "android.permission.POST_NOTIFICATIONS",
             "android.permission.FOREGROUND_SERVICE",
             "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
@@ -242,6 +243,9 @@ tasks.register("bkxAndroidReleaseSeal") {
         "verifyBkxEmbeddedEngineContract",
         "verifyBkxRootStorageContract",
         "verifyBkxProductUiContract",
+        "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkxGoogleDriveProductContract",
+        "verifyBkxCloudProductReleaseSeal",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
         "verifyBkxAndroidManifestReleaseContract",
@@ -407,6 +411,170 @@ tasks.register("verifyBkxRcloneRemoteTransportContract") {
     }
 }
 
+tasks.register("verifyBkxGoogleDriveProductContract") {
+    group = "verification"
+    description = "Verify first-class Google Drive authorization, private managed-rclone ownership, verified cloud backup/archive/restore, and credential-free Android UI boundaries."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val androidRoot = rootProject.layout.projectDirectory.asFile
+    val sourceRoot = layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
+    val testRoot = layout.projectDirectory.dir("src/test/java/com/mikeyphw/bkx/android/contracts").asFile
+    val manifest = layout.projectDirectory.file("src/main/AndroidManifest.xml").asFile
+    val catalog = androidRoot.resolve("gradle/libs.versions.toml")
+    val appBuild = layout.projectDirectory.file("build.gradle.kts").asFile
+    val auth = sourceRoot.resolve("app/drive/GoogleDriveAuthorizationManager.kt")
+    val driveModels = sourceRoot.resolve("core/drive/GoogleDriveModels.kt")
+    val driveConfig = sourceRoot.resolve("core/drive/GoogleDriveRcloneConfig.kt")
+    val configManager = sourceRoot.resolve("core/remotes/RcloneConfigManager.kt")
+    val remoteModels = sourceRoot.resolve("core/remotes/RcloneModels.kt")
+    val navigation = sourceRoot.resolve("app/navigation/BkxNavigation.kt")
+    val productApp = sourceRoot.resolve("feature/home/BkxProductApp.kt")
+    val viewModel = sourceRoot.resolve("app/BkxAppViewModel.kt")
+    val screen = sourceRoot.resolve("feature/more/GoogleDriveScreen.kt")
+    val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
+    val backupUi = sourceRoot.resolve("feature/backup/BackupScreen.kt")
+    val contractTest = testRoot.resolve("GoogleDriveProductContractTest.kt")
+    val configTest = testRoot.resolve("GoogleDriveRcloneConfigTest.kt")
+    val roadmapTest = testRoot.resolve("Ov56RoadmapSealContractTest.kt")
+    val backupGo = repositoryRoot.resolve("internal/backupops/backup.go")
+    val remoteArchiveGo = repositoryRoot.resolve("internal/remotearchive/materialize.go")
+    val dispatcherGo = repositoryRoot.resolve("internal/services/dispatcher.go")
+    val bridgeGo = repositoryRoot.resolve("internal/bridge/bridge.go")
+    val verifier = repositoryRoot.resolve("scripts/verify-google-drive-product.sh")
+    val guide = repositoryRoot.resolve("docs/guide/06_GOOGLE_DRIVE_PRODUCT.md")
+    val checklist = repositoryRoot.resolve("docs/checklists/CHECKLIST_ANDROID_GOOGLE_DRIVE.md")
+
+    inputs.files(
+        manifest, catalog, appBuild, auth, driveModels, driveConfig, configManager, remoteModels,
+        navigation, productApp, viewModel, screen, more, backupUi, contractTest, configTest, roadmapTest,
+        backupGo, remoteArchiveGo, dispatcherGo, bridgeGo, verifier, guide, checklist,
+    )
+
+    doLast {
+        val manifestText = manifest.readText()
+        val catalogText = catalog.readText()
+        val appBuildText = appBuild.readText()
+        val authText = auth.readText()
+        val modelText = driveModels.readText()
+        val configText = driveConfig.readText()
+        val managerText = configManager.readText()
+        val remoteModelText = remoteModels.readText()
+        val navigationText = navigation.readText()
+        val productAppText = productApp.readText()
+        val viewModelText = viewModel.readText()
+        val screenText = screen.readText()
+        val moreText = more.readText()
+        val backupUiText = backupUi.readText()
+        val backupGoText = backupGo.readText()
+        val remoteArchiveText = remoteArchiveGo.readText()
+        val dispatcherText = dispatcherGo.readText()
+        val bridgeText = bridgeGo.readText()
+
+        check("android.permission.INTERNET" in manifestText) {
+            "First-class Drive/rclone networking requires Android INTERNET permission."
+        }
+        check("playServicesAuth = \"21.6.0\"" in catalogText && "implementation(libs.google.play.services.auth)" in appBuildText) {
+            "Google Drive authorization must use the pinned Play Services Auth 21.6.0 dependency lane."
+        }
+        listOf(
+            "Identity.getAuthorizationClient",
+            "AuthorizationRequest.builder()",
+            "Scope(Scopes.DRIVE_FILE)",
+            "client.authorize(request)",
+            "getAuthorizationResultFromIntent",
+            "RevokeAccessRequest.builder()",
+        ).forEach { token -> check(token in authText) { "Google authorization boundary is missing '$token'." } }
+        listOf("GoogleSignInClient", "GoogleSignInOptions").forEach { legacy ->
+            check(legacy !in authText) { "Deprecated Google Sign-In authorization surface returned: $legacy" }
+        }
+        check("https://www.googleapis.com/auth/drive.file" in configText && "scope = drive.file" in configText) {
+            "Managed Google Drive must remain limited to drive.file scope."
+        }
+        check("BKX_GOOGLE_DRIVE_REMOTE_NAME = \"bkx-google-drive\"" in remoteModelText && "rclone://\$BKX_GOOGLE_DRIVE_REMOTE_NAME/BKX" in configText) {
+            "BKX managed Drive remote/root identity drifted."
+        }
+        check("preserveManagedSection" in managerText && "updateManagedGoogleDriveToken" in managerText && "removeManagedGoogleDrive" in managerText) {
+            "App-private rclone configuration must preserve imported remotes around the BKX-managed Drive section."
+        }
+        check("accessToken" !in modelText && "refreshToken" !in modelText && "password" !in modelText.lowercase()) {
+            "Drive UI state must not expose credentials."
+        }
+        val googleDriveRouteDeclared = Regex("""enum\s+class\s+MoreRoute\s*\{[^}]*\bGoogleDrive\b""")
+            .containsMatchIn(navigationText)
+        check(googleDriveRouteDeclared && "MoreRoute.GoogleDrive -> GoogleDriveScreen" in moreText) {
+            "Google Drive must be declared in MoreRoute and dispatched to its dedicated product screen."
+        }
+        check("StartIntentSenderForResult" in productAppText && "CompleteGoogleDriveAuthorization" in productAppText) {
+            "Google authorization consent resolution must be owned by the Compose product shell."
+        }
+        check("authorizeGoogleDriveForOperation" in viewModelText && "requestUsesManagedGoogleDrive" in viewModelText) {
+            "Managed Drive operations must refresh authorization before execution."
+        }
+        check("Back up to Google Drive" in screenText && "Open Drive archives" in screenText) {
+            "Google Drive screen must expose direct backup and archive/restore entry points."
+        }
+        check("GoogleDriveRcloneConfig.rootUri" in backupUiText && "backup.remote" in backupUiText) {
+            "Backup must expose and capability-gate Google Drive as a real destination."
+        }
+        check("Remote archive verification failed after upload" in backupGoText && "remotearchive.Acquire" in backupGoText) {
+            "Remote backup publication must download and verify the final logical archive before success."
+        }
+        check("type Materialized struct" in remoteArchiveText && ".part%03d" in remoteArchiveText) {
+            "Remote archive materialization must support split archives through private staging."
+        }
+        check("materializeArchive" in dispatcherText && "ListRecursive" in dispatcherText) {
+            "Archive browse/verify/restore must share the remote materialization/index boundary."
+        }
+        listOf("backup.remote", "archive.remote", "restore.remote", "cloud.google_drive").forEach { capability ->
+            check("\"$capability\"" in bridgeText) { "Bridge readiness is missing capability $capability." }
+        }
+        check(contractTest.isFile && configTest.isFile && roadmapTest.isFile && verifier.isFile && guide.isFile && checklist.isFile) {
+            "Google Drive regression/acceptance evidence is incomplete."
+        }
+    }
+}
+
+tasks.register("verifyBkxCloudProductReleaseSeal") {
+    group = "verification"
+    description = "Replay the cumulative OV1-OV6 Android product promise matrix and require live rclone/Google Drive release evidence."
+    dependsOn(
+        "verifyBkxProductUiContract",
+        "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkxGoogleDriveProductContract",
+        "verifyBkxRestoreSafetySeal",
+        "verifyBkxPerformanceAndProgressContract",
+    )
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val roadmap = repositoryRoot.resolve("docs/guide/07_ANDROID_PRODUCT_ROADMAP_SEAL.md")
+    val driveGuide = repositoryRoot.resolve("docs/guide/06_GOOGLE_DRIVE_PRODUCT.md")
+    val remoteGuide = repositoryRoot.resolve("docs/guide/05_RCLONE_REMOTE_TRANSPORT.md")
+    val driveChecklist = repositoryRoot.resolve("docs/checklists/CHECKLIST_ANDROID_GOOGLE_DRIVE.md")
+    val remoteChecklist = repositoryRoot.resolve("docs/checklists/CHECKLIST_ANDROID_REMOTE_TRANSPORT.md")
+    val acceptance = rootProject.layout.projectDirectory.file("docs/OV56_GOOGLE_DRIVE_RELEASE_ACCEPTANCE.md").asFile
+    val driveVerifier = repositoryRoot.resolve("scripts/verify-google-drive-product.sh")
+    val roadmapVerifier = repositoryRoot.resolve("scripts/verify-ov56-roadmap-seal.sh")
+    val canonicalValidator = repositoryRoot.resolve("scripts/validate.sh")
+
+    inputs.files(roadmap, driveGuide, remoteGuide, driveChecklist, remoteChecklist, acceptance, driveVerifier, roadmapVerifier, canonicalValidator)
+
+    doLast {
+        listOf(roadmap, driveGuide, remoteGuide, driveChecklist, remoteChecklist, acceptance, driveVerifier, roadmapVerifier, canonicalValidator).forEach { file ->
+            check(file.isFile) { "Missing OV5/OV6 release evidence: ${file.absolutePath}" }
+        }
+        val roadmapText = roadmap.readText()
+        (1..6).forEach { phase -> check("OV$phase" in roadmapText) { "OV$phase promise is missing from final roadmap seal." } }
+        listOf(
+            ":app:installBkxRcloneAndroidRuntime",
+            ":app:verifyBkxRcloneRemoteTransportContract",
+            ":app:verifyBkxGoogleDriveProductContract",
+            ":app:verifyBkxCloudProductReleaseSeal",
+            ":app:testDebugUnitTest",
+            ":app:lintDebug",
+        ).forEach { marker -> check(marker in acceptance.readText()) { "OV5/OV6 acceptance guide is missing $marker." } }
+    }
+}
+
 // Final hardening and release-seal gates.
 tasks.register("verifyBkxRuntimeHardeningContract") {
     group = "verification"
@@ -562,16 +730,33 @@ tasks.register("verifyBkxReleaseHygiene") {
                 }
             }
         }
-        val junk = repositoryRootDir.walkTopDown()
-            .onEnter { dir -> dir.name !in setOf(".git", ".gradle", "build", "artifacts", ".devtool") }
-            .filter { file -> file.isFile && (file.extension == "pyc" || file.extension == "apk" || file.extension == "jks" || file.extension == "keystore") }
-            .toList()
-        check(junk.isEmpty()) { "Release hygiene rejected generated/secret files: ${junk.joinToString { it.relativeTo(repositoryRootDir).path }}" }
-        val cacheDirs = repositoryRootDir.walkTopDown()
-            .onEnter { it.name !in setOf(".git", ".gradle", "build", "artifacts", ".devtool") }
-            .filter { it.isDirectory && it.name == "__pycache__" }
-            .toList()
-        check(cacheDirs.isEmpty()) { "Release hygiene rejected Python caches under source tree." }
+        // Validation itself can create ignored Python bytecode caches before this task runs,
+        // especially when Gradle executes independent verification tasks in parallel. Release
+        // hygiene must reject files that could enter the repository/release, not transient files
+        // that Git explicitly ignores. `--cached` keeps already-tracked ignored files visible,
+        // while `--others --exclude-standard` also catches new, non-ignored junk/secrets.
+        val releaseCandidatePaths = if (repositoryRootDir.resolve(".git").exists()) {
+            val process = ProcessBuilder(
+                "git", "-C", repositoryRootDir.absolutePath,
+                "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+            ).redirectErrorStream(true).start()
+            val output = process.inputStream.readBytes().toString(Charsets.UTF_8)
+            check(process.waitFor() == 0) { "Release hygiene could not enumerate Git release candidates: $output" }
+            output.split('\u0000').filter { it.isNotBlank() }
+        } else {
+            repositoryRootDir.walkTopDown()
+                .onEnter { dir -> dir.name !in setOf(".git", ".gradle", "build", "artifacts", ".devtool", "__pycache__") }
+                .filter { it.isFile && it.extension != "pyc" }
+                .map { it.relativeTo(repositoryRootDir).invariantSeparatorsPath }
+                .toList()
+        }
+        val junk = releaseCandidatePaths
+            .filter { path -> path.substringAfterLast('.', "").lowercase() in setOf("pyc", "apk", "jks", "keystore") }
+        check(junk.isEmpty()) { "Release hygiene rejected generated/secret files: ${junk.joinToString()}" }
+        val cachePaths = releaseCandidatePaths.filter { path ->
+            path.split('/').any { segment -> segment == "__pycache__" }
+        }
+        check(cachePaths.isEmpty()) { "Release hygiene rejected Python caches under source tree: ${cachePaths.joinToString()}" }
     }
 }
 
@@ -837,6 +1022,8 @@ tasks.register("verifyBkxFinalReleaseContract") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn(
         "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkxGoogleDriveProductContract",
+        "verifyBkxCloudProductReleaseSeal",
         "verifyBkxRuntimeHardeningContract",
         "verifyBkxRestoreSafetySeal",
         "verifyBkxPerformanceAndProgressContract",

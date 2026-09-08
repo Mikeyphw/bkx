@@ -21,6 +21,7 @@ import (
 	"bkx/internal/fsutil"
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
+	"bkx/internal/remotearchive"
 	"bkx/internal/runstore"
 	"bkx/internal/transferops"
 	"bkx/internal/validation"
@@ -97,11 +98,11 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 	case "backup.create":
 		return d.backupCreate(ctx, p)
 	case "archive.list":
-		return d.archiveList(p)
+		return d.archiveList(ctx, p)
 	case "archive.info":
-		return d.archiveInfo(p)
+		return d.archiveInfo(ctx, p)
 	case "archive.browse":
-		return d.archiveBrowse(p)
+		return d.archiveBrowse(ctx, p)
 	case "archive.verify":
 		return d.archiveVerify(ctx, p)
 	case "restore.preview":
@@ -220,22 +221,32 @@ func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Resul
 	return Result{Status: status, Summary: fmt.Sprintf("Backup %s: %d files, %d bytes written.", word, r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: arts}, nil
 }
 
-func (d *Dispatcher) archiveInfo(p map[string]any) (Result, error) {
+func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result, error) {
 	path, err := archivePath(p)
 	if err != nil {
 		return Result{}, err
 	}
-	r, err := archiveio.Info(path)
+	materialized, err := materializeArchive(ctx, path)
 	if err != nil {
 		return Result{}, err
 	}
-	return success(fmt.Sprintf("Archive: %d entries, %d uncompressed bytes, format %s.", r.TotalEntries, r.UncompressedSize, r.Format), nil, []Artifact{artifact("archive", r.ArchivePath, "")}), nil
+	defer materialized.Cleanup()
+	r, err := archiveio.Info(materialized.Path)
+	if err != nil {
+		return Result{}, err
+	}
+	return success(fmt.Sprintf("Archive: %d entries, %d uncompressed bytes, format %s.", r.TotalEntries, r.UncompressedSize, r.Format), nil, []Artifact{artifact("archive", path, "")}), nil
 }
-func (d *Dispatcher) archiveBrowse(p map[string]any) (Result, error) {
+func (d *Dispatcher) archiveBrowse(ctx OperationContext, p map[string]any) (Result, error) {
 	path, err := archivePath(p)
 	if err != nil {
 		return Result{}, err
 	}
+	materialized, err := materializeArchive(ctx, path)
+	if err != nil {
+		return Result{}, err
+	}
+	defer materialized.Cleanup()
 	page, err := mapping(p, "page", map[string]any{})
 	if err != nil {
 		return Result{}, err
@@ -251,7 +262,7 @@ func (d *Dispatcher) archiveBrowse(p map[string]any) (Result, error) {
 			return Result{}, berror.Validation("page_token must be an integer offset", nil)
 		}
 	}
-	r, err := archiveio.Browse(path, archiveio.BrowseOptions{Limit: size, Offset: offset, SortBy: "path", SortOrder: "asc"})
+	r, err := archiveio.Browse(materialized.Path, archiveio.BrowseOptions{Limit: size, Offset: offset, SortBy: "path", SortOrder: "asc"})
 	if err != nil {
 		return Result{}, err
 	}
@@ -281,11 +292,17 @@ func (d *Dispatcher) archiveVerify(ctx OperationContext, p map[string]any) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	emit(ctx, "verifying", "Verifying archive structure and contents.", floatPtr(.1))
+	emit(ctx, "verifying", "Preparing archive verification.", floatPtr(.05))
+	materialized, err := materializeArchive(ctx, path)
+	if err != nil {
+		return Result{}, err
+	}
+	defer materialized.Cleanup()
+	emit(ctx, "verifying", "Verifying archive structure and contents.", floatPtr(.35))
 	if err := checkCancelled(ctx, "archive verification"); err != nil {
 		return Result{}, err
 	}
-	r, err := archiveio.Verify(path, []string{"sha256"})
+	r, err := archiveio.Verify(materialized.Path, []string{"sha256"})
 	if err != nil {
 		return Result{}, err
 	}
@@ -307,12 +324,12 @@ func (d *Dispatcher) archiveVerify(ctx OperationContext, p map[string]any) (Resu
 	if status == StatusSuccess {
 		word = "passed"
 	}
-	return Result{Status: status, Summary: fmt.Sprintf("Archive verification %s; checked %d entries.", word, r.EntriesChecked), Errors: issues, Artifacts: []Artifact{artifact("archive_verification", r.ArchivePath, r.ArchiveChecksums["sha256"])}}, nil
+	return Result{Status: status, Summary: fmt.Sprintf("Archive verification %s; checked %d entries.", word, r.EntriesChecked), Errors: issues, Artifacts: []Artifact{artifact("archive_verification", path, r.ArchiveChecksums["sha256"])}}, nil
 }
-func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
+func (d *Dispatcher) archiveList(ctx OperationContext, p map[string]any) (Result, error) {
 	roots, err := stringSliceDefault(p, "roots", []string{})
 	if err != nil {
-		return Result{}, berror.Validation("archive.list roots must be a list of absolute path strings", nil)
+		return Result{}, berror.Validation("archive.list roots must be a list of absolute local paths or rclone:// locations", nil)
 	}
 	depth, err := intValueDefault(p, "max_depth", 4)
 	if err != nil {
@@ -336,7 +353,7 @@ func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
 	}
 	seen := map[string]bool{}
 	items := []Artifact{}
-	add := func(path string) {
+	addLocal := func(path string) {
 		if len(items) >= limit {
 			return
 		}
@@ -356,11 +373,58 @@ func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
 		mt := max64(0, info.ModTime().UnixNano()/1_000_000)
 		items = append(items, Artifact{Label: "archive", Path: abs, SizeBytes: &sz, ModifiedAtEpochMillis: &mt})
 	}
+	addRemote := func(root string) error {
+		runtime, runtimeErr := rcloneops.RuntimeFromEnvironment()
+		if runtimeErr != nil {
+			return runtimeErr
+		}
+		exists, existsErr := runtime.Exists(context.Background(), root)
+		if existsErr != nil {
+			return existsErr
+		}
+		if !exists {
+			// A freshly connected cloud provider may not have its BKX folder yet.
+			// Treat that as an empty archive library; the first backup creates it.
+			return nil
+		}
+		entries, listErr := runtime.ListRecursive(context.Background(), root, depth, limit-len(items))
+		if listErr != nil {
+			return listErr
+		}
+		for _, entry := range entries {
+			if len(items) >= limit || !looksLikeArchive(entry.Path) {
+				continue
+			}
+			uri, joinErr := rcloneops.JoinURI(root, entry.Path)
+			if joinErr != nil {
+				return joinErr
+			}
+			if seen[uri] {
+				continue
+			}
+			seen[uri] = true
+			sz := max64(0, entry.Size)
+			mt := max64(0, entry.ModTime.UnixNano()/1_000_000)
+			items = append(items, Artifact{Label: "archive", Path: uri, SizeBytes: &sz, ModifiedAtEpochMillis: &mt})
+		}
+		return nil
+	}
 	for _, root := range roots {
-		if len(items) >= limit || !filepath.IsAbs(root) {
+		if len(items) >= limit {
+			break
+		}
+		if rcloneops.IsLocation(root) {
+			if err := checkCancelled(ctx, "remote archive indexing"); err != nil {
+				return Result{}, err
+			}
+			if err := addRemote(root); err != nil {
+				return Result{}, fmt.Errorf("index remote archive root: %w", err)
+			}
 			continue
 		}
-		scanArchiveRoot(root, depth, limit, add)
+		if filepath.IsAbs(root) {
+			scanArchiveRoot(root, depth, limit, addLocal)
+		}
 	}
 	if d.RunStore != nil {
 		records, e := d.RunStore.List(min(limit, 200), "")
@@ -368,8 +432,18 @@ func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
 			return Result{}, e
 		}
 		for _, r := range records {
-			if r.ArchivePath != nil {
-				add(*r.ArchivePath)
+			if r.ArchivePath == nil {
+				continue
+			}
+			if rcloneops.IsLocation(*r.ArchivePath) {
+				// Remote runs are already covered by a configured remote root when available;
+				// do not download or stat them during history reconciliation.
+				if !seen[*r.ArchivePath] && looksLikeArchive(*r.ArchivePath) {
+					seen[*r.ArchivePath] = true
+					items = append(items, Artifact{Label: "archive", Path: *r.ArchivePath})
+				}
+			} else {
+				addLocal(*r.ArchivePath)
 			}
 		}
 	}
@@ -390,23 +464,29 @@ func (d *Dispatcher) archiveList(p map[string]any) (Result, error) {
 		}
 		return items[i].Path < items[j].Path
 	})
-	return success(fmt.Sprintf("Indexed %d BKX-compatible archives from direct storage and run history.", len(items)), nil, items), nil
+	return success(fmt.Sprintf("Indexed %d BKX-compatible archives from local storage, configured remotes, and run history.", len(items)), nil, items), nil
 }
-
 func (d *Dispatcher) restorePreview(ctx OperationContext, p map[string]any) (Result, error) {
-	emit(ctx, "planning", "Reviewing restore safety and collisions.", floatPtr(.1))
+	emit(ctx, "planning", "Reviewing restore safety and collisions.", floatPtr(.05))
 	if err := checkCancelled(ctx, "restore preview"); err != nil {
 		return Result{}, err
 	}
-	spec, err := restoreSpecFromBridge(p, true)
+	original, err := restoreSpecFromBridge(p, true)
 	if err != nil {
 		return Result{}, err
 	}
+	tok, err := token(restorePlan(original))
+	if err != nil {
+		return Result{}, err
+	}
+	materialized, err := materializeArchive(ctx, original.Archive)
+	if err != nil {
+		return Result{}, err
+	}
+	defer materialized.Cleanup()
+	spec := original
+	spec.Archive = materialized.Path
 	r, err := archiveio.PreviewRestore(spec)
-	if err != nil {
-		return Result{}, err
-	}
-	tok, err := token(restorePlan(spec))
 	if err != nil {
 		return Result{}, err
 	}
@@ -419,12 +499,12 @@ func (d *Dispatcher) restorePreview(ctx OperationContext, p map[string]any) (Res
 	}
 	arts := []Artifact{artifact("restore_plan", "embedded://plan/"+requestID(ctx), tok)}
 	status := StatusSuccess
-	if spec.Verify {
-		vr, e := archiveio.Verify(spec.Archive, []string{"sha256"})
+	if original.Verify {
+		vr, e := archiveio.Verify(materialized.Path, []string{"sha256"})
 		if e != nil {
 			return Result{}, e
 		}
-		arts = append(arts, artifact("archive_verification", spec.Archive, vr.ArchiveChecksums["sha256"]))
+		arts = append(arts, artifact("archive_verification", original.Archive, vr.ArchiveChecksums["sha256"]))
 		if !vr.Success {
 			issues = append(issues, errorIssue("archive_verification_failed", "Archive verification failed during restore preview."))
 			status = "failure"
@@ -433,16 +513,23 @@ func (d *Dispatcher) restorePreview(ctx OperationContext, p map[string]any) (Res
 	return Result{Status: status, Summary: fmt.Sprintf("Restore preview: %d files, %d bytes; %d existing targets.", r.TotalFiles, r.TotalSize, r.ExistingFiles), Errors: issues, Artifacts: arts}, nil
 }
 func (d *Dispatcher) restoreExtract(ctx OperationContext, p map[string]any) (Result, error) {
-	spec, err := restoreSpecFromBridge(p, false)
+	original, err := restoreSpecFromBridge(p, false)
 	if err != nil {
 		return Result{}, err
 	}
+	materialized, err := materializeArchive(ctx, original.Archive)
+	if err != nil {
+		return Result{}, err
+	}
+	defer materialized.Cleanup()
+	spec := original
+	spec.Archive = materialized.Path
 	preview, err := archiveio.PreviewRestore(spec)
 	if err != nil {
 		return Result{}, err
 	}
 	total := preview.TotalFiles
-	emit(ctx, "verifying", "Checking restore archive before writing files.", floatPtr(.05))
+	emit(ctx, "verifying", "Checking restore archive before writing files.", floatPtr(.35))
 	if err := checkCancelled(ctx, "restore verification"); err != nil {
 		return Result{}, err
 	}
@@ -451,9 +538,9 @@ func (d *Dispatcher) restoreExtract(ctx OperationContext, p map[string]any) (Res
 		if total > 0 {
 			v := float64(files) / float64(total)
 			if phase == "verifying" {
-				v *= .4
+				v = .35 + v*.2
 			} else if phase == "extracting" {
-				v = .4 + v*.55
+				v = .55 + v*.4
 			}
 			f = &v
 		}
@@ -480,16 +567,13 @@ func (d *Dispatcher) restoreExtract(ctx OperationContext, p map[string]any) (Res
 		arts = append(arts, artifact("restored_path", path, ""))
 	}
 	status := StatusSuccess
+	word := "completed"
 	if !r.Success {
 		status = "failure"
-	}
-	word := "failed"
-	if r.Success {
-		word = "completed"
+		word = "failed"
 	}
 	return Result{Status: status, Summary: fmt.Sprintf("Restore %s: %d files, %d bytes.", word, r.FilesRestored, r.BytesRestored), Errors: issues, Artifacts: arts}, nil
 }
-
 func (d *Dispatcher) transferPlan(ctx OperationContext, p map[string]any) (Result, error) {
 	spec, err := transferSpecFromBridge(p, true)
 	if err != nil {
@@ -933,6 +1017,24 @@ func restorePlan(spec models.RestoreSpec) map[string]any {
 	}
 	steps = append(steps, map[string]any{"step_type": "restore", "description": "Extract from " + filepath.Base(spec.Archive), "source": spec.Archive, "destination": dest, "files_affected": nil, "bytes_affected": nil, "details": map[string]any{"full_restore": len(spec.Paths) == 0, "selected_paths": spec.Paths, "overwrite": spec.Overwrite, "fresh_dir": spec.FreshDir, "confirm_overwrite": spec.ConfirmOverwrite, "requires_confirmation": false}, "warnings": []string{}})
 	return map[string]any{"command": "restore.preview", "dry_run": true, "steps": steps, "total_files": nil, "total_bytes": nil, "warnings": []string{}}
+}
+
+func materializeArchive(ctx OperationContext, source string) (remotearchive.Materialized, error) {
+	if !rcloneops.IsLocation(source) {
+		return remotearchive.Acquire(context.Background(), source, remotearchive.Options{})
+	}
+	emit(ctx, "downloading", "Downloading remote archive for local verification.", floatPtr(.1))
+	return remotearchive.Acquire(context.Background(), source, remotearchive.Options{
+		Cancelled: ctx.Cancelled,
+		Progress: func(p remotearchive.Progress) {
+			var fraction *float64
+			if p.BytesTotal > 0 {
+				v := .1 + (.2 * float64(p.BytesDone) / float64(p.BytesTotal))
+				fraction = &v
+			}
+			emitDetailed(ctx, "downloading", fmt.Sprintf("Downloading remote archive: %d of %d parts.", p.FilesDone, p.FilesTotal), fraction, int64Ptr(p.FilesDone), int64Ptr(p.FilesTotal), int64Ptr(p.BytesDone), int64Ptr(p.BytesTotal))
+		},
+	})
 }
 
 func success(summary string, issues []Issue, arts []Artifact) Result {

@@ -11,6 +11,8 @@ GO18 completes the active repository purge: the accepted differential evidence i
 - `ui start` launches optional external `bkx-tui` or `bkx-interactive` plugins; missing plugins fail with a typed actionable error.
 - Host and Android release artifacts are built deterministically and sealed by `SHA256SUMS`.
 - The accepted pre-GO18 implementation is preserved only as a deterministic audit archive under `migration/archive/`; compatibility validation runs only Go-owned fixtures.
+- Android packages a separately validated rclone Android ARM64 runtime for credential-free remote transfer and remote archive staging.
+- Android Google Drive uses Play Services Authorization with `drive.file`, a BKX-managed private rclone remote, verified cloud backup publication, cloud archive browse/verify, and restore through the existing safety engine.
 
 ## Build / install
 

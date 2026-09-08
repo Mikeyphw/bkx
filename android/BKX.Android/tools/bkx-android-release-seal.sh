@@ -20,18 +20,32 @@ for marker in \
   ':app:testDebugUnitTest' \
   ':app:lintDebug' \
   ':app:connectedDebugAndroidTest' \
+  ':app:verifyBkxRcloneRemoteTransportContract' \
+  ':app:verifyBkxGoogleDriveProductContract' \
+  ':app:verifyBkxCloudProductReleaseSeal' \
   ':app:bkxAndroidReleaseSeal'; do
   grep -R -- "$marker" .devtool.toml android/BKX.Android/docs >/dev/null || fail "missing release marker $marker"
 done
 
 MANIFEST=android/BKX.Android/app/src/main/AndroidManifest.xml
 for marker in \
+  'android.permission.INTERNET' \
   'android.permission.POST_NOTIFICATIONS' \
   'android.permission.FOREGROUND_SERVICE' \
   'android.permission.FOREGROUND_SERVICE_DATA_SYNC' \
   'BkxOperationForegroundService' \
   'android:foregroundServiceType="dataSync"'; do
   grep -q -- "$marker" "$MANIFEST" || fail "manifest missing $marker"
+done
+
+for file in \
+  docs/guide/05_RCLONE_REMOTE_TRANSPORT.md \
+  docs/guide/06_GOOGLE_DRIVE_PRODUCT.md \
+  docs/guide/07_ANDROID_PRODUCT_ROADMAP_SEAL.md \
+  docs/checklists/CHECKLIST_ANDROID_REMOTE_TRANSPORT.md \
+  docs/checklists/CHECKLIST_ANDROID_GOOGLE_DRIVE.md \
+  android/BKX.Android/docs/OV56_GOOGLE_DRIVE_RELEASE_ACCEPTANCE.md; do
+  [[ -f "$file" ]] || fail "missing remote/cloud release evidence $file"
 done
 
 if find android/BKX.Android -name 'bkx-release-signing.properties' -o -name '*.jks' -o -name '*.keystore' | grep -q .; then

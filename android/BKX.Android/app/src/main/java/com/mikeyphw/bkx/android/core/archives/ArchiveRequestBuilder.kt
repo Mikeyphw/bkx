@@ -16,7 +16,9 @@ class ArchiveRequestBuilder {
         maxDepth: Int = 4,
         limit: Int = 500,
     ): BridgeRequestEnvelope {
-        require(roots.all { it.startsWith("/") }) { "Archive index roots must be absolute paths." }
+        require(roots.all { it.startsWith("/") || it.startsWith("rclone://", ignoreCase = true) }) {
+            "Archive index roots must be absolute local paths or credential-free rclone:// locations."
+        }
         require(maxDepth in 0..8) { "Archive index maxDepth must be between 0 and 8." }
         require(limit in 1..2000) { "Archive index limit must be between 1 and 2000." }
         return BridgeRequestEnvelope(

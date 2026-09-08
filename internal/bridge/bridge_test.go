@@ -289,7 +289,7 @@ func TestReadinessAdvertisesRcloneOnlyWhenRuntimeIsAvailable(t *testing.T) {
 	t.Setenv("BKX_RCLONE_CONFIG", config)
 	readiness := NewAndroid(nil).Readiness()
 	joined := strings.Join(readiness.Capabilities, "\n")
-	for _, capability := range []string{"remote.rclone", "remote.rclone.configured", "transfer.remote", "transfer.sync"} {
+	for _, capability := range []string{"remote.rclone", "remote.rclone.configured", "transfer.remote", "transfer.sync", "backup.remote", "archive.remote", "restore.remote", "cloud.google_drive"} {
 		if !strings.Contains(joined, capability) {
 			t.Fatalf("missing capability %q in %v", capability, readiness.Capabilities)
 		}

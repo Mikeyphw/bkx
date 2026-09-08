@@ -7,8 +7,8 @@ enum class FilesystemSelectionTarget(
     val allowRemote: Boolean = false,
 ) {
     BackupSource(false, true),
-    BackupDestination(true, true),
-    Archive(false, false),
+    BackupDestination(true, true, allowRemote = true),
+    Archive(false, false, allowRemote = true),
     RestoreDestination(true, true),
     TransferSource(false, true, allowRemote = true),
     TransferDestination(true, true, allowRemote = true),

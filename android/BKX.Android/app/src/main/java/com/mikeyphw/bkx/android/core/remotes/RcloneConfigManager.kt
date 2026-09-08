@@ -2,6 +2,7 @@ package com.mikeyphw.bkx.android.core.remotes
 
 import android.content.Context
 import android.net.Uri
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
 import java.io.FileOutputStream
 
 internal const val MAX_RCLONE_CONFIG_BYTES = 2L * 1024L * 1024L
@@ -53,10 +54,15 @@ class RcloneConfigManager(context: Context) {
                     "No rclone remote sections were found in the selected config."
                 }
             }
-
+            require(parsed.profiles.none { it.name == BKX_GOOGLE_DRIVE_REMOTE_NAME }) {
+                "The remote name $BKX_GOOGLE_DRIVE_REMOTE_NAME is reserved for BKX Google Drive."
+            }
+            val existing = configFile.takeIf { it.isFile }?.readText(Charsets.UTF_8).orEmpty()
+            val merged = GoogleDriveRcloneConfig.preserveManagedSection(existing, text)
+            writeStaging(temp, merged)
             publishAtomically(temp)
             lockOwnerOnly()
-            return parsed
+            return snapshot()
         } catch (error: Throwable) {
             temp.delete()
             throw error
@@ -64,10 +70,55 @@ class RcloneConfigManager(context: Context) {
     }
 
     fun deleteConfig() {
-        if (configFile.exists() && !configFile.delete()) error("Could not remove the BKX rclone configuration.")
+        val existing = configFile.takeIf { it.isFile }?.readText(Charsets.UTF_8).orEmpty()
+        val retained = if (GoogleDriveRcloneConfig.containsManagedSection(existing)) {
+            GoogleDriveRcloneConfig.preserveManagedSection(existing, "")
+        } else {
+            ""
+        }
+        if (retained.isBlank()) {
+            if (configFile.exists() && !configFile.delete()) error("Could not remove the BKX rclone configuration.")
+        } else {
+            publishText(retained)
+        }
     }
 
+    fun updateManagedGoogleDriveToken(accessToken: String): RcloneConfigSnapshot {
+        val existing = configFile.takeIf { it.isFile }?.readText(Charsets.UTF_8).orEmpty()
+        publishText(GoogleDriveRcloneConfig.upsertAccessToken(existing, accessToken))
+        return snapshot()
+    }
+
+    fun removeManagedGoogleDrive(): RcloneConfigSnapshot {
+        val existing = configFile.takeIf { it.isFile }?.readText(Charsets.UTF_8).orEmpty()
+        val next = GoogleDriveRcloneConfig.removeManagedSection(existing)
+        if (next.isBlank()) {
+            if (configFile.exists() && !configFile.delete()) error("Could not remove managed Google Drive configuration.")
+        } else {
+            publishText(next)
+        }
+        return snapshot()
+    }
+
+    fun hasManagedGoogleDrive(): Boolean = snapshot().profiles.any { it.managedByBkx && it.type.equals("drive", ignoreCase = true) }
+
     fun configPathForDiagnostics(): String = configFile.absolutePath
+
+    private fun publishText(text: String) {
+        directory.mkdirs()
+        val temp = directory.resolve("rclone.conf.managed")
+        temp.delete()
+        writeStaging(temp, text)
+        publishAtomically(temp)
+        lockOwnerOnly()
+    }
+
+    private fun writeStaging(temp: java.io.File, text: String) {
+        FileOutputStream(temp).use { output ->
+            output.write(text.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+    }
 
     private fun publishAtomically(temp: java.io.File) {
         val previous = directory.resolve("rclone.conf.previous")

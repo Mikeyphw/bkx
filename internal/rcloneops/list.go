@@ -1,6 +1,7 @@
 package rcloneops
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -95,8 +96,14 @@ func (r Runtime) Stat(ctx context.Context, value string) (Entry, error) {
 
 func (r Runtime) commandOutput(ctx context.Context, args []string) ([]byte, error) {
 	command := execCommandContext(ctx, r.Executable, args...)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	out, err := command.Output()
 	if err != nil {
+		diagnostic := r.sanitizeDiagnostic(stderr.String())
+		if diagnostic != "" {
+			return nil, fmt.Errorf("%w: %s", commandError("rclone", err), diagnostic)
+		}
 		return nil, commandError("rclone", err)
 	}
 	return out, nil

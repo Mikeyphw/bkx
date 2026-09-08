@@ -1,7 +1,6 @@
 package com.mikeyphw.bkx.android.feature.more
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -23,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.net.toUri
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
@@ -50,6 +50,7 @@ fun MoreScreen(
 ) {
     BackHandler(enabled = state.moreRoute != MoreRoute.Overview) { onEvent(BkxHomeEvent.CloseMoreRoute) }
     when (state.moreRoute) {
+        MoreRoute.GoogleDrive -> GoogleDriveScreen(state, onEvent, modifier)
         MoreRoute.Remotes -> RcloneRemotesScreen(state, onEvent, modifier)
         MoreRoute.Transfer -> TransferScreen(state, onEvent, modifier)
         MoreRoute.Diagnostics -> DiagnosticsScreen(state, onEvent, modifier)
@@ -69,6 +70,13 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
         BkxPageHeader("More", "Storage, transfers, access, appearance, and troubleshooting.")
 
         BkxSectionHeader("Storage & transfers")
+        BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.GoogleDrive)) }) {
+            Text("Google Drive", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (state.googleDrive.connected) "Connected · backup and restore through the BKX Drive folder." else "Connect Google Drive for first-class cloud backup and restore.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.Remotes)) }) {
             Text("Cloud & rclone remotes", style = MaterialTheme.typography.titleMedium)
             Text("Import an existing rclone.conf and use its remotes for transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -130,7 +138,7 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
                         }
                     } else {
                         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                            data = Uri.parse("package:${context.packageName}")
+                            data = "package:${context.packageName}".toUri()
                         }
                     }
                     context.startActivity(intent)

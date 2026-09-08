@@ -1,6 +1,7 @@
 package backupops
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -19,6 +20,8 @@ import (
 	"bkx/internal/berror"
 	"bkx/internal/hashing"
 	"bkx/internal/models"
+	"bkx/internal/rcloneops"
+	"bkx/internal/remotearchive"
 	"bkx/internal/runstore"
 	"bkx/internal/validation"
 )
@@ -137,7 +140,16 @@ func Normalize(spec models.BackupSpec) (models.BackupSpec, *string, string, *str
 
 	var destination *string
 	if valid.Destination != nil {
-		canonical, err := validation.CanonicalLocalPath(*valid.Destination)
+		raw := strings.TrimSpace(*valid.Destination)
+		var canonical string
+		if rcloneops.IsLocation(raw) {
+			canonical, err = rcloneops.CanonicalURI(raw)
+		} else {
+			if validation.IsRemoteLocation(raw) {
+				return models.BackupSpec{}, nil, "", nil, berror.Validation("Unsupported backup remote location; use rclone://remote/path", map[string]any{"destination": raw})
+			}
+			canonical, err = validation.CanonicalLocalPath(raw)
+		}
 		if err != nil {
 			return models.BackupSpec{}, nil, "", nil, err
 		}
@@ -159,15 +171,22 @@ func Normalize(spec models.BackupSpec) (models.BackupSpec, *string, string, *str
 
 	var archivePath *string
 	if destination != nil {
-		path := filepath.Join(*destination, name+".bakery")
-		canonical, err := validation.CanonicalLocalPath(path)
+		var canonical string
+		if rcloneops.IsLocation(*destination) {
+			canonical, err = rcloneops.JoinURI(*destination, name+".bakery")
+		} else {
+			path := filepath.Join(*destination, name+".bakery")
+			canonical, err = validation.CanonicalLocalPath(path)
+			if err == nil {
+				for _, source := range sources {
+					if overlapsBackupOutput(source, canonical) {
+						return models.BackupSpec{}, nil, "", nil, berror.Validation("Output/destination must not overlap a source tree", map[string]any{"source": source, "output": canonical})
+					}
+				}
+			}
+		}
 		if err != nil {
 			return models.BackupSpec{}, nil, "", nil, err
-		}
-		for _, source := range sources {
-			if overlapsBackupOutput(source, canonical) {
-				return models.BackupSpec{}, nil, "", nil, berror.Validation("Output/destination must not overlap a source tree", map[string]any{"source": source, "output": canonical})
-			}
 		}
 		archivePath = &canonical
 	}
@@ -185,7 +204,7 @@ func PlanBackup(spec models.BackupSpec) (Plan, error) {
 	}
 	outputName := "(resolved by backend)"
 	if archivePath != nil {
-		outputName = filepath.Base(*archivePath)
+		outputName = rcloneops.BaseName(*archivePath)
 	}
 	var source *string
 	if len(valid.Sources) == 1 {
@@ -336,7 +355,86 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 	finalPaths := []string{output}
 	transferredBytes := int64(0)
 	emit(options, "publishing", 0, 0)
-	if destination != nil {
+	if destination != nil && rcloneops.IsLocation(*destination) {
+		final := *archivePath
+		runtime, runtimeErr := rcloneops.RuntimeFromEnvironment()
+		if runtimeErr != nil {
+			complete("failed", nil, runtimeErr)
+			return Result{}, runtimeErr
+		}
+		finalParts := make([]string, len(archiveParts))
+		for i, part := range archiveParts {
+			suffix := strings.TrimPrefix(part, output)
+			if i == 0 {
+				suffix = ""
+			}
+			finalParts[i] = final + suffix
+		}
+		for _, candidate := range finalParts {
+			exists, existsErr := runtime.Exists(context.Background(), candidate)
+			if existsErr != nil {
+				complete("failed", nil, existsErr)
+				return Result{}, existsErr
+			}
+			if exists {
+				err = berror.Validation("Remote backup destination already exists", map[string]any{"destination": candidate})
+				complete("failed", nil, err)
+				return Result{}, err
+			}
+		}
+		order := make([]int, 0, len(archiveParts))
+		for i := 1; i < len(archiveParts); i++ {
+			order = append(order, i)
+		}
+		order = append(order, 0)
+		published := make([]string, 0, len(order))
+		rollbackRemote := func() {
+			for _, remotePath := range published {
+				_ = runtime.DeleteFile(context.Background(), remotePath)
+			}
+		}
+		for _, i := range order {
+			if isCancelled(options) {
+				rollbackRemote()
+				complete("interrupted", nil, ErrCancelled)
+				return Result{}, ErrCancelled
+			}
+			partResult, copyErr := runtime.CopyTo(context.Background(), archiveParts[i], finalParts[i], rcloneops.TransferOptions{
+				Overwrite: false, Verify: valid.Verify, Cancelled: options.Cancelled,
+				Progress: func(p rcloneops.Progress) { emit(options, "publishing", p.FilesDone, transferredBytes+p.BytesDone) },
+			})
+			if copyErr != nil {
+				rollbackRemote()
+				complete("failed", nil, copyErr)
+				return Result{}, copyErr
+			}
+			transferredBytes += partResult.Bytes
+			published = append(published, finalParts[i])
+		}
+		steps["transfer"] = true
+		finalPaths = []string{final}
+		if valid.Verify {
+			materialized, acquireErr := remotearchive.Acquire(context.Background(), final, remotearchive.Options{Cancelled: options.Cancelled})
+			if acquireErr != nil {
+				rollbackRemote()
+				complete("failed", nil, acquireErr)
+				return Result{}, acquireErr
+			}
+			verifyResult, verifyErr := archiveio.Verify(materialized.Path, []string{"sha256"})
+			_ = materialized.Cleanup()
+			if verifyErr != nil || !verifyResult.Success || !strings.EqualFold(verifyResult.ArchiveChecksums["sha256"], logicalHash.Checksum) {
+				rollbackRemote()
+				if verifyErr != nil {
+					complete("failed", nil, verifyErr)
+					return Result{}, verifyErr
+				}
+				err = berror.Validation("Remote archive verification failed after upload", map[string]any{"archive_path": final})
+				complete("failed", nil, err)
+				return Result{}, err
+			}
+			steps["verify_transfer"] = true
+		}
+	} else if destination != nil {
 		final := filepath.Join(*destination, filepath.Base(output))
 		if archivePath != nil {
 			final = *archivePath

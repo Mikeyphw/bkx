@@ -2,6 +2,7 @@ package com.mikeyphw.bkx.android.app.di
 
 import android.content.Context
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
+import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationManager
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesOperationStateStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
@@ -27,6 +28,7 @@ object DefaultBackendGraph {
     @Volatile private var settingsStoreInstance: SharedPreferencesSettingsStore? = null
     @Volatile private var coordinatorInstance: BkxOperationCoordinator? = null
     @Volatile private var providerStagingInstance: ProviderStagingPort? = null
+    @Volatile private var googleDriveManagerInstance: GoogleDriveAuthorizationManager? = null
 
     fun backendPort(context: Context): BackendPort = backendInstance ?: synchronized(this) {
         backendInstance ?: run {
@@ -56,6 +58,10 @@ object DefaultBackendGraph {
 
     fun providerStaging(context: Context): ProviderStagingPort = providerStagingInstance ?: synchronized(this) {
         providerStagingInstance ?: AndroidProviderStagingManager(context.stableApplicationContext()).also { providerStagingInstance = it }
+    }
+
+    fun googleDriveAuthorizationManager(context: Context): GoogleDriveAuthorizationManager = googleDriveManagerInstance ?: synchronized(this) {
+        googleDriveManagerInstance ?: GoogleDriveAuthorizationManager(context.stableApplicationContext()).also { googleDriveManagerInstance = it }
     }
 
     fun archiveSearchRoots(context: Context, rootAvailable: Boolean): List<String> =

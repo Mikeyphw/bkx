@@ -127,7 +127,15 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"filesystem.direct",
 	)
 	if rcloneops.Available() {
-		caps = append(caps, "remote.rclone", "transfer.remote", "transfer.sync")
+		caps = append(caps,
+			"remote.rclone",
+			"transfer.remote",
+			"transfer.sync",
+			"backup.remote",
+			"archive.remote",
+			"restore.remote",
+			"cloud.google_drive",
+		)
 		if rcloneops.Configured() {
 			caps = append(caps, "remote.rclone.configured")
 		}

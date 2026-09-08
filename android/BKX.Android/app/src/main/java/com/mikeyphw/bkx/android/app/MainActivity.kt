@@ -19,6 +19,7 @@ class MainActivity : ComponentActivity() {
             operationStateStore = DefaultBackendGraph.operationStateStore(this),
             settingsStore = DefaultBackendGraph.settingsStore(this),
             providerStagingPort = DefaultBackendGraph.providerStaging(this),
+            googleDriveAuthorizationManager = DefaultBackendGraph.googleDriveAuthorizationManager(this),
             archiveRootsProvider = { rooted -> DefaultBackendGraph.archiveSearchRoots(this, rooted) },
             requestBaseDirectoryPath = filesDir.resolve("bkx/requests").absolutePath,
         )

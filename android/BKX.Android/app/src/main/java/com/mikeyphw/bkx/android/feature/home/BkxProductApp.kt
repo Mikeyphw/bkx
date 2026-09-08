@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -71,6 +72,11 @@ fun BkxProductApp(
         pendingNotificationEvent?.let(onEvent)
         pendingNotificationEvent = null
     }
+    val googleDriveConsentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult(),
+    ) { result ->
+        onEvent(BkxHomeEvent.CompleteGoogleDriveAuthorization(result.data))
+    }
 
     fun dispatch(event: BkxHomeEvent) {
         val needsNotificationPermission = event.requiresOperationNotificationPermission()
@@ -81,6 +87,13 @@ fun BkxProductApp(
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             onEvent(event)
+        }
+    }
+
+    state.googleDrive.pendingConsent?.let { pendingIntent ->
+        LaunchedEffect(pendingIntent) {
+            googleDriveConsentLauncher.launch(IntentSenderRequest.Builder(pendingIntent.intentSender).build())
+            onEvent(BkxHomeEvent.GoogleDriveConsentLaunched)
         }
     }
 

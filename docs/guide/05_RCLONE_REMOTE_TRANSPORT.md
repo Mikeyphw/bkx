@@ -35,11 +35,11 @@ Encrypted `RCLONE_ENCRYPT_V0:` configuration is rejected until BKX has an explic
 
 ## Remote browsing
 
-The normal BKX filesystem browser can enter configured `rclone://` locations only for transfer source/destination selectors. It uses the existing `filesystem.list` and `filesystem.stat` operations, so local and remote navigation share one UI and bridge contract. Backup/restore do not become remote-enabled in this phase; first-class cloud backup/restore is handled by the Google Drive/product integration phase.
+The normal BKX filesystem browser enters configured `rclone://` locations for remote-capable selectors. It uses the existing `filesystem.list` and `filesystem.stat` operations, so local and remote navigation share one UI and bridge contract. OV4 introduced this boundary for Transfer; OV5 reuses it for remote Backup destinations and Archive selection. Remote Restore does not write directly from rclone: the archive is first materialized into private staging and then passed to the existing restore safety engine.
 
 ## Capability contract
 
-When the packaged runtime is executable, readiness exposes `remote.rclone`, `transfer.remote`, and `transfer.sync`. When an app-private configuration is present, it also exposes `remote.rclone.configured`. Android gates remote actions with these capabilities rather than assuming runtime availability.
+When the packaged runtime is executable, readiness exposes `remote.rclone`, `transfer.remote`, `transfer.sync`, `backup.remote`, `archive.remote`, `restore.remote`, and `cloud.google_drive`. When an app-private configuration is present, it also exposes `remote.rclone.configured`. Android gates remote actions with these capabilities rather than assuming runtime availability. The Google-specific capability means the engine can service the managed credential-free URI; actual account authorization remains Android-owned and must be refreshed before use.
 
 ## Android runtime identity validation
 

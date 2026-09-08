@@ -21,3 +21,11 @@ The APK is intentionally `arm64-v8a` only. NDK `29.0.14206865` is pinned and val
 - Human Go CLI commands remain a separate migration/cutover concern and are not exposed merely because Android runs Go.
 
 The frozen compatibility bundle remains under `migration/contracts/v1/`. Historical Python↔Go parity fixtures continue to protect protocol behavior, but Python is no longer an Android runtime dependency.
+
+## Remote and Google Drive boundary
+
+Rclone is a separate optional Android ARM64 executable boundary; it is not the BKX engine. `GoNativeGateway` supplies its packaged executable path and BKX-owned app-private config path to the Go engine. Remote locations remain credential-free `rclone://REMOTE/path` values across protocol-v1, run history, and UI state.
+
+Generic remote transfer/filesystem behavior lives in `internal/rcloneops`. Remote archives are acquired through `internal/remotearchive` into private temporary staging before existing archive/restore code runs. Remote backup creation remains a normal `backup.create`: BKX builds/verifies locally, publishes parts transactionally through rclone, then re-downloads the logical archive for final verification when requested.
+
+Google authorization is Android-owned because it can require an interactive `PendingIntent`. `GoogleDriveAuthorizationManager` requests only `drive.file` and refreshes the short-lived access token immediately before managed Drive operations. The token is projected into the reserved `bkx-google-drive` section of the owner-only rclone config and never into bridge requests or product models. This keeps Google account consent outside the Go engine while all actual backup/archive/restore semantics remain in the shared Go services.

@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserEntry
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
@@ -100,7 +101,7 @@ private fun FilesystemEntryRow(
 
 private fun canNavigateUp(path: String): Boolean {
     if (path.startsWith("rclone://", ignoreCase = true)) {
-        val uri = Uri.parse(path)
+        val uri = path.toUri()
         return !uri.path.isNullOrBlank() && uri.path != "/"
     }
     return path != "/"
@@ -108,7 +109,7 @@ private fun canNavigateUp(path: String): Boolean {
 
 private fun parentOf(path: String): String {
     if (path.startsWith("rclone://", ignoreCase = true)) {
-        val uri = Uri.parse(path)
+        val uri = path.toUri()
         val host = uri.host ?: return path
         val current = uri.path.orEmpty().trimEnd('/')
         val parent = current.substringBeforeLast('/', "").ifBlank { "/" }

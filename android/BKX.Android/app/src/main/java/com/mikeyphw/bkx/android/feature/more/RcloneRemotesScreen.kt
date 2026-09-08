@@ -46,12 +46,14 @@ fun RcloneRemotesScreen(
             runCatching { manager.importConfig(uri) }
                 .onSuccess {
                     snapshot = it
-                    message = "Imported ${it.profiles.size} rclone remote${if (it.profiles.size == 1) "" else "s"}."
+                    val importedCount = it.profiles.count { profile -> !profile.managedByBkx }
+                    message = "Imported $importedCount rclone remote${if (importedCount == 1) "" else "s"}."
                     onEvent(BkxHomeEvent.RefreshBackend)
                 }
                 .onFailure { message = it.message ?: "Could not import rclone.conf." }
         }
     }
+    val importedProfiles = snapshot.profiles.filterNot { it.managedByBkx }
     val runtimeReady = "remote.rclone" in state.backendToolState.capabilities
     val configuredInEngine = "remote.rclone.configured" in state.backendToolState.capabilities
 
@@ -60,7 +62,7 @@ fun RcloneRemotesScreen(
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
     ) {
         OutlinedButton(onClick = { onEvent(BkxHomeEvent.CloseMoreRoute) }) { Text("Back to More") }
-        BkxPageHeader("Cloud & rclone remotes", "Use app-private rclone configuration without exposing remote credentials in BKX history or diagnostics.")
+        BkxPageHeader("rclone remotes", "Import additional provider remotes without exposing credentials in BKX history or diagnostics. Google Drive managed by BKX has its own screen.")
 
         BkxSurfaceCard {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -109,9 +111,9 @@ fun RcloneRemotesScreen(
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
 
-        if (snapshot.profiles.isNotEmpty()) {
+        if (importedProfiles.isNotEmpty()) {
             BkxSectionHeader("Remotes")
-            snapshot.profiles.forEach { profile ->
+            importedProfiles.forEach { profile ->
                 BkxSurfaceCard {
                     Text(profile.name, style = MaterialTheme.typography.titleMedium)
                     Text(profile.type, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -130,12 +132,5 @@ fun RcloneRemotesScreen(
             }
         }
 
-        BkxSurfaceCard {
-            Text("Google Drive", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "An imported Google Drive rclone remote works in Transfer now. First-class Google Drive sign-in and backup/restore destination UX is the next integration stage.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }

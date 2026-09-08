@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
+import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.ui.components.BkxDivider
 import com.mikeyphw.bkx.android.app.ui.components.BkxKeyValue
 import com.mikeyphw.bkx.android.app.ui.components.BkxOperationProgress
@@ -50,6 +51,7 @@ import com.mikeyphw.bkx.android.core.backup.BackupDestinationSelection
 import com.mikeyphw.bkx.android.core.backup.BackupPlanDraft
 import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
 import com.mikeyphw.bkx.android.core.backup.BackupSplitPolicy
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
 import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
@@ -67,7 +69,11 @@ fun BackupScreen(
     val capabilities = state.backendToolState.capabilities.toSet()
     val splitSupported = "archive.split" in capabilities
     val compressionSupported = draft.compression.requiredCapability in capabilities
-    val selectedCapabilitiesSupported = compressionSupported && (!draft.split.enabled || splitSupported)
+    val remoteDestinationSelected = draft.destination?.stagedDirectoryPath?.startsWith("rclone://", ignoreCase = true) == true
+    val remoteBackupSupported = "backup.remote" in capabilities
+    val selectedCapabilitiesSupported = compressionSupported &&
+        (!draft.split.enabled || splitSupported) &&
+        (!remoteDestinationSelected || remoteBackupSupported)
     val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderBackupTree(it)) }
     }
@@ -115,6 +121,7 @@ fun BackupScreen(
                             onEvent = onEvent,
                         )
                         BackupDestinationSection(
+                            state = state,
                             draft = draft,
                             expanded = chooseDestination,
                             advanced = showAdvancedDestination,
@@ -155,6 +162,7 @@ fun BackupScreen(
                     onEvent = onEvent,
                 )
                 BackupDestinationSection(
+                    state = state,
                     draft = draft,
                     expanded = chooseDestination,
                     advanced = showAdvancedDestination,
@@ -314,6 +322,7 @@ private fun BackupSourceSection(
 
 @Composable
 private fun BackupDestinationSection(
+    state: BkxHomeUiState,
     draft: BackupPlanDraft,
     expanded: Boolean,
     advanced: Boolean,
@@ -329,7 +338,7 @@ private fun BackupDestinationSection(
             TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Done" else "Change destination") }
         } else {
             Text("Choose where to save the archive", style = MaterialTheme.typography.titleMedium)
-            Text("Cloud destinations will appear here when remote storage is connected.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Save locally or connect Google Drive for first-class cloud backup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = { onExpandedChange(true) }) { Text("Choose destination") }
         }
         if (expanded) {
@@ -339,10 +348,35 @@ private fun BackupDestinationSection(
                 onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(destination = destination(defaultPath, "BKX backups"))))
                 onExpandedChange(false)
             }
+            if (state.googleDrive.connected) {
+                LocationChoice("Google Drive", GoogleDriveRcloneConfig.rootUri, "Cloud · BKX folder") {
+                    onEvent(
+                        BkxHomeEvent.UpdateBackupDraft(
+                            draft.copy(destination = BackupDestinationSelection("google-drive-bkx", "Google Drive", GoogleDriveRcloneConfig.rootUri)),
+                        ),
+                    )
+                    onExpandedChange(false)
+                }
+            } else {
+                BkxOutlinedSurface(
+                    onClick = {
+                        onEvent(BkxHomeEvent.SelectDestination(BkxDestination.More))
+                        onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.GoogleDrive))
+                    },
+                ) {
+                    Text("Google Drive", style = MaterialTheme.typography.titleMedium)
+                    Text("Connect once, then back up directly to BKX on Drive.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             OutlinedButton(
-                onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupDestination, draft.destination?.stagedDirectoryPath ?: BkxStorageLocations.SHARED_STORAGE)) },
+                onClick = {
+                    val start = draft.destination?.stagedDirectoryPath
+                        ?.takeIf { it.startsWith("/") || it.startsWith("rclone://", ignoreCase = true) }
+                        ?: BkxStorageLocations.SHARED_STORAGE
+                    onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupDestination, start))
+                },
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Browse device") }
+            ) { Text(if (state.googleDrive.connected) "Browse device or remote" else "Browse device") }
             TextButton(onClick = { onAdvancedChange(!advanced) }) { Text(if (advanced) "Hide manual path" else "Manual path · Advanced") }
             if (advanced) {
                 OutlinedTextField(
@@ -350,7 +384,9 @@ private fun BackupDestinationSection(
                     onValueChange = { path ->
                         onEvent(
                             BkxHomeEvent.UpdateBackupDraft(
-                                draft.copy(destination = path.trim().takeIf { it.startsWith("/") }?.let { destination(it, it.substringAfterLast('/').ifBlank { "Backup destination" }) }),
+                                draft.copy(destination = path.trim().takeIf {
+                                    it.startsWith("/") || it.startsWith("rclone://", ignoreCase = true)
+                                }?.let { destination(it, if (it.startsWith("rclone://", ignoreCase = true)) "Remote backup" else it.substringAfterLast('/').ifBlank { "Backup destination" }) }),
                             ),
                         )
                     },
@@ -455,8 +491,12 @@ private fun BackupReviewSection(
             Text("Preflight", style = MaterialTheme.typography.titleMedium)
             BkxKeyValue("Files", preview.filesTotal?.toString() ?: "—")
             BkxKeyValue("Source size", formatBytes(preview.bytesTotal))
-            BkxKeyValue("Free at destination", formatBytes(destinationFreeBytes))
-            if (preview.bytesTotal != null && destinationFreeBytes != null) {
+            if (draft.destination?.stagedDirectoryPath?.startsWith("rclone://", ignoreCase = true) == true) {
+                BkxKeyValue("Destination storage", "Managed by Google Drive")
+            } else {
+                BkxKeyValue("Free at destination", formatBytes(destinationFreeBytes))
+            }
+            if (preview.bytesTotal != null && destinationFreeBytes != null && draft.destination?.stagedDirectoryPath?.startsWith("rclone://", ignoreCase = true) != true) {
                 val enough = destinationFreeBytes > preview.bytesTotal
                 BkxStatusPill(if (enough) "SPACE AVAILABLE" else "LOW SPACE", if (enough) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
             }
@@ -467,6 +507,8 @@ private fun BackupReviewSection(
                 when {
                     !compressionSupported -> "The connected engine does not support ${draft.compression.displayLabel()} compression."
                     draft.split.enabled && !splitSupported -> "The connected engine does not support split archives."
+                    draft.destination?.stagedDirectoryPath?.startsWith("rclone://", ignoreCase = true) == true && "backup.remote" !in state.backendToolState.capabilities ->
+                        "The connected engine does not support remote backup destinations."
                     else -> "The selected options are not supported by this engine."
                 },
                 color = MaterialTheme.colorScheme.error,
@@ -526,6 +568,8 @@ private fun BackupCompression.displayLabel(): String = when (this) {
 }
 
 private fun locationKind(path: String, rootAvailable: Boolean): String = when {
+    path.startsWith(GoogleDriveRcloneConfig.rootUri, ignoreCase = true) -> "Google Drive"
+    path.startsWith("rclone://", ignoreCase = true) -> "Remote storage"
     path == BkxStorageLocations.TERMUX_HOME || path == BkxStorageLocations.TERMUX_PREFIX -> if (rootAvailable) "Root filesystem" else "Private filesystem"
     path.startsWith(BkxStorageLocations.SHARED_STORAGE) -> "Internal storage"
     else -> "Filesystem"

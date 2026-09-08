@@ -11,4 +11,8 @@ Read in this order:
 4. `03_SPECS_SERVICES.md` — normalized specs, services, ports, and results.
 5. `04_UX_FEATURES.md` — current user-facing behavior.
 
+6. `05_RCLONE_REMOTE_TRANSPORT.md` — generic credential-free remote transport and Android runtime/config ownership.
+7. `06_GOOGLE_DRIVE_PRODUCT.md` — first-class Drive authorization, cloud backup/archive/restore, and privacy boundary.
+8. `07_ANDROID_PRODUCT_ROADMAP_SEAL.md` — cumulative OV1–OV6 product acceptance matrix.
+
 Feature-oriented checklists live in `../checklists/`.

@@ -1,6 +1,8 @@
 package com.mikeyphw.bkx.android.feature.more
 
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +50,7 @@ fun MoreScreen(
 ) {
     BackHandler(enabled = state.moreRoute != MoreRoute.Overview) { onEvent(BkxHomeEvent.CloseMoreRoute) }
     when (state.moreRoute) {
+        MoreRoute.Remotes -> RcloneRemotesScreen(state, onEvent, modifier)
         MoreRoute.Transfer -> TransferScreen(state, onEvent, modifier)
         MoreRoute.Diagnostics -> DiagnosticsScreen(state, onEvent, modifier)
         MoreRoute.Overview -> MoreOverview(state, onEvent, modifier)
@@ -66,9 +69,13 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
         BkxPageHeader("More", "Storage, transfers, access, appearance, and troubleshooting.")
 
         BkxSectionHeader("Storage & transfers")
+        BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.Remotes)) }) {
+            Text("Cloud & rclone remotes", style = MaterialTheme.typography.titleMedium)
+            Text("Import an existing rclone.conf and use its remotes for transfer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.Transfer)) }) {
             Text("Transfer files", style = MaterialTheme.typography.titleMedium)
-            Text("Copy or synchronize local trees. Remote destinations will use this same workflow later.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Copy or synchronize local files with configured rclone remotes.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         BkxSurfaceCard {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -117,11 +124,16 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
             Text("Android 16 live progress is requested when the system supports promoted ongoing updates.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(
                 onClick = {
-                    context.startActivity(
+                    val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-                        },
-                    )
+                        }
+                    } else {
+                        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                            data = Uri.parse("package:${context.packageName}")
+                        }
+                    }
+                    context.startActivity(intent)
                 },
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Notification settings") }
@@ -188,6 +200,7 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
         }
     }
 }
+
 
 @Composable
 private fun DiagnosticsScreen(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit, modifier: Modifier) {

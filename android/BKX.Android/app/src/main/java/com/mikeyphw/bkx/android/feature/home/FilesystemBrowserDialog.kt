@@ -1,5 +1,6 @@
 package com.mikeyphw.bkx.android.feature.home
 
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,14 +34,14 @@ fun FilesystemBrowserDialog(
     val target = state.target ?: return
     AlertDialog(
         onDismissRequest = { onEvent(BkxHomeEvent.CloseFilesystemBrowser) },
-        title = { Text("Choose a filesystem path") },
+        title = { Text(if (state.isRemote) "Choose a remote path" else "Choose a filesystem path") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(state.currentPath, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = { onEvent(BkxHomeEvent.NavigateFilesystem(parentOf(state.currentPath))) },
-                        enabled = state.currentPath != "/",
+                        enabled = canNavigateUp(state.currentPath),
                     ) { Text("Up") }
                     OutlinedButton(onClick = { onEvent(BkxHomeEvent.ToggleFilesystemHidden) }) {
                         Text(if (state.showHidden) "Hide dotfiles" else "Show dotfiles")
@@ -50,7 +51,7 @@ fun FilesystemBrowserDialog(
                 if (state.loading) Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                     items(state.entries, key = { it.path }) { entry ->
-                        FilesystemEntryRow(entry, target.folderOnly, onEvent)
+                        FilesystemEntryRow(entry, state.folderOnly, onEvent)
                     }
                 }
             }
@@ -97,7 +98,22 @@ private fun FilesystemEntryRow(
     }
 }
 
+private fun canNavigateUp(path: String): Boolean {
+    if (path.startsWith("rclone://", ignoreCase = true)) {
+        val uri = Uri.parse(path)
+        return !uri.path.isNullOrBlank() && uri.path != "/"
+    }
+    return path != "/"
+}
+
 private fun parentOf(path: String): String {
+    if (path.startsWith("rclone://", ignoreCase = true)) {
+        val uri = Uri.parse(path)
+        val host = uri.host ?: return path
+        val current = uri.path.orEmpty().trimEnd('/')
+        val parent = current.substringBeforeLast('/', "").ifBlank { "/" }
+        return Uri.Builder().scheme("rclone").authority(host).path(parent).build().toString()
+    }
     val normalized = path.trimEnd('/')
     if (normalized.isBlank() || normalized == "/") return "/"
     return normalized.substringBeforeLast('/', "").ifBlank { "/" }

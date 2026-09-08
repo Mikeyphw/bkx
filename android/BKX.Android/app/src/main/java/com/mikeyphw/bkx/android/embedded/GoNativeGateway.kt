@@ -98,6 +98,9 @@ class GoNativeGateway(
         ).directory(home)
         builder.environment()["HOME"] = home.absolutePath
         builder.environment()["TMPDIR"] = tmp.absolutePath
+        val rcloneConfig = appContext.filesDir.resolve("bkx/rclone/rclone.conf").also { it.parentFile?.mkdirs() }
+        builder.environment()["BKX_RCLONE_PATH"] = rcloneRuntimeFile().absolutePath
+        builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath
         val started = builder.start()
         val startedWriter = BufferedWriter(OutputStreamWriter(started.outputStream, Charsets.UTF_8))
         process = started
@@ -176,12 +179,14 @@ class GoNativeGateway(
     }
 
     private fun runtimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RUNTIME_LIBRARY)
+    private fun rcloneRuntimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RCLONE_RUNTIME_LIBRARY)
 
     private companion object {
         const val ABI = "arm64-v8a"
         const val LOCAL_STATE_NAMESPACE = "go-local"
         val ALLOWED_STATE_NAMESPACES = setOf(LOCAL_STATE_NAMESPACE, "go-root")
         const val RUNTIME_LIBRARY = "libbkxgo.so"
+        const val RCLONE_RUNTIME_LIBRARY = "libbkxrclone_exec.so"
         const val DEFAULT_TIMEOUT_MS = 20_000L
         const val PROGRESS_TIMEOUT_MS = 10_000L
         const val CANCEL_TIMEOUT_MS = 20_000L

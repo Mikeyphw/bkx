@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,8 +20,10 @@ import (
 	"bkx/internal/berror"
 	"bkx/internal/fsutil"
 	"bkx/internal/models"
+	"bkx/internal/rcloneops"
 	"bkx/internal/runstore"
 	"bkx/internal/transferops"
+	"bkx/internal/validation"
 )
 
 const StatusSuccess = "success"
@@ -116,9 +119,9 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 	case "storage.locations":
 		return d.storage(p)
 	case "filesystem.list":
-		return d.filesystemList(p)
+		return d.filesystemList(ctx, p)
 	case "filesystem.stat":
-		return d.filesystemStat(p)
+		return d.filesystemStat(ctx, p)
 	default:
 		return Result{}, berror.Validation("Unsupported GO10 service operation: "+operation, map[string]any{"operation": operation, "supported": SupportedOperations()})
 	}
@@ -512,7 +515,7 @@ func (d *Dispatcher) transferRun(ctx OperationContext, p map[string]any) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	emit(ctx, "transferring", "Starting local transfer.", floatPtr(.02))
+	emit(ctx, "transferring", "Starting transfer.", floatPtr(.02))
 	r, err := transferops.Run(spec, transferops.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(e transferops.ProgressEvent) {
 		var f *float64
 		if e.TotalFiles > 0 {
@@ -548,8 +551,8 @@ func (d *Dispatcher) transferRun(ctx OperationContext, p map[string]any) (Result
 	return Result{Status: status, Summary: fmt.Sprintf("Transfer %s: %d files, %d bytes.", word, r.FilesTransferred, r.BytesTransferred), Errors: issues, Artifacts: []Artifact{}}, nil
 }
 
-func (d *Dispatcher) filesystemList(p map[string]any) (Result, error) {
-	path, err := requiredString(p, "path")
+func (d *Dispatcher) filesystemList(ctx OperationContext, p map[string]any) (Result, error) {
+	location, err := requiredString(p, "path")
 	if err != nil {
 		return Result{}, err
 	}
@@ -565,7 +568,13 @@ func (d *Dispatcher) filesystemList(p map[string]any) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	r, err := fsutil.List(path, hidden, limit, offset)
+	if limit <= 0 || limit > 2000 || offset < 0 {
+		return Result{}, berror.Validation("filesystem.list has invalid pagination", map[string]any{"limit": limit, "offset": offset})
+	}
+	if rcloneops.IsLocation(location) {
+		return d.rcloneFilesystemList(ctx, location, hidden, limit, offset)
+	}
+	r, err := fsutil.List(location, hidden, limit, offset)
 	if err != nil {
 		return Result{}, err
 	}
@@ -580,18 +589,104 @@ func (d *Dispatcher) filesystemList(p map[string]any) (Result, error) {
 	}
 	return success(fmt.Sprintf("Listed %d of %d entries in %s.%s", len(r.Entries), r.TotalCount, r.Path, suffix), nil, arts), nil
 }
-func (d *Dispatcher) filesystemStat(p map[string]any) (Result, error) {
-	path, err := requiredString(p, "path")
+
+func (d *Dispatcher) rcloneFilesystemList(ctx OperationContext, location string, showHidden bool, limit, offset int) (Result, error) {
+	runtime, err := rcloneops.RuntimeFromEnvironment()
+	if err != nil {
+		return Result{}, berror.External("rclone remote browser is unavailable", map[string]any{"dependency": "rclone", "reason": err.Error()})
+	}
+	if err := checkCancelled(ctx, "listing remote"); err != nil {
+		return Result{}, err
+	}
+	commandCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	entries, err := runtime.List(commandCtx, location)
+	if err != nil {
+		return Result{}, berror.WrapExternal("listing rclone remote", location, "rclone", err)
+	}
+	filtered := make([]rcloneops.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if !showHidden && strings.HasPrefix(entry.Name, ".") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	if offset > len(filtered) {
+		offset = len(filtered)
+	}
+	end := offset + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	page := filtered[offset:end]
+	arts := make([]Artifact, 0, len(page))
+	for _, entry := range page {
+		uri, joinErr := rcloneops.JoinURI(location, entry.Path)
+		if joinErr != nil {
+			return Result{}, berror.WrapExternal("normalizing rclone entry", location, "rclone", joinErr)
+		}
+		kind := "file"
+		if entry.IsDir {
+			kind = "directory"
+		}
+		size := entry.Size
+		var modified *int64
+		if !entry.ModTime.IsZero() {
+			value := entry.ModTime.UnixMilli()
+			modified = &value
+		}
+		arts = append(arts, Artifact{Label: kind, Path: uri, SizeBytes: &size, ModifiedAtEpochMillis: modified})
+	}
+	suffix := ""
+	if end < len(filtered) {
+		suffix = " More entries are available."
+	}
+	return success(fmt.Sprintf("Listed %d of %d remote entries.%s", len(page), len(filtered), suffix), nil, arts), nil
+}
+
+func (d *Dispatcher) filesystemStat(ctx OperationContext, p map[string]any) (Result, error) {
+	location, err := requiredString(p, "path")
 	if err != nil {
 		return Result{}, err
 	}
-	e, err := fsutil.Stat(path)
+	if rcloneops.IsLocation(location) {
+		runtime, runtimeErr := rcloneops.RuntimeFromEnvironment()
+		if runtimeErr != nil {
+			return Result{}, berror.External("rclone remote browser is unavailable", map[string]any{"dependency": "rclone", "reason": runtimeErr.Error()})
+		}
+		if err := checkCancelled(ctx, "stating remote"); err != nil {
+			return Result{}, err
+		}
+		commandCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		entry, statErr := runtime.Stat(commandCtx, location)
+		if statErr != nil {
+			return Result{}, berror.WrapExternal("stating rclone remote path", location, "rclone", statErr)
+		}
+		canonical, canonicalErr := rcloneops.CanonicalURI(location)
+		if canonicalErr != nil {
+			return Result{}, berror.Validation("invalid rclone remote path", map[string]any{"reason": canonicalErr.Error()})
+		}
+		kind := "file"
+		if entry.IsDir {
+			kind = "directory"
+		}
+		size := entry.Size
+		var modified *int64
+		if !entry.ModTime.IsZero() {
+			value := entry.ModTime.UnixMilli()
+			modified = &value
+		}
+		return success(fmt.Sprintf("Remote %s: %s, %d bytes.", entry.Name, kind, entry.Size), nil, []Artifact{{Label: kind, Path: canonical, SizeBytes: &size, ModifiedAtEpochMillis: modified}}), nil
+	}
+	e, err := fsutil.Stat(location)
 	if err != nil {
 		return Result{}, err
 	}
 	sz, mt := e.SizeBytes, e.ModifiedAtEpochMillis
 	return success(fmt.Sprintf("%s: %s, %d bytes, mode %04o, uid %d, gid %d.", e.Path, e.Kind, e.SizeBytes, e.Mode, e.UID, e.GID), nil, []Artifact{{Label: e.Kind, Path: e.Path, SizeBytes: &sz, ModifiedAtEpochMillis: &mt}}), nil
 }
+
 func (d *Dispatcher) storage(_ map[string]any) (Result, error) {
 	arts := []Artifact{}
 	for _, c := range d.StorageLocations {
@@ -779,13 +874,14 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 		if !ok {
 			return models.TransferSpec{}, berror.Validation("source endpoint must be an object", nil)
 		}
-		remote, _ := boolDefault(m, "remote", false)
-		if remote {
-			return models.TransferSpec{}, berror.Validation("GO09 local transfer supports only local Path sources and destinations", nil)
-		}
 		loc, err := requiredString(m, "location")
 		if err != nil {
 			return models.TransferSpec{}, err
+		}
+		declaredRemote, _ := boolDefault(m, "remote", false)
+		actualRemote := validation.IsRemoteLocation(loc)
+		if declaredRemote != actualRemote {
+			return models.TransferSpec{}, berror.Validation("source endpoint remote flag does not match its location", map[string]any{"location": loc})
 		}
 		sources = append(sources, loc)
 	}
@@ -793,13 +889,13 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 	if err != nil {
 		return models.TransferSpec{}, err
 	}
-	remote, _ := boolDefault(destMap, "remote", false)
-	if remote {
-		return models.TransferSpec{}, berror.Validation("GO09 local transfer supports only local Path sources and destinations", nil)
-	}
 	dest, err := requiredString(destMap, "location")
 	if err != nil {
 		return models.TransferSpec{}, err
+	}
+	declaredRemote, _ := boolDefault(destMap, "remote", false)
+	if declaredRemote != validation.IsRemoteLocation(dest) {
+		return models.TransferSpec{}, berror.Validation("destination endpoint remote flag does not match its location", map[string]any{"location": dest})
 	}
 	direction := optionalString(p["mode"])
 	if direction == "" {
@@ -808,9 +904,7 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 	if direction == "" {
 		direction = "push"
 	}
-	if direction == "sync" {
-		return models.TransferSpec{}, berror.Validation("GO10 service dispatch defers transfer sync until the frozen bridge advertises it", nil)
-	}
+	deleteExtraneous, _ := boolDefault(p, "delete_extraneous_on_sync", false)
 	verify, _ := boolDefault(p, "verify", true)
 	overwrite, _ := boolDefault(p, "overwrite", false)
 	checksum := optionalString(p["checksum"])
@@ -818,8 +912,9 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 	if checksum != "" {
 		checksumPtr = &checksum
 	}
-	return models.TransferSpec{Sources: sources, Destination: dest, Direction: direction, Verify: verify, Checksum: checksumPtr, DryRun: dry, Overwrite: overwrite}, nil
+	return validation.ValidateTransferSpec(models.TransferSpec{Sources: sources, Destination: dest, Direction: direction, Verify: verify, Checksum: checksumPtr, DryRun: dry, Overwrite: overwrite, DeleteExtraneousOnSync: deleteExtraneous})
 }
+
 func archivePath(p map[string]any) (string, error) {
 	m, err := mapping(p, "archive", nil)
 	if err != nil {

@@ -338,8 +338,14 @@ func ValidateTransferSpec(spec models.TransferSpec) (models.TransferSpec, error)
 	if strings.TrimSpace(spec.Destination) == "" {
 		return models.TransferSpec{}, berror.Validation("Transfer destination must be a Path or URI string", nil)
 	}
-	if spec.Direction != "push" && spec.Direction != "pull" {
-		return models.TransferSpec{}, berror.Validation("Invalid transfer direction", map[string]any{"direction": spec.Direction, "valid": []string{"push", "pull"}})
+	if spec.Direction != "push" && spec.Direction != "pull" && spec.Direction != "sync" {
+		return models.TransferSpec{}, berror.Validation("Invalid transfer direction", map[string]any{"direction": spec.Direction, "valid": []string{"push", "pull", "sync"}})
+	}
+	if spec.Direction == "sync" && len(spec.Sources) != 1 {
+		return models.TransferSpec{}, berror.Validation("Sync requires exactly one source", map[string]any{"source_count": len(spec.Sources)})
+	}
+	if spec.Direction == "sync" && !spec.DeleteExtraneousOnSync {
+		return models.TransferSpec{}, berror.Validation("Sync is a mirror operation and requires explicit approval to delete destination-only files", map[string]any{"delete_extraneous_on_sync": false})
 	}
 	for _, source := range spec.Sources {
 		if strings.TrimSpace(source) == "" {

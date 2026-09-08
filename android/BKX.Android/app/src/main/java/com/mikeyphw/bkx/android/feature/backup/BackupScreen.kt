@@ -1,5 +1,9 @@
 package com.mikeyphw.bkx.android.feature.backup
 
+import android.content.Context
+import android.os.Build
+import android.os.storage.StorageManager
+import android.os.StatFs
 import java.io.File
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
@@ -75,8 +80,9 @@ fun BackupScreen(
     var showAdvancedSource by rememberSaveable { mutableStateOf(false) }
     var showAdvancedDestination by rememberSaveable { mutableStateOf(false) }
     var showOptions by rememberSaveable { mutableStateOf(false) }
+    val context = LocalContext.current
     val destinationFreeBytes = remember(draft.destination?.stagedDirectoryPath) {
-        usableSpaceFor(draft.destination?.stagedDirectoryPath)
+        usableSpaceFor(context, draft.destination?.stagedDirectoryPath)
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -525,10 +531,18 @@ private fun locationKind(path: String, rootAvailable: Boolean): String = when {
     else -> "Filesystem"
 }
 
-private fun usableSpaceFor(path: String?): Long? {
+private fun usableSpaceFor(context: Context, path: String?): Long? {
     if (path.isNullOrBlank() || !path.startsWith('/')) return null
     var current: File? = File(path)
     while (current != null && !current.exists()) current = current.parentFile
-    val usable = current?.usableSpace ?: return null
-    return usable.takeIf { it > 0L }
+    val existing = current ?: return null
+    val bytes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        runCatching {
+            val storage = context.getSystemService(StorageManager::class.java)
+            storage.getAllocatableBytes(storage.getUuidForPath(existing))
+        }.getOrElse { StatFs(existing.absolutePath).availableBytes }
+    } else {
+        StatFs(existing.absolutePath).availableBytes
+    }
+    return bytes.takeIf { it > 0L }
 }

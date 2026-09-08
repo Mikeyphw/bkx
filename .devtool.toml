@@ -84,6 +84,7 @@ preflight = [
     ":app:verifyBkxEmbeddedEngineContract",
     ":app:verifyBkxRootStorageContract",
     ":app:verifyBkxProductUiContract",
+    ":app:verifyBkxRcloneRemoteTransportContract",
     ":app:verifyBkxRuntimeHardeningContract",
     ":app:verifyBkxRestoreSafetySeal",
     ":app:verifyBkxPerformanceAndProgressContract",

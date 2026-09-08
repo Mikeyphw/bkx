@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -271,5 +272,26 @@ func TestBackupPlanPreflightMetricsSurviveBridgeEnvelope(t *testing.T) {
 	}
 	if result.Metrics.DurationMS < 0 {
 		t.Fatalf("invalid duration: %#v", result.Metrics)
+	}
+}
+
+func TestReadinessAdvertisesRcloneOnlyWhenRuntimeIsAvailable(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	if err := os.WriteFile(rclone, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+	readiness := NewAndroid(nil).Readiness()
+	joined := strings.Join(readiness.Capabilities, "\n")
+	for _, capability := range []string{"remote.rclone", "remote.rclone.configured", "transfer.remote", "transfer.sync"} {
+		if !strings.Contains(joined, capability) {
+			t.Fatalf("missing capability %q in %v", capability, readiness.Capabilities)
+		}
 	}
 }

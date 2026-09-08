@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"bkx/internal/berror"
+	"bkx/internal/rcloneops"
 	"bkx/internal/runstore"
 	"bkx/internal/services"
 	"bkx/internal/version"
@@ -125,6 +126,12 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"archive.split",
 		"filesystem.direct",
 	)
+	if rcloneops.Available() {
+		caps = append(caps, "remote.rclone", "transfer.remote", "transfer.sync")
+		if rcloneops.Configured() {
+			caps = append(caps, "remote.rclone.configured")
+		}
+	}
 	if os.Geteuid() == 0 {
 		caps = append(caps, "root.filesystem", "storage.termux.private", "storage.app_private")
 	}

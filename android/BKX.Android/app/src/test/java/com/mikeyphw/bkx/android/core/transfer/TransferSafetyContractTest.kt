@@ -14,7 +14,7 @@ import org.junit.Test
 
 class TransferSafetyContractTest {
     private val source = TransferEndpoint("src-1", "Phone archive", "/shared/bkx/archives/photos.bakery")
-    private val destination = TransferEndpoint("dst-1", "Remote laptop", "user@example:/backups", isRemote = true)
+    private val destination = TransferEndpoint("dst-1", "Remote laptop", "rclone://drive/backups", isRemote = true)
     private val draft = TransferTopologyDraft(
         mode = TransferMode.Push,
         sources = listOf(source),
@@ -31,7 +31,7 @@ class TransferSafetyContractTest {
 
         val pull = TransferTopologyDraft(
             mode = TransferMode.Pull,
-            sources = listOf(TransferEndpoint("remote", "Remote backup", "user@example:/backups/photos.bakery", isRemote = true)),
+            sources = listOf(TransferEndpoint("remote", "Remote backup", "rclone://drive/backups/photos.bakery", isRemote = true)),
             destination = TransferEndpoint("local", "Phone staging", "/shared/bkx/incoming"),
         )
         val sync = TransferTopologyDraft(

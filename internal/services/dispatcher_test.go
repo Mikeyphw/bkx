@@ -275,3 +275,104 @@ func TestDetailedProgressPreservesCountsAndBytes(t *testing.T) {
 		t.Fatalf("detailed progress lost byte counters: %#v", got)
 	}
 }
+
+func TestTransferDispatcherAcceptsRcloneEndpointsAndRejectsSpoofedRemoteFlags(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	script := `#!/bin/sh
+set -eu
+case "$1" in
+  lsjson) printf '{"Path":"source","Name":"source","Size":5,"ModTime":"2026-09-07T12:00:00Z","IsDir":false}\n' ;;
+  size) printf '{"count":1,"bytes":5}\n' ;;
+  *) exit 0 ;;
+esac
+`
+	if err := os.WriteFile(rclone, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+
+	src := filepath.Join(root, "source")
+	if err := os.WriteFile(src, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := New(nil)
+	payload := map[string]any{
+		"sources":     []any{map[string]any{"location": src, "remote": false}},
+		"destination": map[string]any{"location": "rclone://drive/BKX", "remote": true},
+		"mode":        "push", "verify": true, "overwrite": false,
+	}
+	result, err := d.Dispatch(OperationContext{RequestID: "remote-plan"}, "transfer.plan", raw(payload))
+	if err != nil || result.Status != "success" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+
+	payload["destination"] = map[string]any{"location": "rclone://drive/BKX", "remote": false}
+	if _, err := d.Dispatch(OperationContext{RequestID: "spoofed"}, "transfer.plan", raw(payload)); err == nil {
+		t.Fatal("remote flag spoofing accepted")
+	}
+
+	syncPayload := map[string]any{
+		"sources":     []any{map[string]any{"location": src, "remote": false}},
+		"destination": map[string]any{"location": "rclone://drive/BKX", "remote": true},
+		"mode":        "sync", "verify": true, "overwrite": true, "delete_extraneous_on_sync": true,
+	}
+	if _, err := d.Dispatch(OperationContext{RequestID: "sync-plan"}, "transfer.plan", raw(syncPayload)); err != nil {
+		t.Fatalf("approved sync rejected: %v", err)
+	}
+}
+
+func TestFilesystemBrowserDispatchesConfiguredRcloneUrisWithoutProtocolExpansion(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	script := `#!/bin/sh
+set -eu
+case "$1" in
+  lsjson)
+    case "$*" in
+      *--stat*) printf '{"Path":"folder/file.txt","Name":"file.txt","Size":5,"ModTime":"2026-09-07T12:00:00Z","IsDir":false}\n' ;;
+      *) printf '[{"Path":"folder","Name":"folder","Size":0,"ModTime":"2026-09-07T12:00:00Z","IsDir":true},{"Path":".hidden","Name":".hidden","Size":1,"ModTime":"2026-09-07T12:00:00Z","IsDir":false},{"Path":"file.txt","Name":"file.txt","Size":5,"ModTime":"2026-09-07T12:00:00Z","IsDir":false}]\n' ;;
+    esac ;;
+  *) echo "unexpected command $1" >&2; exit 3 ;;
+esac
+`
+	if err := os.WriteFile(rclone, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+
+	d := New(nil)
+	listed, err := d.Dispatch(OperationContext{RequestID: "remote-list"}, "filesystem.list", raw(map[string]any{
+		"path": "rclone://drive/BKX", "show_hidden": false, "limit": 100, "offset": 0,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if listed.Status != "success" || len(listed.Artifacts) != 2 {
+		t.Fatalf("listed=%+v", listed)
+	}
+	if listed.Artifacts[0].Label != "directory" || listed.Artifacts[0].Path != "rclone://drive/BKX/folder" {
+		t.Fatalf("directory artifact=%+v", listed.Artifacts[0])
+	}
+	if listed.Artifacts[1].Label != "file" || listed.Artifacts[1].Path != "rclone://drive/BKX/file.txt" {
+		t.Fatalf("file artifact=%+v", listed.Artifacts[1])
+	}
+
+	stat, err := d.Dispatch(OperationContext{RequestID: "remote-stat"}, "filesystem.stat", raw(map[string]any{"path": "rclone://drive/BKX/file.txt"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stat.Status != "success" || len(stat.Artifacts) != 1 || stat.Artifacts[0].Path != "rclone://drive/BKX/file.txt" || stat.Artifacts[0].Label != "file" {
+		t.Fatalf("stat=%+v", stat)
+	}
+}

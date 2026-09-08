@@ -171,7 +171,7 @@ class BkxAppViewModelTest {
         val transferDraft = TransferTopologyDraft(
             mode = TransferMode.Push,
             sources = listOf(TransferEndpoint("src", "Source", "/shared/bkx/backup.bkx")),
-            destination = TransferEndpoint("dst", "Remote", "user@example:/backups", isRemote = true),
+            destination = TransferEndpoint("dst", "Remote", "rclone://drive/backups", isRemote = true),
         )
         val transferPreview = TransferPreviewSummary(
             requestId = "transfer-preview",

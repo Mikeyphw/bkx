@@ -1,6 +1,7 @@
 package transferops
 
 import (
+	"context"
 	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha1"
@@ -22,6 +23,7 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/models"
+	"bkx/internal/rcloneops"
 	"bkx/internal/runstore"
 	"bkx/internal/validation"
 )
@@ -114,8 +116,8 @@ func Normalize(spec models.TransferSpec) (models.TransferSpec, error) {
 	if err != nil {
 		return models.TransferSpec{}, err
 	}
-	if validation.IsRemoteLocation(valid.Destination) {
-		return models.TransferSpec{}, berror.Validation("GO09 local transfer supports only local Path sources and destinations", map[string]any{"destination": valid.Destination})
+	if usesRclone(valid) {
+		return normalizeRcloneSpec(valid)
 	}
 	destination, err := validation.AbsoluteLocalPath(valid.Destination)
 	if err != nil {
@@ -123,9 +125,6 @@ func Normalize(spec models.TransferSpec) (models.TransferSpec, error) {
 	}
 	sources := make([]string, 0, len(valid.Sources))
 	for _, source := range valid.Sources {
-		if validation.IsRemoteLocation(source) {
-			return models.TransferSpec{}, berror.Validation("GO09 local transfer supports only local Path sources and destinations", map[string]any{"source": source})
-		}
 		canonical, err := validation.CanonicalLocalPath(source)
 		if err != nil {
 			return models.TransferSpec{}, err
@@ -152,10 +151,73 @@ func Normalize(spec models.TransferSpec) (models.TransferSpec, error) {
 	return valid, nil
 }
 
+func usesRclone(spec models.TransferSpec) bool {
+	if spec.Direction == "sync" || validation.IsRemoteLocation(spec.Destination) {
+		return true
+	}
+	for _, source := range spec.Sources {
+		if validation.IsRemoteLocation(source) {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeRcloneSpec(valid models.TransferSpec) (models.TransferSpec, error) {
+	normalize := func(value, field string, requireSource bool) (string, error) {
+		trimmed := strings.TrimSpace(value)
+		if validation.IsRemoteLocation(trimmed) {
+			if !rcloneops.IsLocation(trimmed) {
+				return "", berror.Validation("Unsupported remote location; BKX remote transfers use rclone://remote/path", map[string]any{"field": field, "location": trimmed})
+			}
+			if _, err := rcloneops.NormalizeLocation(trimmed); err != nil {
+				return "", berror.Validation("Invalid rclone remote location", map[string]any{"field": field, "reason": err.Error()})
+			}
+			return trimmed, nil
+		}
+		if requireSource {
+			canonical, err := validation.CanonicalLocalPath(trimmed)
+			if err != nil {
+				return "", err
+			}
+			if err := validateSource(canonical); err != nil {
+				return "", err
+			}
+			return canonical, nil
+		}
+		return validation.AbsoluteLocalPath(trimmed)
+	}
+
+	sources := make([]string, 0, len(valid.Sources))
+	for index, source := range valid.Sources {
+		normalized, err := normalize(source, fmt.Sprintf("sources[%d]", index), true)
+		if err != nil {
+			return models.TransferSpec{}, err
+		}
+		sources = append(sources, normalized)
+	}
+	destination, err := normalize(valid.Destination, "destination", false)
+	if err != nil {
+		return models.TransferSpec{}, err
+	}
+	if len(sources) == 1 && !validation.IsRemoteLocation(sources[0]) && !validation.IsRemoteLocation(destination) {
+		st, _ := os.Stat(sources[0])
+		if sources[0] == destination || (st != nil && st.IsDir() && pathsOverlap(sources[0], destination)) {
+			return models.TransferSpec{}, berror.Validation("Transfer destination overlaps a source tree", map[string]any{"source": sources[0], "destination": destination})
+		}
+	}
+	valid.Sources = sources
+	valid.Destination = destination
+	return valid, nil
+}
+
 func PlanTransfer(spec models.TransferSpec) (Plan, error) {
 	valid, err := Normalize(spec)
 	if err != nil {
 		return Plan{}, err
+	}
+	if usesRclone(valid) {
+		return planRcloneTransfer(valid)
 	}
 	mappings, err := PlanMappings(valid)
 	if err != nil {
@@ -176,6 +238,48 @@ func PlanTransfer(spec models.TransferSpec) (Plan, error) {
 		steps = append(steps, PlanStep{StepType: "verify", Description: "Verify transfer integrity", Source: nil, Destination: &dest, FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{}, Warnings: []string{}})
 	}
 	return Plan{Command: "transfer " + valid.Direction, DryRun: true, Steps: steps, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "unknown", Warnings: []string{}}, nil
+}
+
+func planRcloneTransfer(valid models.TransferSpec) (Plan, error) {
+	runtime, err := rcloneops.RuntimeFromEnvironment()
+	if err != nil {
+		return Plan{}, berror.External("rclone remote transport is unavailable", map[string]any{"reason": err.Error(), "dependency": "rclone"})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	var files, bytes int64
+	for _, source := range valid.Sources {
+		_, size, err := runtime.Measure(ctx, source)
+		if err != nil {
+			return Plan{}, berror.WrapExternal("planning rclone transfer", source, "rclone", err)
+		}
+		files += size.Files
+		bytes += size.Bytes
+	}
+	warnings := []string{}
+	if !valid.Overwrite && valid.Direction != "sync" {
+		warnings = append(warnings, "Existing destination files are skipped unless Replace existing files is enabled.")
+	}
+	if valid.Direction == "sync" {
+		warnings = append(warnings, "Sync mirrors the source and deletes destination-only files after the reviewed plan is accepted.")
+	}
+	if valid.Verify {
+		warnings = append(warnings, "Remote verification uses rclone check and downloads data when a backend cannot provide a comparable hash.")
+	}
+	var source *string
+	if len(valid.Sources) == 1 {
+		value := valid.Sources[0]
+		source = &value
+	}
+	destination := valid.Destination
+	steps := []PlanStep{{
+		StepType: "transfer", Description: fmt.Sprintf("%s with rclone", valid.Direction), Source: source, Destination: &destination,
+		FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{"direction": valid.Direction, "source_count": len(valid.Sources), "transport": "rclone"}, Warnings: append([]string(nil), warnings...),
+	}}
+	if valid.Verify {
+		steps = append(steps, PlanStep{StepType: "verify", Description: "Verify remote transfer with rclone check", Source: source, Destination: &destination, FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{"transport": "rclone"}, Warnings: []string{}})
+	}
+	return Plan{Command: "transfer " + valid.Direction + " --transport rclone", DryRun: true, Steps: steps, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "network-dependent", Warnings: warnings}, nil
 }
 
 func PlanMappings(spec models.TransferSpec) ([]Mapping, error) {
@@ -249,6 +353,9 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if usesRclone(valid) {
+		return runRcloneTransfer(valid, options, started)
+	}
 	mappings, err := PlanMappings(valid)
 	if err != nil {
 		return Result{}, err
@@ -313,6 +420,74 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 	result := Result{Success: true, Direction: valid.Direction, DryRun: false, FilesTransferred: doneFiles, BytesTransferred: doneBytes, Source: &first, Destination: &destination, VerificationPassed: verification, ChecksumVerified: checksum, Warnings: []string{}, Errors: []string{}, DurationMS: time.Since(started).Milliseconds()}
 	complete("success", doneFiles, doneBytes, nil)
 	return result, nil
+}
+
+func runRcloneTransfer(valid models.TransferSpec, options Options, started time.Time) (Result, error) {
+	runtime, err := rcloneops.RuntimeFromEnvironment()
+	if err != nil {
+		return Result{}, berror.External("rclone remote transport is unavailable", map[string]any{"reason": err.Error(), "dependency": "rclone"})
+	}
+	first := valid.Sources[0]
+	destination := valid.Destination
+	if valid.DryRun {
+		plan, err := planRcloneTransfer(valid)
+		if err != nil {
+			return Result{}, err
+		}
+		return Result{Success: true, Direction: valid.Direction, DryRun: true, FilesTransferred: plan.TotalFiles, BytesTransferred: plan.TotalBytes, Source: &first, Destination: &destination, Warnings: append([]string{"Dry run - rclone transfer not executed"}, plan.Warnings...), Errors: []string{}, DurationMS: time.Since(started).Milliseconds()}, nil
+	}
+
+	runID := options.RunID
+	if runID == "" {
+		runID = randomRunID()
+	}
+	if options.RunStore != nil {
+		if _, err := options.RunStore.RecordStart(runID, "transfer", valid.Sources, &destination, nil, snapshotSpec(valid)); err != nil {
+			return Result{}, err
+		}
+	}
+	complete := func(status string, files, bytes int64, opErr error) {
+		if options.RunStore == nil {
+			return
+		}
+		var message *string
+		if opErr != nil {
+			text := opErr.Error()
+			message = &text
+		}
+		_, _ = options.RunStore.RecordCompletion(runID, status, int64ptr(files), int64ptr(bytes), message)
+	}
+
+	ctx := context.Background()
+	result, err := runtime.Transfer(ctx, valid.Direction, valid.Sources, valid.Destination, rcloneops.TransferOptions{
+		Overwrite: valid.Overwrite,
+		Verify:    valid.Verify || valid.Checksum != nil,
+		Cancelled: options.Cancelled,
+		Progress: func(progress rcloneops.Progress) {
+			if options.Progress != nil {
+				options.Progress(ProgressEvent{FilesTransferred: progress.FilesDone, BytesTransferred: progress.BytesDone, TotalFiles: progress.FilesTotal, TotalBytes: progress.BytesTotal})
+			}
+		},
+	})
+	if err != nil {
+		if errors.Is(err, context.Canceled) || isCancelled(options) {
+			complete("interrupted", 0, 0, ErrCancelled)
+			return Result{}, ErrCancelled
+		}
+		wrapped := berror.WrapExternal("running rclone transfer", valid.Destination, "rclone", err)
+		complete("failed", 0, 0, wrapped)
+		return Result{}, wrapped
+	}
+	verified := boolptrIf(valid.Verify, true)
+	checksum := boolptrIf(valid.Verify || valid.Checksum != nil, true)
+	complete("success", result.Files, result.Bytes, nil)
+	return Result{
+		Success: true, Direction: valid.Direction, DryRun: false,
+		FilesTransferred: result.Files, BytesTransferred: result.Bytes,
+		Source: &first, Destination: &destination,
+		VerificationPassed: verified, ChecksumVerified: checksum,
+		Warnings: []string{}, Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
+	}, nil
 }
 
 func copyOne(mapping Mapping, spec models.TransferSpec, progress func(int64), options Options) error {
@@ -683,5 +858,5 @@ func syncDir(path string) error {
 	return d.Sync()
 }
 func snapshotSpec(spec models.TransferSpec) map[string]any {
-	return map[string]any{"type": "TransferSpec", "values": map[string]any{"sources": append([]string(nil), spec.Sources...), "destination": spec.Destination, "direction": spec.Direction, "verify": spec.Verify, "checksum": spec.Checksum, "dry_run": spec.DryRun, "overwrite": spec.Overwrite}}
+	return map[string]any{"type": "TransferSpec", "values": map[string]any{"sources": append([]string(nil), spec.Sources...), "destination": spec.Destination, "direction": spec.Direction, "verify": spec.Verify, "checksum": spec.Checksum, "dry_run": spec.DryRun, "overwrite": spec.Overwrite, "delete_extraneous_on_sync": spec.DeleteExtraneousOnSync}}
 }

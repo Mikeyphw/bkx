@@ -39,11 +39,37 @@ abstract class BuildBkxGoAndroidRuntimeTask @Inject constructor(
     }
 }
 
+abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
+    private val execOperations: ExecOperations,
+) : DefaultTask() {
+    @get:Input
+    abstract val repositoryRootPath: Property<String>
+
+    @get:Input
+    abstract val installerScriptPath: Property<String>
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun installRuntime() {
+        execOperations.exec {
+            workingDir(repositoryRootPath.get())
+            commandLine(
+                "bash",
+                installerScriptPath.get(),
+                outputDirectory.get().asFile.absolutePath,
+            )
+        }
+    }
+}
+
 val bkxValidationSdk = 36
 val bkxBuildToolsVersion = "36.0.0"
 val bkxJavaVersion = JavaVersion.VERSION_21
 val bkxNdkVersion = "29.0.14206865"
 val bkxGoRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-go-runtime/jniLibs")
+val bkxRcloneRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-rclone-runtime/jniLibs")
 
 val bkxRepositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
 val bkxVersionFile = bkxRepositoryRoot.resolve("internal/version/version.go")
@@ -283,11 +309,26 @@ val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("bui
     inputs.file(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh"))
 }
 
+val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRuntimeTask>("installBkxRcloneAndroidRuntime") {
+    group = "build"
+    description = "Install the pinned official ARM64 Android rclone runtime packaged by BKX Android."
+    repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
+    installerScriptPath.set(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh").absolutePath)
+    outputDirectory.set(bkxRcloneRuntimeJniDir)
+    inputs.file(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh"))
+    inputs.file(bkxRepositoryRoot.resolve("scripts/rclone-runtime-contract.sh"))
+    inputs.property("rcloneAndroidRuntime", "v1.75.1/android-21-armv8a")
+}
+
 androidComponents {
     onVariants(selector().all()) { variant ->
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             buildBkxGoAndroidRuntime,
             BuildBkxGoAndroidRuntimeTask::outputDirectory,
+        )
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(
+            installBkxRcloneAndroidRuntime,
+            InstallBkxRcloneAndroidRuntimeTask::outputDirectory,
         )
     }
 }

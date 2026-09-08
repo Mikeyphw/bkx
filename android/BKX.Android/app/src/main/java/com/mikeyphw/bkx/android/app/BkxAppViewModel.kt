@@ -1,5 +1,6 @@
 package com.mikeyphw.bkx.android.app
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -722,16 +723,23 @@ class BkxAppViewModel(
     }
 
     private fun openFilesystemBrowser(target: FilesystemSelectionTarget, initialPath: String) {
-        val path = initialPath.takeIf { it.startsWith("/") } ?: "/storage/emulated/0"
+        val remote = initialPath.startsWith("rclone://", ignoreCase = true)
+        val path = when {
+            initialPath.startsWith("/") -> initialPath
+            remote && target.allowRemote -> initialPath
+            else -> "/storage/emulated/0"
+        }
+        val folderOnlyOverride = if (target == FilesystemSelectionTarget.TransferSource && _state.value.transfer.draft.mode == com.mikeyphw.bkx.android.core.transfer.TransferMode.Sync) true else null
         _state.update { current ->
-            current.copy(filesystemBrowser = FilesystemBrowserUiState(open = true, target = target, currentPath = path, loading = true))
+            current.copy(filesystemBrowser = FilesystemBrowserUiState(open = true, target = target, currentPath = path, loading = true, folderOnlyOverride = folderOnlyOverride))
         }
         loadFilesystem(path)
     }
 
     private fun loadFilesystem(path: String) {
         val browser = _state.value.filesystemBrowser
-        if (!browser.open || !path.startsWith("/")) return
+        val remote = path.startsWith("rclone://", ignoreCase = true)
+        if (!browser.open || (!path.startsWith("/") && !(remote && browser.target?.allowRemote == true))) return
         _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(currentPath = path, loading = true, error = null)) }
         val request = BridgeRequestEnvelope(
             requestId = nextRequestId("filesystem-list"),
@@ -747,7 +755,7 @@ class BkxAppViewModel(
                 val entries = result.artifacts.map { artifact ->
                     FilesystemBrowserEntry(
                         path = artifact.path,
-                        name = artifact.path.substringAfterLast('/').ifBlank { artifact.path },
+                        name = filesystemDisplayName(artifact.path),
                         kind = when (artifact.label) {
                             "directory" -> FilesystemEntryKind.Directory
                             "file" -> FilesystemEntryKind.File
@@ -767,8 +775,9 @@ class BkxAppViewModel(
     }
 
     private fun selectFilesystemPath(path: String, isDirectory: Boolean) {
-        val target = _state.value.filesystemBrowser.target ?: return
-        if (target.folderOnly && !isDirectory) return
+        val browser = _state.value.filesystemBrowser
+        val target = browser.target ?: return
+        if (browser.folderOnly && !isDirectory) return
         when (target) {
             FilesystemSelectionTarget.BackupSource -> {
                 val draft = _state.value.backupPlanning.draft
@@ -791,11 +800,13 @@ class BkxAppViewModel(
             }
             FilesystemSelectionTarget.TransferSource -> {
                 val draft = _state.value.transfer.draft
-                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(sources = listOf(TransferEndpoint("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path)))))
+                val remote = path.startsWith("rclone://", ignoreCase = true)
+                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(sources = listOf(TransferEndpoint("path-${path.hashCode()}", filesystemDisplayName(path), path, isRemote = remote)))))
             }
             FilesystemSelectionTarget.TransferDestination -> {
                 val draft = _state.value.transfer.draft
-                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(destination = TransferEndpoint("path-${path.hashCode()}", path.substringAfterLast('/').ifBlank { path }, path))))
+                val remote = path.startsWith("rclone://", ignoreCase = true)
+                onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(destination = TransferEndpoint("path-${path.hashCode()}", filesystemDisplayName(path), path, isRemote = remote))))
             }
         }
         _state.update { it.copy(filesystemBrowser = FilesystemBrowserUiState()) }
@@ -920,6 +931,16 @@ class BkxAppViewModel(
     private fun nextRequestId(prefix: String): String {
         val sequence = requestSequence.incrementAndGet()
         return "$prefix-${System.currentTimeMillis()}-$sequence"
+    }
+
+    private fun filesystemDisplayName(path: String): String {
+        if (path.startsWith("rclone://", ignoreCase = true)) {
+            val uri = Uri.parse(path)
+            return uri.lastPathSegment?.let(Uri::decode)?.takeIf { it.isNotBlank() }
+                ?: uri.host?.takeIf { it.isNotBlank() }
+                ?: "Remote"
+        }
+        return path.substringAfterLast('/').ifBlank { path }
     }
 
     private fun archiveLocation(path: String): ArchiveLocation = ArchiveLocation(

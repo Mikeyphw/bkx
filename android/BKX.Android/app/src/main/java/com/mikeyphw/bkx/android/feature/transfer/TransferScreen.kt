@@ -21,9 +21,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
@@ -35,6 +37,8 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxStatusPill
 import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
+import com.mikeyphw.bkx.android.core.remotes.RcloneConfigManager
+import com.mikeyphw.bkx.android.core.remotes.RcloneRemoteProfile
 import com.mikeyphw.bkx.android.core.transfer.TransferEndpoint
 import com.mikeyphw.bkx.android.core.transfer.TransferMode
 import com.mikeyphw.bkx.android.core.transfer.TransferResultUiState
@@ -47,6 +51,10 @@ fun TransferScreen(
     modifier: Modifier = Modifier,
 ) {
     val draft = state.transfer.draft
+    val context = LocalContext.current
+    val remoteManager = remember(context) { RcloneConfigManager(context) }
+    val remoteSnapshot = remember(remoteManager, state.backendToolState.capabilities) { remoteManager.snapshot() }
+    val rcloneReady = "remote.rclone" in state.backendToolState.capabilities
     val sourcePath = draft.sources.firstOrNull()?.location.orEmpty()
     val destinationPath = draft.destination?.location.orEmpty()
     var chooseSource by rememberSaveable { mutableStateOf(sourcePath.isBlank()) }
@@ -69,7 +77,7 @@ fun TransferScreen(
             OutlinedButton(onClick = { onEvent(BkxHomeEvent.CloseMoreRoute) }) { Text("Back to More") }
             BkxPageHeader(
                 title = "Transfer",
-                subtitle = "Copy or synchronize local filesystem trees. Cloud remotes will join this workflow when remote storage is added.",
+                subtitle = "Copy or synchronize local files with configured rclone remotes.",
             )
             if (wide) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap)) {
@@ -85,6 +93,8 @@ fun TransferScreen(
                             onAdvancedSource = { advancedSource = it },
                             onAdvancedDestination = { advancedDestination = it },
                             openProvider = { providerTreeLauncher.launch(null) },
+                            remoteProfiles = remoteSnapshot.profiles,
+                            rcloneReady = rcloneReady,
                             onEvent = onEvent,
                         )
                     }
@@ -104,6 +114,8 @@ fun TransferScreen(
                     onAdvancedSource = { advancedSource = it },
                     onAdvancedDestination = { advancedDestination = it },
                     openProvider = { providerTreeLauncher.launch(null) },
+                    remoteProfiles = remoteSnapshot.profiles,
+                    rcloneReady = rcloneReady,
                     onEvent = onEvent,
                 )
                 TransferOptionsAndReview(state, onEvent)
@@ -124,6 +136,8 @@ private fun TransferEndpoints(
     onAdvancedSource: (Boolean) -> Unit,
     onAdvancedDestination: (Boolean) -> Unit,
     openProvider: () -> Unit,
+    remoteProfiles: List<RcloneRemoteProfile>,
+    rcloneReady: Boolean,
     onEvent: (BkxHomeEvent) -> Unit,
 ) {
     val draft = state.transfer.draft
@@ -152,6 +166,16 @@ private fun TransferEndpoints(
                     onChooseSource(false)
                 }
             }
+            if (draft.mode != TransferMode.Push) {
+                RemoteChoices(
+                    profiles = remoteProfiles,
+                    enabled = rcloneReady,
+                    onChoose = { profile ->
+                        onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferSource, profile.rootUri))
+                        onChooseSource(false)
+                    },
+                )
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferSource, source?.location ?: BkxStorageLocations.SHARED_STORAGE)) },
@@ -168,10 +192,10 @@ private fun TransferEndpoints(
                 OutlinedTextField(
                     value = source?.location.orEmpty(),
                     onValueChange = { path ->
-                        val endpoint = path.trim().takeIf { it.startsWith("/") }?.let { localEndpoint("source-${it.hashCode()}", it.substringAfterLast('/').ifBlank { "Source" }, it) }
+                        val endpoint = manualEndpoint(path, "Source")
                         onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(sources = endpoint?.let { listOf(it) }.orEmpty())))
                     },
-                    label = { Text("Source path") },
+                    label = { Text("Source path or rclone://remote/folder") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
@@ -184,7 +208,7 @@ private fun TransferEndpoints(
         Text("To", style = MaterialTheme.typography.titleLarge)
         if (destination == null) {
             Text("Choose where to transfer the files", style = MaterialTheme.typography.titleMedium)
-            Text("Remote destinations will appear here when cloud and rclone support is connected.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Choose device storage or a configured rclone remote.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = { onChooseDestination(true) }) { Text("Choose destination") }
         } else {
             TransferEndpointSummary(destination)
@@ -195,6 +219,16 @@ private fun TransferEndpoints(
             TransferLocationChoice("Internal storage", BkxStorageLocations.SHARED_STORAGE, "Shared storage") {
                 onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(destination = localEndpoint("destination-shared", "Internal storage", BkxStorageLocations.SHARED_STORAGE))))
                 onChooseDestination(false)
+            }
+            if (draft.mode != TransferMode.Pull) {
+                RemoteChoices(
+                    profiles = remoteProfiles,
+                    enabled = rcloneReady,
+                    onChoose = { profile ->
+                        onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferDestination, profile.rootUri))
+                        onChooseDestination(false)
+                    },
+                )
             }
             OutlinedButton(
                 onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.TransferDestination, destination?.location ?: BkxStorageLocations.SHARED_STORAGE)) },
@@ -207,10 +241,10 @@ private fun TransferEndpoints(
                 OutlinedTextField(
                     value = destination?.location.orEmpty(),
                     onValueChange = { path ->
-                        val endpoint = path.trim().takeIf { it.startsWith("/") }?.let { localEndpoint("destination-${it.hashCode()}", it.substringAfterLast('/').ifBlank { "Destination" }, it) }
+                        val endpoint = manualEndpoint(path, "Destination")
                         onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(destination = endpoint)))
                     },
-                    label = { Text("Destination path") },
+                    label = { Text("Destination path or rclone://remote/folder") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                 )
@@ -237,6 +271,34 @@ private fun TransferLocationChoice(label: String, path: String, supporting: Stri
 
 private fun localEndpoint(id: String, label: String, path: String): TransferEndpoint = TransferEndpoint(id, label, path)
 
+private fun manualEndpoint(raw: String, fallbackLabel: String): TransferEndpoint? {
+    val location = raw.trim()
+    if (location.isBlank()) return null
+    return when {
+        location.startsWith("/") -> localEndpoint("path-${location.hashCode()}", location.substringAfterLast('/').ifBlank { fallbackLabel }, location)
+        location.startsWith("rclone://", ignoreCase = true) -> {
+            val remoteName = location.removePrefix("rclone://").substringBefore('/').ifBlank { return null }
+            TransferEndpoint("rclone-${location.hashCode()}", remoteName, location, isRemote = true)
+        }
+        else -> null
+    }
+}
+
+@Composable
+private fun RemoteChoices(profiles: List<RcloneRemoteProfile>, enabled: Boolean, onChoose: (RcloneRemoteProfile) -> Unit) {
+    if (profiles.isEmpty()) {
+        Text("No rclone remotes configured. Import rclone.conf from More → Cloud & rclone remotes.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        return
+    }
+    profiles.forEach { profile ->
+        BkxOutlinedSurface(onClick = { if (enabled) onChoose(profile) }) {
+            Text(profile.name, style = MaterialTheme.typography.titleMedium)
+            Text(profile.type, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(if (enabled) "Browse remote" else "rclone runtime unavailable — refresh engine status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 @Composable
 private fun TransferOptionsAndReview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit) {
     val transfer = state.transfer
@@ -244,11 +306,13 @@ private fun TransferOptionsAndReview(state: BkxHomeUiState, onEvent: (BkxHomeEve
     BkxSurfaceCard {
         Text("Transfer mode", style = MaterialTheme.typography.titleLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val rcloneReady = "transfer.sync" in state.backendToolState.capabilities
             TransferMode.entries.forEach { mode ->
                 FilterChip(
                     selected = draft.mode == mode,
                     onClick = { onEvent(BkxHomeEvent.UpdateTransferDraft(draft.copy(mode = mode))) },
-                    label = { Text(mode.name) },
+                    enabled = mode != TransferMode.Sync || rcloneReady,
+                    label = { Text(mode.displayName) },
                 )
             }
         }

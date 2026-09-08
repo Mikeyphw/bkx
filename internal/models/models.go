@@ -45,13 +45,14 @@ type RestoreSpec struct {
 }
 
 type TransferSpec struct {
-	Checksum    *string  `json:"checksum"`
-	Destination string   `json:"destination"`
-	Direction   string   `json:"direction"`
-	DryRun      bool     `json:"dry_run"`
-	Overwrite   bool     `json:"overwrite"`
-	Sources     []string `json:"sources"`
-	Verify      bool     `json:"verify"`
+	Checksum               *string  `json:"checksum"`
+	Destination            string   `json:"destination"`
+	Direction              string   `json:"direction"`
+	DryRun                 bool     `json:"dry_run"`
+	Overwrite              bool     `json:"overwrite"`
+	Sources                []string `json:"sources"`
+	Verify                 bool     `json:"verify"`
+	DeleteExtraneousOnSync bool     `json:"delete_extraneous_on_sync,omitempty"`
 }
 
 type RunRecord struct {

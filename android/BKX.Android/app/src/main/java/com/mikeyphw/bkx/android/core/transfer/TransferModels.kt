@@ -5,24 +5,28 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.files.ContentUriPathPolicy
 
+private val RCLONE_REMOTE_LOCATION_REGEX = Regex("^rclone://[A-Za-z0-9._-]+(?:/[^?#\\u0000]*)?$", RegexOption.IGNORE_CASE)
 private val SAFE_RELATIVE_PATH_REGEX = Regex("^(?!/)(?![A-Za-z]:)(?!.*\\u0000)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))\\S(?:.*\\S)?/?$")
 
-enum class TransferMode(val protocolValue: String) {
-    Push("push"),
-    Pull("pull"),
-    Sync("sync"),
+enum class TransferMode(val protocolValue: String, val displayName: String) {
+    Push("push", "Send"),
+    Pull("pull", "Receive"),
+    Sync("sync", "Mirror"),
 }
 
 data class TransferEndpoint(
     val endpointId: String,
     val label: String,
     val location: String,
-    val isRemote: Boolean = location.contains(":") && !location.startsWith("/") && !location.startsWith("content://"),
+    val isRemote: Boolean = location.startsWith("rclone://", ignoreCase = true),
 ) {
     init {
         require(endpointId.isNotBlank()) { "Transfer endpoint id must not be blank." }
         require(label.isNotBlank()) { "Transfer endpoint label must not be blank." }
         require(location.isNotBlank()) { "Transfer endpoint location must not be blank." }
+        val rcloneLocation = location.startsWith("rclone://", ignoreCase = true)
+        require(isRemote == rcloneLocation) { "Remote transfer endpoints must use rclone:// locations and the remote flag must match the location." }
+        if (isRemote) require(RCLONE_REMOTE_LOCATION_REGEX.matches(location)) { "Remote transfer location must be a credential-free rclone://remote/path URI." }
         ContentUriPathPolicy.requireNotContentUriPath(location)
     }
 }
@@ -48,6 +52,7 @@ data class TransferTopologyDraft(
         if (sources.isEmpty()) add(TransferValidationIssue.MissingSource)
         if (destination == null) add(TransferValidationIssue.MissingDestination)
         if (mode == TransferMode.Sync && sources.size != 1) add(TransferValidationIssue.InvalidTopology("Sync requires exactly one source."))
+        if (mode == TransferMode.Sync && !deleteExtraneousOnSync) add(TransferValidationIssue.InvalidTopology("Sync mirrors the source and requires explicit approval to delete destination-only files."))
         if (mode == TransferMode.Push && sources.any { it.isRemote }) add(TransferValidationIssue.InvalidTopology("Push sources must be staged local paths."))
         if (mode == TransferMode.Pull && destination?.isRemote == true) add(TransferValidationIssue.InvalidTopology("Pull destination must be a staged local path."))
         if (checksum != null && checksum.isBlank()) add(TransferValidationIssue.InvalidTopology("Checksum must not be blank when provided."))

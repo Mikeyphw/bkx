@@ -39,7 +39,7 @@ object CliParitySnapshots {
             draft = TransferTopologyDraft(
                 mode = TransferMode.Push,
                 sources = listOf(TransferEndpoint("src", "Archive", "/shared/backup.bkx")),
-                destination = TransferEndpoint("dst", "Remote", "user@example:/backups", isRemote = true),
+                destination = TransferEndpoint("dst", "Remote", "rclone://drive/backups", isRemote = true),
             ),
         ),
     )

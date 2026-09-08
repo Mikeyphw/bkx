@@ -303,11 +303,106 @@ tasks.register("verifyBkxProductUiContract") {
         check("OpenMoreRoute(MoreRoute.Transfer)" in more.readText()) {
             "More must route to the dedicated transfer workflow instead of embedding the form."
         }
+        check("OpenMoreRoute(MoreRoute.Remotes)" in more.readText()) {
+            "More must route to the dedicated remote-storage workflow instead of embedding cloud configuration."
+        }
         check("RequestTransferPreview" in transfer.readText() && "RunTransfer" in transfer.readText()) {
-            "Dedicated transfer screen must expose real local transfer review/execution."
+            "Dedicated transfer screen must expose real local/rclone transfer review/execution."
         }
         check("ArchiveDetailPane" in archives.readText() && "ArchiveDetailSection.Restore" in archives.readText()) {
             "Archives must use the adaptive list/detail restore workflow."
+        }
+    }
+}
+
+tasks.register("verifyBkxRcloneRemoteTransportContract") {
+    group = "verification"
+    description = "Verify the structured Android rclone runtime, app-private remote configuration, remote browsing, transfer safety, and OV3 lint-warning cleanup contracts."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val sourceRoot = layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
+    val testRoot = layout.projectDirectory.dir("src/test/java/com/mikeyphw/bkx/android/contracts").asFile
+    val appBuild = layout.projectDirectory.file("build.gradle.kts").asFile
+    val installer = repositoryRoot.resolve("scripts/install-rclone-android-runtime.sh")
+    val runtimeContract = repositoryRoot.resolve("scripts/rclone-runtime-contract.sh")
+    val verifier = repositoryRoot.resolve("scripts/verify-rclone-remote-transport.sh")
+    val gateway = sourceRoot.resolve("embedded/GoNativeGateway.kt")
+    val manager = sourceRoot.resolve("core/remotes/RcloneConfigManager.kt")
+    val parser = sourceRoot.resolve("core/remotes/RcloneConfigParser.kt")
+    val models = sourceRoot.resolve("core/remotes/RcloneModels.kt")
+    val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
+    val remotes = sourceRoot.resolve("feature/more/RcloneRemotesScreen.kt")
+    val transfer = sourceRoot.resolve("feature/transfer/TransferScreen.kt")
+    val browser = sourceRoot.resolve("feature/home/FilesystemBrowserDialog.kt")
+    val browserModels = sourceRoot.resolve("core/files/FilesystemBrowserModels.kt")
+    val backup = sourceRoot.resolve("feature/backup/BackupScreen.kt")
+    val contractTest = testRoot.resolve("RcloneRemoteTransportContractTest.kt")
+    val parserTest = testRoot.resolve("RcloneConfigParserTest.kt")
+
+    inputs.files(appBuild, installer, runtimeContract, verifier, gateway, manager, parser, models, more, remotes, transfer, browser, browserModels, backup, contractTest, parserTest)
+
+    doLast {
+        val buildText = appBuild.readText()
+        val installerText = installer.readText()
+        val runtimeContractText = runtimeContract.readText()
+        val gatewayText = gateway.readText()
+        val managerText = manager.readText()
+        val parserText = parser.readText()
+        val modelText = models.readText()
+        val moreText = more.readText()
+        val remotesText = remotes.readText()
+        val transferText = transfer.readText()
+        val browserText = browser.readText()
+        val browserModelsText = browserModels.readText()
+        val backupText = backup.readText()
+
+        check("installBkxRcloneAndroidRuntime" in buildText && "generated/bkx-rclone-runtime/jniLibs" in buildText) {
+            "BKX Android must package the generated rclone Android runtime as a native-library source."
+        }
+        listOf(
+            "RCLONE_VERSION=\"1.75.1\"",
+            "rclone-android-${'$'}{RCLONE_ANDROID_API}-${'$'}{RCLONE_ANDROID_ARCH}.gz",
+            "BKX_RCLONE_ANDROID_SHA256",
+            "https://beta.rclone.org/v${'$'}{RCLONE_VERSION}/testbuilds/${'$'}{RCLONE_ARCHIVE}",
+            "bkx_rclone_validate_build_info",
+            "bkx_rclone_validate_version_output",
+        ).forEach { token -> check(token in installerText) { "Pinned Android rclone installer is missing '$token'." } }
+        listOf(
+            "GOOS=android",
+            "GOARCH=arm64",
+            "os/type: android",
+            "os/arch: arm64",
+        ).forEach { token -> check(token in runtimeContractText) { "Shared rclone runtime contract is missing '$token'." } }
+        check("linux-arm64" !in installerText) { "Android rclone packaging must never fall back to a Linux binary." }
+        check("BKX_RCLONE_PATH" in gatewayText && "BKX_RCLONE_CONFIG" in gatewayText && "libbkxrclone_exec.so" in gatewayText) {
+            "GoNativeGateway must pass the packaged rclone runtime and app-private config path to BKX."
+        }
+        check("filesDir.resolve(\"bkx/rclone\")" in managerText && "MAX_RCLONE_CONFIG_BYTES" in managerText && "RCLONE_ENCRYPT_V0:" in managerText) {
+            "rclone.conf ownership/import limits are missing from the app-private config manager."
+        }
+        check("RcloneConfigParser" in managerText && "SAFE_RCLONE_REMOTE_NAME" in parserText) {
+            "rclone configuration parsing must remain isolated and unit-testable."
+        }
+        check("token" !in modelText.lowercase() && "password" !in modelText.lowercase()) {
+            "Remote UI models must not expose credential-bearing config values."
+        }
+        check("MoreRoute.Remotes" in moreText && "Import rclone.conf" in remotesText && "remote.rclone.configured" in remotesText) {
+            "More must route to a dedicated rclone-remotes screen with runtime/config state."
+        }
+        check("Browse remote" in transferText && "Manual path · Advanced" in transferText) {
+            "Transfer must remain picker-first and expose remote browsing without reverting to raw-path-first UX."
+        }
+        check("allowRemote" in browserModelsText && "rclone://" in browserText) {
+            "Filesystem browser must gate remote navigation by selection target."
+        }
+        check("Build.VERSION.SDK_INT >= Build.VERSION_CODES.O" in moreText && "ACTION_APPLICATION_DETAILS_SETTINGS" in moreText) {
+            "Notification settings must retain the minSdk-24 fallback instead of unguarded API-26 fields."
+        }
+        check("getAllocatableBytes" in backupText && "getUuidForPath" in backupText && "StatFs" in backupText && ".usableSpace" !in backupText) {
+            "Backup free-space estimation must use allocatable storage on API 26+ with a StatFs fallback."
+        }
+        check(contractTest.isFile && parserTest.isFile && verifier.isFile) {
+            "Structured OV4 remote transport regression evidence is incomplete."
         }
     }
 }
@@ -741,6 +836,7 @@ tasks.register("verifyBkxFinalReleaseContract") {
 
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn(
+        "verifyBkxRcloneRemoteTransportContract",
         "verifyBkxRuntimeHardeningContract",
         "verifyBkxRestoreSafetySeal",
         "verifyBkxPerformanceAndProgressContract",

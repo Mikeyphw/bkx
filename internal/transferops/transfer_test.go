@@ -336,3 +336,44 @@ func TestParseSpecJSONFrozenShapeAndRemoteFailClosed(t *testing.T) {
 }
 
 func unixTime(sec int64) (tme time.Time) { return time.Unix(sec, 0) }
+
+func TestRcloneRemotePlanUsesExternalTransportAndPreservesLocalRules(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	script := `#!/bin/sh
+set -eu
+case "$1" in
+  lsjson) printf '{"Path":"source.txt","Name":"source.txt","Size":7,"ModTime":"2026-09-07T12:00:00Z","IsDir":false}\n' ;;
+  size) printf '{"count":3,"bytes":21}\n' ;;
+  *) echo "unexpected command: $1" >&2; exit 2 ;;
+esac
+`
+	if err := os.WriteFile(rclone, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+
+	source := writeFile(t, filepath.Join(root, "source.txt"), "payload")
+	plan, err := PlanTransfer(models.TransferSpec{
+		Sources: []string{source}, Destination: "rclone://drive/BKX", Direction: "push", Verify: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Command != "transfer push --transport rclone" || plan.TotalFiles != 1 || plan.TotalBytes != 7 {
+		t.Fatalf("plan=%+v", plan)
+	}
+	if len(plan.Steps) != 2 || plan.Steps[0].Details["transport"] != "rclone" {
+		t.Fatalf("steps=%+v", plan.Steps)
+	}
+
+	unsupported := models.TransferSpec{Sources: []string{"s3://bucket/key"}, Destination: root, Direction: "pull"}
+	if _, err := PlanTransfer(unsupported); err == nil {
+		t.Fatal("unsupported non-rclone remote unexpectedly accepted")
+	}
+}

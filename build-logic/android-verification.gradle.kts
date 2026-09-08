@@ -255,10 +255,16 @@ tasks.register("verifyBkxPersonalSigningContract") {
             "create(\"bkxPersonal\")",
             "getByName(\"debug\")",
             "getByName(\"release\")",
+            "abstract class BkxSigningStatusTask",
+            "abstract class VerifyBkxPersonalSigningConfiguredTask",
+            "tasks.register<BkxSigningStatusTask>(\"bkxSigningStatus\")",
+            "tasks.register<VerifyBkxPersonalSigningConfiguredTask>(\"verifyBkxPersonalSigningConfigured\")",
             "verifyBkxPersonalSigningConfigured",
             "assemblePersonalDebug",
             "assemblePersonalRelease",
         ).forEach { token -> check(token in buildText) { "Personal signing build contract missing: $token" } }
+        check("tasks.register(\"bkxSigningStatus\")" !in buildText) { "bkxSigningStatus must use a typed configuration-cache-safe task class." }
+        check("tasks.register(\"verifyBkxPersonalSigningConfigured\")" !in buildText) { "verifyBkxPersonalSigningConfigured must use a typed configuration-cache-safe task class." }
         check("-storepass:env BKX_SIGNING_SETUP_PASSWORD" in setupText) { "Setup helper must not expose the password in keytool argv." }
         check("chmod 600" in setupText && "SHA1:" in setupText) { "Setup helper must restrict secrets and print the OAuth fingerprint." }
         check("storeFile=" in exampleText && "storePassword=" in exampleText && "keyAlias=" in exampleText && "keyPassword=" in exampleText) {

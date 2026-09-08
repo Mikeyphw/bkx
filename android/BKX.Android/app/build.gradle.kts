@@ -66,6 +66,51 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
     }
 }
 
+abstract class BkxSigningStatusTask : DefaultTask() {
+    @get:Input
+    abstract val configured: Property<Boolean>
+
+    @get:Input
+    abstract val propertiesPath: Property<String>
+
+    @get:Input
+    abstract val keystorePath: Property<String>
+
+    @get:Input
+    abstract val keyAlias: Property<String>
+
+    @TaskAction
+    fun reportStatus() {
+        if (configured.get()) {
+            println("BKX personal signing: configured")
+            println("Properties: ${propertiesPath.get()}")
+            println("Keystore: ${keystorePath.get()}")
+            println("Alias: ${keyAlias.get()}")
+            println("Debug and release APKs use the same permanent certificate.")
+        } else {
+            println("BKX personal signing: NOT configured")
+            println("Expected properties: ${propertiesPath.get()}")
+            println("Run bash tools/setup-personal-signing.sh before installing the permanent BKX build.")
+        }
+    }
+}
+
+abstract class VerifyBkxPersonalSigningConfiguredTask : DefaultTask() {
+    @get:Input
+    abstract val configured: Property<Boolean>
+
+    @get:Input
+    abstract val keystorePath: Property<String>
+
+    @TaskAction
+    fun verifyConfigured() {
+        check(configured.get() && File(keystorePath.get()).isFile) {
+            "BKX permanent personal signing is not configured. Run bash tools/setup-personal-signing.sh."
+        }
+        println("BKX permanent personal signing configuration: PASS")
+    }
+}
+
 val bkxValidationSdk = 36
 val bkxBuildToolsVersion = "36.0.0"
 val bkxJavaVersion = JavaVersion.VERSION_21
@@ -211,33 +256,20 @@ android {
 }
 
 
-tasks.register("bkxSigningStatus") {
+tasks.register<BkxSigningStatusTask>("bkxSigningStatus") {
     group = "help"
     description = "Show whether BKX debug and release APKs use the permanent personal signing certificate."
-    doLast {
-        if (bkxPersonalSigningConfigured) {
-            println("BKX personal signing: configured")
-            println("Properties: ${bkxSigningPropertiesFile.absolutePath}")
-            println("Keystore: ${bkxPersonalSigningStoreFile!!.absolutePath}")
-            println("Alias: ${bkxSigningValue("keyAlias")}")
-            println("Debug and release APKs use the same permanent certificate.")
-        } else {
-            println("BKX personal signing: NOT configured")
-            println("Expected properties: ${bkxSigningPropertiesFile.absolutePath}")
-            println("Run bash tools/setup-personal-signing.sh before installing the permanent BKX build.")
-        }
-    }
+    configured.set(bkxPersonalSigningConfigured)
+    propertiesPath.set(bkxSigningPropertiesFile.absolutePath)
+    keystorePath.set(bkxPersonalSigningStoreFile?.absolutePath.orEmpty())
+    keyAlias.set(if (bkxPersonalSigningConfigured) bkxSigningValue("keyAlias") else "")
 }
 
-tasks.register("verifyBkxPersonalSigningConfigured") {
+tasks.register<VerifyBkxPersonalSigningConfiguredTask>("verifyBkxPersonalSigningConfigured") {
     group = "verification"
     description = "Fail unless the permanent BKX personal signing configuration is available outside the repository."
-    doLast {
-        check(bkxPersonalSigningConfigured && bkxPersonalSigningStoreFile?.isFile == true) {
-            "BKX permanent personal signing is not configured. Run bash tools/setup-personal-signing.sh."
-        }
-        println("BKX permanent personal signing configuration: PASS")
-    }
+    configured.set(bkxPersonalSigningConfigured)
+    keystorePath.set(bkxPersonalSigningStoreFile?.absolutePath.orEmpty())
 }
 
 tasks.configureEach {

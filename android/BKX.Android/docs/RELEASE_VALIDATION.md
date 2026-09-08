@@ -27,6 +27,7 @@ devtool -r ~/Code/bkx --target bkx_android validate \
   --task :app:verifyBkxFinalReleaseContract \
   --task :app:verifyBkxAndroidManifestReleaseContract \
   --task :app:verifyBkxAndroidSigningPlaceholders \
+  --task :app:verifyBkxPersonalSigningContract \
   --task :app:verifyBkxAndroidReleaseDocs \
   --task :app:testDebugUnitTest \
   --task :app:lintDebug \
@@ -46,7 +47,15 @@ scripts/validate.sh
 
 ## Google Drive release setup
 
-Google Drive authorization uses `com.google.android.gms:play-services-auth:21.6.0` and only the `drive.file` scope. A build intended to use Drive must have the Drive API enabled and an Android OAuth client matching `com.mikeyphw.bkx.android` plus the APK signing certificate SHA fingerprint. The source tree contains no OAuth client secret and no release keystore.
+Google Drive authorization uses `com.google.android.gms:play-services-auth:21.6.0` and only the `drive.file` scope. A build intended to use Drive must have the Drive API enabled and an Android OAuth client matching `com.mikeyphw.bkx.android` plus the SHA-1 of the permanent BKX signing certificate. Run `bash tools/setup-personal-signing.sh` once; the real keystore and password properties remain under `~/.config/bkx/` (or another external path selected by environment variables), never in the source tree. When configured, both debug and release APKs use that same certificate.
+
+Before distributing/installing a permanent build, run:
+
+```bash
+gradle :app:verifyBkxPersonalSigningConfigured :app:assemblePersonalRelease
+```
+
+Use `gradle :app:assemblePersonalDebug` when a debuggable APK is desired without changing Android/Google OAuth identity.
 
 The manifest must retain `android.permission.INTERNET`; the packaged rclone process executes under the BKX app UID and relies on that permission. Validation must also prove that access-token values never enter UI models, bridge payloads, run history, or diagnostics.
 

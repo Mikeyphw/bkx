@@ -36,7 +36,7 @@ Restore uses the same materialization boundary before the existing local restore
 
 ## Setup requirements
 
-Because the authorization is an Android OAuth client flow, a personal build must have Google Drive API access and an Android OAuth client registered for package `com.mikeyphw.bkx.android` with the signing certificate used for that APK. Debug and release signing certificates are distinct registrations when their SHA fingerprints differ.
+Because authorization is an Android OAuth client flow, a personal build must have Google Drive API access and an Android OAuth client registered for package `com.mikeyphw.bkx.android` with the permanent BKX signing certificate. `tools/setup-personal-signing.sh` creates that external certificate once; when configured, both debug and release APKs use it, so one SHA-1 registration covers future personal BKX updates.
 
 The Android manifest includes `android.permission.INTERNET`; rclone is executed inside the BKX app sandbox and therefore depends on the app owning network permission.
 

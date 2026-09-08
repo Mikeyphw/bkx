@@ -31,12 +31,14 @@ Google Drive is optional and local backup/archive/restore remains fully usable w
 
 For a personal Google Drive build:
 
-1. Enable the Google Drive API in the Google Cloud project used by the APK.
-2. Create an Android OAuth client for package `com.mikeyphw.bkx.android` and register the SHA fingerprint of the certificate used to sign that APK. Debug and release signing certificates normally need separate registrations.
-3. Install the APK and open **More → Google Drive**.
-4. Choose **Connect Google Drive** and complete Google's authorization UI.
-5. BKX requests only `https://www.googleapis.com/auth/drive.file`; it does not request blanket Drive access.
-6. Use **Back up to Google Drive** or select Google Drive from the Backup destination picker. Drive archives then appear in the normal Archives workflow for browse, verify, and restore.
+1. Run `bash ./tools/setup-personal-signing.sh` once. Keep the generated `~/.config/bkx/bkx-personal.p12` and `~/.config/bkx/android-signing.properties` permanently and back them up privately.
+2. Run `gradle :app:bkxSigningStatus` and record the SHA-1 printed by the setup helper. With personal signing configured, debug and release APKs use the same certificate.
+3. Enable the Google Drive API in the Google Cloud project used by the APK.
+4. Create one Android OAuth client for package `com.mikeyphw.bkx.android` and register the SHA-1 fingerprint of the permanent BKX certificate.
+5. Build/install with `gradle :app:assemblePersonalDebug` or `gradle :app:assemblePersonalRelease`. The first permanent-key install may require uninstalling an older APK that was signed with Android's generated debug key.
+6. Open **More → Google Drive**, choose **Connect Google Drive**, and complete Google's authorization UI.
+7. BKX requests only `https://www.googleapis.com/auth/drive.file`; it does not request blanket Drive access.
+8. Use **Back up to Google Drive** or select Google Drive from the Backup destination picker. Drive archives then appear in the normal Archives workflow for browse, verify, and restore.
 
 The managed cloud location is `rclone://bkx-google-drive/BKX`. OAuth access tokens are stored only in BKX's owner-only app-private rclone configuration. BKX refreshes Google authorization before a managed Drive operation; if interactive approval is required, the operation waits for explicit user consent rather than starting unattended.
 

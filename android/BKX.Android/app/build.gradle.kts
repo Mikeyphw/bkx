@@ -6,6 +6,8 @@ import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 import org.gradle.util.GradleVersion
+import java.io.File
+import java.util.Properties
 import javax.inject.Inject
 
 plugins {
@@ -84,6 +86,39 @@ val bkxVersionParts = bkxVersionName.split(".").map { part ->
 check(bkxVersionParts.size == 3) { "BKX Android requires major.minor.patch; found $bkxVersionName" }
 val bkxVersionCode = bkxVersionParts[0] * 10_000 + bkxVersionParts[1] * 100 + bkxVersionParts[2]
 
+val bkxSigningPropertiesFile = File(
+    providers.environmentVariable("BKX_ANDROID_SIGNING_PROPERTIES").orNull
+        ?: File(System.getProperty("user.home"), ".config/bkx/android-signing.properties").absolutePath,
+).absoluteFile
+val bkxPersonalSigningConfigured = bkxSigningPropertiesFile.isFile
+val bkxSigningProperties = Properties().apply {
+    if (bkxPersonalSigningConfigured) {
+        bkxSigningPropertiesFile.inputStream().use { load(it) }
+    }
+}
+fun bkxSigningValue(name: String): String {
+    val value = bkxSigningProperties.getProperty(name)?.trim().orEmpty()
+    check(value.isNotEmpty() && value != "REPLACE_ME") {
+        "BKX personal signing property '$name' is missing in ${bkxSigningPropertiesFile.absolutePath}"
+    }
+    return value
+}
+val bkxPersonalSigningStoreFile = if (bkxPersonalSigningConfigured) {
+    check(!bkxSigningPropertiesFile.canonicalFile.toPath().startsWith(bkxRepositoryRoot.toPath())) {
+        "BKX personal signing properties must live outside the repository: ${bkxSigningPropertiesFile.absolutePath}"
+    }
+    File(bkxSigningValue("storeFile")).canonicalFile.also { store ->
+        check(store.isAbsolute && store.isFile) {
+            "BKX personal signing keystore does not exist: ${store.absolutePath}"
+        }
+        check(!store.toPath().startsWith(bkxRepositoryRoot.toPath())) {
+            "BKX personal signing keystore must live outside the repository: ${store.absolutePath}"
+        }
+    }
+} else {
+    null
+}
+
 // GO14 Android packages only the native Go protocol-v1 runtime.
 android {
     namespace = "com.mikeyphw.bkx.android"
@@ -91,6 +126,30 @@ android {
     buildToolsVersion = bkxBuildToolsVersion
     // Keep this literal so Devtool project inspection resolves --ndk-version auto to r29.
     ndkVersion = "29.0.14206865"
+
+    signingConfigs {
+        if (bkxPersonalSigningConfigured) {
+            create("bkxPersonal") {
+                storeFile = bkxPersonalSigningStoreFile
+                storePassword = bkxSigningValue("storePassword")
+                keyAlias = bkxSigningValue("keyAlias")
+                keyPassword = bkxSigningValue("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("debug") {
+            if (bkxPersonalSigningConfigured) {
+                signingConfig = signingConfigs.getByName("bkxPersonal")
+            }
+        }
+        getByName("release") {
+            if (bkxPersonalSigningConfigured) {
+                signingConfig = signingConfigs.getByName("bkxPersonal")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.mikeyphw.bkx.android"
@@ -151,6 +210,53 @@ android {
     }
 }
 
+
+tasks.register("bkxSigningStatus") {
+    group = "help"
+    description = "Show whether BKX debug and release APKs use the permanent personal signing certificate."
+    doLast {
+        if (bkxPersonalSigningConfigured) {
+            println("BKX personal signing: configured")
+            println("Properties: ${bkxSigningPropertiesFile.absolutePath}")
+            println("Keystore: ${bkxPersonalSigningStoreFile!!.absolutePath}")
+            println("Alias: ${bkxSigningValue("keyAlias")}")
+            println("Debug and release APKs use the same permanent certificate.")
+        } else {
+            println("BKX personal signing: NOT configured")
+            println("Expected properties: ${bkxSigningPropertiesFile.absolutePath}")
+            println("Run bash tools/setup-personal-signing.sh before installing the permanent BKX build.")
+        }
+    }
+}
+
+tasks.register("verifyBkxPersonalSigningConfigured") {
+    group = "verification"
+    description = "Fail unless the permanent BKX personal signing configuration is available outside the repository."
+    doLast {
+        check(bkxPersonalSigningConfigured && bkxPersonalSigningStoreFile?.isFile == true) {
+            "BKX permanent personal signing is not configured. Run bash tools/setup-personal-signing.sh."
+        }
+        println("BKX permanent personal signing configuration: PASS")
+    }
+}
+
+tasks.configureEach {
+    if (name == "assembleDebug" || name == "assembleRelease") {
+        mustRunAfter("verifyBkxPersonalSigningConfigured")
+    }
+}
+
+tasks.register("assemblePersonalDebug") {
+    group = "build"
+    description = "Build a debug APK using the permanent BKX personal certificate."
+    dependsOn("verifyBkxPersonalSigningConfigured", "assembleDebug")
+}
+
+tasks.register("assemblePersonalRelease") {
+    group = "build"
+    description = "Build a release APK using the permanent BKX personal certificate."
+    dependsOn("verifyBkxPersonalSigningConfigured", "assembleRelease")
+}
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))

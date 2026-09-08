@@ -15,6 +15,8 @@ fail() {
 [[ -f android/BKX.Android/docs/SETUP_GUIDE.md ]] || fail "missing setup guide"
 [[ -f android/BKX.Android/docs/SIGNING_PLACEHOLDERS.md ]] || fail "missing signing placeholder guide"
 [[ -f android/BKX.Android/gradle/bkx-release-signing.properties.example ]] || fail "missing signing placeholder example"
+[[ -f android/BKX.Android/tools/setup-personal-signing.sh ]] || fail "missing permanent signing setup helper"
+[[ -f android/BKX.Android/tools/print-personal-signing-fingerprint.sh ]] || fail "missing signing fingerprint helper"
 
 for marker in \
   ':app:testDebugUnitTest' \
@@ -23,6 +25,7 @@ for marker in \
   ':app:verifyBkxRcloneRemoteTransportContract' \
   ':app:verifyBkxGoogleDriveProductContract' \
   ':app:verifyBkxCloudProductReleaseSeal' \
+  ':app:verifyBkxPersonalSigningContract' \
   ':app:bkxAndroidReleaseSeal'; do
   grep -R -- "$marker" .devtool.toml android/BKX.Android/docs >/dev/null || fail "missing release marker $marker"
 done
@@ -48,7 +51,7 @@ for file in \
   [[ -f "$file" ]] || fail "missing remote/cloud release evidence $file"
 done
 
-if find android/BKX.Android -name 'bkx-release-signing.properties' -o -name '*.jks' -o -name '*.keystore' | grep -q .; then
+if find android/BKX.Android -name 'bkx-release-signing.properties' -o -name '*.jks' -o -name '*.keystore' -o -name '*.p12' -o -name '*.pfx' | grep -q .; then
   fail "release signing secret appears to be inside source tree"
 fi
 

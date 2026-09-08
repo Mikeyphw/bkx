@@ -37,6 +37,8 @@ android/**/*.aar
 android/**/gradle/bkx-release-signing.properties
 android/**/*.jks
 android/**/*.keystore
+android/**/*.p12
+android/**/*.pfx
 !android/**/gradle/*.example
 
 # Local/editor/OS noise

@@ -1,7 +1,7 @@
-
-# Copy this file to bkx-release-signing.properties outside source control when release signing is needed.
-# Do not commit real keystore paths, passwords, aliases, or secrets.
-storeFile=/absolute/path/outside/repo/bkx-release.jks
+# Schema example only. Do NOT copy real secrets into the repository.
+# tools/setup-personal-signing.sh writes the real owner-only file to:
+# ~/.config/bkx/android-signing.properties
+storeFile=/absolute/path/outside/repo/bkx-personal.p12
 storePassword=REPLACE_ME
-keyAlias=REPLACE_ME
+keyAlias=bkx
 keyPassword=REPLACE_ME

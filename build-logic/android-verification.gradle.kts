@@ -230,6 +230,44 @@ tasks.register("verifyBkxAndroidManifestReleaseContract") {
     }
 }
 
+tasks.register("verifyBkxPersonalSigningContract") {
+    group = "verification"
+    description = "Verify BKX permanent personal signing stays external and signs debug/release with one certificate when configured."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val appBuild = androidRootDir.resolve("app/build.gradle.kts")
+    val setup = androidRootDir.resolve("tools/setup-personal-signing.sh")
+    val fingerprint = androidRootDir.resolve("tools/print-personal-signing-fingerprint.sh")
+    val example = androidRootDir.resolve("gradle/bkx-release-signing.properties.example")
+    val gitignore = androidRootDir.resolve("../../.gitignore").canonicalFile
+    inputs.files(appBuild, setup, fingerprint, example, gitignore)
+
+    doLast {
+        check(setup.isFile) { "Missing personal signing setup helper." }
+        check(fingerprint.isFile) { "Missing signing fingerprint helper." }
+        val buildText = appBuild.readText()
+        val setupText = setup.readText()
+        val exampleText = example.readText()
+        val ignoreText = gitignore.readText()
+        listOf(
+            "BKX_ANDROID_SIGNING_PROPERTIES",
+            ".config/bkx/android-signing.properties",
+            "create(\"bkxPersonal\")",
+            "getByName(\"debug\")",
+            "getByName(\"release\")",
+            "verifyBkxPersonalSigningConfigured",
+            "assemblePersonalDebug",
+            "assemblePersonalRelease",
+        ).forEach { token -> check(token in buildText) { "Personal signing build contract missing: $token" } }
+        check("-storepass:env BKX_SIGNING_SETUP_PASSWORD" in setupText) { "Setup helper must not expose the password in keytool argv." }
+        check("chmod 600" in setupText && "SHA1:" in setupText) { "Setup helper must restrict secrets and print the OAuth fingerprint." }
+        check("storeFile=" in exampleText && "storePassword=" in exampleText && "keyAlias=" in exampleText && "keyPassword=" in exampleText) {
+            "Signing example schema is incomplete."
+        }
+        check("*.jks" in ignoreText && "*.keystore" in ignoreText && "*.p12" in ignoreText && "*.pfx" in ignoreText) { "Signing key material must remain ignored by Git." }
+    }
+}
+
 tasks.register("bkxAndroidReleaseSeal") {
     group = "verification"
     description = "Fail-closed BKX Android release gate: SDK/dependency compatibility, lint, unit tests, instrumentation tests, packages, docs, signing placeholders, and manifest contracts."
@@ -248,6 +286,7 @@ tasks.register("bkxAndroidReleaseSeal") {
         "verifyBkxCloudProductReleaseSeal",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
+        "verifyBkxPersonalSigningContract",
         "verifyBkxAndroidManifestReleaseContract",
     )
 }
@@ -751,7 +790,7 @@ tasks.register("verifyBkxReleaseHygiene") {
                 .toList()
         }
         val junk = releaseCandidatePaths
-            .filter { path -> path.substringAfterLast('.', "").lowercase() in setOf("pyc", "apk", "jks", "keystore") }
+            .filter { path -> path.substringAfterLast('.', "").lowercase() in setOf("pyc", "apk", "jks", "keystore", "p12", "pfx") }
         check(junk.isEmpty()) { "Release hygiene rejected generated/secret files: ${junk.joinToString()}" }
         val cachePaths = releaseCandidatePaths.filter { path ->
             path.split('/').any { segment -> segment == "__pycache__" }

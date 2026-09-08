@@ -102,6 +102,7 @@ preflight = [
     ":app:verifyBkxFinalReleaseContract",
     ":app:verifyBkxAndroidManifestReleaseContract",
     ":app:verifyBkxAndroidSigningPlaceholders",
+    ":app:verifyBkxPersonalSigningContract",
     ":app:verifyBkxAndroidReleaseDocs",
 ]
 

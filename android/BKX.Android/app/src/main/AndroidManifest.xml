@@ -29,6 +29,37 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".automation.BkxAutomationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <service
+            android:name=".automation.BkxAutomationJobService"
+            android:exported="true"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <receiver
+            android:name=".automation.BkxAutomationReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.FIRE_SETTING" />
+            </intent-filter>
+        </receiver>
+
+        <activity
+            android:name=".automation.BkxTaskerEditActivity"
+            android:exported="true"
+            android:label="@string/tasker_plugin_name"
+            android:icon="@drawable/ic_launcher"
+            android:theme="@style/Theme.BKXAndroid">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.EDIT_SETTING" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Started only through libsu RootService after the root manager authorizes BKX. -->
         <service
             android:name=".root.BkxRootEngineService"

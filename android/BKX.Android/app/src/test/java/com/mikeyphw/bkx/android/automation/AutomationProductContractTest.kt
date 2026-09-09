@@ -1,0 +1,77 @@
+package com.mikeyphw.bkx.android.automation
+
+import java.io.File
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class AutomationProductContractTest {
+    private val projectRoot = File(System.getProperty("user.dir"))
+    private val mainRoot = File(projectRoot, "src/main/java/com/mikeyphw/bkx/android")
+
+    @Test
+    fun manifestExposesOnlyCapabilityProtectedAutomationEntryPoints() {
+        val manifest = File(projectRoot, "src/main/AndroidManifest.xml").readText()
+        assertTrue(manifest.contains(".automation.BkxTaskerEditActivity"))
+        assertTrue(manifest.contains(LocalePluginContract.ACTION_EDIT_SETTING))
+        assertTrue(manifest.contains(LocalePluginContract.ACTION_FIRE_SETTING))
+        assertTrue(manifest.contains(".automation.BkxAutomationReceiver"))
+        assertTrue(manifest.contains(".automation.BkxAutomationService"))
+        assertTrue(manifest.contains(".automation.BkxAutomationJobService"))
+        assertTrue(manifest.contains("android.permission.BIND_JOB_SERVICE"))
+        BkxAutomationContract.directActions.forEach { assertFalse(manifest.contains(it)) }
+    }
+
+    @Test
+    fun taskerCapabilityIsSeparateAndEditActivityRejectsUntrustedCallers() {
+        val stores = File(mainRoot, "automation/AutomationStores.kt").readText()
+        val editor = File(mainRoot, "automation/BkxTaskerEditActivity.kt").readText()
+        assertTrue(stores.contains("tasker_capability_token"))
+        assertTrue(stores.contains("isTaskerAuthorized"))
+        assertTrue(editor.contains("callingPackage !in TRUSTED_TASKER_HOSTS"))
+        assertTrue(editor.contains("access.taskerToken"))
+        assertFalse(editor.contains("access.token, wait"))
+    }
+
+    @Test
+    fun taskerAndDirectIntentsShareOneEngineAndExistingSafetyBuilders() {
+        val engine = File(mainRoot, "automation/BkxAutomationEngine.kt").readText()
+        val receiver = File(mainRoot, "automation/BkxAutomationReceiver.kt").readText()
+        assertTrue(receiver.contains("AutomationAccessStore(context).isTaskerAuthorized"))
+        assertTrue(receiver.contains("AutomationAccessStore(context).isAuthorized"))
+        assertTrue(receiver.contains("AutomationDispatcher.enqueue"))
+        assertTrue(engine.contains("BackupRequestBuilder"))
+        assertTrue(engine.contains("RestoreRequestBuilder"))
+        assertTrue(engine.contains("TransferRequestBuilder"))
+        assertTrue(engine.contains("ArchiveRequestBuilder"))
+        assertTrue(engine.contains("toRestorePreviewSummary"))
+        assertTrue(engine.contains("RestoreExtractionConfirmation.requiredPhrase"))
+        assertTrue(engine.contains("GoogleManagedDriveRefreshPort"))
+        assertFalse(receiver.contains("backendPort.submit"))
+    }
+
+    @Test
+    fun automationOwnsForegroundWhileCoordinatorKeepsDefaultUiBehavior() {
+        val coordinator = File(mainRoot, "app/runtime/BkxOperationCoordinator.kt").readText()
+        val service = File(mainRoot, "automation/BkxAutomationService.kt").readText()
+        assertTrue(coordinator.contains("manageForeground: Boolean = true"))
+        assertTrue(coordinator.contains("if (manageForeground && request.operation in FOREGROUND_OPERATIONS)"))
+        assertTrue(service.contains("startForeground"))
+        assertTrue(service.contains("START_REDELIVER_INTENT"))
+    }
+
+    @Test
+    fun taskerProtocolSupportsAsyncCompletionVariablesAndVariableReplacement() {
+        val contract = File(mainRoot, "automation/AutomationContract.kt").readText()
+        val delivery = File(mainRoot, "automation/BkxAutomationService.kt").readText()
+        assertTrue(contract.contains(TaskerPluginContract.EXTRA_COMPLETION_INTENT))
+        assertTrue(contract.contains(TaskerPluginContract.EXTRA_VARIABLE_REPLACE_KEYS))
+        assertTrue(contract.contains(TaskerPluginContract.EXTRA_RELEVANT_VARIABLES))
+        val editor = File(mainRoot, "automation/BkxTaskerEditActivity.kt").readText()
+        val codec = File(mainRoot, "automation/AutomationIntentCodec.kt").readText()
+        assertTrue(editor.contains("TaskerPluginContract.EXTRA_REQUESTED_TIMEOUT"))
+        assertFalse(codec.contains("TaskerPluginContract.EXTRA_REQUESTED_TIMEOUT"))
+        assertTrue(delivery.contains("Intent.parseUri"))
+        assertTrue(delivery.contains("TaskerPluginContract.EXTRA_VARIABLES"))
+    }
+}

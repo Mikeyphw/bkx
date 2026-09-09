@@ -87,6 +87,7 @@ preflight = [
     ":app:verifyBkxRcloneRemoteTransportContract",
     ":app:verifyBkx16KbNativePageSizeContract",
     ":app:verifyBkxGoogleDriveProductContract",
+    ":app:verifyBkxAutomationProductContract",
     ":app:verifyBkxCloudProductReleaseSeal",
     ":app:verifyBkxRuntimeHardeningContract",
     ":app:verifyBkxRestoreSafetySeal",

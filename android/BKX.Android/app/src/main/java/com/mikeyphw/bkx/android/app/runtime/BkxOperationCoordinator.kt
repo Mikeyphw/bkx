@@ -80,6 +80,7 @@ class BkxOperationCoordinator(
     suspend fun execute(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
+        manageForeground: Boolean = true,
     ): OperationOutcome {
         val candidate = CompletableDeferred<OperationOutcome>()
         val existing = executions.putIfAbsent(request.requestId, candidate)
@@ -87,7 +88,7 @@ class BkxOperationCoordinator(
 
         scope.launch {
             val outcome = try {
-                executeOwned(request, recordInHistory)
+                executeOwned(request, recordInHistory, manageForeground)
             } catch (error: Throwable) {
                 val failure = OperationFailureMapper.fromProtocolException(
                     "BKX runtime failed before execution could establish a final result: ${error.message ?: error::class.java.simpleName}",
@@ -114,14 +115,18 @@ class BkxOperationCoordinator(
         return candidate.await()
     }
 
-    suspend fun cancel(requestId: String, cancelRequestId: String): OperationOutcome {
+    suspend fun cancel(
+        requestId: String,
+        cancelRequestId: String,
+        manageForeground: Boolean = true,
+    ): OperationOutcome {
         val files = BridgeFileLayout.forRequest(requestBaseDirectoryPath, requestId)
         val state = mutateState { current ->
             val active = current.activeFor(requestId) ?: return@mutateState current
             if (active.status !in ACTIVE_STATUSES) return@mutateState current
             progressTracker.markCancelling(current, requestId, cancelRequestId, System.currentTimeMillis())
         }
-        state.activeFor(requestId)?.let(::updateForeground)
+        if (manageForeground) state.activeFor(requestId)?.let(::updateForeground)
 
         val submission = backendPort.cancel(requestId, files.cancelFilePath)
         if (!submission.accepted) {
@@ -129,7 +134,7 @@ class BkxOperationCoordinator(
             val failed = mutateState { current ->
                 progressTracker.fail(current, requestId, failure, System.currentTimeMillis())
             }
-            failed.activeFor(requestId)?.let(::updateForeground)
+            if (manageForeground) failed.activeFor(requestId)?.let(::updateForeground)
             return OperationOutcome.Failed(failure)
         }
         return OperationOutcome.CancellationAccepted(requestId)
@@ -160,15 +165,17 @@ class BkxOperationCoordinator(
     private suspend fun executeOwned(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
+        manageForeground: Boolean,
     ): OperationOutcome = if (request.operation in FOREGROUND_OPERATIONS) {
-        foregroundOperationMutex.withLock { executeOwnedSerialized(request, recordInHistory) }
+        foregroundOperationMutex.withLock { executeOwnedSerialized(request, recordInHistory, manageForeground) }
     } else {
-        executeOwnedSerialized(request, recordInHistory)
+        executeOwnedSerialized(request, recordInHistory, manageForeground)
     }
 
     private suspend fun executeOwnedSerialized(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
+        manageForeground: Boolean,
     ): OperationOutcome {
         val files = BridgeFileLayout.forRequest(requestBaseDirectoryPath, request.requestId)
         val startedAt = System.currentTimeMillis()
@@ -181,7 +188,7 @@ class BkxOperationCoordinator(
                 cancelFilePath = files.cancelFilePath,
             )
         }
-        if (request.operation in FOREGROUND_OPERATIONS) {
+        if (manageForeground && request.operation in FOREGROUND_OPERATIONS) {
             startedState.activeFor(request.requestId)?.let(::updateForeground)
         }
         val progressPoller = startProgressPoller(request.requestId)
@@ -219,7 +226,7 @@ class BkxOperationCoordinator(
             OperationOutcome.Failed(failure)
         } finally {
             progressPoller.cancel()
-            if (request.operation in FOREGROUND_OPERATIONS) {
+            if (manageForeground && request.operation in FOREGROUND_OPERATIONS) {
                 val context = appContext
                 terminalNotification?.let { (operation, result) ->
                     if (context != null) runCatching { BkxOperationForegroundService.publishTerminal(context, operation, result) }

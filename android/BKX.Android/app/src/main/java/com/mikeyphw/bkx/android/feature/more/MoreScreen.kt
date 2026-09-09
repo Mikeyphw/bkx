@@ -53,6 +53,7 @@ fun MoreScreen(
         MoreRoute.GoogleDrive -> GoogleDriveScreen(state, onEvent, modifier)
         MoreRoute.Remotes -> RcloneRemotesScreen(state, onEvent, modifier)
         MoreRoute.Transfer -> TransferScreen(state, onEvent, modifier)
+        MoreRoute.Automation -> AutomationScreen(onEvent, modifier)
         MoreRoute.Diagnostics -> DiagnosticsScreen(state, onEvent, modifier)
         MoreRoute.Overview -> MoreOverview(state, onEvent, modifier)
     }
@@ -84,6 +85,10 @@ private fun MoreOverview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit,
         BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.Transfer)) }) {
             Text("Transfer files", style = MaterialTheme.typography.titleMedium)
             Text("Copy or synchronize local files with configured rclone remotes.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        BkxOutlinedSurface(onClick = { onEvent(BkxHomeEvent.OpenMoreRoute(MoreRoute.Automation)) }) {
+            Text("Automation & Tasker", style = MaterialTheme.typography.titleMedium)
+            Text("Configure Tasker/Locale actions and the capability-protected external Intent API.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         BkxSurfaceCard {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

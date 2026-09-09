@@ -26,6 +26,7 @@ for marker in \
   ':app:verifyBkxRcloneRemoteTransportContract' \
   ':app:verifyBkx16KbNativePageSizeContract' \
   ':app:verifyBkxGoogleDriveProductContract' \
+  ':app:verifyBkxAutomationProductContract' \
   ':app:verifyBkxCloudProductReleaseSeal' \
   ':app:verifyBkxPersonalSigningContract' \
   ':app:bkxAndroidReleaseSeal'; do
@@ -44,6 +45,9 @@ for marker in \
 done
 
 for file in \
+  android/BKX.Android/docs/AUTOMATION_TASKER.md \
+  docs/checklists/CHECKLIST_ANDROID_AUTOMATION.md \
+  scripts/verify-android-automation.sh \
   docs/guide/05_RCLONE_REMOTE_TRANSPORT.md \
   docs/guide/06_GOOGLE_DRIVE_PRODUCT.md \
   docs/guide/07_ANDROID_PRODUCT_ROADMAP_SEAL.md \

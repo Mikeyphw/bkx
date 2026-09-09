@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">BKX</string>
+    <string name="tasker_plugin_name">BKX Automation</string>
 </resources>

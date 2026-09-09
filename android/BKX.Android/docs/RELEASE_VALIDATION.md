@@ -11,6 +11,7 @@ devtool -r ~/Code/bkx --target bkx_android validate \
   --task :app:verifyBkxProductUiContract \
   --task :app:verifyBkxRcloneRemoteTransportContract \
   --task :app:verifyBkxGoogleDriveProductContract \
+  --task :app:verifyBkxAutomationProductContract \
   --task :app:verifyBkxCloudProductReleaseSeal \
   --task :app:verifyBkxRuntimeHardeningContract \
   --task :app:verifyBkxRestoreSafetySeal \
@@ -58,6 +59,12 @@ gradle :app:verifyBkxPersonalSigningConfigured :app:assemblePersonalRelease
 Use `gradle :app:assemblePersonalDebug` when a debuggable APK is desired without changing Android/Google OAuth identity.
 
 The manifest must retain `android.permission.INTERNET`; the packaged rclone process executes under the BKX app UID and relies on that permission. Validation must also prove that access-token values never enter UI models, bridge payloads, run history, or diagnostics.
+
+## Tasker / external automation release gate
+
+`verifyBkxAutomationProductContract` seals the Locale/Tasker edit/fire surface, direct explicit-Intent API, separate Tasker/direct capabilities, internal foreground + system-protected JobService dispatch, persistent idempotency receipts, `%bkx_*` asynchronous completion variables, Google Drive silent refresh, and reuse of the existing backup/restore/archive/transfer builders and coordinator. The manifest must expose only the edit Activity and fire/direct receiver; the execution service remains non-exported and the JobService is protected by `android.permission.BIND_JOB_SERVICE`.
+
+Manual smoke for a release build: create a Tasker **BKX Automation** backup action with a blank Request ID, run it twice and confirm two distinct request IDs; repeat with a fixed Request ID and confirm the second invocation returns the existing terminal result. Exercise final variables, Status, Cancel, a destructive-restore confirmation failure, managed Google Drive refresh, token regeneration, and rejection of an old Tasker action after regeneration. Direct API smoke must use a package/component-explicit broadcast and a callback package/action pair. See `docs/AUTOMATION_TASKER.md`.
 
 ## Opt-in physical-device qualification
 

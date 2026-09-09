@@ -274,6 +274,107 @@ tasks.register("verifyBkxPersonalSigningContract") {
     }
 }
 
+tasks.register("verifyBkxAutomationProductContract") {
+    group = "verification"
+    description = "Seal Tasker/Locale actions, capability-protected explicit intents, background execution, idempotency, and shared BKX safety semantics."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val sourceRoot = layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
+    val testRoot = layout.projectDirectory.dir("src/test/java/com/mikeyphw/bkx/android/automation").asFile
+    val manifest = layout.projectDirectory.file("src/main/AndroidManifest.xml").asFile
+    val contract = sourceRoot.resolve("automation/AutomationContract.kt")
+    val stores = sourceRoot.resolve("automation/AutomationStores.kt")
+    val codec = sourceRoot.resolve("automation/AutomationIntentCodec.kt")
+    val engine = sourceRoot.resolve("automation/BkxAutomationEngine.kt")
+    val dispatch = sourceRoot.resolve("automation/AutomationDispatch.kt")
+    val receiver = sourceRoot.resolve("automation/BkxAutomationReceiver.kt")
+    val service = sourceRoot.resolve("automation/BkxAutomationService.kt")
+    val editor = sourceRoot.resolve("automation/BkxTaskerEditActivity.kt")
+    val graph = sourceRoot.resolve("app/di/DefaultBackendGraph.kt")
+    val coordinator = sourceRoot.resolve("app/runtime/BkxOperationCoordinator.kt")
+    val navigation = sourceRoot.resolve("app/navigation/BkxNavigation.kt")
+    val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
+    val automationScreen = sourceRoot.resolve("feature/more/AutomationScreen.kt")
+    val engineTest = testRoot.resolve("BkxAutomationEngineTest.kt")
+    val productTest = testRoot.resolve("AutomationProductContractTest.kt")
+    val docs = rootProject.layout.projectDirectory.file("docs/AUTOMATION_TASKER.md").asFile
+    val verifier = repositoryRoot.resolve("scripts/verify-android-automation.sh")
+
+    inputs.files(manifest, contract, stores, codec, engine, dispatch, receiver, service, editor, graph, coordinator, navigation, more, automationScreen, engineTest, productTest, docs, verifier)
+
+    doLast {
+        val manifestText = manifest.readText()
+        val contractText = contract.readText()
+        val storeText = stores.readText()
+        val codecText = codec.readText()
+        val engineText = engine.readText()
+        val receiverText = receiver.readText()
+        val serviceText = service.readText()
+        val editorText = editor.readText()
+        val graphText = graph.readText()
+        val coordinatorText = coordinator.readText()
+        val navigationText = navigation.readText()
+        val moreText = more.readText()
+        val docsText = docs.readText()
+
+        listOf(
+            "com.twofortyfouram.locale.intent.action.EDIT_SETTING",
+            "com.twofortyfouram.locale.intent.action.FIRE_SETTING",
+            ".automation.BkxTaskerEditActivity",
+            ".automation.BkxAutomationReceiver",
+            ".automation.BkxAutomationService",
+            ".automation.BkxAutomationJobService",
+            "android.permission.BIND_JOB_SERVICE",
+        ).forEach { token -> check(token in manifestText) { "Automation manifest contract missing: $token" } }
+        listOf("BACKUP", "RESTORE", "VERIFY", "ARCHIVE_LIST", "ARCHIVE_INFO", "ARCHIVE_BROWSE", "TRANSFER", "CANCEL", "STATUS").forEach { action ->
+            check("ACTION_$action" in contractText) { "Automation contract action missing: $action" }
+        }
+        check("com.mikeyphw.bkx.android.automation.BACKUP" !in manifestText) {
+            "Direct automation actions must be explicit-component only and must not be advertised by manifest intent filters."
+        }
+        check("android:name=\".automation.BkxAutomationService\"\n            android:exported=\"false\"" in manifestText) {
+            "Automation execution service must remain non-exported."
+        }
+        check("tasker_capability_token" in storeText && "capability_token" in storeText && "isTaskerAuthorized" in storeText) {
+            "Tasker and direct Intent capabilities must remain separate and private."
+        }
+        check("callingPackage !in TRUSTED_TASKER_HOSTS" in editorText && "access.taskerToken" in editorText) {
+            "Tasker edit Activity must not disclose a capability to arbitrary callers."
+        }
+        check("AutomationAccessStore(context).isTaskerAuthorized" in receiverText && "AutomationAccessStore(context).isAuthorized" in receiverText) {
+            "Tasker and direct receiver authorization contracts drifted."
+        }
+        listOf("BackupRequestBuilder", "RestoreRequestBuilder", "ArchiveRequestBuilder", "TransferRequestBuilder", "RestoreExtractionConfirmation.requiredPhrase", "GoogleManagedDriveRefreshPort", "automation_previous_dispatch_incomplete").forEach { token ->
+            check(token in engineText) { "Shared automation safety/runtime contract missing: $token" }
+        }
+        check("manageForeground = false" in engineText && "manageForeground: Boolean = true" in coordinatorText) {
+            "External automation must own its foreground service without changing default UI coordinator behavior."
+        }
+        check("AutomationDispatchStore" in serviceText && "START_REDELIVER_INTENT" in serviceText && "startForeground" in serviceText) {
+            "Automation background/restart contract is incomplete."
+        }
+        check("EXTRA_COMPLETION_INTENT" in contractText && "EXTRA_VARIABLE_REPLACE_KEYS" in codecText && "%bkx_request_id" in contractText) {
+            "Tasker async completion/variables contract is incomplete."
+        }
+        check("TaskerPluginContract.EXTRA_REQUESTED_TIMEOUT" in editorText) {
+            "Tasker synchronous timeout must be returned by the edit Activity."
+        }
+        check("TaskerPluginContract.EXTRA_REQUESTED_TIMEOUT" !in codecText) {
+            "Tasker requested timeout must not be persisted inside the Locale plugin bundle."
+        }
+        check("Automation" in navigationText && "MoreRoute.Automation" in moreText && automationScreen.isFile) {
+            "Automation product settings route is missing."
+        }
+        check("BkxAutomationEngine" in graphText && "SharedPreferencesAutomationStateStore" in graphText) {
+            "Process-scoped automation engine/state graph is missing."
+        }
+        listOf("RESTORE ROOT", "rclone://bkx-google-drive/BKX", "%bkx_request_id", "automation_previous_dispatch_incomplete").forEach { token ->
+            check(token in docsText) { "Automation documentation missing release-critical token: $token" }
+        }
+        check(engineTest.isFile && productTest.isFile && verifier.isFile) { "Automation test/verifier evidence is incomplete." }
+    }
+}
+
 tasks.register("bkxAndroidReleaseSeal") {
     group = "verification"
     description = "Fail-closed BKX Android release gate: SDK/dependency compatibility, lint, unit tests, instrumentation tests, packages, docs, signing placeholders, and manifest contracts."
@@ -290,6 +391,7 @@ tasks.register("bkxAndroidReleaseSeal") {
         "verifyBkxRcloneRemoteTransportContract",
         "verifyBkx16KbNativePageSizeContract",
         "verifyBkxGoogleDriveProductContract",
+        "verifyBkxAutomationProductContract",
         "verifyBkxCloudProductReleaseSeal",
         "verifyBkxAndroidReleaseDocs",
         "verifyBkxAndroidSigningPlaceholders",
@@ -1096,6 +1198,7 @@ tasks.named("bkxAndroidReleaseSeal") {
         "verifyBkxRcloneRemoteTransportContract",
         "verifyBkx16KbNativePageSizeContract",
         "verifyBkxGoogleDriveProductContract",
+        "verifyBkxAutomationProductContract",
         "verifyBkxCloudProductReleaseSeal",
         "verifyBkxRuntimeHardeningContract",
         "verifyBkxRestoreSafetySeal",

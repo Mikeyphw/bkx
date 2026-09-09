@@ -2,6 +2,10 @@ package com.mikeyphw.bkx.android.app.di
 
 import android.content.Context
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
+import com.mikeyphw.bkx.android.automation.BkxAutomationEngine
+import com.mikeyphw.bkx.android.automation.CoordinatorAutomationOperationPort
+import com.mikeyphw.bkx.android.automation.GoogleManagedDriveRefreshPort
+import com.mikeyphw.bkx.android.automation.SharedPreferencesAutomationStateStore
 import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationManager
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesOperationStateStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
@@ -29,6 +33,7 @@ object DefaultBackendGraph {
     @Volatile private var coordinatorInstance: BkxOperationCoordinator? = null
     @Volatile private var providerStagingInstance: ProviderStagingPort? = null
     @Volatile private var googleDriveManagerInstance: GoogleDriveAuthorizationManager? = null
+    @Volatile private var automationEngineInstance: BkxAutomationEngine? = null
 
     fun backendPort(context: Context): BackendPort = backendInstance ?: synchronized(this) {
         backendInstance ?: run {
@@ -76,6 +81,15 @@ object DefaultBackendGraph {
             requestBaseDirectoryPath = context.stableApplicationContext().filesDir.resolve("bkx/requests").absolutePath,
             progressPreferenceProvider = { sharedSettingsStore(context.stableApplicationContext()).readNow().progressPreference },
         ).also { coordinatorInstance = it }
+    }
+
+
+    fun automationEngine(context: Context): BkxAutomationEngine = automationEngineInstance ?: synchronized(this) {
+        automationEngineInstance ?: BkxAutomationEngine(
+            operationPort = CoordinatorAutomationOperationPort(operationCoordinator(context), runSummaryStore(context)),
+            stateStore = SharedPreferencesAutomationStateStore(context.stableApplicationContext()),
+            driveRefreshPort = GoogleManagedDriveRefreshPort(googleDriveAuthorizationManager(context)),
+        ).also { automationEngineInstance = it }
     }
 
     private fun sharedSettingsStore(context: Context): SharedPreferencesSettingsStore = settingsStoreInstance ?: synchronized(this) {

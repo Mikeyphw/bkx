@@ -80,4 +80,8 @@ Exercise local and Google Drive backup, archive browse/verify, fresh restore, a 
 
 The APK does not apply Chaquopy or package Python. Release validation requires `verifyBkxGoOnlyAndroidRuntimeContract`, the generated ARM64 ELF, `ndkVersion = "29.0.14206865"`, and the r29+ floor. The Android artifact is intentionally `arm64-v8a` only.
 
+Release validation also requires `verifyBkx16KbNativePageSizeContract`. It builds debug and release APKs and parses every packaged native ELF; every `PT_LOAD` must be compatible with 16 KiB pages. The rclone runtime is built from the SHA-256-pinned official v1.75.1 vendored source because the upstream Android v1.75.1 testbuild is only 4 KiB aligned. NDK r28+ produces 16 KiB alignment by default; BKX still passes the 16 KiB linker policy explicitly and verifies the resulting ELF and APK.
+
 The same packaged Go protocol-v1 runtime powers normal app execution and the explicit libsu UID-0 route. Rclone is a separate pinned Android ARM64 executable boundary and does not replace the BKX engine.
+
+For native Termux builds, compiler selection is probe-driven. A candidate that fails the real Go/cgo Android/arm64 + 16 KiB link probe is rejected and the installer continues to the next lane. The preferred fallback uses native Termux clang with the Gradle-selected NDK r29 sysroot, avoiding unlaunchable glibc-hosted NDK compiler binaries while preserving the Android API/ABI link environment.

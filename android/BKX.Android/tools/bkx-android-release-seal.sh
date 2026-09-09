@@ -17,12 +17,14 @@ fail() {
 [[ -f android/BKX.Android/gradle/bkx-release-signing.properties.example ]] || fail "missing signing placeholder example"
 [[ -f android/BKX.Android/tools/setup-personal-signing.sh ]] || fail "missing permanent signing setup helper"
 [[ -f android/BKX.Android/tools/print-personal-signing-fingerprint.sh ]] || fail "missing signing fingerprint helper"
+[[ -f scripts/verify-native-page-size.go ]] || fail "missing Go-native 16 KiB ELF/APK verifier"
 
 for marker in \
   ':app:testDebugUnitTest' \
   ':app:lintDebug' \
   ':app:connectedDebugAndroidTest' \
   ':app:verifyBkxRcloneRemoteTransportContract' \
+  ':app:verifyBkx16KbNativePageSizeContract' \
   ':app:verifyBkxGoogleDriveProductContract' \
   ':app:verifyBkxCloudProductReleaseSeal' \
   ':app:verifyBkxPersonalSigningContract' \

@@ -17,6 +17,10 @@ bkx_rclone_validate_build_info() {
         printf 'missing GOARCH=arm64 in Go build metadata\n' >&2
         failed=1
     fi
+    if ! grep -Fq 'CGO_ENABLED=1' <<<"$build_info"; then
+        printf 'missing CGO_ENABLED=1 in Go build metadata\n' >&2
+        failed=1
+    fi
     [[ $failed -eq 0 ]]
 }
 

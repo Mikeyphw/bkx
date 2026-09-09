@@ -10,9 +10,11 @@ The existing protocol-v1 `filesystem.list`, `filesystem.stat`, `transfer.plan`, 
 
 ## Runtime packaging
 
-Android packages the pinned official rclone Android ARM64 build for v1.75.1 as generated `arm64-v8a/libbkxrclone_exec.so`. The `.so` name is intentional: AGP extracts native libraries into `ApplicationInfo.nativeLibraryDir`, providing a stable executable path for `ProcessBuilder` without copying executables into writable app storage.
+Android packages rclone v1.75.1 as generated `arm64-v8a/libbkxrclone_exec.so`. The `.so` name is intentional: AGP extracts native libraries into `ApplicationInfo.nativeLibraryDir`, providing a stable executable path for `ProcessBuilder` without copying executables into writable app storage.
 
-`scripts/install-rclone-android-runtime.sh` validates gzip integrity, ELF64/AArch64 identity, Go build metadata, Android/arm64 target metadata, exact rclone version identity, and performs an executable `rclone version` smoke test when the build host itself is Android. `BKX_RCLONE_ANDROID_SHA256` can additionally pin an independently obtained archive digest in controlled/reproducible build environments.
+BKX does **not** package rclone's upstream Android testbuild directly. The v1.75.1 testbuild is linked with 4 KiB `PT_LOAD` alignment and triggers Android's 16 KiB memory-page compatibility mode. `scripts/install-rclone-android-runtime.sh` instead downloads both official release inputs: `rclone-v1.75.1.tar.gz` (the source tree) and `rclone-v1.75.1-vendor.tar.gz` (the dependency-only `vendor/` tree). It verifies both SHA-256 values from the signed upstream release manifest, merges `vendor/` into the source tree, and builds Android/arm64 offline with `-mod=vendor`, `CGO_ENABLED=1`, `CC`/`CC_FOR_TARGET`, the `android noselfupdate` tags used by Round Sync's proven Android rclone build shape, PIE, and explicit 16 KiB linker alignment. The build prefers the Gradle-selected NDK r29 toolchain; native Termux clang is an allowed Android/aarch64 fallback when the standard x86_64 NDK host tools cannot execute on ARM64.
+
+Before packaging, BKX verifies ELF64/AArch64/PIE identity, Go build metadata, `CGO_ENABLED=1`, exact rclone version identity, and every `PT_LOAD` segment's 16 KiB alignment/congruence. On Android hosts it also executes `rclone version`. The successful runtime is cached outside the repository so later builds avoid recompiling rclone.
 
 ## Configuration ownership
 
@@ -43,14 +45,21 @@ When the packaged runtime is executable, readiness exposes `remote.rclone`, `tra
 
 ## Android runtime identity validation
 
-The Android CI artifact is built with rclone's official `-X github.com/rclone/rclone/fs.Version=<VERSION>` linker setting. The raw ELF therefore carries the bare linker value (for example `v1.75.1`); it is not valid to require the already-formatted CLI phrase `rclone v1.75.1` to appear as one contiguous raw string.
+The source build retains rclone's release linker identity through `-X github.com/rclone/rclone/fs.Version=v1.75.1`. The raw ELF therefore carries the bare linker value; BKX does not rely on the already-formatted CLI phrase being contiguous in binary strings.
 
 BKX validates the runtime in layers instead:
 
-1. gzip integrity and optional operator-provided SHA-256 pin;
-2. ELF64, little-endian, position-independent AArch64 identity;
-3. embedded bare `v1.75.1` linker-value marker;
-4. Go build metadata proving the rclone module plus `GOOS=android` and `GOARCH=arm64`;
-5. on Android/Termux, execution of `rclone version`, requiring the exact `rclone v1.75.1`, `os/type: android`, and `os/arch: arm64` report.
+1. mandatory SHA-256 verification of the official vendored source archive;
+2. Android/arm64 compiler proof plus an early 16 KiB linker probe;
+3. ELF64, little-endian, position-independent AArch64 identity;
+4. every `PT_LOAD` requires `p_align >= 16384` and file/vaddr congruence modulo 16384;
+5. embedded bare `v1.75.1` linker-value marker;
+6. Go build metadata proving the rclone module, `GOOS=android`, `GOARCH=arm64`, and `CGO_ENABLED=1`;
+7. on Android/Termux, execution of `rclone version`, requiring the exact `rclone v1.75.1`, `os/type: android`, and `os/arch: arm64` report;
+8. final debug/release APK scanning of every packaged native ELF through `verifyBkx16KbNativePageSizeContract`.
 
 The installer prints each validation stage so Devtool failures identify the rejected contract instead of surfacing only an opaque shell exit code.
+
+### Termux ARM64 CGO compiler lane
+
+On native Termux, an NDK compiler wrapper can appear executable in an interactive shell even though Go/cgo later receives `ENOENT`. BKX therefore makes compiler selection probe-driven: each direct NDK wrapper, Termux-Bash wrapper, native-Termux-clang + NDK-r29-sysroot lane, and final native Termux clang lane is accepted only after it builds an actual Android/arm64 CGO PIE whose `PT_LOAD` segments pass the 16 KiB gate. A failed lane is logged and selection continues instead of aborting on the first superficially executable compiler.

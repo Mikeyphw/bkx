@@ -1,7 +1,9 @@
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
@@ -50,6 +52,9 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
     @get:Input
     abstract val installerScriptPath: Property<String>
 
+    @get:Input
+    abstract val ndkDirectoryPath: Property<String>
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
@@ -61,6 +66,39 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
                 "bash",
                 installerScriptPath.get(),
                 outputDirectory.get().asFile.absolutePath,
+                ndkDirectoryPath.get(),
+            )
+        }
+    }
+}
+
+abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
+    private val execOperations: ExecOperations,
+) : DefaultTask() {
+    @get:Input
+    abstract val verifierProgramPath: Property<String>
+
+    @get:Input
+    abstract val minimumPageSize: Property<Int>
+
+    @get:InputFile
+    abstract val debugApk: RegularFileProperty
+
+    @get:InputFile
+    abstract val releaseApk: RegularFileProperty
+
+    @TaskAction
+    fun verifyPageSize() {
+        execOperations.exec {
+            commandLine(
+                "go",
+                "run",
+                verifierProgramPath.get(),
+                "apk",
+                "--min-page-size",
+                minimumPageSize.get().toString(),
+                debugApk.get().asFile.absolutePath,
+                releaseApk.get().asFile.absolutePath,
             )
         }
     }
@@ -452,13 +490,26 @@ val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("bui
 
 val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRuntimeTask>("installBkxRcloneAndroidRuntime") {
     group = "build"
-    description = "Install the pinned official ARM64 Android rclone runtime packaged by BKX Android."
+    description = "Build the pinned ARM64 Android rclone runtime from verified vendored source with 16 KiB page-size alignment."
     repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
     installerScriptPath.set(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh").absolutePath)
+    ndkDirectoryPath.set(androidComponents.sdkComponents.ndkDirectory.map { it.asFile.absolutePath })
     outputDirectory.set(bkxRcloneRuntimeJniDir)
     inputs.file(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/rclone-runtime-contract.sh"))
-    inputs.property("rcloneAndroidRuntime", "v1.75.1/android-21-armv8a")
+    inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
+    inputs.property("rcloneAndroidRuntime", "v1.75.1/source+vendor/android-24-arm64/16k")
+}
+
+val verifyBkx16KbNativePageSizeContract = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkx16KbNativePageSizeContract") {
+    group = "verification"
+    description = "Verify every packaged BKX native ELF is compatible with Android 16 KiB memory pages."
+    dependsOn("assembleDebug", "assembleRelease")
+    verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
+    minimumPageSize.set(16_384)
+    debugApk.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    releaseApk.set(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
 }
 
 androidComponents {

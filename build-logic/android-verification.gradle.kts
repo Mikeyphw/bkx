@@ -288,6 +288,7 @@ tasks.register("bkxAndroidReleaseSeal") {
         "verifyBkxRootStorageContract",
         "verifyBkxProductUiContract",
         "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkx16KbNativePageSizeContract",
         "verifyBkxGoogleDriveProductContract",
         "verifyBkxCloudProductReleaseSeal",
         "verifyBkxAndroidReleaseDocs",
@@ -374,6 +375,7 @@ tasks.register("verifyBkxRcloneRemoteTransportContract") {
     val appBuild = layout.projectDirectory.file("build.gradle.kts").asFile
     val installer = repositoryRoot.resolve("scripts/install-rclone-android-runtime.sh")
     val runtimeContract = repositoryRoot.resolve("scripts/rclone-runtime-contract.sh")
+    val nativePageVerifier = repositoryRoot.resolve("scripts/verify-native-page-size.go")
     val verifier = repositoryRoot.resolve("scripts/verify-rclone-remote-transport.sh")
     val gateway = sourceRoot.resolve("embedded/GoNativeGateway.kt")
     val manager = sourceRoot.resolve("core/remotes/RcloneConfigManager.kt")
@@ -388,12 +390,13 @@ tasks.register("verifyBkxRcloneRemoteTransportContract") {
     val contractTest = testRoot.resolve("RcloneRemoteTransportContractTest.kt")
     val parserTest = testRoot.resolve("RcloneConfigParserTest.kt")
 
-    inputs.files(appBuild, installer, runtimeContract, verifier, gateway, manager, parser, models, more, remotes, transfer, browser, browserModels, backup, contractTest, parserTest)
+    inputs.files(appBuild, installer, runtimeContract, nativePageVerifier, verifier, gateway, manager, parser, models, more, remotes, transfer, browser, browserModels, backup, contractTest, parserTest)
 
     doLast {
         val buildText = appBuild.readText()
         val installerText = installer.readText()
         val runtimeContractText = runtimeContract.readText()
+        val nativePageVerifierText = nativePageVerifier.readText()
         val gatewayText = gateway.readText()
         val managerText = manager.readText()
         val parserText = parser.readText()
@@ -410,19 +413,42 @@ tasks.register("verifyBkxRcloneRemoteTransportContract") {
         }
         listOf(
             "RCLONE_VERSION=\"1.75.1\"",
-            "rclone-android-${'$'}{RCLONE_ANDROID_API}-${'$'}{RCLONE_ANDROID_ARCH}.gz",
-            "BKX_RCLONE_ANDROID_SHA256",
-            "https://beta.rclone.org/v${'$'}{RCLONE_VERSION}/testbuilds/${'$'}{RCLONE_ARCHIVE}",
+            "RCLONE_SOURCE_ARCHIVE=\"rclone-v${'$'}{RCLONE_VERSION}.tar.gz\"",
+            "RCLONE_VENDOR_ARCHIVE=\"rclone-v${'$'}{RCLONE_VERSION}-vendor.tar.gz\"",
+            "RCLONE_SOURCE_SHA256=\"6ada25ecda8b3c8d971ed0aae1167e44d257dbcbf0be6598bf6c127daca2e13f\"",
+            "RCLONE_VENDOR_SHA256=\"a43cd21f71344ff96b3b00217196c069f2f28fa29835cd61cfa94edb1aa5b93b\"",
+            "downloads.rclone.org/v${'$'}{RCLONE_VERSION}",
+            "CGO_ENABLED=1",
+            "rejected by Go/cgo + 16 KiB probe; trying next candidate",
+            "termux-native-clang-ndk-sysroot",
+            "make_termux_ndk_sysroot_shim",
+            "max-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}",
+            "common-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}",
+            "go build -mod=vendor",
+            "verify-native-page-size.go",
             "bkx_rclone_validate_build_info",
             "bkx_rclone_validate_version_output",
-        ).forEach { token -> check(token in installerText) { "Pinned Android rclone installer is missing '$token'." } }
+        ).forEach { token -> check(token in installerText) { "Pinned source-built Android rclone installer is missing '$token'." } }
         listOf(
             "GOOS=android",
             "GOARCH=arm64",
+            "CGO_ENABLED=1",
             "os/type: android",
             "os/arch: arm64",
         ).forEach { token -> check(token in runtimeContractText) { "Shared rclone runtime contract is missing '$token'." } }
-        check("linux-arm64" !in installerText) { "Android rclone packaging must never fall back to a Linux binary." }
+        listOf(
+            "archive-safe",
+            "runtime",
+            "APK native-page-size contract",
+            "rclone runtime is missing embedded version marker",
+            "PT_LOAD",
+        ).forEach { token -> check(token in nativePageVerifierText) { "Go-native page-size verifier is missing '$token'." } }
+        check("beta.rclone.org" !in installerText && "linux-arm64" !in installerText) {
+            "Android rclone packaging must not use the upstream 4 KiB testbuild or a Linux binary."
+        }
+        check("verifyBkx16KbNativePageSizeContract" in buildText && "androidComponents.sdkComponents.ndkDirectory" in buildText) {
+            "BKX Android must source-build rclone with the project NDK lane and verify final APK native ELF page-size compatibility."
+        }
         check("BKX_RCLONE_PATH" in gatewayText && "BKX_RCLONE_CONFIG" in gatewayText && "libbkxrclone_exec.so" in gatewayText) {
             "GoNativeGateway must pass the packaged rclone runtime and app-private config path to BKX."
         }
@@ -585,6 +611,7 @@ tasks.register("verifyBkxCloudProductReleaseSeal") {
     dependsOn(
         "verifyBkxProductUiContract",
         "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkx16KbNativePageSizeContract",
         "verifyBkxGoogleDriveProductContract",
         "verifyBkxRestoreSafetySeal",
         "verifyBkxPerformanceAndProgressContract",
@@ -1067,6 +1094,7 @@ tasks.register("verifyBkxFinalReleaseContract") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn(
         "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkx16KbNativePageSizeContract",
         "verifyBkxGoogleDriveProductContract",
         "verifyBkxCloudProductReleaseSeal",
         "verifyBkxRuntimeHardeningContract",

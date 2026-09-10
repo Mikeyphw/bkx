@@ -14,6 +14,8 @@ class FakeBackendPort(
             "readiness.probe",
             "backup.plan",
             "backup.create",
+            "backup.snapshot",
+            "repository.init",
             "archive.compression.none",
             "archive.compression.gzip",
             "archive.compression.zstd",

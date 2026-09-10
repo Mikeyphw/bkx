@@ -3,6 +3,7 @@ package tools
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,5 +71,30 @@ func TestDetectorPreferenceRequiresExecutable(t *testing.T) {
 	}
 	if pref != "rsync" {
 		t.Fatalf("preferred %q", pref)
+	}
+}
+
+func TestDetectResticAdvertisesSnapshotCapabilities(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "restic")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 'restic 0.18.0'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	d, err := New(nil, map[string]string{"PATH": dir}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := d.Detect("restic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !info.Available {
+		t.Fatal("restic should be detected")
+	}
+	joined := strings.Join(info.Capabilities, ",")
+	for _, want := range []string{"backup", "snapshot", "deduplication", "encryption"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("capabilities=%v missing=%s", info.Capabilities, want)
+		}
 	}
 }

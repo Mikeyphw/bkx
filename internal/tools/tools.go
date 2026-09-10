@@ -39,7 +39,7 @@ type Detector struct {
 var versionRE = regexp.MustCompile(`\d+(?:\.\d+)+(?:[-+._~A-Za-z0-9]*)?`)
 
 var knownTools = map[string]string{
-	"python": "runtime", "zstd": "compression", "gzip": "compression", "pigz": "compression", "pbzip2": "compression", "xz": "compression", "bzip2": "compression", "7z": "compression", "zip": "compression", "tar": "archiving", "rsync": "transfer", "rclone": "cloud", "scp": "transfer", "cp": "transfer", "xxh128": "hashing", "xxh64": "hashing", "sha256sum": "hashing", "sha512sum": "hashing", "md5sum": "hashing",
+	"python": "runtime", "zstd": "compression", "gzip": "compression", "pigz": "compression", "pbzip2": "compression", "xz": "compression", "bzip2": "compression", "7z": "compression", "zip": "compression", "tar": "archiving", "rsync": "transfer", "rclone": "cloud", "restic": "backup", "scp": "transfer", "cp": "transfer", "xxh128": "hashing", "xxh64": "hashing", "sha256sum": "hashing", "sha512sum": "hashing", "md5sum": "hashing",
 }
 var preferredTools = map[string][]string{
 	"archiver": {"tar"}, "compression": {"zstd", "pigz", "xz", "gzip"}, "transfer": {"rsync", "rclone", "scp", "cp"}, "hashing": {"xxh128", "xxh64", "sha256sum"},
@@ -283,6 +283,8 @@ func capabilities(name string) []string {
 		add("archiver", "zip")
 	case "rsync", "rclone", "scp", "cp":
 		add("transfer", name)
+	case "restic":
+		add("backup", "snapshot", "deduplication", "encryption")
 	}
 	if strings.HasPrefix(name, "sha") || strings.HasPrefix(name, "md5") || strings.HasPrefix(name, "xxh") {
 		add("hashing")

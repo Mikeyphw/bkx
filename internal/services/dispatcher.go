@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"bkx/internal/archiveio"
+	"bkx/internal/backupengine"
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/fsutil"
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
 	"bkx/internal/remotearchive"
+	"bkx/internal/resticops"
 	"bkx/internal/runstore"
 	"bkx/internal/transferops"
 	"bkx/internal/validation"
@@ -81,7 +83,7 @@ func New(store *runstore.Store) *Dispatcher {
 	return &Dispatcher{RunStore: store, StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "filesystem.list", "filesystem.stat", "restore.extract", "restore.preview", "runs.list", "runs.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.init", "restore.extract", "restore.preview", "runs.list", "runs.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -97,6 +99,10 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.backupPlan(ctx, p)
 	case "backup.create":
 		return d.backupCreate(ctx, p)
+	case "backup.snapshot":
+		return d.backupSnapshot(ctx, p)
+	case "repository.init":
+		return d.repositoryInit(ctx, p)
 	case "archive.list":
 		return d.archiveList(ctx, p)
 	case "archive.info":
@@ -219,6 +225,69 @@ func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Resul
 		word = "completed"
 	}
 	return Result{Status: status, Summary: fmt.Sprintf("Backup %s: %d files, %d bytes written.", word, r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: arts}, nil
+}
+
+func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Result, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return Result{}, berror.Validation("Invalid snapshot backup payload", map[string]any{"reason": err.Error()})
+	}
+	var spec models.SnapshotBackupSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return Result{}, berror.Validation("Invalid snapshot backup payload", map[string]any{"reason": err.Error()})
+	}
+	if spec.Engine == "" {
+		spec.Engine = models.BackupEngineRestic
+	}
+	if spec.DryRun {
+		plan, err := resticops.PlanBackup(spec)
+		if err != nil {
+			return Result{}, err
+		}
+		tok, _ := token(plan)
+		return success("Incremental snapshot plan ready.", nil, []Artifact{artifact("snapshot_plan", "embedded://snapshot-plan/"+requestID(ctx), tok)}), nil
+	}
+	result, err := backupengine.Create(backupengine.Request{
+		Engine: spec.Engine, Sources: spec.Sources, Repository: &spec.Repository, CredentialRef: spec.CredentialRef,
+		Excludes: spec.Excludes, Includes: spec.Includes, Tags: spec.Tags, Verify: spec.Verify, DryRun: false,
+	}, backupengine.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(stage string, files, bytes int64) {
+		emitDetailed(ctx, stage, fmt.Sprintf("%s: %d files, %d bytes.", title(stage), files, bytes), nil, int64Ptr(files), nil, int64Ptr(bytes), nil)
+	}})
+	if err != nil {
+		return Result{}, err
+	}
+	issues := []Issue{}
+	for _, w := range result.Warnings {
+		issues = append(issues, warningIssue("snapshot_warning", w))
+	}
+	arts := []Artifact{}
+	if result.SnapshotID != "" {
+		arts = append(arts, artifact("restic_snapshot", "restic://"+result.Repository+"/snapshots/"+result.SnapshotID, ""))
+	}
+	out := success(fmt.Sprintf("Restic snapshot %s completed.", result.SnapshotID), issues, arts)
+	out.Metrics = &ResultMetrics{FilesTotal: int64Ptr(result.FilesProcessed), BytesTotal: int64Ptr(result.BytesProcessed)}
+	return out, nil
+}
+
+func (d *Dispatcher) repositoryInit(ctx OperationContext, p map[string]any) (Result, error) {
+	data, err := json.Marshal(p)
+	if err != nil {
+		return Result{}, berror.Validation("Invalid repository init payload", map[string]any{"reason": err.Error()})
+	}
+	var spec models.RepositoryInitSpec
+	if err := json.Unmarshal(data, &spec); err != nil {
+		return Result{}, berror.Validation("Invalid repository init payload", map[string]any{"reason": err.Error()})
+	}
+	if spec.Engine == "" {
+		spec.Engine = models.BackupEngineRestic
+	}
+	emit(ctx, "preparing", "Initializing local Restic repository.", floatPtr(.1))
+	result, err := resticops.Init(spec, resticops.Options{})
+	if err != nil {
+		return Result{}, err
+	}
+	emit(ctx, "complete", "Restic repository initialized.", floatPtr(1))
+	return success("Restic repository initialized at "+result.Repository+".", nil, []Artifact{artifact("restic_repository", result.Repository, "")}), nil
 }
 
 func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result, error) {

@@ -241,6 +241,7 @@ Commands:
   restore   Restore operations
   job       Saved and replayable operations
   run       View and replay run history
+  repository Local and remote backup repositories
   tools     Tool management
   transfer  Transfer operations
   ui        Optional user interfaces
@@ -273,6 +274,13 @@ Restore operations
 Commands:
   extract
   pick
+`,
+	"repository": `Usage: bkx repository COMMAND [ARGS]...
+
+Backup repositories
+
+Commands:
+  init
 `,
 	"job": `Usage: bkx job COMMAND [ARGS]...
 
@@ -351,6 +359,7 @@ var LeafHelp = map[string]string{
 	"run list":            "Usage: bkx run list [OPTIONS]\n",
 	"run replay":          "Usage: bkx run replay [OPTIONS] RUN_ID\n",
 	"run show":            "Usage: bkx run show RUN_ID\n",
+	"repository init":     "Usage: bkx repository init [OPTIONS] REPOSITORY\n",
 	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
 	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",

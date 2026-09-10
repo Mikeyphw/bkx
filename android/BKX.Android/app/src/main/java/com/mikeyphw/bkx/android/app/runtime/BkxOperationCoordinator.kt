@@ -346,7 +346,7 @@ class BkxOperationCoordinator(
 
     private companion object {
         val ACTIVE_STATUSES = setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling)
-        val FOREGROUND_OPERATIONS = setOf("backup.create", "archive.verify", "restore.extract", "transfer.run")
+        val FOREGROUND_OPERATIONS = setOf("backup.create", "backup.snapshot", "archive.verify", "restore.extract", "transfer.run")
         const val MAX_SUMMARY_CHARS = 500
     }
 }

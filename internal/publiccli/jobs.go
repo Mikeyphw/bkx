@@ -10,6 +10,7 @@ import (
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/models"
+	"bkx/internal/resticops"
 	"bkx/internal/services"
 	"bkx/internal/transferops"
 )
@@ -416,6 +417,31 @@ func dispatchSaved(c *appContext, op models.OperationSpecV2, sets []string, plan
 			return commandErr(c, err)
 		}
 		return renderResult(c, result, "job_run")
+	case "backup.snapshot":
+		var spec models.SnapshotBackupSpec
+		if err := json.Unmarshal(raw, &spec); err != nil {
+			return commandErr(c, berror.Validation("invalid snapshot backup job parameters", map[string]any{"reason": err.Error()}))
+		}
+		if spec.Engine == "" {
+			spec.Engine = models.BackupEngineRestic
+		}
+		if spec.CredentialRef == nil && len(op.CredentialRefs) > 0 {
+			ref := op.CredentialRefs[0].ID
+			spec.CredentialRef = &ref
+		}
+		if plan || c.globals.DryRun {
+			spec.DryRun = true
+			result, err := resticops.PlanBackup(spec)
+			if err != nil {
+				return commandErr(c, err)
+			}
+			return renderResult(c, result, "job_plan")
+		}
+		result, err := resticops.Backup(spec, resticops.Options{RunStore: c.store})
+		if err != nil {
+			return commandErr(c, err)
+		}
+		return renderResult(c, result, "job_run")
 	case "transfer.run":
 		var spec models.TransferSpec
 		if err := json.Unmarshal(raw, &spec); err != nil {
@@ -493,13 +519,23 @@ func replayOperation(record models.RunRecord) (models.OperationSpecV2, error) {
 	op := ""
 	switch record.Operation {
 	case "backup":
-		op = "backup.create"
+		if engine, _ := values["engine"].(string); strings.EqualFold(engine, models.BackupEngineRestic) {
+			op = "backup.snapshot"
+		} else {
+			op = "backup.create"
+		}
 	case "transfer":
 		op = "transfer.run"
 	default:
 		return models.OperationSpecV2{}, berror.Validation("historical operation is not replayable yet", map[string]any{"operation": record.Operation})
 	}
 	spec := models.NewOperationSpecV2(op, values)
+	if op == "backup.snapshot" {
+		if rawRef, ok := values["credential_ref"].(string); ok && strings.TrimSpace(rawRef) != "" {
+			delete(spec.Parameters, "credential_ref")
+			spec.CredentialRefs = []models.SecretReference{{ID: strings.TrimSpace(rawRef), Purpose: "restic repository password"}}
+		}
+	}
 	if err := models.ValidateOperationSpecV2(spec); err != nil {
 		return spec, berror.Validation("historical spec snapshot cannot be replayed", map[string]any{"reason": err.Error()})
 	}

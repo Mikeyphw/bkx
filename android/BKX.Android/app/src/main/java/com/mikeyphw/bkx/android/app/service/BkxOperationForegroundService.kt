@@ -321,6 +321,8 @@ class BkxOperationForegroundService : Service() {
 
         private fun displayOperation(operation: String): String = when (operation) {
             "backup.create" -> "Backup"
+            "backup.snapshot" -> "Snapshot backup"
+            "repository.init" -> "Repository setup"
             "archive.verify" -> "Archive verification"
             "restore.extract" -> "Restore"
             "transfer.run" -> "Transfer"

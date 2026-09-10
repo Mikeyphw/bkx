@@ -5,7 +5,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"testing"
 
@@ -38,8 +37,21 @@ func TestSupportedOperationsMatchFrozenBridge(t *testing.T) {
 	got := SupportedOperations()
 	sort.Strings(got)
 	sort.Strings(doc.Advertised)
-	if !reflect.DeepEqual(got, doc.Advertised) {
-		t.Fatalf("supported=%v frozen=%v", got, doc.Advertised)
+	// The frozen v1 bridge is a compatibility floor. Additive V2 operations
+	// are permitted as long as every originally advertised operation remains.
+	owned := map[string]bool{}
+	for _, operation := range got {
+		owned[operation] = true
+	}
+	for _, operation := range doc.Advertised {
+		if !owned[operation] {
+			t.Fatalf("frozen bridge operation lost: %s", operation)
+		}
+	}
+	for _, required := range []string{"backup.snapshot", "repository.init"} {
+		if !owned[required] {
+			t.Fatalf("BR05/06 service operation missing: %s", required)
+		}
 	}
 }
 

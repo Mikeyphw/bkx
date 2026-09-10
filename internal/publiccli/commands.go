@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"bkx/internal/archiveio"
+	"bkx/internal/backupengine"
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/models"
@@ -25,6 +26,7 @@ var commandHandlers = map[string]commandHandler{
 	"archive verify":      archiveVerify,
 	"backup create":       backupCreate,
 	"backup plan":         backupPlanCommand,
+	"repository init":     repositoryInit,
 	"job clone":           jobClone,
 	"job create":          jobCreate,
 	"job create-from-run": jobCreateFromRun,
@@ -129,8 +131,12 @@ func backupOptions() map[string]optionSpec {
 		"--exclude-from": {Key: "exclude_from", Kind: optionMultiValue}, "--include-from": {Key: "include_from", Kind: optionMultiValue},
 		"-n": {Key: "name", Kind: optionValue}, "--name": {Key: "name", Kind: optionValue},
 		"--compression": {Key: "compression", Kind: optionValue}, "--compression-level": {Key: "compression_level", Kind: optionValue},
-		"--split-size": {Key: "split_size", Kind: optionValue},
-		"--verify":     {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
+		"--split-size":     {Key: "split_size", Kind: optionValue},
+		"--engine":         {Key: "engine", Kind: optionValue},
+		"--repository":     {Key: "repository", Kind: optionValue},
+		"--credential-ref": {Key: "credential_ref", Kind: optionValue},
+		"--tag":            {Key: "tag", Kind: optionMultiValue},
+		"--verify":         {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
 	}
 }
 
@@ -170,6 +176,38 @@ func backupCreate(c *appContext, args []string) int {
 	if raw, set := a.stringValue("name"); set {
 		name = &raw
 	}
+	engine, _ := a.stringValue("engine")
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if engine == "" {
+		engine = models.BackupEngineBakery
+	}
+	if engine == models.BackupEngineRestic {
+		repository, set := a.stringValue("repository")
+		if !set || strings.TrimSpace(repository) == "" {
+			return commandErr(c, berror.Validation("--repository is required with --engine restic", nil))
+		}
+		var credentialRef *string
+		if raw, set := a.stringValue("credential_ref"); set {
+			raw = strings.TrimSpace(raw)
+			credentialRef = &raw
+		}
+		req := backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: excludes, Includes: includes, Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: c.globals.DryRun}
+		if c.globals.DryRun {
+			plan, err := backupengine.PlanBackup(req)
+			if err != nil {
+				return commandErr(c, err)
+			}
+			return renderResult(c, plan, "backup_plan")
+		}
+		result, err := backupengine.Create(req, backupengine.Options{RunStore: c.store})
+		if err != nil {
+			return commandErr(c, err)
+		}
+		return renderResult(c, result, "backup")
+	}
+	if engine != models.BackupEngineBakery {
+		return commandErr(c, berror.Validation("Unknown backup engine", map[string]any{"engine": engine, "supported": []string{models.BackupEngineBakery, models.BackupEngineRestic}}))
+	}
 	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, ArchiveName: name, Excludes: excludes, Includes: includes, SplitSize: split, Compression: profile, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun, SkipSymlinks: false}
 	if c.globals.DryRun {
 		plan, err := backupPlan(spec, "backup create")
@@ -192,7 +230,12 @@ func backupCreate(c *appContext, args []string) int {
 }
 
 func backupPlanCommand(c *appContext, args []string) int {
-	specs := map[string]optionSpec{"-d": {Key: "destination", Kind: optionValue}, "--destination": {Key: "destination", Kind: optionValue}}
+	specs := map[string]optionSpec{
+		"-d": {Key: "destination", Kind: optionValue}, "--destination": {Key: "destination", Kind: optionValue},
+		"--engine": {Key: "engine", Kind: optionValue}, "--repository": {Key: "repository", Kind: optionValue},
+		"--credential-ref": {Key: "credential_ref", Kind: optionValue}, "--exclude": {Key: "exclude", Kind: optionMultiValue},
+		"--tag": {Key: "tag", Kind: optionMultiValue}, "--verify": {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
+	}
 	a, ok := parseFor(c, "backup plan", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -207,6 +250,27 @@ func backupPlanCommand(c *appContext, args []string) int {
 	} else if c.config.DefaultDestination != nil {
 		value := *c.config.DefaultDestination
 		destination = &value
+	}
+	engine, _ := a.stringValue("engine")
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if engine == "" {
+		engine = models.BackupEngineBakery
+	}
+	if engine == models.BackupEngineRestic {
+		repository, set := a.stringValue("repository")
+		if !set || strings.TrimSpace(repository) == "" {
+			return commandErr(c, berror.Validation("--repository is required with --engine restic", nil))
+		}
+		var credentialRef *string
+		if raw, set := a.stringValue("credential_ref"); set {
+			raw = strings.TrimSpace(raw)
+			credentialRef = &raw
+		}
+		plan, err := backupengine.PlanBackup(backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: a.multiValue("exclude"), Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: true})
+		if err != nil {
+			return commandErr(c, err)
+		}
+		return renderResult(c, plan, "backup_plan")
 	}
 	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, Compression: models.CompressionProfile{Algorithm: c.config.CompressionAlgorithm, Level: c.config.CompressionLevel}, Verify: c.config.VerifyAfterOperation, DryRun: true, Excludes: []string{}, Includes: []string{}}
 	plan, err := backupPlan(spec, "backup plan")

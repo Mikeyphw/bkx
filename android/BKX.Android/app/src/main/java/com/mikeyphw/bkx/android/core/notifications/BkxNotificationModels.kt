@@ -124,6 +124,8 @@ object BkxOperationNotificationPlanner {
 
     private fun displayOperation(operation: String): String = when (operation) {
         "backup.create" -> "backup"
+        "backup.snapshot" -> "snapshot backup"
+        "repository.init" -> "repository setup"
         "archive.verify" -> "archive verification"
         "restore.extract" -> "restore"
         "transfer.run" -> "transfer"

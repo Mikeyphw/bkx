@@ -11,6 +11,7 @@ import (
 	"bkx/internal/berror"
 	"bkx/internal/config"
 	"bkx/internal/jobstore"
+	"bkx/internal/repositorystore"
 	"bkx/internal/runstore"
 	"bkx/internal/version"
 )
@@ -26,13 +27,14 @@ type globalOptions struct {
 }
 
 type appContext struct {
-	globals globalOptions
-	config  config.Config
-	stdout  io.Writer
-	stderr  io.Writer
-	render  renderer
-	store   *runstore.Store
-	jobs    *jobstore.Store
+	globals      globalOptions
+	config       config.Config
+	stdout       io.Writer
+	stderr       io.Writer
+	render       renderer
+	store        *runstore.Store
+	jobs         *jobstore.Store
+	repositories *repositorystore.Store
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -78,12 +80,13 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		globals.Trace = &trace
 	}
 	ctx := &appContext{
-		globals: globals,
-		config:  cfg,
-		stdout:  stdout,
-		stderr:  stderr,
-		render:  renderer{json: globals.JSON, stdout: stdout, stderr: stderr},
-		jobs:    jobstore.New(jobstore.DefaultPath(home)),
+		globals:      globals,
+		config:       cfg,
+		stdout:       stdout,
+		stderr:       stderr,
+		render:       renderer{json: globals.JSON, stdout: stdout, stderr: stderr},
+		jobs:         jobstore.New(jobstore.DefaultPath(home)),
+		repositories: repositorystore.New(repositorystore.DefaultPath(home)),
 	}
 	if cfg.RunHistoryEnabled {
 		store, storeErr := runstore.New(runstore.DefaultPath(home), cfg.RunHistoryLimit, true)
@@ -280,7 +283,11 @@ Commands:
 Backup repositories
 
 Commands:
+  add
   init
+  list
+  remove
+  show
 `,
 	"job": `Usage: bkx job COMMAND [ARGS]...
 
@@ -359,7 +366,11 @@ var LeafHelp = map[string]string{
 	"run list":            "Usage: bkx run list [OPTIONS]\n",
 	"run replay":          "Usage: bkx run replay [OPTIONS] RUN_ID\n",
 	"run show":            "Usage: bkx run show RUN_ID\n",
-	"repository init":     "Usage: bkx repository init [OPTIONS] REPOSITORY\n",
+	"repository add":      "Usage: bkx repository add [OPTIONS] REPOSITORY_ID\n",
+	"repository init":     "Usage: bkx repository init [OPTIONS] [REPOSITORY]\n",
+	"repository list":     "Usage: bkx repository list\n",
+	"repository remove":   "Usage: bkx repository remove REPOSITORY_ID\n",
+	"repository show":     "Usage: bkx repository show REPOSITORY_ID\n",
 	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
 	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",

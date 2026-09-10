@@ -425,6 +425,22 @@ func dispatchSaved(c *appContext, op models.OperationSpecV2, sets []string, plan
 		if spec.Engine == "" {
 			spec.Engine = models.BackupEngineRestic
 		}
+		if op.RepositoryRef != nil {
+			definition, err := c.repositories.Resolve(strings.TrimSpace(*op.RepositoryRef))
+			if err != nil {
+				return commandErr(c, err)
+			}
+			if spec.Repository != "" && strings.TrimSpace(spec.Repository) != definition.Location {
+				return commandErr(c, berror.Validation("Saved snapshot job contains both repository_ref and a conflicting repository location", map[string]any{"repository_ref": *op.RepositoryRef}))
+			}
+			spec.Repository = definition.Location
+			if spec.Engine != definition.Engine {
+				return commandErr(c, berror.Validation("Saved snapshot job engine does not match named repository", map[string]any{"repository_ref": *op.RepositoryRef, "engine": spec.Engine, "repository_engine": definition.Engine}))
+			}
+			if spec.CredentialRef == nil {
+				spec.CredentialRef = definition.CredentialRef
+			}
+		}
 		if spec.CredentialRef == nil && len(op.CredentialRefs) > 0 {
 			ref := op.CredentialRefs[0].ID
 			spec.CredentialRef = &ref

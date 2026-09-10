@@ -25,6 +25,26 @@ const (
 	maxRuntimeDocs  = 128
 )
 
+var frozenSupportedOperations = []string{
+	"archive.browse",
+	"archive.info",
+	"archive.list",
+	"archive.verify",
+	"backup.create",
+	"backup.plan",
+	"filesystem.list",
+	"filesystem.stat",
+	"restore.extract",
+	"restore.preview",
+	"runs.list",
+	"runs.show",
+	"storage.locations",
+	"transfer.plan",
+	"transfer.run",
+}
+
+var frozenHandlerOperations = append(append([]string(nil), frozenSupportedOperations...), "run.cancel")
+
 var frozenCapabilities = []string{
 	"archive.browse",
 	"archive.info",
@@ -125,6 +145,8 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"archive.compression.zstd",
 		"archive.split",
 		"filesystem.direct",
+		"backup.snapshot",
+		"repository.named",
 	)
 	if rcloneops.Available() {
 		caps = append(caps,
@@ -134,6 +156,8 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 			"backup.remote",
 			"archive.remote",
 			"restore.remote",
+			"backup.snapshot.remote.rclone",
+			"repository.managed_google_drive",
 			"cloud.google_drive",
 		)
 		if rcloneops.Configured() {
@@ -153,13 +177,49 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 	}
 }
 
-func SupportedOperations() []string { return services.SupportedOperations() }
-
-func HandlerOperations() []string {
-	ops := append([]string(nil), services.SupportedOperations()...)
-	ops = append(ops, "run.cancel")
+func SupportedOperations() []string {
+	ops := append([]string(nil), frozenSupportedOperations...)
 	sort.Strings(ops)
 	return ops
+}
+
+func HandlerOperations() []string {
+	ops := append([]string(nil), frozenHandlerOperations...)
+	sort.Strings(ops)
+	return ops
+}
+
+// ExtensionOperations are additive post-v1 operations. They are executable by
+// the embedded runtime but intentionally excluded from SupportedOperations so
+// the frozen v1 migration/bridge contract remains byte-for-byte compatible.
+func ExtensionOperations() []string {
+	frozen := map[string]bool{}
+	for _, op := range frozenSupportedOperations {
+		frozen[op] = true
+	}
+	var out []string
+	for _, op := range services.SupportedOperations() {
+		if !frozen[op] {
+			out = append(out, op)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func ExecutableOperations() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, group := range [][]string{HandlerOperations(), ExtensionOperations()} {
+		for _, op := range group {
+			if !seen[op] {
+				seen[op] = true
+				out = append(out, op)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (r *RuntimeAdapter) Progress(requestID string) (*Progress, error) {
@@ -211,10 +271,10 @@ func (r *RuntimeAdapter) Execute(raw string) Result {
 	var result Result
 	if request.Operation == "run.cancel" {
 		result = r.handleCancelOperation(request)
-	} else if !contains(services.SupportedOperations(), request.Operation) {
+	} else if !contains(ExecutableOperations(), request.Operation) {
 		result = failure(requestID, berror.Validation(
 			"Unsupported embedded Android operation: "+request.Operation,
-			map[string]any{"operation": request.Operation, "supported": HandlerOperations()},
+			map[string]any{"operation": request.Operation, "supported": ExecutableOperations()},
 		))
 	} else {
 		ctx := services.OperationContext{

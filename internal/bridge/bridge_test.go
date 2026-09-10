@@ -295,3 +295,26 @@ func TestReadinessAdvertisesRcloneOnlyWhenRuntimeIsAvailable(t *testing.T) {
 		}
 	}
 }
+
+func TestPostV1RepositoryExtensionsAreExecutableWithoutAdvertisingRegistryDrift(t *testing.T) {
+	advertised := map[string]bool{}
+	for _, op := range SupportedOperations() {
+		advertised[op] = true
+	}
+	extensions := map[string]bool{}
+	for _, op := range ExtensionOperations() {
+		extensions[op] = true
+	}
+	executable := map[string]bool{}
+	for _, op := range ExecutableOperations() {
+		executable[op] = true
+	}
+	for _, op := range []string{"backup.snapshot", "repository.init", "repositories.add", "repositories.list", "repositories.show", "repositories.remove"} {
+		if advertised[op] {
+			t.Fatalf("post-v1 extension must not drift frozen advertised operations: %s", op)
+		}
+		if !extensions[op] || !executable[op] {
+			t.Fatalf("post-v1 extension must remain executable: %s", op)
+		}
+	}
+}

@@ -58,6 +58,7 @@ data class BridgeArtifact(
     val sha256: String? = null,
     @SerialName("size_bytes") val sizeBytes: Long? = null,
     @SerialName("modified_at_epoch_millis") val modifiedAtEpochMillis: Long? = null,
+    val metadata: Map<String, String> = emptyMap(),
 ) {
     init {
         require(sizeBytes == null || sizeBytes >= 0L) { "artifact size_bytes must be non-negative" }

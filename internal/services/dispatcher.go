@@ -23,6 +23,7 @@ import (
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
 	"bkx/internal/remotearchive"
+	"bkx/internal/repositorystore"
 	"bkx/internal/resticops"
 	"bkx/internal/runstore"
 	"bkx/internal/transferops"
@@ -39,11 +40,12 @@ type Issue struct {
 	Action  string `json:"action"`
 }
 type Artifact struct {
-	Label                 string  `json:"label"`
-	Path                  string  `json:"path"`
-	SHA256                *string `json:"sha256,omitempty"`
-	SizeBytes             *int64  `json:"size_bytes,omitempty"`
-	ModifiedAtEpochMillis *int64  `json:"modified_at_epoch_millis,omitempty"`
+	Label                 string            `json:"label"`
+	Path                  string            `json:"path"`
+	SHA256                *string           `json:"sha256,omitempty"`
+	SizeBytes             *int64            `json:"size_bytes,omitempty"`
+	ModifiedAtEpochMillis *int64            `json:"modified_at_epoch_millis,omitempty"`
+	Metadata              map[string]string `json:"metadata,omitempty"`
 }
 type ResultMetrics struct {
 	FilesTotal *int64 `json:"files_total,omitempty"`
@@ -76,14 +78,20 @@ type StorageLocation struct {
 }
 type Dispatcher struct {
 	RunStore         *runstore.Store
+	Repositories     *repositorystore.Store
 	StorageLocations []StorageLocation
 }
 
 func New(store *runstore.Store) *Dispatcher {
-	return &Dispatcher{RunStore: store, StorageLocations: defaultStorageLocations()}
+	home, _ := os.UserHomeDir()
+	return NewWithRepositories(store, repositorystore.New(repositorystore.DefaultPath(home)))
+}
+
+func NewWithRepositories(store *runstore.Store, repositories *repositorystore.Store) *Dispatcher {
+	return &Dispatcher{RunStore: store, Repositories: repositories, StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.init", "restore.extract", "restore.preview", "runs.list", "runs.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.init", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -103,6 +111,14 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.backupSnapshot(ctx, p)
 	case "repository.init":
 		return d.repositoryInit(ctx, p)
+	case "repositories.add":
+		return d.repositoriesAdd(p)
+	case "repositories.list":
+		return d.repositoriesList()
+	case "repositories.show":
+		return d.repositoriesShow(p)
+	case "repositories.remove":
+		return d.repositoriesRemove(p)
 	case "archive.list":
 		return d.archiveList(ctx, p)
 	case "archive.info":
@@ -236,6 +252,28 @@ func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Res
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return Result{}, berror.Validation("Invalid snapshot backup payload", map[string]any{"reason": err.Error()})
 	}
+	repositoryRef := optionalString(p["repository_ref"])
+	if repositoryRef != "" {
+		if strings.TrimSpace(spec.Repository) != "" {
+			return Result{}, berror.Validation("snapshot backup accepts repository or repository_ref, not both", nil)
+		}
+		if d.Repositories == nil {
+			return Result{}, berror.Validation("named repository store is unavailable", nil)
+		}
+		definition, err := d.Repositories.Resolve(repositoryRef)
+		if err != nil {
+			return Result{}, err
+		}
+		spec.Repository = definition.Location
+		if spec.Engine == "" {
+			spec.Engine = definition.Engine
+		} else if spec.Engine != definition.Engine {
+			return Result{}, berror.Validation("snapshot backup engine does not match named repository", map[string]any{"repository_ref": repositoryRef, "engine": spec.Engine, "repository_engine": definition.Engine})
+		}
+		if spec.CredentialRef == nil {
+			spec.CredentialRef = definition.CredentialRef
+		}
+	}
 	if spec.Engine == "" {
 		spec.Engine = models.BackupEngineRestic
 	}
@@ -278,16 +316,122 @@ func (d *Dispatcher) repositoryInit(ctx OperationContext, p map[string]any) (Res
 	if err := json.Unmarshal(data, &spec); err != nil {
 		return Result{}, berror.Validation("Invalid repository init payload", map[string]any{"reason": err.Error()})
 	}
+	repositoryRef := optionalString(p["repository_ref"])
+	if repositoryRef != "" {
+		if strings.TrimSpace(spec.Repository) != "" {
+			return Result{}, berror.Validation("repository init accepts repository or repository_ref, not both", nil)
+		}
+		if d.Repositories == nil {
+			return Result{}, berror.Validation("named repository store is unavailable", nil)
+		}
+		definition, err := d.Repositories.Resolve(repositoryRef)
+		if err != nil {
+			return Result{}, err
+		}
+		spec.Repository = definition.Location
+		if spec.Engine == "" {
+			spec.Engine = definition.Engine
+		} else if spec.Engine != definition.Engine {
+			return Result{}, berror.Validation("repository init engine does not match named repository", map[string]any{"repository_ref": repositoryRef})
+		}
+		if spec.CredentialRef == nil {
+			spec.CredentialRef = definition.CredentialRef
+		}
+	}
 	if spec.Engine == "" {
 		spec.Engine = models.BackupEngineRestic
 	}
-	emit(ctx, "preparing", "Initializing local Restic repository.", floatPtr(.1))
+	emit(ctx, "preparing", "Initializing Restic repository.", floatPtr(.1))
 	result, err := resticops.Init(spec, resticops.Options{})
 	if err != nil {
 		return Result{}, err
 	}
 	emit(ctx, "complete", "Restic repository initialized.", floatPtr(1))
 	return success("Restic repository initialized at "+result.Repository+".", nil, []Artifact{artifact("restic_repository", result.Repository, "")}), nil
+}
+
+func repositoryArtifact(def models.RepositoryDefinition) Artifact {
+	metadata := map[string]string{
+		"repository_id":  def.RepositoryID,
+		"name":           def.Name,
+		"engine":         def.Engine,
+		"backend":        def.Backend,
+		"managed_by_bkx": strconv.FormatBool(def.ManagedByBKX),
+	}
+	if def.CredentialRef != nil {
+		metadata["credential_ref"] = *def.CredentialRef
+	}
+	return Artifact{Label: "repository", Path: def.Location, Metadata: metadata}
+}
+
+func (d *Dispatcher) repositoriesAdd(p map[string]any) (Result, error) {
+	if d.Repositories == nil {
+		return Result{}, berror.Validation("named repository store is unavailable", nil)
+	}
+	data, err := json.Marshal(p)
+	if err != nil {
+		return Result{}, berror.Validation("Invalid repository definition payload", map[string]any{"reason": err.Error()})
+	}
+	var def models.RepositoryDefinition
+	if err := json.Unmarshal(data, &def); err != nil {
+		return Result{}, berror.Validation("Invalid repository definition payload", map[string]any{"reason": err.Error()})
+	}
+	created, err := d.Repositories.Create(def)
+	if err != nil {
+		return Result{}, err
+	}
+	return success("Repository "+created.RepositoryID+" saved.", nil, []Artifact{repositoryArtifact(created)}), nil
+}
+
+func (d *Dispatcher) repositoriesList() (Result, error) {
+	if d.Repositories == nil {
+		return Result{}, berror.Validation("named repository store is unavailable", nil)
+	}
+	items, err := d.Repositories.List()
+	if err != nil {
+		return Result{}, err
+	}
+	artifacts := make([]Artifact, 0, len(items))
+	for _, item := range items {
+		artifacts = append(artifacts, repositoryArtifact(item))
+	}
+	return success(fmt.Sprintf("%d named repositories.", len(items)), nil, artifacts), nil
+}
+
+func (d *Dispatcher) repositoriesShow(p map[string]any) (Result, error) {
+	if d.Repositories == nil {
+		return Result{}, berror.Validation("named repository store is unavailable", nil)
+	}
+	id, err := requiredString(p, "repository_id")
+	if err != nil {
+		return Result{}, err
+	}
+	item, err := d.Repositories.Get(id)
+	if err != nil {
+		return Result{}, err
+	}
+	if item == nil {
+		return Result{}, berror.NotFound("Repository not found: "+id, map[string]any{"repository_id": id})
+	}
+	return success("Repository "+item.RepositoryID+" loaded.", nil, []Artifact{repositoryArtifact(*item)}), nil
+}
+
+func (d *Dispatcher) repositoriesRemove(p map[string]any) (Result, error) {
+	if d.Repositories == nil {
+		return Result{}, berror.Validation("named repository store is unavailable", nil)
+	}
+	id, err := requiredString(p, "repository_id")
+	if err != nil {
+		return Result{}, err
+	}
+	deleted, err := d.Repositories.Delete(id)
+	if err != nil {
+		return Result{}, err
+	}
+	if !deleted {
+		return Result{}, berror.NotFound("Repository not found: "+id, map[string]any{"repository_id": id})
+	}
+	return success("Repository "+id+" removed.", nil, nil), nil
 }
 
 func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result, error) {

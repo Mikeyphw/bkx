@@ -973,8 +973,11 @@ class BkxAppViewModel(
         }
     }
 
-    private fun requestUsesManagedGoogleDrive(request: BridgeRequestEnvelope): Boolean =
-        request.payload.toString().contains("rclone://bkx-google-drive/", ignoreCase = true)
+    private fun requestUsesManagedGoogleDrive(request: BridgeRequestEnvelope): Boolean {
+        val payload = request.payload.toString()
+        return payload.contains("rclone://bkx-google-drive/", ignoreCase = true) ||
+            payload.contains("\"repository_backend\":\"managed_google_drive\"", ignoreCase = true)
+    }
 
     private fun refreshBackend() {
         viewModelScope.launch {

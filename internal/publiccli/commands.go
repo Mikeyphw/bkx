@@ -26,7 +26,11 @@ var commandHandlers = map[string]commandHandler{
 	"archive verify":      archiveVerify,
 	"backup create":       backupCreate,
 	"backup plan":         backupPlanCommand,
+	"repository add":      repositoryAdd,
 	"repository init":     repositoryInit,
+	"repository list":     repositoryList,
+	"repository remove":   repositoryRemove,
+	"repository show":     repositoryShow,
 	"job clone":           jobClone,
 	"job create":          jobCreate,
 	"job create-from-run": jobCreateFromRun,
@@ -134,6 +138,7 @@ func backupOptions() map[string]optionSpec {
 		"--split-size":     {Key: "split_size", Kind: optionValue},
 		"--engine":         {Key: "engine", Kind: optionValue},
 		"--repository":     {Key: "repository", Kind: optionValue},
+		"--repository-ref": {Key: "repository_ref", Kind: optionValue},
 		"--credential-ref": {Key: "credential_ref", Kind: optionValue},
 		"--tag":            {Key: "tag", Kind: optionMultiValue},
 		"--verify":         {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
@@ -178,18 +183,40 @@ func backupCreate(c *appContext, args []string) int {
 	}
 	engine, _ := a.stringValue("engine")
 	engine = strings.ToLower(strings.TrimSpace(engine))
+	repository, hasRepository := a.stringValue("repository")
+	repositoryRef, hasRepositoryRef := a.stringValue("repository_ref")
+	if hasRepository && hasRepositoryRef {
+		return commandErr(c, berror.Validation("Use either --repository or --repository-ref, not both", nil))
+	}
+	var credentialRef *string
+	if hasRepositoryRef {
+		definition, err := c.repositories.Resolve(strings.TrimSpace(repositoryRef))
+		if err != nil {
+			return commandErr(c, err)
+		}
+		repository = definition.Location
+		hasRepository = true
+		credentialRef = definition.CredentialRef
+		if engine == "" {
+			engine = definition.Engine
+		} else if engine != definition.Engine {
+			return commandErr(c, berror.Validation("Requested backup engine does not match named repository", map[string]any{"engine": engine, "repository_ref": repositoryRef, "repository_engine": definition.Engine}))
+		}
+	}
+	if raw, set := a.stringValue("credential_ref"); set {
+		raw = strings.TrimSpace(raw)
+		credentialRef = &raw
+	}
 	if engine == "" {
-		engine = models.BackupEngineBakery
+		if hasRepository {
+			engine = models.BackupEngineRestic
+		} else {
+			engine = models.BackupEngineBakery
+		}
 	}
 	if engine == models.BackupEngineRestic {
-		repository, set := a.stringValue("repository")
-		if !set || strings.TrimSpace(repository) == "" {
-			return commandErr(c, berror.Validation("--repository is required with --engine restic", nil))
-		}
-		var credentialRef *string
-		if raw, set := a.stringValue("credential_ref"); set {
-			raw = strings.TrimSpace(raw)
-			credentialRef = &raw
+		if !hasRepository || strings.TrimSpace(repository) == "" {
+			return commandErr(c, berror.Validation("--repository or --repository-ref is required with --engine restic", nil))
 		}
 		req := backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: excludes, Includes: includes, Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: c.globals.DryRun}
 		if c.globals.DryRun {
@@ -207,6 +234,9 @@ func backupCreate(c *appContext, args []string) int {
 	}
 	if engine != models.BackupEngineBakery {
 		return commandErr(c, berror.Validation("Unknown backup engine", map[string]any{"engine": engine, "supported": []string{models.BackupEngineBakery, models.BackupEngineRestic}}))
+	}
+	if hasRepository {
+		return commandErr(c, berror.Validation("--repository and --repository-ref are only valid with the restic backup engine", nil))
 	}
 	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, ArchiveName: name, Excludes: excludes, Includes: includes, SplitSize: split, Compression: profile, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun, SkipSymlinks: false}
 	if c.globals.DryRun {
@@ -232,7 +262,7 @@ func backupCreate(c *appContext, args []string) int {
 func backupPlanCommand(c *appContext, args []string) int {
 	specs := map[string]optionSpec{
 		"-d": {Key: "destination", Kind: optionValue}, "--destination": {Key: "destination", Kind: optionValue},
-		"--engine": {Key: "engine", Kind: optionValue}, "--repository": {Key: "repository", Kind: optionValue},
+		"--engine": {Key: "engine", Kind: optionValue}, "--repository": {Key: "repository", Kind: optionValue}, "--repository-ref": {Key: "repository_ref", Kind: optionValue},
 		"--credential-ref": {Key: "credential_ref", Kind: optionValue}, "--exclude": {Key: "exclude", Kind: optionMultiValue},
 		"--tag": {Key: "tag", Kind: optionMultiValue}, "--verify": {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
 	}
@@ -253,24 +283,52 @@ func backupPlanCommand(c *appContext, args []string) int {
 	}
 	engine, _ := a.stringValue("engine")
 	engine = strings.ToLower(strings.TrimSpace(engine))
+	repository, hasRepository := a.stringValue("repository")
+	repositoryRef, hasRepositoryRef := a.stringValue("repository_ref")
+	if hasRepository && hasRepositoryRef {
+		return commandErr(c, berror.Validation("Use either --repository or --repository-ref, not both", nil))
+	}
+	var credentialRef *string
+	if hasRepositoryRef {
+		definition, err := c.repositories.Resolve(strings.TrimSpace(repositoryRef))
+		if err != nil {
+			return commandErr(c, err)
+		}
+		repository = definition.Location
+		hasRepository = true
+		credentialRef = definition.CredentialRef
+		if engine == "" {
+			engine = definition.Engine
+		} else if engine != definition.Engine {
+			return commandErr(c, berror.Validation("Requested backup engine does not match named repository", map[string]any{"engine": engine, "repository_ref": repositoryRef, "repository_engine": definition.Engine}))
+		}
+	}
+	if raw, set := a.stringValue("credential_ref"); set {
+		raw = strings.TrimSpace(raw)
+		credentialRef = &raw
+	}
 	if engine == "" {
-		engine = models.BackupEngineBakery
+		if hasRepository {
+			engine = models.BackupEngineRestic
+		} else {
+			engine = models.BackupEngineBakery
+		}
 	}
 	if engine == models.BackupEngineRestic {
-		repository, set := a.stringValue("repository")
-		if !set || strings.TrimSpace(repository) == "" {
-			return commandErr(c, berror.Validation("--repository is required with --engine restic", nil))
-		}
-		var credentialRef *string
-		if raw, set := a.stringValue("credential_ref"); set {
-			raw = strings.TrimSpace(raw)
-			credentialRef = &raw
+		if !hasRepository || strings.TrimSpace(repository) == "" {
+			return commandErr(c, berror.Validation("--repository or --repository-ref is required with --engine restic", nil))
 		}
 		plan, err := backupengine.PlanBackup(backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: a.multiValue("exclude"), Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: true})
 		if err != nil {
 			return commandErr(c, err)
 		}
 		return renderResult(c, plan, "backup_plan")
+	}
+	if engine != models.BackupEngineBakery {
+		return commandErr(c, berror.Validation("Unknown backup engine", map[string]any{"engine": engine, "supported": []string{models.BackupEngineBakery, models.BackupEngineRestic}}))
+	}
+	if hasRepository {
+		return commandErr(c, berror.Validation("--repository and --repository-ref are only valid with the restic backup engine", nil))
 	}
 	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, Compression: models.CompressionProfile{Algorithm: c.config.CompressionAlgorithm, Level: c.config.CompressionLevel}, Verify: c.config.VerifyAfterOperation, DryRun: true, Excludes: []string{}, Includes: []string{}}
 	plan, err := backupPlan(spec, "backup plan")

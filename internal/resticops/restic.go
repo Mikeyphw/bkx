@@ -16,6 +16,7 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/models"
+	"bkx/internal/rcloneops"
 	"bkx/internal/runstore"
 )
 
@@ -102,26 +103,126 @@ func ResolveRunner(options Options) (Runner, error) {
 	if options.Runner != nil {
 		return options.Runner, nil
 	}
-	path, err := exec.LookPath("restic")
-	if err != nil {
-		return nil, berror.External("restic is required for incremental snapshot backups", map[string]any{"tool": "restic", "action": "Install restic and ensure it is available on PATH."})
+	env := options.Environ
+	if len(env) == 0 {
+		env = os.Environ()
 	}
-	return ExecRunner{Path: path}, nil
+	path := strings.TrimSpace(environmentValue(env, "BKX_RESTIC_PATH"))
+	if path == "" {
+		located, err := exec.LookPath("restic")
+		if err != nil {
+			return nil, berror.External("restic is required for incremental snapshot backups", map[string]any{"tool": "restic", "action": "Install restic and ensure it is available on PATH, or set BKX_RESTIC_PATH."})
+		}
+		path = located
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, berror.External("restic runtime path is invalid", map[string]any{"tool": "restic", "reason": err.Error()})
+	}
+	info, err := os.Stat(absolute)
+	if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
+		return nil, berror.External("restic runtime is not executable", map[string]any{"tool": "restic", "path": absolute})
+	}
+	return ExecRunner{Path: absolute}, nil
 }
 
-func NormalizeLocalRepository(raw string) (string, error) {
+// NormalizeRepository accepts local filesystem repositories and BKX canonical
+// rclone://remote/path repositories. Native restic rclone: syntax is kept out
+// of saved specs so credentials/userinfo cannot be smuggled through backend URLs.
+func NormalizeRepository(raw string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
 		return "", berror.Validation("Restic repository must not be empty", nil)
 	}
-	if strings.Contains(value, "://") || strings.HasPrefix(value, "rclone:") || strings.HasPrefix(value, "s3:") || strings.HasPrefix(value, "sftp:") {
-		return "", berror.Validation("BR06 supports local Restic repositories only; remote/cloud repositories arrive in BR07+BR08", map[string]any{"repository": value})
+	if rcloneops.IsLocation(value) {
+		canonical, err := rcloneops.CanonicalURI(value)
+		if err != nil {
+			return "", berror.Validation("Invalid rclone Restic repository", map[string]any{"repository": value, "reason": err.Error()})
+		}
+		return canonical, nil
+	}
+	lower := strings.ToLower(value)
+	if strings.Contains(value, "://") || strings.HasPrefix(lower, "rclone:") || strings.HasPrefix(lower, "s3:") || strings.HasPrefix(lower, "sftp:") || strings.HasPrefix(lower, "b2:") || strings.HasPrefix(lower, "azure:") || strings.HasPrefix(lower, "gs:") {
+		return "", berror.Validation("BKX remote Restic repositories must use rclone://remote/path; provider credentials stay in rclone configuration", map[string]any{"repository": value})
 	}
 	abs, err := filepath.Abs(value)
 	if err != nil {
 		return "", berror.Validation("Invalid local Restic repository path", map[string]any{"repository": value, "reason": err.Error()})
 	}
 	return filepath.Clean(abs), nil
+}
+
+func NormalizeLocalRepository(raw string) (string, error) {
+	repository, err := NormalizeRepository(raw)
+	if err != nil {
+		return "", err
+	}
+	if rcloneops.IsLocation(repository) {
+		return "", berror.Validation("Expected a local Restic repository path", map[string]any{"repository": repository})
+	}
+	return repository, nil
+}
+
+func commandRepository(repository string) (string, error) {
+	if !rcloneops.IsLocation(repository) {
+		return repository, nil
+	}
+	native, err := rcloneops.NormalizeLocation(repository)
+	if err != nil {
+		return "", err
+	}
+	return "rclone:" + native, nil
+}
+
+func environmentValue(env []string, key string) string {
+	prefix := key + "="
+	for i := len(env) - 1; i >= 0; i-- {
+		if strings.HasPrefix(env[i], prefix) {
+			return strings.TrimPrefix(env[i], prefix)
+		}
+	}
+	return ""
+}
+
+func setEnvironmentValue(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return append(out, key+"="+value)
+}
+
+// repositoryInvocation translates BKX's non-secret repository URI into the
+// restic process form and injects only runtime/config paths for rclone. The
+// rclone config contents (OAuth tokens, provider secrets) are never copied into
+// a job, run snapshot, command argument, or diagnostic.
+func repositoryInvocation(repository string, baseEnv []string) (string, []string, []string, error) {
+	commandRepo, err := commandRepository(repository)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	env := append([]string(nil), baseEnv...)
+	if len(env) == 0 {
+		env = os.Environ()
+	}
+	if !rcloneops.IsLocation(repository) {
+		return commandRepo, nil, env, nil
+	}
+	runtime, err := rcloneops.RuntimeFromEnviron(env)
+	if err != nil {
+		return "", nil, nil, berror.External("rclone is required for this Restic repository", map[string]any{"tool": "rclone", "repository": repository, "reason": err.Error()})
+	}
+	if runtime.Config != "" {
+		info, statErr := os.Stat(runtime.Config)
+		if statErr != nil || info.IsDir() || info.Size() == 0 {
+			return "", nil, nil, berror.External("rclone config is unavailable for this Restic repository", map[string]any{"tool": "rclone", "repository": repository})
+		}
+		env = setEnvironmentValue(env, "RCLONE_CONFIG", runtime.Config)
+	}
+	return commandRepo, []string{"-o", "rclone.program=" + runtime.Executable}, env, nil
 }
 
 func credentialEnvironment(base []string, ref *string) ([]string, error) {
@@ -164,7 +265,7 @@ func Init(spec models.RepositoryInitSpec, options Options) (RepositoryResult, er
 	if err := models.ValidateRepositoryInitSpec(spec); err != nil {
 		return RepositoryResult{}, berror.Validation("Invalid repository init specification", map[string]any{"reason": err.Error()})
 	}
-	repo, err := NormalizeLocalRepository(spec.Repository)
+	repo, err := NormalizeRepository(spec.Repository)
 	if err != nil {
 		return RepositoryResult{}, err
 	}
@@ -176,10 +277,18 @@ func Init(spec models.RepositoryInitSpec, options Options) (RepositoryResult, er
 	if err != nil {
 		return RepositoryResult{}, err
 	}
-	if err := os.MkdirAll(filepath.Dir(repo), 0o700); err != nil {
-		return RepositoryResult{}, berror.WrapExternal("creating Restic repository parent", filepath.Dir(repo), "filesystem", err)
+	commandRepo, backendArgs, env, err := repositoryInvocation(repo, env)
+	if err != nil {
+		return RepositoryResult{}, err
 	}
-	_, stderr, runErr := runner.Run([]string{"--repo", repo, "init"}, env)
+	if !rcloneops.IsLocation(repo) {
+		if err := os.MkdirAll(filepath.Dir(repo), 0o700); err != nil {
+			return RepositoryResult{}, berror.WrapExternal("creating Restic repository parent", filepath.Dir(repo), "filesystem", err)
+		}
+	}
+	args := append([]string{}, backendArgs...)
+	args = append(args, "--repo", commandRepo, "init")
+	_, stderr, runErr := runner.Run(args, env)
 	if runErr != nil {
 		return RepositoryResult{}, external("initializing Restic repository", repo, stderr, runErr)
 	}
@@ -192,6 +301,9 @@ func PlanBackup(spec models.SnapshotBackupSpec) (Plan, error) {
 		return Plan{}, err
 	}
 	warnings := []string{}
+	if rcloneops.IsLocation(normalized.Repository) {
+		warnings = append(warnings, "Remote snapshot uses restic's rclone backend; provider credentials remain in rclone configuration.")
+	}
 	if normalized.Verify {
 		warnings = append(warnings, "Repository verification runs after the snapshot; full data-read verification is reserved for repository maintenance.")
 	}
@@ -212,6 +324,10 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		return BackupResult{}, err
 	}
 	env, err := credentialEnvironment(options.Environ, normalized.CredentialRef)
+	if err != nil {
+		return BackupResult{}, err
+	}
+	commandRepo, backendArgs, env, err := repositoryInvocation(normalized.Repository, env)
 	if err != nil {
 		return BackupResult{}, err
 	}
@@ -254,7 +370,9 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		complete("interrupted", nil, ErrCancelled)
 		return BackupResult{}, ErrCancelled
 	}
-	args := []string{"--json", "--repo", normalized.Repository, "backup"}
+	args := []string{"--json"}
+	args = append(args, backendArgs...)
+	args = append(args, "--repo", commandRepo, "backup")
 	for _, pattern := range normalized.Excludes {
 		args = append(args, "--exclude", pattern)
 	}
@@ -277,7 +395,9 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 	result := BackupResult{Success: true, Engine: models.BackupEngineRestic, Repository: normalized.Repository, SnapshotID: summary.SnapshotID, FilesProcessed: summary.TotalFilesProcessed, BytesProcessed: summary.TotalBytesProcessed, DataAdded: summary.DataAdded, Warnings: []string{}}
 	if normalized.Verify {
 		emit(options, "verifying", result.FilesProcessed, result.BytesProcessed)
-		_, checkErrText, checkErr := runner.Run([]string{"--repo", normalized.Repository, "check"}, env)
+		checkArgs := append([]string{}, backendArgs...)
+		checkArgs = append(checkArgs, "--repo", commandRepo, "check")
+		_, checkErrText, checkErr := runner.Run(checkArgs, env)
 		ok := checkErr == nil
 		result.VerificationPassed = &ok
 		if checkErr != nil {
@@ -301,9 +421,9 @@ func normalizeBackup(spec models.SnapshotBackupSpec) (models.SnapshotBackupSpec,
 		return spec, berror.Validation("Invalid Restic snapshot backup specification", map[string]any{"reason": err.Error()})
 	}
 	if len(spec.Includes) > 0 {
-		return spec, berror.Validation("Restic include filters are not enabled in BR06; use explicit sources plus exclusions", map[string]any{"includes": spec.Includes})
+		return spec, berror.Validation("Restic include filters are not enabled yet; use explicit sources plus exclusions", map[string]any{"includes": spec.Includes})
 	}
-	repo, err := NormalizeLocalRepository(spec.Repository)
+	repo, err := NormalizeRepository(spec.Repository)
 	if err != nil {
 		return spec, err
 	}

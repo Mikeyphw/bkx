@@ -128,3 +128,90 @@ func (s *sequenceRunner) Run(args []string, env []string) ([]byte, []byte, error
 	s.calls++
 	return r.stdout, r.stderr, r.err
 }
+
+func TestRemoteRcloneRepositoryUsesBkxRuntimeAndConfigWithoutSecretArgs(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rclone := filepath.Join(root, "rclone")
+	if err := os.WriteFile(rclone, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\ntoken = SECRET-OAUTH-TOKEN\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ref := "drive-repo"
+	fake := &fakeRunner{stdout: []byte("{\"message_type\":\"summary\",\"snapshot_id\":\"remote123\",\"total_files_processed\":1,\"total_bytes_processed\":10,\"data_added\":4}\n")}
+	got, err := Backup(models.SnapshotBackupSpec{
+		Engine: models.BackupEngineRestic, Repository: "rclone://drive/BKX/restic", CredentialRef: &ref, Sources: []string{source},
+	}, Options{Runner: fake, Environ: []string{
+		"BKX_CREDENTIAL_DRIVE_REPO=repo-password",
+		"BKX_RCLONE_PATH=" + rclone,
+		"BKX_RCLONE_CONFIG=" + config,
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Repository != "rclone://drive/BKX/restic" || got.SnapshotID != "remote123" {
+		t.Fatalf("result=%+v", got)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("calls=%v", fake.calls)
+	}
+	joinedArgs := strings.Join(fake.calls[0], " ")
+	for _, required := range []string{"--json", "-o", "rclone.program=" + rclone, "--repo", "rclone:drive:BKX/restic", "backup"} {
+		if !strings.Contains(joinedArgs, required) {
+			t.Fatalf("missing %q in args: %v", required, fake.calls[0])
+		}
+	}
+	if strings.Contains(joinedArgs, "repo-password") || strings.Contains(joinedArgs, "SECRET-OAUTH-TOKEN") || strings.Contains(joinedArgs, config) {
+		t.Fatalf("secret/config leaked into restic args: %v", fake.calls[0])
+	}
+	joinedEnv := strings.Join(fake.envs[0], "\n")
+	if !strings.Contains(joinedEnv, "RESTIC_PASSWORD=repo-password") || !strings.Contains(joinedEnv, "RCLONE_CONFIG="+config) {
+		t.Fatalf("runtime env missing isolated credential/config bindings: %s", joinedEnv)
+	}
+	if strings.Contains(joinedEnv, "SECRET-OAUTH-TOKEN") {
+		t.Fatal("rclone config contents leaked into environment")
+	}
+}
+
+func TestRemoteRepositoryInitUsesRcloneBackend(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	if err := os.WriteFile(rclone, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeRunner{}
+	got, err := Init(models.RepositoryInitSpec{Engine: models.BackupEngineRestic, Repository: "rclone://drive/BKX/restic"}, Options{
+		Runner:  fake,
+		Environ: []string{"RESTIC_PASSWORD=pw", "BKX_RCLONE_PATH=" + rclone, "BKX_RCLONE_CONFIG=" + config},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Repository != "rclone://drive/BKX/restic" {
+		t.Fatalf("got=%+v", got)
+	}
+	if len(fake.calls) != 1 || !strings.Contains(strings.Join(fake.calls[0], " "), "rclone:drive:BKX/restic") {
+		t.Fatalf("calls=%v", fake.calls)
+	}
+}
+
+func TestNormalizeRepositoryRejectsNativeProviderBackends(t *testing.T) {
+	for _, raw := range []string{"rclone:drive:repo", "s3:https://example/bucket", "sftp:user@host:/repo", "https://example/repo"} {
+		if _, err := NormalizeRepository(raw); err == nil {
+			t.Fatalf("expected BKX rclone URI rejection for %q", raw)
+		}
+	}
+	if got, err := NormalizeRepository("rclone://drive/BKX/restic"); err != nil || got != "rclone://drive/BKX/restic" {
+		t.Fatalf("got=%q err=%v", got, err)
+	}
+}

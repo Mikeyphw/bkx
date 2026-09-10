@@ -22,7 +22,24 @@ type RuntimeInfo struct {
 }
 
 func RuntimeFromEnvironment() (Runtime, error) {
-	candidate := strings.TrimSpace(os.Getenv("BKX_RCLONE_PATH"))
+	return RuntimeFromEnviron(os.Environ())
+}
+
+// RuntimeFromEnviron resolves BKX's rclone runtime from an explicit environment.
+// Restic uses this so its child rclone process receives the same app-private
+// runtime/config bindings as direct BKX transfers without reading secret config
+// contents into operation specifications or diagnostics.
+func RuntimeFromEnviron(environ []string) (Runtime, error) {
+	lookup := func(key string) string {
+		prefix := key + "="
+		for i := len(environ) - 1; i >= 0; i-- {
+			if strings.HasPrefix(environ[i], prefix) {
+				return strings.TrimSpace(strings.TrimPrefix(environ[i], prefix))
+			}
+		}
+		return ""
+	}
+	candidate := lookup("BKX_RCLONE_PATH")
 	if candidate == "" {
 		located, err := exec.LookPath("rclone")
 		if err != nil {
@@ -38,7 +55,15 @@ func RuntimeFromEnvironment() (Runtime, error) {
 	if err != nil || info.IsDir() || info.Mode()&0o111 == 0 {
 		return Runtime{}, fmt.Errorf("rclone runtime is not executable: %s", absolute)
 	}
-	return Runtime{Executable: absolute, Config: strings.TrimSpace(os.Getenv("BKX_RCLONE_CONFIG"))}, nil
+	config := lookup("BKX_RCLONE_CONFIG")
+	if config != "" {
+		configAbs, err := filepath.Abs(config)
+		if err != nil {
+			return Runtime{}, fmt.Errorf("resolve rclone config: %w", err)
+		}
+		config = configAbs
+	}
+	return Runtime{Executable: absolute, Config: config}, nil
 }
 
 func Available() bool {

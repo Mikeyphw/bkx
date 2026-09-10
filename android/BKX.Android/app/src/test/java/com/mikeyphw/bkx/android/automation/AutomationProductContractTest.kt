@@ -74,4 +74,21 @@ class AutomationProductContractTest {
         assertTrue(delivery.contains("Intent.parseUri"))
         assertTrue(delivery.contains("TaskerPluginContract.EXTRA_VARIABLES"))
     }
+    @Test
+    fun taskerEditorUsesGuidedCompactUxWithoutRemovingVariablePower() {
+        val editor = File(mainRoot, "automation/BkxTaskerEditActivity.kt").readText()
+        assertTrue(editor.contains("Scaffold("))
+        assertTrue(editor.contains("bottomBar ="))
+        assertTrue(editor.contains("OperationPicker"))
+        assertTrue(editor.contains("DropdownMenu("))
+        assertTrue(editor.contains("AdvancedSection"))
+        assertTrue(editor.contains("taskerEditorErrors"))
+        assertTrue(editor.contains("ChoiceField"))
+        assertTrue(editor.contains("Use Tasker variable"))
+        assertTrue(editor.contains("Save to Tasker"))
+        assertTrue(editor.contains("Tasker summary"))
+        assertTrue(editor.contains("navigationBarsPadding().imePadding()"))
+        assertFalse(editor.contains("AutomationAction.entries.chunked(3)"))
+    }
+
 }

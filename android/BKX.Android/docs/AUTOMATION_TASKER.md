@@ -115,3 +115,18 @@ The automation service owns the notification while external automation is runnin
 - The direct token is shown/copyable only from BKX's Automation screen.
 - Google OAuth and imported-rclone credentials never cross the automation Intent boundary.
 - Regenerate tokens after copying a Tasker configuration to an untrusted device or if the direct token may have leaked.
+
+## Tasker editor UX
+
+The Tasker configuration Activity is intentionally optimized for small screens and repeated automation setup:
+
+- one compact operation picker replaces the nine-chip action wall;
+- the selected operation includes a short explanation and the exact Tasker blurb preview;
+- required inputs appear first while uncommon controls live under **Advanced options**;
+- compression, restore mode, and transfer mode use guided fixed choices, with an explicit **Use Tasker variable** escape hatch so dynamic Tasker workflows remain possible;
+- required/path/numeric mistakes are reported inline before **Save to Tasker** becomes available;
+- restore and sync deletion requirements are visually separated as safety guidance rather than mixed into ordinary fields;
+- returned `%bkx_*` variables are collapsed by default and can be expanded when building downstream Tasker steps;
+- the bottom Cancel/Save bar stays reachable while scrolling and respects gesture-navigation and IME insets.
+
+The editor performs only configuration-time guidance. The authoritative `AutomationRequest.validate()` still runs after Tasker variable replacement when the action fires, so editor convenience never weakens runtime validation or the existing backup/restore/transfer safety gates.

@@ -114,3 +114,27 @@ for test_file in "$test_root/AutomationProductContractTest.kt" "$test_root/BkxAu
   grep -Fq 'import org.junit.Test' "$test_file"
 done
 
+
+# Tasker editor UX contract: compact picker, sticky save, progressive disclosure, inline guidance, and variable escape hatch.
+editor="$source_root/automation/BkxTaskerEditActivity.kt"
+for token in \
+  'Scaffold(' \
+  'bottomBar =' \
+  'OperationPicker' \
+  'DropdownMenu(' \
+  'AdvancedSection' \
+  'taskerEditorErrors' \
+  'ChoiceField' \
+  'Use Tasker variable' \
+  'Save to Tasker' \
+  'Tasker summary' \
+  'navigationBarsPadding().imePadding()'; do
+  grep -Fq "$token" "$editor" || { echo "Tasker editor UX contract missing: $token" >&2; exit 1; }
+done
+if grep -Fq 'AutomationAction.entries.chunked(3)' "$editor"; then
+  echo 'Tasker editor must not regress to the dense multi-row action chip wall.' >&2
+  exit 1
+fi
+for token in 'Tasker editor UX' 'Advanced options' 'Use Tasker variable' 'Save to Tasker'; do
+  grep -Fq "$token" "$docs" || { echo "Tasker docs missing editor UX guidance: $token" >&2; exit 1; }
+done

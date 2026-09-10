@@ -110,7 +110,10 @@ class BkxTaskerConditionPublisher(
         notifyStateChanged()
     }
 
-    fun driveConnecting() = updateDrive(BkxTaskerDriveState.Connecting)
+    fun driveConnecting() {
+        store.update { it.copy(driveState = BkxTaskerDriveState.Connecting) }
+        notifyStateChanged()
+    }
     fun driveConnected() {
         val wasUnavailable = store.read().remoteAvailability["google-drive"] == false
         store.update { it.copy(driveState = BkxTaskerDriveState.Connected, remoteAvailability = it.remoteAvailability + ("google-drive" to true)) }

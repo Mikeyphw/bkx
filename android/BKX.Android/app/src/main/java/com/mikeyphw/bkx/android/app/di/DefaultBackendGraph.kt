@@ -13,9 +13,11 @@ import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationManager
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesOperationStateStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
+import com.mikeyphw.bkx.android.app.store.SharedPreferencesSavedJobStore
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
+import com.mikeyphw.bkx.android.core.jobs.SavedJobStore
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
 import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
@@ -33,6 +35,7 @@ object DefaultBackendGraph {
     @Volatile private var runStoreInstance: RunSummaryStore? = null
     @Volatile private var operationStoreInstance: OperationStateStore? = null
     @Volatile private var settingsStoreInstance: SharedPreferencesSettingsStore? = null
+    @Volatile private var savedJobStoreInstance: SavedJobStore? = null
     @Volatile private var coordinatorInstance: BkxOperationCoordinator? = null
     @Volatile private var providerStagingInstance: ProviderStagingPort? = null
     @Volatile private var googleDriveManagerInstance: GoogleDriveAuthorizationManager? = null
@@ -65,6 +68,10 @@ object DefaultBackendGraph {
     }
 
     fun settingsStore(context: Context): SettingsStore = sharedSettingsStore(context.stableApplicationContext())
+
+    fun savedJobStore(context: Context): SavedJobStore = savedJobStoreInstance ?: synchronized(this) {
+        savedJobStoreInstance ?: SharedPreferencesSavedJobStore(context.stableApplicationContext()).also { savedJobStoreInstance = it }
+    }
 
     fun providerStaging(context: Context): ProviderStagingPort = providerStagingInstance ?: synchronized(this) {
         providerStagingInstance ?: AndroidProviderStagingManager(context.stableApplicationContext()).also { providerStagingInstance = it }

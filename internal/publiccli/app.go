@@ -10,6 +10,7 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/config"
+	"bkx/internal/jobstore"
 	"bkx/internal/runstore"
 	"bkx/internal/version"
 )
@@ -31,6 +32,7 @@ type appContext struct {
 	stderr  io.Writer
 	render  renderer
 	store   *runstore.Store
+	jobs    *jobstore.Store
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -81,6 +83,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		stdout:  stdout,
 		stderr:  stderr,
 		render:  renderer{json: globals.JSON, stdout: stdout, stderr: stderr},
+		jobs:    jobstore.New(jobstore.DefaultPath(home)),
 	}
 	if cfg.RunHistoryEnabled {
 		store, storeErr := runstore.New(runstore.DefaultPath(home), cfg.RunHistoryLimit, true)
@@ -236,7 +239,8 @@ Commands:
   archive   Archive operations
   backup    Backup operations
   restore   Restore operations
-  run       View run history
+  job       Saved and replayable operations
+  run       View and replay run history
   tools     Tool management
   transfer  Transfer operations
   ui        Optional user interfaces
@@ -270,12 +274,31 @@ Commands:
   extract
   pick
 `,
+	"job": `Usage: bkx job COMMAND [ARGS]...
+
+Saved and replayable operations
+
+Commands:
+  clone
+  create
+  create-from-run
+  delete
+  edit
+  export
+  import
+  list
+  plan
+  run
+  save
+  show
+`,
 	"run": `Usage: bkx run COMMAND [ARGS]...
 
-View run history
+View and replay run history
 
 Commands:
   list
+  replay
   show
 `,
 	"tools": `Usage: bkx tools COMMAND [ARGS]...
@@ -304,20 +327,33 @@ Commands:
 }
 
 var LeafHelp = map[string]string{
-	"backup create":   "Usage: bkx backup create [OPTIONS] SOURCES...\n",
-	"backup plan":     "Usage: bkx backup plan [OPTIONS] SOURCES...\n",
-	"archive create":  "Usage: bkx archive create [OPTIONS] SOURCES...\n",
-	"archive list":    "Usage: bkx archive list [OPTIONS] ARCHIVE\n",
-	"archive info":    "Usage: bkx archive info ARCHIVE\n",
-	"archive browse":  "Usage: bkx archive browse [OPTIONS] ARCHIVE\n",
-	"archive verify":  "Usage: bkx archive verify ARCHIVE\n",
-	"restore extract": "Usage: bkx restore extract [OPTIONS] ARCHIVE\n",
-	"restore pick":    "Usage: bkx restore pick [OPTIONS] ARCHIVE PATHS...\n",
-	"run list":        "Usage: bkx run list [OPTIONS]\n",
-	"run show":        "Usage: bkx run show RUN_ID\n",
-	"tools detect":    "Usage: bkx tools detect [TOOL_NAME]...\n",
-	"tools explain":   "Usage: bkx tools explain [CATEGORY]...\n",
-	"transfer push":   "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",
-	"transfer pull":   "Usage: bkx transfer pull [OPTIONS] SOURCE DESTINATION\n",
-	"ui start":        "Usage: bkx ui start [OPTIONS]\n",
+	"backup create":       "Usage: bkx backup create [OPTIONS] SOURCES...\n",
+	"backup plan":         "Usage: bkx backup plan [OPTIONS] SOURCES...\n",
+	"archive create":      "Usage: bkx archive create [OPTIONS] SOURCES...\n",
+	"archive list":        "Usage: bkx archive list [OPTIONS] ARCHIVE\n",
+	"archive info":        "Usage: bkx archive info ARCHIVE\n",
+	"archive browse":      "Usage: bkx archive browse [OPTIONS] ARCHIVE\n",
+	"archive verify":      "Usage: bkx archive verify ARCHIVE\n",
+	"restore extract":     "Usage: bkx restore extract [OPTIONS] ARCHIVE\n",
+	"restore pick":        "Usage: bkx restore pick [OPTIONS] ARCHIVE PATHS...\n",
+	"job create":          "Usage: bkx job create [OPTIONS] JOB_ID\n",
+	"job save":            "Usage: bkx job save [OPTIONS] JOB_ID\n",
+	"job list":            "Usage: bkx job list\n",
+	"job show":            "Usage: bkx job show JOB_ID\n",
+	"job edit":            "Usage: bkx job edit [OPTIONS] JOB_ID\n",
+	"job clone":           "Usage: bkx job clone SOURCE_JOB_ID TARGET_JOB_ID [OPTIONS]\n",
+	"job delete":          "Usage: bkx job delete JOB_ID\n",
+	"job plan":            "Usage: bkx job plan [OPTIONS] JOB_ID\n",
+	"job run":             "Usage: bkx job run [OPTIONS] JOB_ID\n",
+	"job export":          "Usage: bkx job export [OPTIONS] JOB_ID\n",
+	"job import":          "Usage: bkx job import [OPTIONS] FILE\n",
+	"job create-from-run": "Usage: bkx job create-from-run [OPTIONS] RUN_ID JOB_ID\n",
+	"run list":            "Usage: bkx run list [OPTIONS]\n",
+	"run replay":          "Usage: bkx run replay [OPTIONS] RUN_ID\n",
+	"run show":            "Usage: bkx run show RUN_ID\n",
+	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
+	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
+	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",
+	"transfer pull":       "Usage: bkx transfer pull [OPTIONS] SOURCE DESTINATION\n",
+	"ui start":            "Usage: bkx ui start [OPTIONS]\n",
 }

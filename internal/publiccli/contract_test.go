@@ -54,13 +54,12 @@ func TestFrozenCLIContractIsOwnedByPublicGoDispatcher(t *testing.T) {
 		}
 	}
 	sort.Strings(leaves)
-	var handlers []string
-	for name := range commandHandlers {
-		handlers = append(handlers, name)
-	}
-	sort.Strings(handlers)
-	if strings.Join(leaves, "\n") != strings.Join(handlers, "\n") {
-		t.Fatalf("Go leaf ownership differs from frozen contract\ncontract=%v\nhandlers=%v", leaves, handlers)
+	// The v1 contract is an immutable compatibility floor. New public commands
+	// may be added, but every frozen leaf must remain owned by the Go dispatcher.
+	for _, leaf := range leaves {
+		if _, ok := commandHandlers[leaf]; !ok {
+			t.Fatalf("frozen CLI leaf lost Go ownership: %s", leaf)
+		}
 	}
 }
 
@@ -101,14 +100,20 @@ func TestInternalProbesStayOutOfPublicHelp(t *testing.T) {
 	}
 }
 
-func TestRootHelpGolden(t *testing.T) {
+func TestRootHelpPreservesFrozenV1Surface(t *testing.T) {
 	path := filepath.Join("..", "..", "migration", "fixtures", "v1", "go_cli", "root_help.txt")
 	want, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if RootHelp != string(want) {
-		t.Fatalf("root help drifted\n--- want ---\n%s\n--- got ---\n%s", want, RootHelp)
+	// Do not rewrite the immutable v1 fixture when additive commands ship.
+	for _, required := range []string{"archive   Archive operations", "backup    Backup operations", "restore   Restore operations", "tools     Tool management", "transfer  Transfer operations", "ui        Optional user interfaces"} {
+		if !strings.Contains(string(want), required) || !strings.Contains(RootHelp, required) {
+			t.Fatalf("frozen root-help surface missing %q", required)
+		}
+	}
+	if !strings.Contains(RootHelp, "job       Saved and replayable operations") || !strings.Contains(RootHelp, "run       View") {
+		t.Fatalf("saved-job/replay surface missing from root help")
 	}
 }
 

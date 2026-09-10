@@ -73,6 +73,32 @@ func snapshotList(c *appContext, args []string) int {
 	return renderResult(c, result, "snapshot_list")
 }
 
+func snapshotBrowse(c *appContext, args []string) int {
+	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--path": {Key: "path", Kind: optionValue}, "--recursive": {Key: "recursive", Kind: optionBoolTrue}})
+	a, ok := parseFor(c, "snapshot browse", args, specs)
+	if !ok {
+		return berror.ExitOK
+	}
+	if err := requirePositionals(a.Positionals, 1, 1, "SNAPSHOT"); err != nil {
+		usageError(c.stderr, err)
+		return berror.ExitUsage
+	}
+	access, err := snapshotAccess(c, a)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	path, _ := a.stringValue("path")
+	recursive := false
+	if v, ok := a.triBool("recursive"); ok && v != nil {
+		recursive = *v
+	}
+	result, err := resticops.BrowseSnapshot(access, a.Positionals[0], path, recursive, resticops.Options{})
+	if err != nil {
+		return commandErr(c, err)
+	}
+	return renderResult(c, result, "snapshot_browse")
+}
+
 func snapshotShow(c *appContext, args []string) int {
 	a, ok := parseFor(c, "snapshot show", args, snapshotAccessOptions())
 	if !ok {

@@ -17,6 +17,7 @@ object RepositoryRequestBuilder {
     const val OPERATION_PRUNE = "repository.prune"
     const val OPERATION_SNAPSHOT = "backup.snapshot"
     const val OPERATION_SNAPSHOTS_LIST = "snapshots.list"
+    const val OPERATION_SNAPSHOTS_BROWSE = "snapshots.browse"
     const val OPERATION_SNAPSHOTS_SHOW = "snapshots.show"
     const val OPERATION_SNAPSHOTS_DIFF = "snapshots.diff"
     const val OPERATION_SNAPSHOTS_RESTORE = "snapshots.restore"
@@ -79,6 +80,16 @@ object RepositoryRequestBuilder {
             if (tags.isNotEmpty()) put("tags", strings(tags))
         },
     )
+
+    fun snapshotBrowse(requestId: String, repository: RepositoryDefinition, snapshot: String, path: String = "/", recursive: Boolean = false): BridgeRequestEnvelope {
+        val normalizedPath = path.trim().ifBlank { "/" }
+        require(normalizedPath.startsWith("/")) { "snapshot browse path must be absolute within the snapshot" }
+        return BridgeRequestEnvelope(
+            requestId = requestId, operation = OPERATION_SNAPSHOTS_BROWSE, payload = repositoryPayload(repository) {
+                put("snapshot", requireSnapshot(snapshot)); put("path", normalizedPath); put("recursive", recursive)
+            },
+        )
+    }
 
     fun snapshotShow(requestId: String, repository: RepositoryDefinition, snapshot: String): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId, operation = OPERATION_SNAPSHOTS_SHOW, payload = repositoryPayload(repository) { put("snapshot", requireSnapshot(snapshot)) },

@@ -39,7 +39,7 @@ func (d *Dispatcher) repositoryAccess(p map[string]any) (models.RepositoryAccess
 }
 
 func snapshotArtifact(repositoryRef, repository string, item models.SnapshotDescriptor) Artifact {
-	meta := map[string]string{"snapshot_id": item.ID, "time": item.Time, "hostname": item.Hostname, "username": item.Username}
+	meta := map[string]string{"snapshot_id": item.ID, "short_id": item.ShortID, "time": item.Time, "hostname": item.Hostname, "username": item.Username}
 	if repositoryRef != "" {
 		meta["repository_id"] = repositoryRef
 	}
@@ -77,6 +77,54 @@ func (d *Dispatcher) snapshotsList(ctx OperationContext, p map[string]any) (Resu
 		arts = append(arts, snapshotArtifact(ref, listed.Repository, item))
 	}
 	return success(fmt.Sprintf("%d Restic snapshots.", listed.Total), nil, arts), nil
+}
+
+func (d *Dispatcher) snapshotsBrowse(ctx OperationContext, p map[string]any) (Result, error) {
+	access, ref, err := d.repositoryAccess(p)
+	if err != nil {
+		return Result{}, err
+	}
+	selector, err := requiredString(p, "snapshot")
+	if err != nil {
+		return Result{}, err
+	}
+	path := optionalString(p["path"])
+	recursive, _ := p["recursive"].(bool)
+	browse, err := resticops.BrowseSnapshot(access, selector, path, recursive, resticops.Options{Cancelled: ctx.Cancelled})
+	if err != nil {
+		return Result{}, err
+	}
+	arts := make([]Artifact, 0, len(browse.Entries))
+	for _, node := range browse.Entries {
+		label := "snapshot_node"
+		meta := map[string]string{
+			"snapshot_id": browse.SnapshotID,
+			"browse_path": browse.Path,
+			"name":        node.Name,
+			"type":        node.Type,
+		}
+		if ref != "" {
+			meta["repository_id"] = ref
+		}
+		if node.Size > 0 {
+			meta["size"] = strconv.FormatUint(node.Size, 10)
+		}
+		if node.Permissions != "" {
+			meta["permissions"] = node.Permissions
+		}
+		if node.ModTime != "" {
+			meta["mtime"] = node.ModTime
+		}
+		arts = append(arts, Artifact{Label: label, Path: node.Path, Metadata: meta})
+	}
+	return success(fmt.Sprintf("%d entries in snapshot %s at %s.", len(arts), shortSnapshotID(browse.SnapshotID), browse.Path), nil, arts), nil
+}
+
+func shortSnapshotID(id string) string {
+	if len(id) > 8 {
+		return id[:8]
+	}
+	return id
 }
 
 func (d *Dispatcher) snapshotsShow(ctx OperationContext, p map[string]any) (Result, error) {
@@ -146,7 +194,8 @@ func (d *Dispatcher) snapshotsRestore(ctx OperationContext, p map[string]any) (R
 	dry, _ := p["dry_run"].(bool)
 	overwrite := optionalString(p["overwrite"])
 	result, err := resticops.RestoreSnapshot(access, selector, resticops.RestoreOptions{Target: target, Includes: includes, Excludes: excludes, Overwrite: overwrite, DryRun: dry}, resticops.Options{Cancelled: ctx.Cancelled, Progress: func(e resticops.ProgressEvent) {
-		emitDetailed(ctx, e.Stage, "Restoring snapshot.", nil, nil, nil, nil, nil)
+		message := fmt.Sprintf("Restored %d files, %d bytes.", e.Files, e.Bytes)
+		emitDetailed(ctx, e.Stage, message, e.Progress, int64Ptr(e.Files), positiveInt64Ptr(e.TotalFiles), int64Ptr(e.Bytes), positiveInt64Ptr(e.TotalBytes))
 	}})
 	if err != nil {
 		return Result{}, err
@@ -155,7 +204,7 @@ func (d *Dispatcher) snapshotsRestore(ctx OperationContext, p map[string]any) (R
 	if result.DryRun {
 		mode = "restore dry-run completed for"
 	}
-	return success(fmt.Sprintf("Snapshot %s %s %s.", result.SnapshotID, mode, result.Target), nil, []Artifact{{Label: "snapshot_restore_target", Path: result.Target, Metadata: map[string]string{"snapshot_id": result.SnapshotID, "overwrite": result.Overwrite, "dry_run": strconv.FormatBool(result.DryRun)}}}), nil
+	return success(fmt.Sprintf("Snapshot %s %s %s.", shortSnapshotID(result.SnapshotID), mode, result.Target), nil, []Artifact{{Label: "snapshot_restore_target", Path: result.Target, Metadata: map[string]string{"snapshot_id": result.SnapshotID, "overwrite": result.Overwrite, "dry_run": strconv.FormatBool(result.DryRun), "files_restored": strconv.FormatInt(result.FilesRestored, 10), "files_skipped": strconv.FormatInt(result.FilesSkipped, 10), "bytes_restored": strconv.FormatInt(result.BytesRestored, 10), "bytes_skipped": strconv.FormatInt(result.BytesSkipped, 10), "total_files": strconv.FormatInt(result.TotalFiles, 10), "total_bytes": strconv.FormatInt(result.TotalBytes, 10)}}}), nil
 }
 
 func (d *Dispatcher) snapshotsForget(ctx OperationContext, p map[string]any) (Result, error) {
@@ -315,6 +364,13 @@ func (d *Dispatcher) retentionApply(ctx OperationContext, p map[string]any) (Res
 		return Result{}, err
 	}
 	return success("Retention policy applied without pruning.", nil, []Artifact{{Label: "retention_apply", Path: result.Repository, Metadata: map[string]string{"repository_id": id, "dry_run": strconv.FormatBool(dry)}}}), nil
+}
+
+func positiveInt64Ptr(value int64) *int64 {
+	if value <= 0 {
+		return nil
+	}
+	return int64Ptr(value)
 }
 
 var _ = strings.TrimSpace

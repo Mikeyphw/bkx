@@ -75,6 +75,10 @@ import com.mikeyphw.bkx.android.core.repositories.RepositoryCreateSpec
 import com.mikeyphw.bkx.android.core.repositories.RepositoryDefinition
 import com.mikeyphw.bkx.android.core.repositories.RepositoryRequestBuilder
 import com.mikeyphw.bkx.android.core.repositories.RetentionPolicy
+import com.mikeyphw.bkx.android.core.repositories.SnapshotBridgeCodec
+import com.mikeyphw.bkx.android.core.repositories.SnapshotDescriptor
+import com.mikeyphw.bkx.android.core.repositories.SnapshotOverwriteMode
+import com.mikeyphw.bkx.android.core.restore.RestoreDestinationPolicy
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -121,6 +125,7 @@ data class BkxHomeUiState(
     val backupRoute: BackupRoute = BackupRoute.Overview,
     val savedJobs: SavedJobsUiState = SavedJobsUiState(),
     val repositories: RepositoriesUiState = RepositoriesUiState(),
+    val snapshots: SnapshotsUiState = SnapshotsUiState(),
     val archiveDetailSection: ArchiveDetailSection = ArchiveDetailSection.Overview,
     val moreRoute: MoreRoute = MoreRoute.Overview,
     val recentRuns: List<RunSummary> = emptyList(),
@@ -181,6 +186,19 @@ sealed interface BkxHomeEvent {
     data class PreviewRetentionApply(val repositoryId: String) : BkxHomeEvent
     data class ApplyRetention(val repositoryId: String) : BkxHomeEvent
     data class RemoveRepository(val repositoryId: String) : BkxHomeEvent
+
+    data class SelectSnapshotRepository(val repositoryId: String) : BkxHomeEvent
+    data object RefreshSnapshots : BkxHomeEvent
+    data class SelectSnapshot(val snapshot: SnapshotDescriptor) : BkxHomeEvent
+    data class BrowseSnapshotPath(val path: String) : BkxHomeEvent
+    data class ToggleSnapshotRestorePath(val path: String) : BkxHomeEvent
+    data object ClearSnapshotRestorePaths : BkxHomeEvent
+    data class SetSnapshotRestoreTarget(val path: String) : BkxHomeEvent
+    data class SetSnapshotOverwriteMode(val mode: SnapshotOverwriteMode) : BkxHomeEvent
+    data object CompareSnapshotWithPrevious : BkxHomeEvent
+    data object PreviewSnapshotRestore : BkxHomeEvent
+    data object ExecuteSnapshotRestore : BkxHomeEvent
+    data class ForgetSnapshot(val snapshotId: String) : BkxHomeEvent
 
     data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview) : BkxHomeEvent
@@ -321,7 +339,10 @@ class BkxAppViewModel(
             is BkxHomeEvent.OpenMoreRoute -> _state.update { it.copy(moreRoute = event.route) }
             BkxHomeEvent.CloseMoreRoute -> _state.update { it.copy(moreRoute = MoreRoute.Overview) }
 
-            is BkxHomeEvent.OpenBackupRoute -> _state.update { it.copy(backupRoute = event.route) }
+            is BkxHomeEvent.OpenBackupRoute -> {
+                _state.update { it.copy(backupRoute = event.route) }
+                if (event.route == BackupRoute.Snapshots) ensureSnapshotRepositoryAndRefresh()
+            }
             BkxHomeEvent.RefreshSavedJobs -> refreshSavedJobs()
             BkxHomeEvent.RefreshRepositories -> refreshRepositories()
             is BkxHomeEvent.CreateSavedJob -> createSavedJob(event.draft)
@@ -339,6 +360,19 @@ class BkxAppViewModel(
             is BkxHomeEvent.PreviewRetentionApply -> applyRetention(event.repositoryId, dryRun = true)
             is BkxHomeEvent.ApplyRetention -> applyRetention(event.repositoryId, dryRun = false)
             is BkxHomeEvent.RemoveRepository -> removeRepository(event.repositoryId)
+
+            is BkxHomeEvent.SelectSnapshotRepository -> selectSnapshotRepository(event.repositoryId)
+            BkxHomeEvent.RefreshSnapshots -> refreshSnapshots()
+            is BkxHomeEvent.SelectSnapshot -> selectSnapshot(event.snapshot)
+            is BkxHomeEvent.BrowseSnapshotPath -> browseSnapshotPath(event.path)
+            is BkxHomeEvent.ToggleSnapshotRestorePath -> toggleSnapshotRestorePath(event.path)
+            BkxHomeEvent.ClearSnapshotRestorePaths -> _state.update { current -> current.copy(snapshots = current.snapshots.copy(selectedRestorePaths = emptySet(), restorePreview = null, restoreResult = null)) }
+            is BkxHomeEvent.SetSnapshotRestoreTarget -> setSnapshotRestoreTarget(event.path)
+            is BkxHomeEvent.SetSnapshotOverwriteMode -> _state.update { current -> current.copy(snapshots = current.snapshots.copy(overwriteMode = event.mode, restorePreview = null)) }
+            BkxHomeEvent.CompareSnapshotWithPrevious -> compareSnapshotWithPrevious()
+            BkxHomeEvent.PreviewSnapshotRestore -> runSnapshotRestore(dryRun = true)
+            BkxHomeEvent.ExecuteSnapshotRestore -> runSnapshotRestore(dryRun = false)
+            is BkxHomeEvent.ForgetSnapshot -> forgetSnapshot(event.snapshotId)
 
             is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
                 current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
@@ -818,6 +852,8 @@ class BkxAppViewModel(
         "repository.check" -> "Repository check"
         "repository.prune" -> "Repository prune"
         "retention.apply" -> "Retention"
+        "snapshots.restore" -> "Snapshot restore"
+        "snapshots.forget" -> "Snapshot removal"
         else -> "BKX operation"
     }
 
@@ -915,6 +951,9 @@ class BkxAppViewModel(
             FilesystemSelectionTarget.RestoreDestination -> {
                 val draft = _state.value.restore.draft
                 onEvent(BkxHomeEvent.UpdateRestoreDraft(draft.copy(destination = RestoreDestinationSelection("path-${path.hashCode()}", filesystemDisplayName(path), path))))
+            }
+            FilesystemSelectionTarget.SnapshotRestoreDestination -> {
+                onEvent(BkxHomeEvent.SetSnapshotRestoreTarget(path))
             }
             FilesystemSelectionTarget.TransferSource -> {
                 val draft = _state.value.transfer.draft
@@ -1284,6 +1323,250 @@ class BkxAppViewModel(
                 repositories = current.repositories.copy(
                     actionInProgress = null,
                     messages = current.repositories.messages + (repositoryId to failure.message),
+                ),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
+            )
+        }
+    }
+
+    private fun ensureSnapshotRepositoryAndRefresh() {
+        val currentId = _state.value.snapshots.repositoryId
+        val available = _state.value.repositories.items
+        val selected = available.firstOrNull { it.repositoryId == currentId } ?: available.firstOrNull()
+        if (selected == null) {
+            _state.update { current ->
+                current.copy(
+                    snapshots = current.snapshots.copy(
+                        status = ScreenStatus.Empty("Add or connect a Restic repository before browsing snapshots."),
+                        repositoryId = null,
+                        items = emptyList(),
+                        selectedSnapshot = null,
+                        entries = emptyList(),
+                    ),
+                )
+            }
+            return
+        }
+        if (currentId != selected.repositoryId) {
+            _state.update { current -> current.copy(snapshots = SnapshotsUiState(repositoryId = selected.repositoryId)) }
+        }
+        refreshSnapshots()
+    }
+
+    private fun selectSnapshotRepository(repositoryId: String) {
+        if (_state.value.repositories.items.none { it.repositoryId == repositoryId }) return
+        _state.update { current -> current.copy(snapshots = SnapshotsUiState(repositoryId = repositoryId)) }
+        refreshSnapshots()
+    }
+
+    private fun refreshSnapshots() {
+        val repositoryId = _state.value.snapshots.repositoryId ?: run {
+            ensureSnapshotRepositoryAndRefresh()
+            return
+        }
+        withRepository(repositoryId) { repository ->
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(status = ScreenStatus.Loading, actionInProgress = "list:$repositoryId", message = null)) }
+            executeRequest(
+                request = repositoryRequestBuilder.snapshots(nextRequestId("snapshots-list"), repository),
+                recordInHistory = false,
+                onFailure = { failure -> snapshotActionFailure(failure, listFailure = true) },
+            ) { result ->
+                val snapshots = SnapshotBridgeCodec.decodeSnapshots(result.artifacts)
+                val selectedId = _state.value.snapshots.selectedSnapshot?.id
+                val selected = snapshots.firstOrNull { it.id == selectedId }
+                _state.update { current ->
+                    current.copy(
+                        snapshots = current.snapshots.copy(
+                            status = if (snapshots.isEmpty()) ScreenStatus.Empty("No snapshots in this repository yet. Run an incremental backup to create one.") else ScreenStatus.Content,
+                            items = snapshots,
+                            selectedSnapshot = selected,
+                            actionInProgress = null,
+                            message = result.summary,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun selectSnapshot(snapshot: SnapshotDescriptor) {
+        val shortId = snapshot.shortId.ifBlank { snapshot.id.take(8) }
+        _state.update { current ->
+            current.copy(
+                snapshots = current.snapshots.copy(
+                    selectedSnapshot = snapshot,
+                    browseStatus = ScreenStatus.Loading,
+                    browsePath = "/",
+                    entries = emptyList(),
+                    selectedRestorePaths = emptySet(),
+                    restoreTarget = "/storage/emulated/0/BKX/Restores/$shortId",
+                    restorePreview = null,
+                    restoreResult = null,
+                    diff = null,
+                    compareTargetId = null,
+                    message = null,
+                ),
+            )
+        }
+        browseSnapshotPath("/")
+    }
+
+    private fun browseSnapshotPath(path: String) {
+        val snapshotState = _state.value.snapshots
+        val repositoryId = snapshotState.repositoryId ?: return
+        val snapshot = snapshotState.selectedSnapshot ?: return
+        val normalized = path.trim().ifBlank { "/" }
+        if (!normalized.startsWith("/")) return
+        withRepository(repositoryId) { repository ->
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(browseStatus = ScreenStatus.Loading, browsePath = normalized, entries = emptyList(), actionInProgress = "browse:${snapshot.id}")) }
+            executeRequest(
+                request = repositoryRequestBuilder.snapshotBrowse(nextRequestId("snapshot-browse"), repository, snapshot.id, normalized),
+                recordInHistory = false,
+                onFailure = { failure ->
+                    _state.update { current -> current.copy(snapshots = current.snapshots.copy(browseStatus = ScreenStatus.Error(failure.title, failure.message), actionInProgress = null, message = failure.message)) }
+                },
+            ) { result ->
+                val entries = SnapshotBridgeCodec.decodeNodes(result.artifacts)
+                _state.update { current ->
+                    current.copy(
+                        snapshots = current.snapshots.copy(
+                            browseStatus = if (entries.isEmpty()) ScreenStatus.Empty("This folder is empty in the selected snapshot.") else ScreenStatus.Content,
+                            browsePath = normalized,
+                            entries = entries,
+                            actionInProgress = null,
+                            message = result.summary,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun toggleSnapshotRestorePath(path: String) {
+        val normalized = path.trim()
+        if (!normalized.startsWith("/")) return
+        _state.update { current ->
+            val selected = current.snapshots.selectedRestorePaths.toMutableSet()
+            if (!selected.add(normalized)) selected.remove(normalized)
+            current.copy(snapshots = current.snapshots.copy(selectedRestorePaths = selected, restorePreview = null, restoreResult = null))
+        }
+    }
+
+    private fun setSnapshotRestoreTarget(path: String) {
+        val normalized = path.trim().replace(Regex("/+"), "/").let { if (it.length > 1) it.trimEnd('/') else it }
+        val issue = when {
+            !normalized.startsWith("/") -> "Restore target must be an absolute device path."
+            else -> RestoreDestinationPolicy.blockedReason(normalized)
+        }
+        if (issue != null) {
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(message = issue, restorePreview = null)) }
+            return
+        }
+        _state.update { current -> current.copy(snapshots = current.snapshots.copy(restoreTarget = normalized, restorePreview = null, restoreResult = null, message = null)) }
+    }
+
+    private fun compareSnapshotWithPrevious() {
+        val snapshotState = _state.value.snapshots
+        val currentSnapshot = snapshotState.selectedSnapshot ?: return
+        val repositoryId = snapshotState.repositoryId ?: return
+        val index = snapshotState.items.indexOfFirst { it.id == currentSnapshot.id }
+        val previous = snapshotState.items.getOrNull(index + 1)
+        if (index < 0 || previous == null) {
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(message = "There is no older snapshot to compare with this one.")) }
+            return
+        }
+        withRepository(repositoryId) { repository ->
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = "diff:${currentSnapshot.id}", diff = null, compareTargetId = previous.id)) }
+            executeRequest(
+                request = repositoryRequestBuilder.snapshotDiff(nextRequestId("snapshot-diff"), repository, previous.id, currentSnapshot.id, metadata = true),
+                recordInHistory = false,
+                onFailure = { failure -> snapshotActionFailure(failure) },
+            ) { result ->
+                _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = null, diff = SnapshotBridgeCodec.decodeDiff(result.artifacts), message = result.summary)) }
+            }
+        }
+    }
+
+    private fun runSnapshotRestore(dryRun: Boolean) {
+        val snapshotState = _state.value.snapshots
+        val repositoryId = snapshotState.repositoryId ?: return
+        val snapshot = snapshotState.selectedSnapshot ?: return
+        val target = snapshotState.restoreTarget.trim()
+        val issue = when {
+            !target.startsWith("/") -> "Restore target must be an absolute device path."
+            else -> RestoreDestinationPolicy.blockedReason(target)
+        }
+        if (issue != null) {
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(message = issue)) }
+            return
+        }
+        withRepository(repositoryId) { repository ->
+            val request = repositoryRequestBuilder.snapshotRestore(
+                requestId = nextRequestId(if (dryRun) "snapshot-restore-preview" else "snapshot-restore"),
+                repository = repository,
+                snapshot = snapshot.id,
+                target = target,
+                includes = snapshotState.restoreIncludes,
+                overwrite = snapshotState.overwriteMode,
+                dryRun = dryRun,
+            )
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = if (dryRun) "restore-preview:${snapshot.id}" else "restore:${snapshot.id}", message = null)) }
+            executeRequest(
+                request = request,
+                recordInHistory = !dryRun,
+                feedbackDestination = if (dryRun) null else BkxDestination.Backup,
+                onFailure = { failure -> snapshotActionFailure(failure) },
+            ) { result ->
+                val decoded = SnapshotBridgeCodec.decodeRestoreResult(result.artifacts)
+                _state.update { current ->
+                    current.copy(
+                        snapshots = current.snapshots.copy(
+                            actionInProgress = null,
+                            restorePreview = if (dryRun) decoded else current.snapshots.restorePreview,
+                            restoreResult = if (dryRun) current.snapshots.restoreResult else decoded,
+                            message = result.summary,
+                        ),
+                    )
+                }
+                if (!dryRun) refreshRuns()
+            }
+        }
+    }
+
+    private fun forgetSnapshot(snapshotId: String) {
+        val repositoryId = _state.value.snapshots.repositoryId ?: return
+        withRepository(repositoryId) { repository ->
+            _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = "forget:$snapshotId")) }
+            executeRequest(
+                request = repositoryRequestBuilder.snapshotForget(nextRequestId("snapshot-forget"), repository, snapshotId, confirm = true),
+                recordInHistory = true,
+                feedbackDestination = BkxDestination.Backup,
+                onFailure = { failure -> snapshotActionFailure(failure) },
+            ) { result ->
+                _state.update { current ->
+                    val clearSelected = current.snapshots.selectedSnapshot?.id == snapshotId
+                    current.copy(
+                        snapshots = current.snapshots.copy(
+                            actionInProgress = null,
+                            selectedSnapshot = if (clearSelected) null else current.snapshots.selectedSnapshot,
+                            entries = if (clearSelected) emptyList() else current.snapshots.entries,
+                            selectedRestorePaths = if (clearSelected) emptySet() else current.snapshots.selectedRestorePaths,
+                            message = result.summary,
+                        ),
+                    )
+                }
+                refreshSnapshots()
+            }
+        }
+    }
+
+    private fun snapshotActionFailure(failure: OperationFailureUiState, listFailure: Boolean = false) {
+        _state.update { current ->
+            current.copy(
+                snapshots = current.snapshots.copy(
+                    status = if (listFailure) ScreenStatus.Error(failure.title, failure.message) else current.snapshots.status,
+                    actionInProgress = null,
+                    message = failure.message,
                 ),
                 uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
             )

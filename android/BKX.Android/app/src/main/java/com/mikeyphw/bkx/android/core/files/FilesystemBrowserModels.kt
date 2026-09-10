@@ -10,6 +10,7 @@ enum class FilesystemSelectionTarget(
     BackupDestination(true, true, allowRemote = true),
     Archive(false, false, allowRemote = true),
     RestoreDestination(true, true),
+    SnapshotRestoreDestination(true, true),
     TransferSource(false, true, allowRemote = true),
     TransferDestination(true, true, allowRemote = true),
 }

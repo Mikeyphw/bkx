@@ -18,6 +18,17 @@ type SnapshotDescriptor struct {
 	Size     *uint64  `json:"size,omitempty"`
 }
 
+// SnapshotNode is a safe, read-only view of one node returned by `restic ls --json`.
+// It deliberately excludes ownership-sensitive or repository-internal identifiers.
+type SnapshotNode struct {
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	Path        string `json:"path"`
+	Size        uint64 `json:"size,omitempty"`
+	Permissions string `json:"permissions,omitempty"`
+	ModTime     string `json:"mtime,omitempty"`
+}
+
 type RetentionPolicy struct {
 	SchemaVersion int      `json:"schema_version"`
 	KeepLast      *int     `json:"keep_last,omitempty"`

@@ -33,6 +33,7 @@ var commandHandlers = map[string]commandHandler{
 	"repository prune":    repositoryPrune,
 	"repository remove":   repositoryRemove,
 	"repository show":     repositoryShow,
+	"snapshot browse":     snapshotBrowse,
 	"snapshot diff":       snapshotDiff,
 	"snapshot forget":     snapshotForget,
 	"snapshot list":       snapshotList,

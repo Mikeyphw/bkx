@@ -1,6 +1,7 @@
 package resticops
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"bkx/internal/berror"
@@ -26,6 +28,13 @@ type Runner interface {
 	Run(args []string, env []string) (stdout []byte, stderr []byte, err error)
 }
 
+// StreamingRunner is implemented by runners that can surface JSON-lines progress
+// while a long-running Restic command is still executing. Test runners may keep
+// implementing Runner only; RestoreSnapshot falls back to buffered parsing.
+type StreamingRunner interface {
+	RunStreaming(args []string, env []string, cancelled func() bool, onStdoutLine func([]byte)) (stderr []byte, err error)
+}
+
 type ExecRunner struct{ Path string }
 
 func (r ExecRunner) Run(args []string, env []string) ([]byte, []byte, error) {
@@ -38,6 +47,58 @@ func (r ExecRunner) Run(args []string, env []string) ([]byte, []byte, error) {
 	return stdout.Bytes(), stderr.Bytes(), err
 }
 
+func (r ExecRunner) RunStreaming(args []string, env []string, cancelled func() bool, onStdoutLine func([]byte)) ([]byte, error) {
+	cmd := exec.Command(r.Path, args...)
+	cmd.Env = env
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return stderr.Bytes(), err
+	}
+	var cancelledByCaller atomic.Bool
+	done := make(chan struct{})
+	if cancelled != nil {
+		go func() {
+			ticker := time.NewTicker(100 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-ticker.C:
+					if cancelled() {
+						cancelledByCaller.Store(true)
+						_ = cmd.Process.Kill()
+						return
+					}
+				}
+			}
+		}()
+	}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+	for scanner.Scan() {
+		if onStdoutLine != nil {
+			line := append([]byte(nil), scanner.Bytes()...)
+			onStdoutLine(line)
+		}
+	}
+	scanErr := scanner.Err()
+	waitErr := cmd.Wait()
+	close(done)
+	if cancelledByCaller.Load() {
+		return stderr.Bytes(), ErrCancelled
+	}
+	if scanErr != nil {
+		return stderr.Bytes(), scanErr
+	}
+	return stderr.Bytes(), waitErr
+}
+
 type Options struct {
 	Runner    Runner
 	Environ   []string
@@ -48,9 +109,12 @@ type Options struct {
 }
 
 type ProgressEvent struct {
-	Stage string `json:"stage"`
-	Files int64  `json:"files"`
-	Bytes int64  `json:"bytes"`
+	Stage      string   `json:"stage"`
+	Files      int64    `json:"files"`
+	Bytes      int64    `json:"bytes"`
+	TotalFiles int64    `json:"total_files,omitempty"`
+	TotalBytes int64    `json:"total_bytes,omitempty"`
+	Progress   *float64 `json:"progress,omitempty"`
 }
 
 type Plan struct {

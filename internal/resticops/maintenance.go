@@ -3,6 +3,7 @@ package resticops
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -24,6 +25,14 @@ type SnapshotListResult struct {
 	Repository string                      `json:"repository"`
 	Snapshots  []models.SnapshotDescriptor `json:"snapshots"`
 	Total      int                         `json:"total"`
+}
+
+type SnapshotBrowseResult struct {
+	Success    bool                  `json:"success"`
+	Repository string                `json:"repository"`
+	SnapshotID string                `json:"snapshot_id"`
+	Path       string                `json:"path"`
+	Entries    []models.SnapshotNode `json:"entries"`
 }
 
 type DiffChange struct {
@@ -66,15 +75,21 @@ type RestoreOptions struct {
 }
 
 type RestoreResult struct {
-	Success    bool     `json:"success"`
-	Repository string   `json:"repository"`
-	SnapshotID string   `json:"snapshot_id"`
-	Target     string   `json:"target"`
-	DryRun     bool     `json:"dry_run"`
-	Includes   []string `json:"includes,omitempty"`
-	Excludes   []string `json:"excludes,omitempty"`
-	Overwrite  string   `json:"overwrite"`
-	DurationMS int64    `json:"duration_ms"`
+	Success       bool     `json:"success"`
+	Repository    string   `json:"repository"`
+	SnapshotID    string   `json:"snapshot_id"`
+	Target        string   `json:"target"`
+	DryRun        bool     `json:"dry_run"`
+	Includes      []string `json:"includes,omitempty"`
+	Excludes      []string `json:"excludes,omitempty"`
+	Overwrite     string   `json:"overwrite"`
+	FilesRestored int64    `json:"files_restored"`
+	FilesSkipped  int64    `json:"files_skipped"`
+	BytesRestored int64    `json:"bytes_restored"`
+	BytesSkipped  int64    `json:"bytes_skipped"`
+	TotalFiles    int64    `json:"total_files"`
+	TotalBytes    int64    `json:"total_bytes"`
+	DurationMS    int64    `json:"duration_ms"`
 }
 
 type CheckOptions struct {
@@ -199,6 +214,84 @@ func ResolveSnapshot(spec models.RepositoryAccessSpec, selector string, options 
 	return models.SnapshotDescriptor{}, berror.NotFound("Snapshot not found: "+value, map[string]any{"snapshot": value})
 }
 
+func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, recursive bool, options Options) (SnapshotBrowseResult, error) {
+	runner, repository, base, env, err := prepareAccess(spec, options)
+	if err != nil {
+		return SnapshotBrowseResult{}, err
+	}
+	snapshot, err := ResolveSnapshot(spec, selector, options)
+	if err != nil {
+		return SnapshotBrowseResult{}, err
+	}
+	browsePath := strings.TrimSpace(path)
+	if browsePath == "" {
+		browsePath = "/"
+	}
+	if !strings.HasPrefix(browsePath, "/") {
+		return SnapshotBrowseResult{}, berror.Validation("snapshot browse path must be absolute within the snapshot", map[string]any{"path": browsePath})
+	}
+	browsePath = filepath.Clean(strings.ReplaceAll(browsePath, "\\", "/"))
+	if browsePath == "." {
+		browsePath = "/"
+	}
+	args := append([]string{"--json"}, base...)
+	args = append(args, "ls")
+	if recursive {
+		args = append(args, "--recursive")
+	}
+	args = append(args, snapshot.ID, browsePath)
+	stdout, stderr, runErr := runner.Run(args, env)
+	if runErr != nil {
+		return SnapshotBrowseResult{}, external("browsing Restic snapshot", repository, stderr, runErr)
+	}
+	entries := []models.SnapshotNode{}
+	for _, line := range bytes.Split(stdout, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var head struct {
+			MessageType string `json:"message_type"`
+			StructType  string `json:"struct_type"`
+		}
+		if json.Unmarshal(line, &head) != nil || (head.MessageType != "node" && head.StructType != "node") {
+			continue
+		}
+		var node struct {
+			Name        string `json:"name"`
+			Type        string `json:"type"`
+			Path        string `json:"path"`
+			Size        uint64 `json:"size"`
+			Permissions string `json:"permissions"`
+			MTime       string `json:"mtime"`
+		}
+		if json.Unmarshal(line, &node) != nil || strings.TrimSpace(node.Path) == "" {
+			continue
+		}
+		cleanPath := filepath.Clean(strings.ReplaceAll(node.Path, "\\", "/"))
+		if cleanPath == "." {
+			cleanPath = "/"
+		}
+		// restic includes the selected directory itself. The browser renders
+		// children only, so omit that exact node while retaining root children.
+		if cleanPath == browsePath {
+			continue
+		}
+		entries = append(entries, models.SnapshotNode{
+			Name: node.Name, Type: node.Type, Path: cleanPath, Size: node.Size,
+			Permissions: node.Permissions, ModTime: node.MTime,
+		})
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		id, jd := entries[i].Type == "dir", entries[j].Type == "dir"
+		if id != jd {
+			return id
+		}
+		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
+	})
+	return SnapshotBrowseResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Path: browsePath, Entries: entries}, nil
+}
+
 func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, metadata bool, options Options) (SnapshotDiffResult, error) {
 	runner, repository, base, env, err := prepareAccess(spec, options)
 	if err != nil {
@@ -289,7 +382,7 @@ func RestoreSnapshot(spec models.RepositoryAccessSpec, selector string, restore 
 	default:
 		return RestoreResult{}, berror.Validation("overwrite must be one of always, if-changed, if-newer, never", map[string]any{"overwrite": overwrite})
 	}
-	args := append([]string{}, base...)
+	args := append([]string{"--json"}, base...)
 	args = append(args, "restore", snapshot.ID, "--target", abs, "--overwrite", overwrite)
 	for _, pattern := range restore.Includes {
 		args = append(args, "--include", pattern)
@@ -303,12 +396,76 @@ func RestoreSnapshot(spec models.RepositoryAccessSpec, selector string, restore 
 	if options.Cancelled != nil && options.Cancelled() {
 		return RestoreResult{}, ErrCancelled
 	}
-	emit(options, "restoring", 0, 0)
-	_, stderr, runErr := runner.Run(args, env)
-	if runErr != nil {
-		return RestoreResult{}, external("restoring Restic snapshot", repository, stderr, runErr)
+	out := RestoreResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Target: abs, DryRun: restore.DryRun, Includes: append([]string(nil), restore.Includes...), Excludes: append([]string(nil), restore.Excludes...), Overwrite: overwrite}
+	parseLine := func(line []byte) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			return
+		}
+		var head struct {
+			MessageType string `json:"message_type"`
+		}
+		if json.Unmarshal(line, &head) != nil {
+			return
+		}
+		switch head.MessageType {
+		case "status", "summary":
+			var status struct {
+				PercentDone   float64 `json:"percent_done"`
+				TotalFiles    int64   `json:"total_files"`
+				FilesRestored int64   `json:"files_restored"`
+				FilesSkipped  int64   `json:"files_skipped"`
+				TotalBytes    int64   `json:"total_bytes"`
+				BytesRestored int64   `json:"bytes_restored"`
+				BytesSkipped  int64   `json:"bytes_skipped"`
+			}
+			if json.Unmarshal(line, &status) != nil {
+				return
+			}
+			out.TotalFiles = status.TotalFiles
+			out.FilesRestored = status.FilesRestored
+			out.FilesSkipped = status.FilesSkipped
+			out.TotalBytes = status.TotalBytes
+			out.BytesRestored = status.BytesRestored
+			out.BytesSkipped = status.BytesSkipped
+			if head.MessageType == "status" {
+				progress := status.PercentDone
+				if progress < 0 {
+					progress = 0
+				}
+				if progress > 1 {
+					progress = 1
+				}
+				emitRestore(options, "restoring", status.FilesRestored, status.TotalFiles, status.BytesRestored, status.TotalBytes, &progress)
+			}
+		}
 	}
-	return RestoreResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Target: abs, DryRun: restore.DryRun, Includes: append([]string(nil), restore.Includes...), Excludes: append([]string(nil), restore.Excludes...), Overwrite: overwrite, DurationMS: time.Since(started).Milliseconds()}, nil
+	emitRestore(options, "restoring", 0, 0, 0, 0, nil)
+	if streaming, ok := runner.(StreamingRunner); ok {
+		stderr, runErr := streaming.RunStreaming(args, env, options.Cancelled, parseLine)
+		if runErr != nil {
+			if errors.Is(runErr, ErrCancelled) {
+				return RestoreResult{}, ErrCancelled
+			}
+			return RestoreResult{}, external("restoring Restic snapshot", repository, stderr, runErr)
+		}
+	} else {
+		stdout, stderr, runErr := runner.Run(args, env)
+		if runErr != nil {
+			return RestoreResult{}, external("restoring Restic snapshot", repository, stderr, runErr)
+		}
+		for _, line := range bytes.Split(stdout, []byte{'\n'}) {
+			parseLine(line)
+		}
+	}
+	out.DurationMS = time.Since(started).Milliseconds()
+	return out, nil
+}
+
+func emitRestore(options Options, stage string, files, totalFiles, bytes, totalBytes int64, progress *float64) {
+	if options.Progress != nil {
+		options.Progress(ProgressEvent{Stage: stage, Files: files, TotalFiles: totalFiles, Bytes: bytes, TotalBytes: totalBytes, Progress: progress})
+	}
 }
 
 func CheckRepository(spec models.RepositoryAccessSpec, check CheckOptions, options Options) (MaintenanceResult, error) {

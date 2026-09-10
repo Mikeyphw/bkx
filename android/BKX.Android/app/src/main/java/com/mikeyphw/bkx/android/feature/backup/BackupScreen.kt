@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -67,16 +68,18 @@ fun BackupScreen(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             FilterChip(selected = state.backupRoute == BackupRoute.Overview, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Overview)) }, label = { Text("Backup now") })
             FilterChip(selected = state.backupRoute == BackupRoute.Jobs, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Jobs)) }, label = { Text("Jobs") })
+            FilterChip(selected = state.backupRoute == BackupRoute.Snapshots, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Snapshots)) }, label = { Text("Snapshots") })
             FilterChip(selected = state.backupRoute == BackupRoute.Repositories, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Repositories)) }, label = { Text("Repositories") })
         }
         when (state.backupRoute) {
             BackupRoute.Overview -> BackupCreateScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Jobs -> SavedJobsScreen(state, onEvent, Modifier.weight(1f))
+            BackupRoute.Snapshots -> SnapshotsScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Repositories -> RepositoriesScreen(state, onEvent, Modifier.weight(1f))
         }
     }

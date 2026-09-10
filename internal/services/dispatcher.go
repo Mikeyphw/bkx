@@ -102,7 +102,7 @@ func NewWithStores(store *runstore.Store, repositories *repositorystore.Store, j
 	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -128,6 +128,8 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.repositoryPrune(ctx, p)
 	case "snapshots.list":
 		return d.snapshotsList(ctx, p)
+	case "snapshots.browse":
+		return d.snapshotsBrowse(ctx, p)
 	case "snapshots.show":
 		return d.snapshotsShow(ctx, p)
 	case "snapshots.diff":

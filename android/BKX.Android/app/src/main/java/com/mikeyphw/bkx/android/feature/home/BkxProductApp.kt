@@ -181,6 +181,7 @@ private fun BkxHomeEvent.requiresOperationNotificationPermission(): Boolean = wh
     is BkxHomeEvent.CheckRepository,
     is BkxHomeEvent.PruneRepository,
     is BkxHomeEvent.ApplyRetention,
+    BkxHomeEvent.ExecuteSnapshotRestore,
     is BkxHomeEvent.VerifyArchive -> true
     else -> false
 }

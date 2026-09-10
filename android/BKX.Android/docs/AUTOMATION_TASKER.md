@@ -130,3 +130,19 @@ The Tasker configuration Activity is intentionally optimized for small screens a
 - the bottom Cancel/Save bar stays reachable while scrolling and respects gesture-navigation and IME insets.
 
 The editor performs only configuration-time guidance. The authoritative `AutomationRequest.validate()` still runs after Tasker variable replacement when the action fires, so editor convenience never weakens runtime validation or the existing backup/restore/transfer safety gates.
+
+### UI/UX promise-audit hotfix
+
+A follow-up audit of the first compact editor found several presentation gaps and closes them without changing the automation protocol or operation engine:
+
+- edge-to-edge content now explicitly respects the status-bar inset as well as the existing navigation-bar/IME-safe bottom actions;
+- the **Tasker summary** always shows the exact blurb that will be returned to Tasker, even while validation issues are present;
+- Request ID is now genuinely progressive disclosure inside **Tasker result** instead of a permanent full-width card;
+- invalid literal compression, restore-mode, and transfer-mode choices are surfaced beside the choice control;
+- expanded `%bkx_*` output help is rendered as individually described variables instead of one dense monospaced block;
+- switch rows are fully tappable with switch semantics, improving touch targets and accessibility;
+- the operation menu is grouped by Backup & recovery, Archive tools, Files & remotes, and Operation control, with the current operation marked as selected;
+- collapsed advanced options use a compact control rather than another large empty card.
+
+These remain editor-only improvements. Tasker variable replacement, the capability-token boundary, request idempotency, Google Drive authorization behavior, foreground dispatch, and BKX backup/restore/transfer safety checks are unchanged.
+

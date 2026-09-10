@@ -88,6 +88,14 @@ class AutomationProductContractTest {
         assertTrue(editor.contains("Save to Tasker"))
         assertTrue(editor.contains("Tasker summary"))
         assertTrue(editor.contains("navigationBarsPadding().imePadding()"))
+        assertTrue(editor.contains("statusBarsPadding()"))
+        assertTrue(editor.contains("ReturnedVariablesList"))
+        assertTrue(editor.contains("Show request identity"))
+        assertTrue(editor.contains("clickable(role = Role.Switch)"))
+        assertTrue(editor.contains("AutomationAction.entries.groupBy { it.editorCategory() }"))
+        assertTrue(editor.contains("Text(blurb"))
+        assertFalse(editor.contains("AutomationResult.relevantVariables.joinToString"))
+        assertFalse(editor.contains("SectionCard("Request identity""))
         assertFalse(editor.contains("AutomationAction.entries.chunked(3)"))
     }
 

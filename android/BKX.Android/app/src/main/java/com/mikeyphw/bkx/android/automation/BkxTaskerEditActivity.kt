@@ -6,6 +6,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
@@ -44,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTheme
@@ -132,6 +135,7 @@ private fun TaskerConfigurationScreen(
     var waitForResult by remember { mutableStateOf(initialWait) }
     var showAdvanced by remember { mutableStateOf(false) }
     var showVariables by remember { mutableStateOf(false) }
+    var showTaskerAdvanced by remember { mutableStateOf(requestId.isNotBlank()) }
 
     val request = AutomationRequest(
         action = action,
@@ -192,6 +196,7 @@ private fun TaskerConfigurationScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .statusBarsPadding()
                 .padding(contentPadding)
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -237,6 +242,7 @@ private fun TaskerConfigurationScreen(
                             choices = listOf("gzip" to "Gzip", "zstd" to "Zstd", "none" to "None"),
                             onValueChange = { compression = it },
                             helper = "Choose a fixed value or use a Tasker variable.",
+                            error = editorErrorFor(editorErrors, "Compression"),
                         )
                         ToggleRow("Verify after backup", "Run BKX verification after creating the archive.", verifyAfter) { verifyAfter = it }
                         ToggleRow("Include hidden files", "Include dotfiles and hidden entries.", includeHidden) { includeHidden = it }
@@ -280,6 +286,7 @@ private fun TaskerConfigurationScreen(
                             choices = listOf("fresh_directory" to "New folder", "existing_directory" to "Existing"),
                             onValueChange = { restoreMode = it },
                             helper = "Use a fixed mode or a Tasker variable.",
+                            error = editorErrorFor(editorErrors, "Restore mode"),
                         )
                         ToggleRow("Verify before restore", "Verify the archive before extraction.", verifyAfter) { verifyAfter = it }
                     }
@@ -394,6 +401,7 @@ private fun TaskerConfigurationScreen(
                             choices = listOf("push" to "Push", "pull" to "Pull", "sync" to "Sync"),
                             onValueChange = { transferMode = it },
                             helper = "Use a fixed mode or a Tasker variable.",
+                            error = editorErrorFor(editorErrors, "Transfer mode"),
                         )
                         ToggleRow("Verify after transfer", "Verify the completed transfer.", verifyAfter) { verifyAfter = it }
                         ToggleRow("Allow overwrite", "Permit replacing destination files when BKX's plan allows it.", overwrite) { overwrite = it }
@@ -441,26 +449,31 @@ private fun TaskerConfigurationScreen(
                     if (waitForResult) "Tasker receives the final BKX result variables." else "Tasker returns after BKX queues the operation.",
                     waitForResult,
                 ) { waitForResult = it }
+
                 TextButton(onClick = { showVariables = !showVariables }) {
                     Text(if (showVariables) "Hide returned variables" else "Show returned variables")
                 }
                 if (showVariables) {
+                    ReturnedVariablesList()
+                }
+
+                TextButton(onClick = { showTaskerAdvanced = !showTaskerAdvanced }) {
+                    Text(if (showTaskerAdvanced) "Hide request identity" else "Show request identity")
+                }
+                if (showTaskerAdvanced) {
+                    ConfigField(
+                        "Request ID",
+                        requestId,
+                        { requestId = it },
+                        helper = "Optional. Leave blank for BKX to generate one, or use a stable Tasker variable for deliberate idempotent retries.",
+                    )
+                } else if (requestId.isNotBlank()) {
                     Text(
-                        AutomationResult.relevantVariables.joinToString("\n"),
+                        "A custom request ID is configured.",
                         style = MaterialTheme.typography.bodySmall,
-                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-
-            SectionCard("Request identity", "Optional advanced control for deduplication and later status/cancel actions.") {
-                ConfigField(
-                    "Request ID",
-                    requestId,
-                    { requestId = it },
-                    helper = "Optional. Leave blank for BKX to generate one, or use a stable Tasker variable.",
-                )
             }
 
             if (editorErrors.isNotEmpty()) {
@@ -487,19 +500,37 @@ private fun OperationPicker(action: AutomationAction, onActionChange: (Automatio
             Text("Change", style = MaterialTheme.typography.labelLarge)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            AutomationAction.entries.forEach { item ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(item.label, fontWeight = if (item == action) FontWeight.SemiBold else FontWeight.Normal)
-                            Text(item.editorDescription(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    },
-                    onClick = {
-                        onActionChange(item)
-                        expanded = false
-                    },
+            AutomationAction.entries.groupBy { it.editorCategory() }.forEach { (category, items) ->
+                Text(
+                    category,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
                 )
+                items.forEach { item ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        item.label,
+                                        modifier = Modifier.weight(1f),
+                                        fontWeight = if (item == action) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
+                                    if (item == action) {
+                                        Text("Selected", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                                Text(item.editorDescription(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        },
+                        onClick = {
+                            onActionChange(item)
+                            expanded = false
+                        },
+                    )
+                }
             }
         }
     }
@@ -545,9 +576,30 @@ private fun SafetyCard(title: String, text: String, content: @Composable ColumnS
 
 @Composable
 private fun AdvancedSection(showAdvanced: Boolean, onToggle: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    SectionCard("Advanced options", if (showAdvanced) "Less common settings are shown below." else "Keep the common path compact; expand only when needed.") {
-        TextButton(onClick = onToggle) { Text(if (showAdvanced) "Hide advanced options" else "Show advanced options") }
-        if (showAdvanced) content()
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
+                Text("Advanced options", fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (showAdvanced) "Less common settings are shown below." else "Expand only when you need uncommon controls.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Text(if (showAdvanced) "Hide" else "Show", style = MaterialTheme.typography.labelLarge)
+        }
+        if (showAdvanced) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f)),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = content,
+                )
+            }
+        }
     }
 }
 
@@ -557,14 +609,18 @@ private fun PreviewStrip(blurb: String, errors: List<String>) {
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = if (errors.isEmpty()) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f)
-        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f),
+        else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.42f),
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Text(if (errors.isEmpty()) "Tasker summary" else "Configuration needs attention", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-            Text(
-                if (errors.isEmpty()) blurb else "${errors.size} issue${if (errors.size == 1) "" else "s"} to fix before saving.",
-                style = MaterialTheme.typography.bodySmall,
-            )
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Tasker summary", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+            Text(blurb, style = MaterialTheme.typography.bodySmall)
+            if (errors.isNotEmpty()) {
+                Text(
+                    "${errors.size} issue${if (errors.size == 1) "" else "s"} to fix before saving.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -576,8 +632,10 @@ private fun ChoiceField(
     choices: List<Pair<String, String>>,
     onValueChange: (String) -> Unit,
     helper: String,
+    error: String? = null,
 ) {
-    var custom by remember(value in choices.map { it.first }) { mutableStateOf(value !in choices.map { it.first }) }
+    val fixedValues = choices.map { it.first }
+    var custom by remember(value in fixedValues) { mutableStateOf(value !in fixedValues) }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(label, style = MaterialTheme.typography.labelLarge)
         if (!custom) {
@@ -586,18 +644,22 @@ private fun ChoiceField(
                     FilterChip(selected = value == wire, onClick = { onValueChange(wire) }, label = { Text(display) })
                 }
             }
+            if (error != null) {
+                Text(error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
         } else {
             ConfigField(
                 label = "$label Tasker variable",
                 value = value,
                 onValueChange = onValueChange,
                 helper = "Example: %bkx_mode. Tasker substitutes it before BKX validates the request.",
+                error = error,
             )
         }
         TextButton(
             onClick = {
                 custom = !custom
-                if (!custom && value !in choices.map { it.first }) onValueChange(choices.first().first)
+                if (!custom && value !in fixedValues) onValueChange(fixedValues.first())
             },
         ) {
             Text(if (custom) "Use fixed choice" else "Use Tasker variable")
@@ -635,7 +697,10 @@ private fun ConfigField(
 @Composable
 private fun ToggleRow(label: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Switch) { onCheckedChange(!checked) }
+            .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -643,8 +708,41 @@ private fun ToggleRow(label: String, description: String, checked: Boolean, onCh
             Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, onCheckedChange = null)
     }
+}
+
+@Composable
+private fun ReturnedVariablesList() {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        AutomationResult.relevantVariables.forEach { name ->
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            ) {
+                Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(name, style = MaterialTheme.typography.labelMedium, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold)
+                    Text(taskerVariableDescription(name), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+private fun taskerVariableDescription(name: String): String = when (name) {
+    "%bkx_request_id" -> "Stable BKX automation request ID."
+    "%bkx_action" -> "Operation wire name."
+    "%bkx_status" -> "accepted, running, success, failed, or cancelled."
+    "%bkx_operation_request_id" -> "Current internal BKX operation request ID when available."
+    "%bkx_summary" -> "Human-readable result summary."
+    "%bkx_error_code" -> "Stable machine-readable failure code."
+    "%bkx_error_message" -> "Human-readable failure detail."
+    "%bkx_artifact_paths" -> "Newline-separated artifact paths."
+    "%bkx_artifact_sha256" -> "Newline-separated SHA-256 values matching artifact paths."
+    "%bkx_files_total" -> "Total files reported by the operation when available."
+    "%bkx_bytes_total" -> "Total bytes reported by the operation when available."
+    else -> "BKX automation result variable."
 }
 
 private fun AutomationAction.editorCategory(): String = when (this) {

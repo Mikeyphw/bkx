@@ -128,11 +128,25 @@ for token in \
   'Use Tasker variable' \
   'Save to Tasker' \
   'Tasker summary' \
-  'navigationBarsPadding().imePadding()'; do
+  'navigationBarsPadding().imePadding()' \
+  'statusBarsPadding()' \
+  'ReturnedVariablesList' \
+  'Show request identity' \
+  'clickable(role = Role.Switch)' \
+  'AutomationAction.entries.groupBy { it.editorCategory() }' \
+  'Text(blurb'; do
   grep -Fq "$token" "$editor" || { echo "Tasker editor UX contract missing: $token" >&2; exit 1; }
 done
 if grep -Fq 'AutomationAction.entries.chunked(3)' "$editor"; then
   echo 'Tasker editor must not regress to the dense multi-row action chip wall.' >&2
+  exit 1
+fi
+if grep -Fq 'AutomationResult.relevantVariables.joinToString' "$editor"; then
+  echo 'Tasker returned variables must not regress to an undifferentiated raw text block.' >&2
+  exit 1
+fi
+if grep -Fq 'SectionCard("Request identity"' "$editor"; then
+  echo 'Tasker request identity must remain progressively disclosed instead of consuming a permanent full card.' >&2
   exit 1
 fi
 for token in 'Tasker editor UX' 'Advanced options' 'Use Tasker variable' 'Save to Tasker'; do

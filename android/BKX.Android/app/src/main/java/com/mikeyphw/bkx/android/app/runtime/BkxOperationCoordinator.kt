@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import androidx.core.content.ContextCompat
 import com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService
+import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.bridge.BridgeFileLayout
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
@@ -56,6 +57,7 @@ class BkxOperationCoordinator(
     private val operationStateStore: OperationStateStore,
     private val requestBaseDirectoryPath: String,
     private val progressPreferenceProvider: () -> ProgressPreference = { ProgressPreference.EventDriven },
+    private val taskerConditionPublisher: BkxTaskerConditionPublisher? = null,
 ) {
     private val appContext = context?.let { it.applicationContext ?: it }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -93,7 +95,7 @@ class BkxOperationCoordinator(
                 val failure = OperationFailureMapper.fromProtocolException(
                     "BKX runtime failed before execution could establish a final result: ${error.message ?: error::class.java.simpleName}",
                 )
-                try {
+                val failedState = try {
                     mutateState { state ->
                         val active = state.activeFor(request.requestId)
                         if (active == null) state else progressTracker.fail(
@@ -105,7 +107,9 @@ class BkxOperationCoordinator(
                     }
                 } catch (_: Throwable) {
                     // Persistence failure must never leave the caller suspended.
+                    null
                 }
+                taskerConditionPublisher?.operationFailed(request, failedState?.activeFor(request.requestId), failure)
                 OperationOutcome.Failed(failure)
             } finally {
                 executions.remove(request.requestId, candidate)
@@ -143,22 +147,26 @@ class BkxOperationCoordinator(
     fun recoverInterruptedOperations() {
         scope.launch {
             val now = System.currentTimeMillis()
+            val before = snapshot()
+            val interrupted = before.activeOperations.values
+                .filter { operation -> operation.status in ACTIVE_STATUSES && !executions.containsKey(operation.requestId) }
+            if (interrupted.isEmpty()) return@launch
+            val failure = OperationFailureMapper.interrupted(
+                "BKX was interrupted before a final result was committed. Partial temporary artifacts were not promoted as successful output.",
+            )
             mutateState { state ->
                 var next = state
-                state.activeOperations.values
-                    .filter { operation -> operation.status in ACTIVE_STATUSES && !executions.containsKey(operation.requestId) }
-                    .forEach { operation ->
-                        next = progressTracker.interrupt(
-                            state = next,
-                            requestId = operation.requestId,
-                            failure = OperationFailureMapper.interrupted(
-                                "BKX was interrupted before a final result was committed. Partial temporary artifacts were not promoted as successful output.",
-                            ),
-                            nowEpochMillis = now,
-                        )
-                    }
+                interrupted.forEach { operation ->
+                    next = progressTracker.interrupt(
+                        state = next,
+                        requestId = operation.requestId,
+                        failure = failure,
+                        nowEpochMillis = now,
+                    )
+                }
                 next
             }
+            interrupted.forEach { operation -> taskerConditionPublisher?.operationInterrupted(operation, failure) }
         }
     }
 
@@ -188,10 +196,11 @@ class BkxOperationCoordinator(
                 cancelFilePath = files.cancelFilePath,
             )
         }
-        if (manageForeground && request.operation in FOREGROUND_OPERATIONS) {
-            startedState.activeFor(request.requestId)?.let(::updateForeground)
+        startedState.activeFor(request.requestId)?.let { operation ->
+            taskerConditionPublisher?.operationStarted(request, operation)
+            if (manageForeground && request.operation in FOREGROUND_OPERATIONS) updateForeground(operation)
         }
-        val progressPoller = startProgressPoller(request.requestId)
+        val progressPoller = startProgressPoller(request)
         var terminalNotification: Pair<ActiveOperation, OperationResultUiState>? = null
 
         return try {
@@ -201,7 +210,8 @@ class BkxOperationCoordinator(
                 val failedState = mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
                 failedState.activeFor(request.requestId)?.let { operation ->
                     terminalNotification = operation to OperationResultUiState.Failed(failure)
-                }
+                    taskerConditionPublisher?.operationFailed(request, operation, failure)
+                } ?: taskerConditionPublisher?.operationFailed(request, null, failure)
                 OperationOutcome.Failed(failure)
             } else {
                 val rawResult = File(files.resultFilePath).readText()
@@ -211,6 +221,7 @@ class BkxOperationCoordinator(
                 val completedState = mutateState { state -> progressTracker.finish(state, result, completedAt) }
                 completedState.activeFor(request.requestId)?.let { operation ->
                     terminalNotification = operation to result.toOperationResultUiState()
+                    taskerConditionPublisher?.operationTerminal(request, operation, result)
                 }
                 if (recordInHistory) persistRun(request.operation, startedAt, completedAt, result)
                 OperationOutcome.Completed(result)
@@ -222,7 +233,8 @@ class BkxOperationCoordinator(
             val failedState = mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
             failedState.activeFor(request.requestId)?.let { operation ->
                 terminalNotification = operation to OperationResultUiState.Failed(failure)
-            }
+                taskerConditionPublisher?.operationFailed(request, operation, failure)
+            } ?: taskerConditionPublisher?.operationFailed(request, null, failure)
             OperationOutcome.Failed(failure)
         } finally {
             progressPoller.cancel()
@@ -236,7 +248,8 @@ class BkxOperationCoordinator(
         }
     }
 
-    private fun startProgressPoller(requestId: String): Job = scope.launch {
+    private fun startProgressPoller(request: BridgeRequestEnvelope): Job = scope.launch {
+        val requestId = request.requestId
         while (isActive && executions.containsKey(requestId)) {
             val progress = runCatching { backendPort.progress(requestId) }.getOrNull()
             if (progress != null) {
@@ -245,7 +258,10 @@ class BkxOperationCoordinator(
                     if (progress.seq <= active.lastSeq) return@mutateState current
                     progressTracker.consume(current, progress, System.currentTimeMillis())
                 }
-                state.activeFor(requestId)?.let(::updateForeground)
+                state.activeFor(requestId)?.let { operation ->
+                    taskerConditionPublisher?.operationProgress(request, operation)
+                    updateForeground(operation)
+                }
             }
             delay(progressPollIntervalMillis())
         }

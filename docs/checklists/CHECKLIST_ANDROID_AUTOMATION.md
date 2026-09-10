@@ -16,3 +16,17 @@
 - [ ] External automation runs under the BKX automation foreground service; UI-initiated operations retain the normal coordinator foreground path.
 - [ ] Force-stop/process-death recovery does not blindly replay a persisted active request ID.
 - [ ] `lintDebug`, `assembleDebug`, `assembleRelease`, and `bkxAndroidReleaseSeal` pass.
+
+## Tasker Event / State condition seal
+
+- [x] BKX Event and BKX State appear as distinct Tasker plugin contexts.
+- [x] Event updates originate from the process-scoped BKX operation coordinator, including work launched from the normal BKX UI.
+- [x] State queries read persisted operation state plus minimal redacted Tasker signal state.
+- [x] Start, canonical progress milestone, terminal success/failure/cancel, operation-specific completion, archive-created, Drive-auth-required, remote-unavailable, and remote-recovered events are represented.
+- [x] Running, Drive authorization, remote availability, and filtered last-terminal states are represented.
+- [x] Progress is deduplicated by request id and canonical 5% bucket.
+- [x] Operation/request/error/remote/progress filters are deterministic and wildcard-aware.
+- [x] Terminal history stores one canonical terminal signal per request id.
+- [x] Google Drive connected is observation-based, not inferred from config presence.
+- [x] OAuth/rclone/capability secrets and complete local paths are excluded from persisted/emitted signals.
+- [x] Tasker condition library is pinned; its competing Action components are removed from manifest merge.

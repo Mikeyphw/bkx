@@ -95,8 +95,40 @@ class AutomationProductContractTest {
         assertTrue(editor.contains("AutomationAction.entries.groupBy { it.editorCategory() }"))
         assertTrue(editor.contains("Text(blurb"))
         assertFalse(editor.contains("AutomationResult.relevantVariables.joinToString"))
-        assertFalse(editor.contains("SectionCard("Request identity""))
+        assertFalse(editor.contains("SectionCard(\"Request identity\""))
         assertFalse(editor.contains("AutomationAction.entries.chunked(3)"))
+    }
+
+    @Test
+    fun taskerEventAndStateConditionsUseAuthoritativeBkxSignals() {
+        val manifest = File(projectRoot, "src/main/AndroidManifest.xml").readText()
+        val versions = File(projectRoot, "gradle/libs.versions.toml").readText()
+        val build = File(projectRoot, "build.gradle.kts").readText()
+        val graph = File(mainRoot, "app/di/DefaultBackendGraph.kt").readText()
+        val coordinator = File(mainRoot, "app/runtime/BkxOperationCoordinator.kt").readText()
+        val drive = File(mainRoot, "app/drive/GoogleDriveAuthorizationManager.kt").readText()
+        val publisher = File(mainRoot, "automation/TaskerConditionPublisher.kt").readText()
+        val plugin = File(mainRoot, "automation/TaskerConditionPlugin.kt").readText()
+
+        assertTrue(manifest.contains("net.dinglisch.android.tasker.ACTION_EDIT_EVENT"))
+        assertTrue(manifest.contains("com.twofortyfouram.locale.intent.action.EDIT_CONDITION"))
+        assertTrue(manifest.contains(".automation.BkxTaskerEventEditActivity"))
+        assertTrue(manifest.contains(".automation.BkxTaskerStateEditActivity"))
+        assertTrue(manifest.contains("com.joaomgcd.taskerpluginlibrary.action.BroadcastReceiverAction"))
+        assertTrue(manifest.contains("tools:node=\"remove\""))
+        assertTrue(versions.contains("taskerPlugin = \"0.4.10\""))
+        assertTrue(build.contains("implementation(libs.tasker.plugin.library)"))
+        assertTrue(coordinator.contains("taskerConditionPublisher?.operationStarted"))
+        assertTrue(coordinator.contains("taskerConditionPublisher?.operationProgress"))
+        assertTrue(coordinator.contains("taskerConditionPublisher?.operationTerminal"))
+        assertTrue(drive.contains("taskerConditionPublisher?.driveNeedsAuthorization"))
+        assertTrue(graph.contains("SharedPreferencesBkxTaskerConditionStore"))
+        assertTrue(publisher.contains("TaskerPluginRunnerCondition.requestQuery"))
+        assertTrue(plugin.contains("TaskerPluginRunnerConditionEvent"))
+        assertTrue(plugin.contains("TaskerPluginRunnerConditionState"))
+        assertFalse(publisher.contains("accessToken"))
+        assertFalse(publisher.contains("refreshToken"))
+        assertFalse(publisher.contains("capability_token"))
     }
 
 }

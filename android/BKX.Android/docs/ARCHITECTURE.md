@@ -37,3 +37,9 @@ Tasker/Locale and explicit Android Intents converge on `BkxAutomationEngine`; th
 Two private capabilities are deliberately separate: a Tasker-only token saved into Locale/Tasker configuration bundles and a direct-Intent token explicitly copied by the user from **More → Automation**. The Tasker configuration Activity rejects non-Tasker/Locale callers. Neither token grants direct access to cloud credentials; automation accepts only credential-free `rclone://` locations. Managed Google Drive authorization remains Android-owned and is refreshed silently before an operation, with interactive re-consent deferred to the normal Google Drive product screen.
 
 Automation request IDs are persistent idempotency keys. The in-process execution map coalesces concurrent duplicates, private terminal receipts prevent replay after completion, and an orphaned active stage after process death fails closed rather than automatically repeating destructive work. Restore uses the existing preview and exact confirmation phrase policy unchanged.
+
+## Tasker bidirectional conditions
+
+Tasker Event/State integration is an observer of the existing product runtime, not a second execution engine. `BkxTaskerConditionPublisher` receives lifecycle transitions from the process-scoped `BkxOperationCoordinator` and authorization transitions from `GoogleDriveAuthorizationManager`. It writes a bounded, redacted condition snapshot and notifies Tasker through the official condition `requestQuery` protocol. `BkxTaskerStateRunner` combines that redacted snapshot with the authoritative persisted `OperationStateStore` when Tasker evaluates a state.
+
+The existing capability-protected `BkxAutomationReceiver` remains the only Action/FIRE_SETTING execution entry point. The Tasker library's Action receiver/service are removed during manifest merge; only its QUERY_CONDITION machinery is retained for BKX Event and BKX State.

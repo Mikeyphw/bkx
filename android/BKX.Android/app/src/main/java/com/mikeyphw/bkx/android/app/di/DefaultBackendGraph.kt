@@ -3,6 +3,9 @@ package com.mikeyphw.bkx.android.app.di
 import android.content.Context
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.automation.BkxAutomationEngine
+import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
+import com.mikeyphw.bkx.android.automation.BkxTaskerConditionStore
+import com.mikeyphw.bkx.android.automation.SharedPreferencesBkxTaskerConditionStore
 import com.mikeyphw.bkx.android.automation.CoordinatorAutomationOperationPort
 import com.mikeyphw.bkx.android.automation.GoogleManagedDriveRefreshPort
 import com.mikeyphw.bkx.android.automation.SharedPreferencesAutomationStateStore
@@ -34,6 +37,8 @@ object DefaultBackendGraph {
     @Volatile private var providerStagingInstance: ProviderStagingPort? = null
     @Volatile private var googleDriveManagerInstance: GoogleDriveAuthorizationManager? = null
     @Volatile private var automationEngineInstance: BkxAutomationEngine? = null
+    @Volatile private var taskerConditionStoreInstance: BkxTaskerConditionStore? = null
+    @Volatile private var taskerConditionPublisherInstance: BkxTaskerConditionPublisher? = null
 
     fun backendPort(context: Context): BackendPort = backendInstance ?: synchronized(this) {
         backendInstance ?: run {
@@ -65,8 +70,22 @@ object DefaultBackendGraph {
         providerStagingInstance ?: AndroidProviderStagingManager(context.stableApplicationContext()).also { providerStagingInstance = it }
     }
 
+    fun taskerConditionStore(context: Context): BkxTaskerConditionStore = taskerConditionStoreInstance ?: synchronized(this) {
+        taskerConditionStoreInstance ?: SharedPreferencesBkxTaskerConditionStore(context.stableApplicationContext()).also { taskerConditionStoreInstance = it }
+    }
+
+    fun taskerConditionPublisher(context: Context): BkxTaskerConditionPublisher = taskerConditionPublisherInstance ?: synchronized(this) {
+        taskerConditionPublisherInstance ?: BkxTaskerConditionPublisher(
+            context.stableApplicationContext(),
+            taskerConditionStore(context),
+        ).also { taskerConditionPublisherInstance = it }
+    }
+
     fun googleDriveAuthorizationManager(context: Context): GoogleDriveAuthorizationManager = googleDriveManagerInstance ?: synchronized(this) {
-        googleDriveManagerInstance ?: GoogleDriveAuthorizationManager(context.stableApplicationContext()).also { googleDriveManagerInstance = it }
+        googleDriveManagerInstance ?: GoogleDriveAuthorizationManager(
+            context.stableApplicationContext(),
+            taskerConditionPublisher = taskerConditionPublisher(context),
+        ).also { googleDriveManagerInstance = it }
     }
 
     fun archiveSearchRoots(context: Context, rootAvailable: Boolean): List<String> =
@@ -80,6 +99,7 @@ object DefaultBackendGraph {
             operationStateStore = operationStateStore(context),
             requestBaseDirectoryPath = context.stableApplicationContext().filesDir.resolve("bkx/requests").absolutePath,
             progressPreferenceProvider = { sharedSettingsStore(context.stableApplicationContext()).readNow().progressPreference },
+            taskerConditionPublisher = taskerConditionPublisher(context),
         ).also { coordinatorInstance = it }
     }
 

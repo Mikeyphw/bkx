@@ -146,3 +146,35 @@ A follow-up audit of the first compact editor found several presentation gaps an
 
 These remain editor-only improvements. Tasker variable replacement, the capability-token boundary, request idempotency, Google Drive authorization behavior, foreground dispatch, and BKX backup/restore/transfer safety checks are unchanged.
 
+
+## Tasker Event and State conditions
+
+BKX automation is bidirectional. **BKX Action** continues to execute work; **BKX Event** wakes a Tasker profile when something happens; **BKX State** keeps a profile active while a persisted BKX condition is true. Event/State conditions are backed by the same `BkxOperationCoordinator` state used by the app UI, so operations launched from either BKX or Tasker produce the same signals.
+
+### BKX Event
+
+Available event selectors are: Any BKX event, Operation started, Progress milestone, Operation completed, Backup completed, Restore completed, Verify completed, Transfer completed, Archive created, Operation failed, Operation cancelled, Google Drive authorization required, Remote unavailable, and Remote recovered.
+
+Progress publication is throttled at canonical 5% buckets. A backend jump from 24% to 26% publishes `%bkx_progress=25`; files/bytes remain the latest real counters. The Tasker editor can further filter progress to recommended milestones (0/10/25/50/75/90/100), every 5%, every 10%, every 25%, or every 50%.
+
+### BKX State
+
+Available state selectors are: Any operation running, Backup running, Restore running, Verify running, Transfer running, Google Drive connected, Google Drive needs authorization, Remote available, Last operation succeeded, Last operation failed, and Last operation cancelled.
+
+`Google Drive connected` is true only after BKX has observed a successful authorization result. Merely finding a stored Google Drive configuration is not treated as proof that an OAuth token remains valid. Unknown connectivity is returned to Tasker as unknown rather than a false connected state.
+
+The three Last operation states search bounded terminal history for the newest operation that also matches the profile filters. Alias events such as `backup_completed` and `archive_created` do not create duplicate terminal history records.
+
+### Filters and variables
+
+Event and State editors support operation wildcards (`backup.*`), local/remote/Google Drive/specific-rclone filtering, rclone remote name, request-ID wildcards, and error-code wildcards. `*` matches any sequence and `?` matches one character.
+
+Conditions can expose `%bkx_event`, `%bkx_state`, `%bkx_operation`, `%bkx_request_id`, `%bkx_status`, `%bkx_progress`, `%bkx_files_done`, `%bkx_files_total`, `%bkx_bytes_done`, `%bkx_bytes_total`, `%bkx_archive`, `%bkx_remote`, `%bkx_error_code`, `%bkx_error`, `%bkx_phase`, and `%bkx_timestamp`.
+
+Tasker signals deliberately exclude Google OAuth access/refresh tokens, rclone secrets, BKX capability tokens, and complete local filesystem paths. Archive output is reduced to its display name. Remote identity is normalized to `local`, `google-drive`, or `rclone:<name>`.
+
+### Remote health semantics
+
+`Remote unavailable` is emitted when a remote operation produces a remote/network/authentication-style failure and that remote was not already known unavailable. A later successful operation against that remote emits `Remote recovered`. These are observations from real BKX operations/authorization, not synthetic network polling.
+
+The official Tasker condition library handles `QUERY_CONDITION`. Its Action receiver/service are explicitly removed from manifest merge, so the existing capability-protected BKX Action receiver remains the single owner of `FIRE_SETTING`.

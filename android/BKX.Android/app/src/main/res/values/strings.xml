@@ -1,4 +1,15 @@
 <resources>
     <string name="app_name">BKX</string>
     <string name="tasker_plugin_name">BKX Automation</string>
+
+    <string name="tasker_event_plugin_name">BKX Event</string>
+    <string name="tasker_state_plugin_name">BKX State</string>
+    <string name="tasker_event_type">Event</string>
+    <string name="tasker_state_type">State</string>
+    <string name="tasker_filter_operation">Operation filter</string>
+    <string name="tasker_filter_remote">Storage filter</string>
+    <string name="tasker_filter_remote_name">rclone remote name</string>
+    <string name="tasker_filter_request_id">Request ID pattern</string>
+    <string name="tasker_filter_error_code">Error code filter</string>
+    <string name="tasker_progress_cadence">Progress cadence</string>
 </resources>

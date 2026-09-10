@@ -60,6 +60,40 @@
             </intent-filter>
         </activity>
 
+
+        <!-- The official Tasker library owns QUERY_CONDITION only. BKX keeps its existing
+             capability-protected Action receiver as the sole FIRE_SETTING owner. -->
+        <receiver
+            android:name="com.joaomgcd.taskerpluginlibrary.action.BroadcastReceiverAction"
+            tools:node="remove" />
+        <service
+            android:name="com.joaomgcd.taskerpluginlibrary.action.IntentServiceAction"
+            tools:node="remove" />
+
+        <activity
+            android:name=".automation.BkxTaskerEventEditActivity"
+            android:exported="true"
+            android:label="@string/tasker_event_plugin_name"
+            android:icon="@drawable/ic_launcher"
+            android:theme="@style/Theme.BKXAndroid">
+            <intent-filter>
+                <action android:name="net.dinglisch.android.tasker.ACTION_EDIT_EVENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".automation.BkxTaskerStateEditActivity"
+            android:exported="true"
+            android:label="@string/tasker_state_plugin_name"
+            android:icon="@drawable/ic_launcher"
+            android:theme="@style/Theme.BKXAndroid">
+            <intent-filter>
+                <action android:name="com.twofortyfouram.locale.intent.action.EDIT_CONDITION" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <!-- Started only through libsu RootService after the root manager authorizes BKX. -->
         <service
             android:name=".root.BkxRootEngineService"

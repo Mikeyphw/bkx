@@ -290,17 +290,26 @@ tasks.register("verifyBkxAutomationProductContract") {
     val receiver = sourceRoot.resolve("automation/BkxAutomationReceiver.kt")
     val service = sourceRoot.resolve("automation/BkxAutomationService.kt")
     val editor = sourceRoot.resolve("automation/BkxTaskerEditActivity.kt")
+    val conditionContract = sourceRoot.resolve("automation/TaskerConditionContract.kt")
+    val conditionStore = sourceRoot.resolve("automation/TaskerConditionStore.kt")
+    val conditionPublisher = sourceRoot.resolve("automation/TaskerConditionPublisher.kt")
+    val conditionPlugin = sourceRoot.resolve("automation/TaskerConditionPlugin.kt")
+    val conditionActivities = sourceRoot.resolve("automation/BkxTaskerConditionActivities.kt")
     val graph = sourceRoot.resolve("app/di/DefaultBackendGraph.kt")
+    val drive = sourceRoot.resolve("app/drive/GoogleDriveAuthorizationManager.kt")
     val coordinator = sourceRoot.resolve("app/runtime/BkxOperationCoordinator.kt")
     val navigation = sourceRoot.resolve("app/navigation/BkxNavigation.kt")
     val more = sourceRoot.resolve("feature/more/MoreScreen.kt")
     val automationScreen = sourceRoot.resolve("feature/more/AutomationScreen.kt")
     val engineTest = testRoot.resolve("BkxAutomationEngineTest.kt")
     val productTest = testRoot.resolve("AutomationProductContractTest.kt")
+    val conditionTest = testRoot.resolve("TaskerConditionContractTest.kt")
+    val versions = rootProject.layout.projectDirectory.file("gradle/libs.versions.toml").asFile
+    val appBuild = rootProject.layout.projectDirectory.file("app/build.gradle.kts").asFile
     val docs = rootProject.layout.projectDirectory.file("docs/AUTOMATION_TASKER.md").asFile
     val verifier = repositoryRoot.resolve("scripts/verify-android-automation.sh")
 
-    inputs.files(manifest, contract, stores, codec, engine, dispatch, receiver, service, editor, graph, coordinator, navigation, more, automationScreen, engineTest, productTest, docs, verifier)
+    inputs.files(manifest, contract, stores, codec, engine, dispatch, receiver, service, editor, conditionContract, conditionStore, conditionPublisher, conditionPlugin, conditionActivities, graph, drive, coordinator, navigation, more, automationScreen, engineTest, productTest, conditionTest, versions, appBuild, docs, verifier)
 
     doLast {
         val manifestText = manifest.readText()
@@ -311,7 +320,13 @@ tasks.register("verifyBkxAutomationProductContract") {
         val receiverText = receiver.readText()
         val serviceText = service.readText()
         val editorText = editor.readText()
+        val conditionContractText = conditionContract.readText()
+        val conditionPublisherText = conditionPublisher.readText()
+        val conditionPluginText = conditionPlugin.readText()
         val graphText = graph.readText()
+        val driveText = drive.readText()
+        val versionsText = versions.readText()
+        val appBuildText = appBuild.readText()
         val coordinatorText = coordinator.readText()
         val navigationText = navigation.readText()
         val moreText = more.readText()
@@ -325,6 +340,10 @@ tasks.register("verifyBkxAutomationProductContract") {
             ".automation.BkxAutomationService",
             ".automation.BkxAutomationJobService",
             "android.permission.BIND_JOB_SERVICE",
+            "net.dinglisch.android.tasker.ACTION_EDIT_EVENT",
+            "com.twofortyfouram.locale.intent.action.EDIT_CONDITION",
+            ".automation.BkxTaskerEventEditActivity",
+            ".automation.BkxTaskerStateEditActivity",
         ).forEach { token -> check(token in manifestText) { "Automation manifest contract missing: $token" } }
         listOf("BACKUP", "RESTORE", "VERIFY", "ARCHIVE_LIST", "ARCHIVE_INFO", "ARCHIVE_BROWSE", "TRANSFER", "CANCEL", "STATUS").forEach { action ->
             check("ACTION_$action" in contractText) { "Automation contract action missing: $action" }
@@ -368,10 +387,34 @@ tasks.register("verifyBkxAutomationProductContract") {
         check("BkxAutomationEngine" in graphText && "SharedPreferencesAutomationStateStore" in graphText) {
             "Process-scoped automation engine/state graph is missing."
         }
+        listOf("operation_started", "progress_milestone", "operation_completed", "google_drive_authorization_required", "remote_unavailable", "remote_recovered").forEach { token ->
+            check(token in conditionContractText) { "Tasker Event contract missing: $token" }
+        }
+        listOf("any_operation_running", "google_drive_connected", "remote_available", "last_operation_failed").forEach { token ->
+            check(token in conditionContractText) { "Tasker State contract missing: $token" }
+        }
+        check("TaskerPluginRunnerConditionEvent" in conditionPluginText && "TaskerPluginRunnerConditionState" in conditionPluginText) {
+            "Tasker Event/State runners are missing."
+        }
+        check("TaskerPluginRunnerCondition.requestQuery" in conditionPublisherText && "canonicalProgressBucket" in conditionPublisherText) {
+            "Tasker Event publication/throttling contract is incomplete."
+        }
+        check("taskerConditionPublisher?.operationStarted" in coordinatorText && "taskerConditionPublisher?.operationProgress" in coordinatorText && "taskerConditionPublisher?.operationTerminal" in coordinatorText) {
+            "Tasker signals must originate from the authoritative operation coordinator."
+        }
+        check("taskerConditionPublisher?.driveNeedsAuthorization" in driveText && "taskerConditionPublisher?.driveConnected" in driveText) {
+            "Google Drive authorization state must feed Tasker conditions."
+        }
+        check("taskerPlugin = \"0.4.10\"" in versionsText && "implementation(libs.tasker.plugin.library)" in appBuildText) {
+            "Tasker condition library must remain pinned to 0.4.10."
+        }
+        check("com.joaomgcd.taskerpluginlibrary.action.BroadcastReceiverAction" in manifestText && "tools:node=\"remove\"" in manifestText) {
+            "The library Action receiver must be removed so BKX remains the sole FIRE_SETTING owner."
+        }
         listOf("RESTORE ROOT", "rclone://bkx-google-drive/BKX", "%bkx_request_id", "automation_previous_dispatch_incomplete").forEach { token ->
             check(token in docsText) { "Automation documentation missing release-critical token: $token" }
         }
-        check(engineTest.isFile && productTest.isFile && verifier.isFile) { "Automation test/verifier evidence is incomplete." }
+        check(engineTest.isFile && productTest.isFile && conditionTest.isFile && verifier.isFile) { "Automation test/verifier evidence is incomplete." }
     }
 }
 

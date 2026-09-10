@@ -152,3 +152,75 @@ fi
 for token in 'Tasker editor UX' 'Advanced options' 'Use Tasker variable' 'Save to Tasker'; do
   grep -Fq "$token" "$docs" || { echo "Tasker docs missing editor UX guidance: $token" >&2; exit 1; }
 done
+
+# Tasker Event/State bidirectional condition contract.
+condition_contract="$source_root/automation/TaskerConditionContract.kt"
+condition_store="$source_root/automation/TaskerConditionStore.kt"
+condition_publisher="$source_root/automation/TaskerConditionPublisher.kt"
+condition_plugin="$source_root/automation/TaskerConditionPlugin.kt"
+condition_activities="$source_root/automation/BkxTaskerConditionActivities.kt"
+condition_test="$test_root/TaskerConditionContractTest.kt"
+drive_manager="$source_root/app/drive/GoogleDriveAuthorizationManager.kt"
+graph="$source_root/app/di/DefaultBackendGraph.kt"
+coordinator="$source_root/app/runtime/BkxOperationCoordinator.kt"
+versions="$root/android/BKX.Android/gradle/libs.versions.toml"
+app_build="$root/android/BKX.Android/app/build.gradle.kts"
+
+for f in "$condition_contract" "$condition_store" "$condition_publisher" "$condition_plugin" "$condition_activities" "$condition_test" "$drive_manager" "$graph" "$coordinator" "$versions" "$app_build"; do
+  [[ -f "$f" ]] || { echo "missing Tasker Event/State contract file: $f" >&2; exit 1; }
+done
+
+grep -Fq 'net.dinglisch.android.tasker.ACTION_EDIT_EVENT' "$manifest"
+grep -Fq 'com.twofortyfouram.locale.intent.action.EDIT_CONDITION' "$manifest"
+grep -Fq '.automation.BkxTaskerEventEditActivity' "$manifest"
+grep -Fq '.automation.BkxTaskerStateEditActivity' "$manifest"
+grep -Fq 'com.joaomgcd.taskerpluginlibrary.action.BroadcastReceiverAction' "$manifest"
+grep -Fq 'com.joaomgcd.taskerpluginlibrary.action.IntentServiceAction' "$manifest"
+grep -Fq 'tools:node="remove"' "$manifest"
+grep -Fq 'taskerPlugin = "0.4.10"' "$versions"
+grep -Fq 'implementation(libs.tasker.plugin.library)' "$app_build"
+
+for token in operation_started progress_milestone operation_completed backup_completed restore_completed verify_completed transfer_completed archive_created operation_failed operation_cancelled google_drive_authorization_required remote_unavailable remote_recovered; do
+  grep -Fq "$token" "$condition_contract" || { echo "Tasker Event contract missing $token" >&2; exit 1; }
+done
+for token in any_operation_running backup_running restore_running verify_running transfer_running google_drive_connected google_drive_needs_authorization remote_available last_operation_succeeded last_operation_failed last_operation_cancelled; do
+  grep -Fq "$token" "$condition_contract" || { echo "Tasker State contract missing $token" >&2; exit 1; }
+done
+for token in bkx_event bkx_state bkx_operation bkx_request_id bkx_status bkx_progress bkx_files_done bkx_files_total bkx_bytes_done bkx_bytes_total bkx_archive bkx_remote bkx_error_code bkx_error bkx_phase bkx_timestamp; do
+  grep -Fq "TaskerOutputVariable(\"$token\")" "$condition_contract" || { echo "Tasker condition output missing %$token" >&2; exit 1; }
+done
+
+grep -Fq 'TaskerPluginRunnerConditionEvent' "$condition_plugin"
+grep -Fq 'TaskerPluginRunnerConditionState' "$condition_plugin"
+grep -Fq 'TaskerPluginRunnerCondition.requestQuery' "$condition_publisher"
+grep -Fq 'canonicalProgressBucket' "$condition_publisher"
+grep -Fq 'activeSignals' "$condition_store"
+grep -Fq 'terminalHistory' "$condition_store"
+grep -Fq 'remoteAvailability' "$condition_store"
+grep -Fq 'driveState' "$condition_store"
+
+grep -Fq 'taskerConditionPublisher?.operationStarted' "$coordinator"
+grep -Fq 'taskerConditionPublisher?.operationProgress' "$coordinator"
+grep -Fq 'taskerConditionPublisher?.operationTerminal' "$coordinator"
+grep -Fq 'taskerConditionPublisher?.operationInterrupted' "$coordinator"
+grep -Fq 'taskerConditionPublisher?.driveNeedsAuthorization' "$drive_manager"
+grep -Fq 'taskerConditionPublisher?.driveConnected' "$drive_manager"
+grep -Fq 'SharedPreferencesBkxTaskerConditionStore' "$graph"
+
+# Signals must remain metadata-only: never add credential fields to the condition DTO/store.
+if grep -Eiq '(val|var)[[:space:]]+(accessToken|refreshToken|clientSecret|capabilityToken|taskerToken|password)' "$condition_contract" "$condition_store" "$condition_publisher"; then
+  echo 'Tasker Event/State signal contract must not contain credential/capability fields.' >&2
+  exit 1
+fi
+# Canonical milestones are required so a 24% -> 26% jump still triggers a 25% profile.
+grep -Fq '((it.coerceIn(0.0, 1.0) * 100.0).toInt() / 5) * 5' "$condition_store"
+grep -Fq 'assertEquals(25, BkxTaskerConditionMatcher.canonicalProgressBucket(0.26))' "$condition_test"
+# Existing Action receiver remains present and the library Action components are removed.
+grep -Fq 'android:name=".automation.BkxAutomationReceiver"' "$manifest"
+grep -Fq 'com.twofortyfouram.locale.intent.action.FIRE_SETTING' "$manifest"
+
+for token in 'BKX Event' 'BKX State' 'Google Drive connected' 'Remote unavailable' '%bkx_event' '%bkx_state'; do
+  grep -Fq "$token" "$docs" || { echo "Tasker Event/State docs missing $token" >&2; exit 1; }
+done
+
+echo 'BKX Android Tasker Event/State condition contract: PASS'

@@ -92,3 +92,7 @@ Release validation also requires `verifyBkx16KbNativePageSizeContract`. It build
 The same packaged Go protocol-v1 runtime powers normal app execution and the explicit libsu UID-0 route. Rclone is a separate pinned Android ARM64 executable boundary and does not replace the BKX engine.
 
 For native Termux builds, compiler selection is probe-driven. A candidate that fails the real Go/cgo Android/arm64 + 16 KiB link probe is rejected and the installer continues to the next lane. The preferred fallback uses native Termux clang with the Gradle-selected NDK r29 sysroot, avoiding unlaunchable glibc-hosted NDK compiler binaries while preserving the Android API/ABI link environment.
+
+### Tasker Event / State conditions
+
+`verifyBkxAutomationProductContract` also seals the bidirectional condition surface. It requires the pinned Tasker condition library, distinct Event/State configuration activities, Action-component manifest removal, authoritative coordinator and Google Drive publisher hooks, canonical progress buckets, bounded redacted condition state, all promised Event/State selectors, and the `%bkx_*` output-variable contract. `testDebugUnitTest` covers wildcard/remote/progress matching; `lintDebug` and `bkxAndroidReleaseSeal` remain release blockers.

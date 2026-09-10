@@ -129,6 +129,16 @@ object RepositoryRequestBuilder {
     fun retentionApply(requestId: String, repositoryId: String, dryRun: Boolean = true, confirm: Boolean = false): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId, operation = OPERATION_RETENTION_APPLY, payload = buildJsonObject { put("repository_id", requireRepositoryIdValue(repositoryId)); put("dry_run", dryRun); put("confirm", confirm) },
     )
+    fun retentionApply(requestId: String, repository: RepositoryDefinition, dryRun: Boolean = true, confirm: Boolean = false): BridgeRequestEnvelope = BridgeRequestEnvelope(
+        requestId = requestId,
+        operation = OPERATION_RETENTION_APPLY,
+        payload = buildJsonObject {
+            put("repository_id", requireRepositoryIdValue(repository.repositoryId))
+            put("repository_backend", repository.backend)
+            put("dry_run", dryRun)
+            put("confirm", confirm)
+        },
+    )
 
     private fun repositoryRefRequest(requestId: String, operation: String, repository: RepositoryDefinition) = BridgeRequestEnvelope(requestId = requestId, operation = operation, payload = repositoryPayload(repository) {})
     private fun repositoryIdRequest(requestId: String, operation: String, repositoryId: String) = BridgeRequestEnvelope(requestId = requestId, operation = operation, payload = buildJsonObject { put("repository_id", requireRepositoryIdValue(repositoryId)) })

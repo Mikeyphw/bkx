@@ -2,6 +2,8 @@ package com.mikeyphw.bkx.android.embedded
 
 import android.content.Context
 import android.os.Build
+import android.os.Environment
+import com.mikeyphw.bkx.android.core.state.BkxSharedStateContract
 import java.io.BufferedWriter
 import java.io.File
 import java.io.OutputStreamWriter
@@ -37,6 +39,7 @@ class GoNativeGateway(
 
     @Volatile private var process: Process? = null
     @Volatile private var writer: BufferedWriter? = null
+    @Volatile private var sessionStateRoot: String? = null
 
     override fun isAvailable(): Boolean =
         Build.SUPPORTED_ABIS.any { it == ABI } && runtimeFile().let { it.isFile && it.canExecute() }
@@ -81,9 +84,17 @@ class GoNativeGateway(
     }
 
     private fun ensureSession(): BufferedWriter = synchronized(stateLock) {
+        val desiredStateRoot = desiredStateRoot()
         val current = process
         val currentWriter = writer
-        if (current != null && isAlive(current) && currentWriter != null) return@synchronized currentWriter
+        if (current != null && isAlive(current) && currentWriter != null && sessionStateRoot == desiredStateRoot.absolutePath) {
+            return@synchronized currentWriter
+        }
+        if (current != null) {
+            writer = null
+            current.destroy()
+            process = null
+        }
 
         val home = appContext.filesDir.resolve("bkx/$stateNamespace/home").apply { mkdirs() }
         val tmp = appContext.cacheDir.resolve("bkx-$stateNamespace-tmp").apply { mkdirs() }
@@ -98,6 +109,7 @@ class GoNativeGateway(
         ).directory(home)
         builder.environment()["HOME"] = home.absolutePath
         builder.environment()["TMPDIR"] = tmp.absolutePath
+        builder.environment()[BkxSharedStateContract.ENVIRONMENT] = desiredStateRoot.absolutePath
         val rcloneConfig = appContext.filesDir.resolve("bkx/rclone/rclone.conf").also { it.parentFile?.mkdirs() }
         builder.environment()["BKX_RCLONE_PATH"] = rcloneRuntimeFile().absolutePath
         builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath
@@ -105,6 +117,7 @@ class GoNativeGateway(
         val startedWriter = BufferedWriter(OutputStreamWriter(started.outputStream, Charsets.UTF_8))
         process = started
         writer = startedWriter
+        sessionStateRoot = desiredStateRoot.absolutePath
         startReader(started)
         startErrorReader(started, stderr)
         startedWriter
@@ -131,6 +144,7 @@ class GoNativeGateway(
                     if (process === started) {
                         process = null
                         writer = null
+                        sessionStateRoot = null
                     }
                 }
             }
@@ -164,6 +178,7 @@ class GoNativeGateway(
         writer = null
         process?.destroy()
         process = null
+        sessionStateRoot = null
         failPending(error)
     }
 
@@ -175,7 +190,30 @@ class GoNativeGateway(
         writer = null
         process?.destroy()
         process = null
+        sessionStateRoot = null
         failPending(IllegalStateException("BKX Go runtime session closed."))
+    }
+
+
+    private fun desiredStateRoot(): File {
+        val sharedAllowed = stateNamespace == ROOT_STATE_NAMESPACE ||
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
+            Environment.isExternalStorageManager()
+        if (!sharedAllowed) {
+            return appContext.filesDir.resolve("bkx/$stateNamespace/home/.local/share/bkx").apply { mkdirs() }
+        }
+        return File(BkxSharedStateContract.ROOT).apply {
+            mkdirs()
+            val marker = resolve(BkxSharedStateContract.MARKER)
+            if (!marker.exists()) {
+                runCatching {
+                    marker.writeText(
+                        """{"schema_version":1,"kind":"${BkxSharedStateContract.MARKER_KIND}","creator":"android"}""" + "\n",
+                        Charsets.UTF_8,
+                    )
+                }
+            }
+        }
     }
 
     private fun runtimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RUNTIME_LIBRARY)
@@ -184,7 +222,8 @@ class GoNativeGateway(
     private companion object {
         const val ABI = "arm64-v8a"
         const val LOCAL_STATE_NAMESPACE = "go-local"
-        val ALLOWED_STATE_NAMESPACES = setOf(LOCAL_STATE_NAMESPACE, "go-root")
+        const val ROOT_STATE_NAMESPACE = "go-root"
+        val ALLOWED_STATE_NAMESPACES = setOf(LOCAL_STATE_NAMESPACE, ROOT_STATE_NAMESPACE)
         const val RUNTIME_LIBRARY = "libbkxgo.so"
         const val RCLONE_RUNTIME_LIBRARY = "libbkxrclone_exec.so"
         const val DEFAULT_TIMEOUT_MS = 20_000L

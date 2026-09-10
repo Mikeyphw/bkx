@@ -20,6 +20,7 @@ import (
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/fsutil"
+	"bkx/internal/jobstore"
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
 	"bkx/internal/remotearchive"
@@ -79,19 +80,29 @@ type StorageLocation struct {
 type Dispatcher struct {
 	RunStore         *runstore.Store
 	Repositories     *repositorystore.Store
+	Jobs             *jobstore.Store
 	StorageLocations []StorageLocation
 }
 
 func New(store *runstore.Store) *Dispatcher {
 	home, _ := os.UserHomeDir()
-	return NewWithRepositories(store, repositorystore.New(repositorystore.DefaultPath(home)))
+	return NewWithStores(
+		store,
+		repositorystore.Default(home),
+		jobstore.Default(home),
+	)
 }
 
 func NewWithRepositories(store *runstore.Store, repositories *repositorystore.Store) *Dispatcher {
-	return &Dispatcher{RunStore: store, Repositories: repositories, StorageLocations: defaultStorageLocations()}
+	home, _ := os.UserHomeDir()
+	return NewWithStores(store, repositories, jobstore.Default(home))
+}
+
+func NewWithStores(store *runstore.Store, repositories *repositorystore.Store, jobs *jobstore.Store) *Dispatcher {
+	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -141,6 +152,22 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.repositoriesShow(p)
 	case "repositories.remove":
 		return d.repositoriesRemove(p)
+	case "jobs.list":
+		return d.jobsList()
+	case "jobs.show":
+		return d.jobsShow(p)
+	case "jobs.create":
+		return d.jobsCreate(p)
+	case "jobs.update":
+		return d.jobsUpdate(p)
+	case "jobs.clone":
+		return d.jobsClone(p)
+	case "jobs.delete":
+		return d.jobsDelete(p)
+	case "jobs.plan":
+		return d.jobsExecute(ctx, p, true)
+	case "jobs.run":
+		return d.jobsExecute(ctx, p, false)
 	case "archive.list":
 		return d.archiveList(ctx, p)
 	case "archive.info":
@@ -374,11 +401,14 @@ func (d *Dispatcher) repositoryInit(ctx OperationContext, p map[string]any) (Res
 
 func repositoryArtifact(def models.RepositoryDefinition) Artifact {
 	metadata := map[string]string{
+		"schema_version": strconv.Itoa(def.SchemaVersion),
 		"repository_id":  def.RepositoryID,
 		"name":           def.Name,
 		"engine":         def.Engine,
 		"backend":        def.Backend,
 		"managed_by_bkx": strconv.FormatBool(def.ManagedByBKX),
+		"created_at":     def.CreatedAt,
+		"updated_at":     def.UpdatedAt,
 	}
 	if def.CredentialRef != nil {
 		metadata["credential_ref"] = *def.CredentialRef

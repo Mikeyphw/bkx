@@ -38,6 +38,7 @@ var commandHandlers = map[string]commandHandler{
 	"snapshot list":       snapshotList,
 	"snapshot restore":    snapshotRestore,
 	"snapshot show":       snapshotShow,
+	"state status":        stateStatus,
 	"retention apply":     retentionApply,
 	"retention clear":     retentionClear,
 	"retention set":       retentionSet,

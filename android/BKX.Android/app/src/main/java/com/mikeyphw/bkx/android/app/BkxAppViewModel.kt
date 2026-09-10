@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
 import com.mikeyphw.bkx.android.app.navigation.ArchiveDetailSection
+import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
@@ -48,8 +49,13 @@ import com.mikeyphw.bkx.android.core.files.FilesystemBrowserEntry
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
 import com.mikeyphw.bkx.android.core.files.FilesystemEntryKind
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
+import com.mikeyphw.bkx.android.core.jobs.SavedJob
+import com.mikeyphw.bkx.android.core.jobs.SavedJobBridgeCodec
+import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
+import com.mikeyphw.bkx.android.core.jobs.SavedJobRequestBuilder
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
+import com.mikeyphw.bkx.android.core.operations.OperationFailureKind
 import com.mikeyphw.bkx.android.core.operations.OperationFailureUiState
 import com.mikeyphw.bkx.android.core.operations.OperationProgressTracker
 import com.mikeyphw.bkx.android.core.operations.OperationReconnectSnapshot
@@ -64,6 +70,11 @@ import com.mikeyphw.bkx.android.core.restore.RestorePreviewSummary
 import com.mikeyphw.bkx.android.core.restore.RestoreRequestBuilder
 import com.mikeyphw.bkx.android.core.restore.RestoreUiState
 import com.mikeyphw.bkx.android.core.restore.toRestorePreviewSummary
+import com.mikeyphw.bkx.android.core.repositories.RepositoryBridgeCodec
+import com.mikeyphw.bkx.android.core.repositories.RepositoryCreateSpec
+import com.mikeyphw.bkx.android.core.repositories.RepositoryDefinition
+import com.mikeyphw.bkx.android.core.repositories.RepositoryRequestBuilder
+import com.mikeyphw.bkx.android.core.repositories.RetentionPolicy
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -107,6 +118,9 @@ data class BkxHomeUiState(
     val isRefreshing: Boolean = false,
     val selectedDestination: BkxDestination = BkxDestination.Home,
     val destinations: List<BkxDestination> = BkxDestination.entries,
+    val backupRoute: BackupRoute = BackupRoute.Overview,
+    val savedJobs: SavedJobsUiState = SavedJobsUiState(),
+    val repositories: RepositoriesUiState = RepositoriesUiState(),
     val archiveDetailSection: ArchiveDetailSection = ArchiveDetailSection.Overview,
     val moreRoute: MoreRoute = MoreRoute.Overview,
     val recentRuns: List<RunSummary> = emptyList(),
@@ -148,6 +162,25 @@ sealed interface BkxHomeEvent {
     data object CloseArchiveDetails : BkxHomeEvent
     data class OpenMoreRoute(val route: MoreRoute) : BkxHomeEvent
     data object CloseMoreRoute : BkxHomeEvent
+
+    data class OpenBackupRoute(val route: BackupRoute) : BkxHomeEvent
+    data object RefreshSavedJobs : BkxHomeEvent
+    data object RefreshRepositories : BkxHomeEvent
+    data class CreateSavedJob(val draft: SavedJobDraft) : BkxHomeEvent
+    data class UpdateSavedJob(val jobId: String, val expectedRevision: Long, val draft: SavedJobDraft) : BkxHomeEvent
+    data class CloneSavedJob(val sourceJobId: String, val targetJobId: String, val name: String) : BkxHomeEvent
+    data class DeleteSavedJob(val jobId: String) : BkxHomeEvent
+    data class PlanSavedJob(val jobId: String) : BkxHomeEvent
+    data class RunSavedJob(val jobId: String) : BkxHomeEvent
+    data class AddRepository(val spec: RepositoryCreateSpec) : BkxHomeEvent
+    data class InitializeRepository(val repositoryId: String) : BkxHomeEvent
+    data class CheckRepository(val repositoryId: String) : BkxHomeEvent
+    data class PreviewRepositoryPrune(val repositoryId: String) : BkxHomeEvent
+    data class PruneRepository(val repositoryId: String) : BkxHomeEvent
+    data class SetRepositoryRetention(val repositoryId: String, val policy: RetentionPolicy) : BkxHomeEvent
+    data class PreviewRetentionApply(val repositoryId: String) : BkxHomeEvent
+    data class ApplyRetention(val repositoryId: String) : BkxHomeEvent
+    data class RemoveRepository(val repositoryId: String) : BkxHomeEvent
 
     data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview) : BkxHomeEvent
@@ -237,6 +270,8 @@ class BkxAppViewModel(
     private val archiveRequestBuilder = ArchiveRequestBuilder()
     private val restoreRequestBuilder = RestoreRequestBuilder()
     private val transferRequestBuilder = TransferRequestBuilder()
+    private val savedJobRequestBuilder = SavedJobRequestBuilder
+    private val repositoryRequestBuilder = RepositoryRequestBuilder
     private val requestSequence = AtomicLong(0L)
     private val messageSequence = AtomicLong(0L)
     private val _state = MutableStateFlow(BkxHomeUiState())
@@ -256,6 +291,8 @@ class BkxAppViewModel(
         refreshRuns()
         refreshOperations()
         refreshSettings()
+        refreshSavedJobs()
+        refreshRepositories()
     }
 
     fun onEvent(event: BkxHomeEvent) {
@@ -283,6 +320,25 @@ class BkxAppViewModel(
             }
             is BkxHomeEvent.OpenMoreRoute -> _state.update { it.copy(moreRoute = event.route) }
             BkxHomeEvent.CloseMoreRoute -> _state.update { it.copy(moreRoute = MoreRoute.Overview) }
+
+            is BkxHomeEvent.OpenBackupRoute -> _state.update { it.copy(backupRoute = event.route) }
+            BkxHomeEvent.RefreshSavedJobs -> refreshSavedJobs()
+            BkxHomeEvent.RefreshRepositories -> refreshRepositories()
+            is BkxHomeEvent.CreateSavedJob -> createSavedJob(event.draft)
+            is BkxHomeEvent.UpdateSavedJob -> updateSavedJob(event.jobId, event.expectedRevision, event.draft)
+            is BkxHomeEvent.CloneSavedJob -> cloneSavedJob(event.sourceJobId, event.targetJobId, event.name)
+            is BkxHomeEvent.DeleteSavedJob -> deleteSavedJob(event.jobId)
+            is BkxHomeEvent.PlanSavedJob -> executeSavedJob(event.jobId, plan = true)
+            is BkxHomeEvent.RunSavedJob -> executeSavedJob(event.jobId, plan = false)
+            is BkxHomeEvent.AddRepository -> addRepository(event.spec)
+            is BkxHomeEvent.InitializeRepository -> initializeRepository(event.repositoryId)
+            is BkxHomeEvent.CheckRepository -> checkRepository(event.repositoryId)
+            is BkxHomeEvent.PreviewRepositoryPrune -> pruneRepository(event.repositoryId, dryRun = true)
+            is BkxHomeEvent.PruneRepository -> pruneRepository(event.repositoryId, dryRun = false)
+            is BkxHomeEvent.SetRepositoryRetention -> setRepositoryRetention(event.repositoryId, event.policy)
+            is BkxHomeEvent.PreviewRetentionApply -> applyRetention(event.repositoryId, dryRun = true)
+            is BkxHomeEvent.ApplyRetention -> applyRetention(event.repositoryId, dryRun = false)
+            is BkxHomeEvent.RemoveRepository -> removeRepository(event.repositoryId)
 
             is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
                 current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
@@ -653,21 +709,34 @@ class BkxAppViewModel(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         feedbackDestination: BkxDestination? = null,
+        onFailure: (OperationFailureUiState) -> Unit = {},
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
         if (requestUsesManagedGoogleDrive(request) && googleDriveAuthorizationManager != null) {
             authorizeGoogleDriveForOperation { authorized ->
-                if (authorized) executePreparedRequest(request, recordInHistory, feedbackDestination, onResult)
+                if (authorized) {
+                    executePreparedRequest(request, recordInHistory, feedbackDestination, onFailure, onResult)
+                } else {
+                    onFailure(
+                        OperationFailureUiState(
+                            kind = OperationFailureKind.PermissionDenied,
+                            code = "google_drive_authorization_required",
+                            title = "Google Drive authorization required",
+                            message = "Reconnect Google Drive before running this operation.",
+                        ),
+                    )
+                }
             }
             return
         }
-        executePreparedRequest(request, recordInHistory, feedbackDestination, onResult)
+        executePreparedRequest(request, recordInHistory, feedbackDestination, onFailure, onResult)
     }
 
     private fun executePreparedRequest(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         feedbackDestination: BkxDestination? = null,
+        onFailure: (OperationFailureUiState) -> Unit = {},
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
         val startedAt = System.currentTimeMillis()
@@ -698,6 +767,7 @@ class BkxAppViewModel(
                     if (recordInHistory) refreshRuns()
                 }
                 is OperationOutcome.Failed -> {
+                    onFailure(outcome.failure)
                     if (feedbackDestination != null) {
                         updateOperationFeedback(
                             feedbackDestination,
@@ -742,6 +812,12 @@ class BkxAppViewModel(
         "archive.verify" -> "Archive verification"
         "restore.extract" -> "Restore"
         "transfer.run" -> "Transfer"
+        "jobs.run" -> "Saved job"
+        "jobs.plan" -> "Job plan"
+        "repository.init" -> "Repository initialization"
+        "repository.check" -> "Repository check"
+        "repository.prune" -> "Repository prune"
+        "retention.apply" -> "Retention"
         else -> "BKX operation"
     }
 
@@ -977,6 +1053,241 @@ class BkxAppViewModel(
         val payload = request.payload.toString()
         return payload.contains("rclone://bkx-google-drive/", ignoreCase = true) ||
             payload.contains("\"repository_backend\":\"managed_google_drive\"", ignoreCase = true)
+    }
+
+    private fun refreshSavedJobs() {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(status = ScreenStatus.Loading)) }
+        val request = savedJobRequestBuilder.list(nextRequestId("jobs-list"))
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current ->
+                    current.copy(savedJobs = current.savedJobs.copy(status = ScreenStatus.Error(failure.title, failure.message), actionInProgress = null))
+                }
+            },
+        ) { result ->
+            val jobs = SavedJobBridgeCodec.decodeArtifacts(result.artifacts)
+            _state.update { current ->
+                current.copy(
+                    savedJobs = current.savedJobs.copy(
+                        status = if (jobs.isEmpty()) ScreenStatus.Empty("No saved jobs yet. Create one to replay a backup or transfer without rebuilding its options.") else ScreenStatus.Content,
+                        items = jobs,
+                        actionInProgress = null,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun createSavedJob(draft: SavedJobDraft) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(actionInProgress = "create:${draft.jobId}")) }
+        executeRequest(
+            request = savedJobRequestBuilder.create(nextRequestId("job-create"), draft),
+            recordInHistory = false,
+            onFailure = { failure -> jobActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(lastActionMessage = result.summary, actionInProgress = null)) }
+            refreshSavedJobs()
+        }
+    }
+
+    private fun updateSavedJob(jobId: String, expectedRevision: Long, draft: SavedJobDraft) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(actionInProgress = "update:$jobId")) }
+        executeRequest(
+            request = savedJobRequestBuilder.update(nextRequestId("job-update"), jobId, expectedRevision, draft),
+            recordInHistory = false,
+            onFailure = { failure -> jobActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(lastActionMessage = result.summary, actionInProgress = null)) }
+            refreshSavedJobs()
+        }
+    }
+
+    private fun cloneSavedJob(sourceJobId: String, targetJobId: String, name: String) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(actionInProgress = "clone:$sourceJobId")) }
+        executeRequest(
+            request = savedJobRequestBuilder.clone(nextRequestId("job-clone"), sourceJobId, targetJobId, name),
+            recordInHistory = false,
+            onFailure = { failure -> jobActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(lastActionMessage = result.summary, actionInProgress = null)) }
+            refreshSavedJobs()
+        }
+    }
+
+    private fun deleteSavedJob(jobId: String) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(actionInProgress = "delete:$jobId")) }
+        executeRequest(
+            request = savedJobRequestBuilder.delete(nextRequestId("job-delete"), jobId),
+            recordInHistory = false,
+            onFailure = { failure -> jobActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(lastActionMessage = result.summary, actionInProgress = null)) }
+            refreshSavedJobs()
+        }
+    }
+
+    private fun executeSavedJob(jobId: String, plan: Boolean) {
+        val job = _state.value.savedJobs.items.firstOrNull { it.jobId == jobId } ?: return
+        _state.update { current ->
+            current.copy(savedJobs = current.savedJobs.copy(actionInProgress = if (plan) "plan:$jobId" else "run:$jobId"))
+        }
+        val backendHint = job.operation.repositoryRef?.let { repositoryId ->
+            _state.value.repositories.items.firstOrNull { it.repositoryId == repositoryId }?.backend
+        }
+        val request = if (plan) {
+            savedJobRequestBuilder.plan(nextRequestId("job-plan"), jobId, backendHint)
+        } else {
+            savedJobRequestBuilder.run(nextRequestId("job-run"), jobId, backendHint)
+        }
+        executeRequest(
+            request = request,
+            recordInHistory = !plan,
+            feedbackDestination = BkxDestination.Backup,
+            onFailure = { failure -> jobActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(lastActionMessage = result.summary, actionInProgress = null)) }
+            if (!plan) refreshRuns()
+        }
+    }
+
+    private fun jobActionFailure(failure: OperationFailureUiState) {
+        _state.update { current ->
+            current.copy(
+                savedJobs = current.savedJobs.copy(actionInProgress = null, lastActionMessage = failure.message),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
+            )
+        }
+    }
+
+    private fun refreshRepositories() {
+        _state.update { current -> current.copy(repositories = current.repositories.copy(status = ScreenStatus.Loading)) }
+        executeRequest(
+            request = repositoryRequestBuilder.list(nextRequestId("repositories-list")),
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(repositories = current.repositories.copy(status = ScreenStatus.Error(failure.title, failure.message), actionInProgress = null)) }
+            },
+        ) { result ->
+            val repositories = RepositoryBridgeCodec.decodeArtifacts(result.artifacts)
+            _state.update { current ->
+                current.copy(
+                    repositories = current.repositories.copy(
+                        status = if (repositories.isEmpty()) ScreenStatus.Empty("No incremental repositories yet. Add a local, rclone, or BKX-managed Google Drive repository.") else ScreenStatus.Content,
+                        items = repositories,
+                        actionInProgress = null,
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun addRepository(spec: RepositoryCreateSpec) {
+        _state.update { current -> current.copy(repositories = current.repositories.copy(actionInProgress = "add:${spec.repositoryId}")) }
+        executeRequest(
+            request = repositoryRequestBuilder.add(nextRequestId("repository-add"), spec),
+            recordInHistory = false,
+            onFailure = { failure -> repositoryActionFailure(spec.repositoryId, failure) },
+        ) { result ->
+            repositoryActionSuccess(spec.repositoryId, result.summary)
+            refreshRepositories()
+        }
+    }
+
+    private fun initializeRepository(repositoryId: String) = withRepository(repositoryId) { repository ->
+        repositoryOperation(repository, "init", repositoryRequestBuilder.initialize(nextRequestId("repository-init"), repository), recordInHistory = true)
+    }
+
+    private fun checkRepository(repositoryId: String) = withRepository(repositoryId) { repository ->
+        repositoryOperation(repository, "check", repositoryRequestBuilder.check(nextRequestId("repository-check"), repository), recordInHistory = true)
+    }
+
+    private fun pruneRepository(repositoryId: String, dryRun: Boolean) = withRepository(repositoryId) { repository ->
+        repositoryOperation(
+            repository,
+            if (dryRun) "prune-preview" else "prune",
+            repositoryRequestBuilder.prune(nextRequestId(if (dryRun) "repository-prune-preview" else "repository-prune"), repository, dryRun = dryRun, confirm = !dryRun),
+            recordInHistory = !dryRun,
+        )
+    }
+
+    private fun setRepositoryRetention(repositoryId: String, policy: RetentionPolicy) {
+        val request = repositoryRequestBuilder.retentionSet(nextRequestId("retention-set"), repositoryId, policy)
+        _state.update { current -> current.copy(repositories = current.repositories.copy(actionInProgress = "retention-set:$repositoryId")) }
+        executeRequest(request, recordInHistory = false, onFailure = { failure -> repositoryActionFailure(repositoryId, failure) }) { result ->
+            repositoryActionSuccess(repositoryId, result.summary)
+            refreshRepositories()
+        }
+    }
+
+    private fun applyRetention(repositoryId: String, dryRun: Boolean) = withRepository(repositoryId) { repository ->
+        repositoryOperation(
+            repository,
+            if (dryRun) "retention-preview" else "retention-apply",
+            repositoryRequestBuilder.retentionApply(nextRequestId(if (dryRun) "retention-preview" else "retention-apply"), repository, dryRun = dryRun, confirm = !dryRun),
+            recordInHistory = !dryRun,
+        )
+    }
+
+    private fun removeRepository(repositoryId: String) {
+        _state.update { current -> current.copy(repositories = current.repositories.copy(actionInProgress = "remove:$repositoryId")) }
+        executeRequest(
+            request = repositoryRequestBuilder.remove(nextRequestId("repository-remove"), repositoryId),
+            recordInHistory = false,
+            onFailure = { failure -> repositoryActionFailure(repositoryId, failure) },
+        ) { result ->
+            repositoryActionSuccess(repositoryId, result.summary)
+            refreshRepositories()
+        }
+    }
+
+    private fun withRepository(repositoryId: String, block: (RepositoryDefinition) -> Unit) {
+        val repository = _state.value.repositories.items.firstOrNull { it.repositoryId == repositoryId }
+        if (repository == null) {
+            _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), "Repository $repositoryId is no longer available.")) }
+            refreshRepositories()
+            return
+        }
+        block(repository)
+    }
+
+    private fun repositoryOperation(repository: RepositoryDefinition, action: String, request: BridgeRequestEnvelope, recordInHistory: Boolean) {
+        val key = "$action:${repository.repositoryId}"
+        _state.update { current -> current.copy(repositories = current.repositories.copy(actionInProgress = key)) }
+        executeRequest(
+            request = request,
+            recordInHistory = recordInHistory,
+            feedbackDestination = BkxDestination.Backup,
+            onFailure = { failure -> repositoryActionFailure(repository.repositoryId, failure) },
+        ) { result ->
+            repositoryActionSuccess(repository.repositoryId, result.summary)
+            refreshRepositories()
+        }
+    }
+
+    private fun repositoryActionSuccess(repositoryId: String, message: String) {
+        _state.update { current ->
+            current.copy(
+                repositories = current.repositories.copy(
+                    actionInProgress = null,
+                    messages = current.repositories.messages + (repositoryId to message),
+                ),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), message),
+            )
+        }
+    }
+
+    private fun repositoryActionFailure(repositoryId: String, failure: OperationFailureUiState) {
+        _state.update { current ->
+            current.copy(
+                repositories = current.repositories.copy(
+                    actionInProgress = null,
+                    messages = current.repositories.messages + (repositoryId to failure.message),
+                ),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
+            )
+        }
     }
 
     private fun refreshBackend() {

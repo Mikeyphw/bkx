@@ -85,8 +85,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		stdout:       stdout,
 		stderr:       stderr,
 		render:       renderer{json: globals.JSON, stdout: stdout, stderr: stderr},
-		jobs:         jobstore.New(jobstore.DefaultPath(home)),
-		repositories: repositorystore.New(repositorystore.DefaultPath(home)),
+		jobs:         jobstore.Default(home),
+		repositories: repositorystore.Default(home),
 	}
 	if cfg.RunHistoryEnabled {
 		store, storeErr := runstore.New(runstore.DefaultPath(home), cfg.RunHistoryLimit, true)
@@ -247,6 +247,7 @@ Commands:
   repository Local and remote backup repositories
   snapshot  Incremental snapshot lifecycle
   retention Snapshot retention policies
+  state     Shared control-plane state
   tools     Tool management
   transfer  Transfer operations
   ui        Optional user interfaces
@@ -341,6 +342,13 @@ Commands:
   replay
   show
 `,
+	"state": `Usage: bkx state COMMAND [ARGS]...
+
+Shared control-plane state
+
+Commands:
+  status
+`,
 	"tools": `Usage: bkx tools COMMAND [ARGS]...
 
 Tool management
@@ -407,6 +415,7 @@ var LeafHelp = map[string]string{
 	"retention show":      "Usage: bkx retention show REPOSITORY_ID\n",
 	"retention clear":     "Usage: bkx retention clear REPOSITORY_ID\n",
 	"retention apply":     "Usage: bkx retention apply [OPTIONS] REPOSITORY_ID\n",
+	"state status":        "Usage: bkx state status\n",
 	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
 	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",

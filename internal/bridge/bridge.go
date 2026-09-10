@@ -152,6 +152,10 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"repository.check",
 		"repository.prune.explicit",
 		"retention.policy",
+		"jobs.shared_store",
+		"jobs.crud",
+		"jobs.run",
+		"jobs.plan",
 	)
 	if rcloneops.Available() {
 		caps = append(caps,

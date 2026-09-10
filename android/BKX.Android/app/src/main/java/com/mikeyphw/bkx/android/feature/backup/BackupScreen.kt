@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.ui.components.BkxDivider
@@ -60,6 +61,29 @@ import com.mikeyphw.bkx.android.storage.BkxStorageLocations
 
 @Composable
 fun BackupScreen(
+    state: BkxHomeUiState,
+    onEvent: (BkxHomeEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(selected = state.backupRoute == BackupRoute.Overview, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Overview)) }, label = { Text("Backup now") })
+            FilterChip(selected = state.backupRoute == BackupRoute.Jobs, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Jobs)) }, label = { Text("Jobs") })
+            FilterChip(selected = state.backupRoute == BackupRoute.Repositories, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Repositories)) }, label = { Text("Repositories") })
+        }
+        when (state.backupRoute) {
+            BackupRoute.Overview -> BackupCreateScreen(state, onEvent, Modifier.weight(1f))
+            BackupRoute.Jobs -> SavedJobsScreen(state, onEvent, Modifier.weight(1f))
+            BackupRoute.Repositories -> RepositoriesScreen(state, onEvent, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun BackupCreateScreen(
     state: BkxHomeUiState,
     onEvent: (BkxHomeEvent) -> Unit,
     modifier: Modifier = Modifier,

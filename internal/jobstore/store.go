@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
 	"bkx/internal/berror"
 	"bkx/internal/models"
+	"bkx/internal/statepaths"
 )
 
 const documentSchemaVersion = 2
@@ -40,16 +42,22 @@ type legacySavedJobV1 struct {
 }
 
 type Store struct {
-	Path string
-	Now  func() time.Time
+	Path       string
+	LegacyPath string
+	Now        func() time.Time
 }
 
 func New(path string) *Store {
 	return &Store{Path: path, Now: time.Now}
 }
 
+func Default(home string) *Store {
+	path := statepaths.JobStorePath(home)
+	return &Store{Path: path, LegacyPath: statepaths.LegacyJobStorePath(home), Now: time.Now}
+}
+
 func DefaultPath(home string) string {
-	return filepath.Join(home, ".local", "share", "bkx", "jobs", "jobs.json")
+	return statepaths.JobStorePath(home)
 }
 
 func (s *Store) LockPath() string { return s.Path + ".lock" }
@@ -70,6 +78,11 @@ func (s *Store) withLock(fn func() error) error {
 		return berror.WrapExternal("locking saved jobs", s.LockPath(), "filesystem", err)
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if strings.TrimSpace(s.LegacyPath) != "" {
+		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
+			return berror.WrapExternal("seeding shared saved jobs from legacy state", s.LegacyPath, "filesystem", err)
+		}
+	}
 	return fn()
 }
 

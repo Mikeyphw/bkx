@@ -245,6 +245,8 @@ Commands:
   job       Saved and replayable operations
   run       View and replay run history
   repository Local and remote backup repositories
+  snapshot  Incremental snapshot lifecycle
+  retention Snapshot retention policies
   tools     Tool management
   transfer  Transfer operations
   ui        Optional user interfaces
@@ -284,9 +286,32 @@ Backup repositories
 
 Commands:
   add
+  check
   init
   list
+  prune
   remove
+  show
+`,
+	"snapshot": `Usage: bkx snapshot COMMAND [ARGS]...
+
+Incremental snapshot lifecycle
+
+Commands:
+  diff
+  forget
+  list
+  restore
+  show
+`,
+	"retention": `Usage: bkx retention COMMAND [ARGS]...
+
+Snapshot retention policies
+
+Commands:
+  apply
+  clear
+  set
   show
 `,
 	"job": `Usage: bkx job COMMAND [ARGS]...
@@ -367,10 +392,21 @@ var LeafHelp = map[string]string{
 	"run replay":          "Usage: bkx run replay [OPTIONS] RUN_ID\n",
 	"run show":            "Usage: bkx run show RUN_ID\n",
 	"repository add":      "Usage: bkx repository add [OPTIONS] REPOSITORY_ID\n",
+	"repository check":    "Usage: bkx repository check [OPTIONS] REPOSITORY_ID\n",
 	"repository init":     "Usage: bkx repository init [OPTIONS] [REPOSITORY]\n",
 	"repository list":     "Usage: bkx repository list\n",
+	"repository prune":    "Usage: bkx repository prune [OPTIONS] REPOSITORY_ID\n",
 	"repository remove":   "Usage: bkx repository remove REPOSITORY_ID\n",
 	"repository show":     "Usage: bkx repository show REPOSITORY_ID\n",
+	"snapshot list":       "Usage: bkx snapshot list [OPTIONS]\n",
+	"snapshot show":       "Usage: bkx snapshot show [OPTIONS] SNAPSHOT\n",
+	"snapshot diff":       "Usage: bkx snapshot diff [OPTIONS] SOURCE TARGET\n",
+	"snapshot restore":    "Usage: bkx snapshot restore [OPTIONS] SNAPSHOT\n",
+	"snapshot forget":     "Usage: bkx snapshot forget [OPTIONS] SNAPSHOT_ID\n",
+	"retention set":       "Usage: bkx retention set [OPTIONS] REPOSITORY_ID\n",
+	"retention show":      "Usage: bkx retention show REPOSITORY_ID\n",
+	"retention clear":     "Usage: bkx retention clear REPOSITORY_ID\n",
+	"retention apply":     "Usage: bkx retention apply [OPTIONS] REPOSITORY_ID\n",
 	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
 	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",

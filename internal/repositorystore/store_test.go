@@ -96,3 +96,25 @@ func TestStoreRejectsDuplicateAndSupportsDelete(t *testing.T) {
 		t.Fatalf("second delete=%v err=%v", deleted, err)
 	}
 }
+
+func TestRepositoryRetentionRoundTripIsDeepCopied(t *testing.T) {
+	store := New(filepath.Join(t.TempDir(), "repositories.json"))
+	keep := 7
+	created, err := store.Create(models.RepositoryDefinition{RepositoryID: "phone", Name: "Phone", Engine: models.BackupEngineRestic, Backend: models.RepositoryBackendLocal, Location: filepath.Join(t.TempDir(), "repo")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created.Retention = &models.RetentionPolicy{SchemaVersion: 1, KeepDaily: &keep}
+	updated, err := store.Update("phone", created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*updated.Retention.KeepDaily = 99
+	loaded, err := store.Resolve("phone")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Retention == nil || loaded.Retention.KeepDaily == nil || *loaded.Retention.KeepDaily != 7 {
+		t.Fatalf("loaded=%+v", loaded.Retention)
+	}
+}

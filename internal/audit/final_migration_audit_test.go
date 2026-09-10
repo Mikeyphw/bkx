@@ -120,8 +120,19 @@ func TestGO19RoadmapAndFrozenContractAudit(t *testing.T) {
 	if cli.CommandNodeCount != audit.Compatibility.CLI.CommandNodes || cli.LeafCommandCount != audit.Compatibility.CLI.LeafCommands || len(cli.RootParameters) != audit.Compatibility.CLI.RootParameterFamilies {
 		t.Fatalf("CLI audit mismatch: %#v / %#v", cli, audit.Compatibility.CLI)
 	}
-	if !reflect.DeepEqual(services.SupportedOperations(), bridge.SupportedOperations()) {
-		t.Fatal("service and bridge advertised operations differ")
+	serviceOperations := map[string]bool{}
+	for _, operation := range services.SupportedOperations() {
+		serviceOperations[operation] = true
+	}
+	for _, operation := range bridge.SupportedOperations() {
+		if !serviceOperations[operation] {
+			t.Fatalf("frozen bridge operation lost service ownership: %s", operation)
+		}
+	}
+	for _, operation := range bridge.ExtensionOperations() {
+		if !serviceOperations[operation] {
+			t.Fatalf("bridge extension is not service-backed: %s", operation)
+		}
 	}
 	if len(bridge.SupportedOperations()) != audit.Compatibility.Bridge.AdvertisedOperations {
 		t.Fatalf("advertised operations=%d", len(bridge.SupportedOperations()))

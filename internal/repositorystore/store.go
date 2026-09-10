@@ -155,6 +155,7 @@ func cloneRepository(in models.RepositoryDefinition) models.RepositoryDefinition
 		value := *in.CredentialRef
 		out.CredentialRef = &value
 	}
+	out.Retention = models.CloneRetentionPolicy(in.Retention)
 	return out
 }
 
@@ -180,6 +181,19 @@ func NormalizeDefinition(def models.RepositoryDefinition) (models.RepositoryDefi
 	if def.CredentialRef != nil {
 		value := strings.TrimSpace(*def.CredentialRef)
 		def.CredentialRef = &value
+	}
+	if def.Retention != nil {
+		policy := models.CloneRetentionPolicy(def.Retention)
+		policy.SchemaVersion = models.RetentionPolicySchemaVersion
+		policy.GroupBy = strings.TrimSpace(policy.GroupBy)
+		if policy.KeepWithin != nil {
+			value := strings.TrimSpace(*policy.KeepWithin)
+			policy.KeepWithin = &value
+		}
+		for i := range policy.KeepTags {
+			policy.KeepTags[i] = strings.TrimSpace(policy.KeepTags[i])
+		}
+		def.Retention = policy
 	}
 	switch def.Backend {
 	case models.RepositoryBackendLocal:

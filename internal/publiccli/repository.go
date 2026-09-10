@@ -220,3 +220,66 @@ func repositoryInit(c *appContext, args []string) int {
 	}
 	return renderResult(c, result, "repository")
 }
+
+func repositoryCheck(c *appContext, args []string) int {
+	specs := map[string]optionSpec{
+		"--read-data":        {Key: "read_data", Kind: optionBoolTrue},
+		"--read-data-subset": {Key: "read_data_subset", Kind: optionValue},
+	}
+	a, ok := parseFor(c, "repository check", args, specs)
+	if !ok {
+		return berror.ExitOK
+	}
+	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
+		usageError(c.stderr, err)
+		return berror.ExitUsage
+	}
+	def, code := getRepository(c, a.Positionals[0])
+	if def == nil {
+		return code
+	}
+	readData := false
+	if v, ok := a.triBool("read_data"); ok && v != nil {
+		readData = *v
+	}
+	subset, _ := a.stringValue("read_data_subset")
+	result, err := resticops.CheckRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.CheckOptions{ReadData: readData, ReadDataSubset: subset}, resticops.Options{})
+	if err != nil {
+		return commandErr(c, err)
+	}
+	return renderResult(c, result, "repository_check")
+}
+
+func repositoryPrune(c *appContext, args []string) int {
+	specs := map[string]optionSpec{
+		"--confirm":         {Key: "confirm", Kind: optionBoolTrue},
+		"--max-unused":      {Key: "max_unused", Kind: optionValue},
+		"--max-repack-size": {Key: "max_repack_size", Kind: optionValue},
+	}
+	a, ok := parseFor(c, "repository prune", args, specs)
+	if !ok {
+		return berror.ExitOK
+	}
+	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
+		usageError(c.stderr, err)
+		return berror.ExitUsage
+	}
+	def, code := getRepository(c, a.Positionals[0])
+	if def == nil {
+		return code
+	}
+	confirm := false
+	if v, ok := a.triBool("confirm"); ok && v != nil {
+		confirm = *v
+	}
+	if !c.globals.DryRun && !confirm {
+		return commandErr(c, berror.Validation("repository prune requires --confirm unless --dry-run is active", map[string]any{"action": "Run with --dry-run first, then rerun with --confirm."}))
+	}
+	maxUnused, _ := a.stringValue("max_unused")
+	maxRepack, _ := a.stringValue("max_repack_size")
+	result, err := resticops.PruneRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.PruneOptions{DryRun: c.globals.DryRun, MaxUnused: maxUnused, MaxRepackSize: maxRepack}, resticops.Options{})
+	if err != nil {
+		return commandErr(c, err)
+	}
+	return renderResult(c, result, "repository_prune")
+}

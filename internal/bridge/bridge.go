@@ -146,7 +146,12 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"archive.split",
 		"filesystem.direct",
 		"backup.snapshot",
+		"snapshot.lifecycle",
+		"snapshot.restore.safe",
 		"repository.named",
+		"repository.check",
+		"repository.prune.explicit",
+		"retention.policy",
 	)
 	if rcloneops.Available() {
 		caps = append(caps,

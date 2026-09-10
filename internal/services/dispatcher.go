@@ -91,7 +91,7 @@ func NewWithRepositories(store *runstore.Store, repositories *repositorystore.St
 	return &Dispatcher{RunStore: store, Repositories: repositories, StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.init", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -111,6 +111,28 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.backupSnapshot(ctx, p)
 	case "repository.init":
 		return d.repositoryInit(ctx, p)
+	case "repository.check":
+		return d.repositoryCheck(ctx, p)
+	case "repository.prune":
+		return d.repositoryPrune(ctx, p)
+	case "snapshots.list":
+		return d.snapshotsList(ctx, p)
+	case "snapshots.show":
+		return d.snapshotsShow(ctx, p)
+	case "snapshots.diff":
+		return d.snapshotsDiff(ctx, p)
+	case "snapshots.restore":
+		return d.snapshotsRestore(ctx, p)
+	case "snapshots.forget":
+		return d.snapshotsForget(ctx, p)
+	case "retention.set":
+		return d.retentionSet(p)
+	case "retention.show":
+		return d.retentionShow(p)
+	case "retention.clear":
+		return d.retentionClear(p)
+	case "retention.apply":
+		return d.retentionApply(ctx, p)
 	case "repositories.add":
 		return d.repositoriesAdd(p)
 	case "repositories.list":
@@ -360,6 +382,11 @@ func repositoryArtifact(def models.RepositoryDefinition) Artifact {
 	}
 	if def.CredentialRef != nil {
 		metadata["credential_ref"] = *def.CredentialRef
+	}
+	if def.Retention != nil {
+		if raw, err := json.Marshal(def.Retention); err == nil {
+			metadata["retention"] = string(raw)
+		}
 	}
 	return Artifact{Label: "repository", Path: def.Location, Metadata: metadata}
 }

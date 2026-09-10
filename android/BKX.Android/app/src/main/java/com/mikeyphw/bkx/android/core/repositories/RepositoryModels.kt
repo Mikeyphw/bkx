@@ -14,6 +14,37 @@ enum class RepositoryBackendKind(val wireValue: String) {
     @SerialName("managed_google_drive") ManagedGoogleDrive("managed_google_drive"),
 }
 
+
+@Serializable
+data class RetentionPolicy(
+    @SerialName("schema_version") val schemaVersion: Int = 1,
+    @SerialName("keep_last") val keepLast: Int? = null,
+    @SerialName("keep_hourly") val keepHourly: Int? = null,
+    @SerialName("keep_daily") val keepDaily: Int? = null,
+    @SerialName("keep_weekly") val keepWeekly: Int? = null,
+    @SerialName("keep_monthly") val keepMonthly: Int? = null,
+    @SerialName("keep_yearly") val keepYearly: Int? = null,
+    @SerialName("keep_within") val keepWithin: String? = null,
+    @SerialName("keep_tags") val keepTags: List<String> = emptyList(),
+    @SerialName("group_by") val groupBy: String = "",
+) {
+    init {
+        require(schemaVersion == 1) { "unsupported retention schema version" }
+        listOf(keepLast, keepHourly, keepDaily, keepWeekly, keepMonthly, keepYearly).filterNotNull().forEach {
+            require(it >= 1) { "retention counts must be at least 1" }
+        }
+        require(keepWithin == null || keepWithin.isNotBlank()) { "keep_within must not be blank" }
+        require(keepTags.none { it.isBlank() }) { "keep_tags must not contain blank values" }
+        require(
+            listOf(keepLast, keepHourly, keepDaily, keepWeekly, keepMonthly, keepYearly).any { it != null } ||
+                keepWithin != null || keepTags.isNotEmpty(),
+        ) { "retention policy must contain at least one keep rule" }
+        require(groupBy in setOf("", "host,paths", "host,paths,tags", "paths,tags", "host,tags", "paths")) {
+            "unsupported retention group_by"
+        }
+    }
+}
+
 @Serializable
 data class RepositoryCreateSpec(
     @SerialName("repository_id") val repositoryId: String,
@@ -47,6 +78,7 @@ data class RepositoryDefinition(
     @SerialName("managed_by_bkx") val managedByBkx: Boolean,
     @SerialName("created_at") val createdAt: String,
     @SerialName("updated_at") val updatedAt: String,
+    val retention: RetentionPolicy? = null,
 ) {
     init {
         require(schemaVersion == REPOSITORY_DEFINITION_SCHEMA_VERSION) { "unsupported repository schema version" }

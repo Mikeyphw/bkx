@@ -22,16 +22,17 @@ var repositoryIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 // key in a platform-specific secret store. Cloud provider credentials never
 // belong in this document (rclone owns those separately).
 type RepositoryDefinition struct {
-	SchemaVersion int     `json:"schema_version"`
-	RepositoryID  string  `json:"repository_id"`
-	Name          string  `json:"name"`
-	Engine        string  `json:"engine"`
-	Backend       string  `json:"backend"`
-	Location      string  `json:"location"`
-	CredentialRef *string `json:"credential_ref,omitempty"`
-	ManagedByBKX  bool    `json:"managed_by_bkx"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	SchemaVersion int              `json:"schema_version"`
+	RepositoryID  string           `json:"repository_id"`
+	Name          string           `json:"name"`
+	Engine        string           `json:"engine"`
+	Backend       string           `json:"backend"`
+	Location      string           `json:"location"`
+	CredentialRef *string          `json:"credential_ref,omitempty"`
+	ManagedByBKX  bool             `json:"managed_by_bkx"`
+	CreatedAt     string           `json:"created_at"`
+	UpdatedAt     string           `json:"updated_at"`
+	Retention     *RetentionPolicy `json:"retention,omitempty"`
 }
 
 func ValidateRepositoryDefinition(def RepositoryDefinition) error {
@@ -76,6 +77,11 @@ func ValidateRepositoryDefinition(def RepositoryDefinition) error {
 	}
 	if updated.Before(created) {
 		return fmt.Errorf("updated_at must not be before created_at")
+	}
+	if def.Retention != nil {
+		if err := ValidateRetentionPolicy(*def.Retention); err != nil {
+			return fmt.Errorf("invalid retention policy: %w", err)
+		}
 	}
 	return nil
 }

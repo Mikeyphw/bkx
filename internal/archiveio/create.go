@@ -23,9 +23,10 @@ import (
 )
 
 const (
-	zipMethodBzip2 = 12
-	zipMethodLZMA  = 14
-	zipMethodZstd  = 93
+	zipMethodBzip2      = 12
+	zipMethodLZMA       = 14
+	zipMethodZstd       = 93
+	zipMethodZstdLegacy = 20
 )
 
 type CreateResult struct {
@@ -369,6 +370,7 @@ func writeZipArchive(out io.Writer, manifest fsutil.SourceManifest, profile mode
 				w,
 				zstd.WithEncoderLevel(zstd.EncoderLevelFromZstd(profile.Level)),
 				zstd.WithEncoderConcurrency(1),
+				zstd.WithZeroFrames(true),
 			)
 		})
 	}

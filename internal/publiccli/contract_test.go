@@ -132,3 +132,16 @@ func TestInvalidArgumentGolden(t *testing.T) {
 		t.Fatalf("invalid-arg output drifted: got=%q want=%q", stderr.String(), string(want))
 	}
 }
+
+func TestEveryPublicHandlerHasLeafHelpAndEveryLeafHelpHasHandler(t *testing.T) {
+	for command := range commandHandlers {
+		if _, ok := LeafHelp[command]; !ok {
+			t.Errorf("public command handler is missing leaf help: %s", command)
+		}
+	}
+	for command := range LeafHelp {
+		if _, ok := commandHandlers[command]; !ok {
+			t.Errorf("leaf help advertises a command without a handler: %s", command)
+		}
+	}
+}

@@ -25,6 +25,8 @@ func stateStatus(c *appContext, args []string) int {
 		"repositories":         statepaths.RepositoryStorePath(home),
 		"schedules":            statepaths.ScheduleStorePath(home),
 		"execution_control":    statepaths.ExecutionControlPath(home),
+		"run_history":          statepaths.RunHistoryPath(home),
+		"legacy_run_history":   statepaths.LegacyRunHistoryPath(home),
 		"legacy_jobs":          statepaths.LegacyJobStorePath(home),
 		"legacy_repositories":  statepaths.LegacyRepositoryStorePath(home),
 		"android_shared_root":  statepaths.AndroidSharedRoot(),

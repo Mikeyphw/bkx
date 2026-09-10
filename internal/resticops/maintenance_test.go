@@ -41,6 +41,16 @@ func TestListAndResolveSnapshots(t *testing.T) {
 	if err != nil || !strings.HasPrefix(latest.ID, "aaaaaaaa") {
 		t.Fatalf("latest=%+v err=%v", latest, err)
 	}
+
+	fake3 := &fakeRunner{stdout: snapshotJSON()}
+	previous, err := ResolveSnapshot(access, "latest~1", Options{Runner: fake3, Environ: env})
+	if err != nil || !strings.HasPrefix(previous.ID, "bbbbbbbb") {
+		t.Fatalf("latest~1=%+v err=%v", previous, err)
+	}
+	fake4 := &fakeRunner{stdout: snapshotJSON()}
+	if _, err := ResolveSnapshot(access, "latest~2", Options{Runner: fake4, Environ: env}); err == nil {
+		t.Fatal("expected latest~2 to be outside available history")
+	}
 }
 
 func TestRestoreDefaultsToNeverOverwriteAndSupportsDryRun(t *testing.T) {
@@ -58,8 +68,14 @@ func TestRestoreDefaultsToNeverOverwriteAndSupportsDryRun(t *testing.T) {
 
 func TestForgetRejectsLatestAndNeverPrunes(t *testing.T) {
 	access, env := localAccess(t)
-	if _, err := ForgetSnapshot(access, "latest", Options{Runner: &fakeRunner{}, Environ: env}); err == nil {
-		t.Fatal("expected latest rejection")
+	for _, selector := range []string{"latest", "latest~0", "latest~1", " latest~2 ", "latest~-1", "latest~bad"} {
+		fake := &fakeRunner{}
+		if _, err := ForgetSnapshot(access, selector, Options{Runner: fake, Environ: env}); err == nil {
+			t.Fatalf("expected relative selector %q rejection", selector)
+		}
+		if len(fake.calls) != 0 {
+			t.Fatalf("relative selector %q must be rejected before invoking Restic", selector)
+		}
 	}
 	seq := &sequenceRunner{responses: []response{{stdout: snapshotJSON()}, {}}}
 	got, err := ForgetSnapshot(access, "bbbbbbbb", Options{Runner: seq, Environ: env})

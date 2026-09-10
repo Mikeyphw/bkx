@@ -353,6 +353,13 @@ func verifyTar(path string, checksums map[string]string) VerifyResult {
 	for {
 		hdr, nextErr := tr.Next()
 		if errors.Is(nextErr, io.EOF) {
+			// TAR ends before its enclosing compressed frame. Drain that frame
+			// to validate its footer/checksum and detect trailing truncation.
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				result.ChecksumsValid = false
+				result.StructureValid = false
+				result.Errors = append(result.Errors, err.Error())
+			}
 			break
 		}
 		if nextErr != nil {
@@ -384,18 +391,8 @@ func verifyTar(path string, checksums map[string]string) VerifyResult {
 
 func openZipPayload(file *zip.File) (io.ReadCloser, error) {
 	switch file.Method {
-	case zip.Store, zip.Deflate:
+	case zip.Store, zip.Deflate, zipMethodZstd, zipMethodZstdLegacy:
 		return file.Open()
-	case zipMethodZstd:
-		raw, err := file.OpenRaw()
-		if err != nil {
-			return nil, err
-		}
-		decoder, err := zstd.NewReader(raw, zstd.WithDecoderConcurrency(1))
-		if err != nil {
-			return nil, err
-		}
-		return &zstdReadCloser{decoder: decoder}, nil
 	case zipMethodBzip2:
 		raw, err := file.OpenRaw()
 		if err != nil {
@@ -490,6 +487,9 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				return nil, "", berror.WrapExternal("finishing compressed tar archive", path, "go-codec", err)
+			}
 			break
 		}
 		if err != nil {
@@ -637,6 +637,12 @@ func openZipArchive(path string) (*openedZip, error) {
 		_ = parts.Close()
 		return nil, err
 	}
+	// Use archive/zip's checked reader so the ZIP CRC and uncompressed size
+	// are verified in addition to the zstd frame checksum. Read the historical
+	// method 20 for compatibility; new archives always use method 93.
+	decompressor := zstd.ZipDecompressor(zstd.WithDecoderConcurrency(1))
+	zr.RegisterDecompressor(zipMethodZstd, decompressor)
+	zr.RegisterDecompressor(zipMethodZstdLegacy, decompressor)
 	return &openedZip{Reader: zr, parts: parts}, nil
 }
 

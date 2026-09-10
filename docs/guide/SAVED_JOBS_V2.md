@@ -20,13 +20,13 @@ BKX deliberately stores references to credentials rather than credential materia
 
 ## Persistence and revisions
 
-The Go core stores jobs in `~/.local/share/bkx/jobs/jobs.json` by default. Writes are lock-protected, written to a private temporary file, fsynced, and atomically renamed. The file is mode `0600`; its directory is private where BKX creates it.
+The Go core owns the canonical Saved Job V2 store. By default it resolves under `~/.local/share/bkx/jobs/jobs.json`; `BKX_STATE_DIR` can select an explicit control-plane root. On Android/Termux, once the app initializes `/storage/emulated/0/BKX/.state/.bkx-state.json`, both clients resolve jobs, repositories, schedules, execution control, and run history under that shared non-secret root. Writes are lock-protected, written to a private temporary file, fsynced, and atomically renamed.
 
-Android persists the same V2 wire document in app-private SharedPreferences. The process-scoped dependency graph exposes a single `SavedJobStore` for later Jobs UI and Tasker V2 work.
+The Android UI talks to the embedded Go bridge for canonical job CRUD/run/plan operations. The older SharedPreferences job store remains only as a compatibility/migration source; it is not a second authoritative catalog. Credentials, OAuth tokens, rclone configuration, and Restic passwords remain in private/secure storage rather than the shared control plane.
 
 Creating a job produces revision 1. Updating requires the caller's expected current revision. A stale update fails closed instead of silently overwriting a newer editor. Prior revisions remain immutable and queryable until the job is deleted.
 
-Both stores recognize the initial V1 document shape and migrate it to V2. V1 jobs become revision 1 and receive an `OperationSpecV2` wrapper without embedding secrets.
+The V1 document shape migrates to V2 without embedding secrets. Legacy HOME-scoped control-plane documents are seeded non-destructively when the canonical shared document is absent. Run history is union-migrated by `run_id`, so unique historical app and Termux runs converge while legacy files remain intact.
 
 ## Intentional scope of BR01+BR02
 

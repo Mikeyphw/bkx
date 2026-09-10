@@ -2,6 +2,7 @@ package backupops
 
 import (
 	"context"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -223,11 +224,9 @@ func TestCreateRemoteSplitPublishesSidecarsAndFailureRollsBackEarlierParts(t *te
 	remoteRoot := installBackupRemoteFake(t)
 	source := fixture(t)
 	blob := make([]byte, 128*1024)
-	for i := range blob {
-		// Deterministic high-entropy-ish data keeps the compressed archive large
-		// enough to exercise several split parts without relying on random input.
-		blob[i] = byte((i*131 + i*i*17 + (i>>3)*29) & 0xff)
-	}
+	// A seeded PRNG keeps this fixture reproducible and incompressible enough
+	// to exercise multipart publication with the real zstd codec.
+	_, _ = rand.New(rand.NewSource(19)).Read(blob)
 	if err := os.WriteFile(filepath.Join(source, "blob.bin"), blob, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -255,9 +254,9 @@ func TestCreateRemoteSplitPublishesBaseLastAndVerifiesLogicalArchive(t *testing.
 	remoteRoot := installBackupRemoteFake(t)
 	source := fixture(t)
 	blob := make([]byte, 128*1024)
-	for i := range blob {
-		blob[i] = byte((i*197 + i*i*31 + (i>>2)*11) & 0xff)
-	}
+	// A seeded PRNG keeps this fixture reproducible and incompressible enough
+	// to exercise multipart publication with the real zstd codec.
+	_, _ = rand.New(rand.NewSource(19)).Read(blob)
 	if err := os.WriteFile(filepath.Join(source, "blob.bin"), blob, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"bkx/internal/bridge"
 	"bkx/internal/publiccli"
@@ -147,6 +148,11 @@ func jsonEqual(got, want any) bool {
 }
 
 func TestFrozenReferenceOracleCLI(t *testing.T) {
+	// The frozen Python oracle interpreted ZIP DOS timestamps in UTC. Pin the
+	// fixture timezone without changing the production local-time semantics.
+	originalLocal := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = originalLocal })
 	o := loadOracle(t)
 	work, home := setupWorkspace(t)
 	oldHome := os.Getenv("HOME")

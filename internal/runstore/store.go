@@ -14,8 +14,12 @@ import (
 	"time"
 
 	"bkx/internal/berror"
+	"bkx/internal/executioncontrol"
 	"bkx/internal/models"
+	"bkx/internal/statepaths"
 )
+
+const EnvLegacyRunHistory = "BKX_LEGACY_RUN_HISTORY"
 
 var validStatuses = map[string]bool{"started": true, "success": true, "failed": true, "interrupted": true}
 var validOperations = map[string]bool{"backup": true, "archive": true, "transfer": true, "restore": true, "run": true, "unknown": true}
@@ -40,7 +44,81 @@ func New(path string, maxRecords int, recoverStarted bool) (*Store, error) {
 }
 
 func DefaultPath(home string) string {
-	return filepath.Join(home, ".local", "share", "bkx", "runs", "runs.jsonl")
+	return statepaths.RunHistoryPath(home)
+}
+
+func LegacyDefaultPath(home string) string {
+	return statepaths.LegacyRunHistoryPath(home)
+}
+
+type MergeResult struct {
+	Added      int
+	Duplicates int
+}
+
+// MergeLegacyHistory unions unique historical runs into the canonical store.
+// It never deletes or rewrites the legacy file. A duplicate run_id keeps the
+// canonical record so migration is deterministic even if two clients had
+// already converged independently.
+func MergeLegacyHistory(canonicalPath, legacyPath string) (MergeResult, error) {
+	canonicalPath = filepath.Clean(strings.TrimSpace(canonicalPath))
+	legacyPath = filepath.Clean(strings.TrimSpace(legacyPath))
+	if canonicalPath == legacyPath || legacyPath == "." || legacyPath == "" {
+		return MergeResult{}, nil
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		if os.IsNotExist(err) {
+			return MergeResult{}, nil
+		}
+		return MergeResult{}, berror.WrapExternal("reading legacy run history", legacyPath, "filesystem", err)
+	}
+	legacy, err := New(legacyPath, 0, false)
+	if err != nil {
+		return MergeResult{}, err
+	}
+	var incoming []models.RunRecord
+	if err := legacy.withLock(func() error {
+		var loadErr error
+		incoming, loadErr = legacy.loadUnlocked(false)
+		return loadErr
+	}); err != nil {
+		return MergeResult{}, err
+	}
+	if len(incoming) == 0 {
+		return MergeResult{}, nil
+	}
+	canonical, err := New(canonicalPath, 0, false)
+	if err != nil {
+		return MergeResult{}, err
+	}
+	result := MergeResult{}
+	err = canonical.withLock(func() error {
+		records, err := canonical.loadUnlocked(true)
+		if err != nil {
+			return err
+		}
+		seen := make(map[string]struct{}, len(records))
+		for _, record := range records {
+			seen[record.RunID] = struct{}{}
+		}
+		for _, record := range incoming {
+			if _, exists := seen[record.RunID]; exists {
+				result.Duplicates++
+				continue
+			}
+			if err := validateRecord(record); err != nil {
+				return err
+			}
+			records = append(records, record)
+			seen[record.RunID] = struct{}{}
+			result.Added++
+		}
+		if result.Added == 0 {
+			return nil
+		}
+		return canonical.writeUnlocked(records)
+	})
+	return result, err
 }
 func (s *Store) LockPath() string       { return s.Path + ".lock" }
 func (s *Store) QuarantinePath() string { return s.Path + ".corrupt" }
@@ -216,15 +294,33 @@ func (s *Store) applyRetention(records []models.RunRecord) []models.RunRecord {
 }
 
 func (s *Store) RecoverInterrupted() (int, error) {
+	return s.RecoverInterruptedWithControl(nil)
+}
+
+// RecoverInterruptedWithControl preserves operations owned by a live shared
+// execution lease when another CLI or Android client opens the same history.
+func (s *Store) RecoverInterruptedWithControl(control *executioncontrol.Store) (int, error) {
 	changed := 0
 	err := s.withLock(func() error {
 		records, err := s.loadUnlocked(true)
 		if err != nil {
 			return err
 		}
+		active := map[string]bool{}
+		if control != nil {
+			// Read leases while holding the history lock. Acquiring a lease
+			// precedes RecordStart, so a new run cannot slip past this check.
+			leases, err := control.Active()
+			if err != nil {
+				return err
+			}
+			for _, lease := range leases {
+				active[lease.RequestID] = true
+			}
+		}
 		now := nowISO()
 		for i := range records {
-			if records[i].Status == "started" {
+			if records[i].Status == "started" && !active[records[i].RunID] {
 				records[i].Status = "interrupted"
 				records[i].CompletedAt = &now
 				if records[i].ErrorMessage == nil || *records[i].ErrorMessage == "" {

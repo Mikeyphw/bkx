@@ -1,7 +1,10 @@
 package runstore
 
 import (
+	"bkx/internal/executioncontrol"
+	"bkx/internal/models"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -109,5 +112,136 @@ func TestValidationAndNotFound(t *testing.T) {
 	negative := int64(-1)
 	if _, err := s.RecordCompletion("missing", "success", &negative, nil, nil); err == nil {
 		t.Fatal("negative accepted")
+	}
+}
+
+func TestMergeLegacyHistoryUnionsUniqueRunsWithoutDeletingLegacy(t *testing.T) {
+	root := t.TempDir()
+	canonicalPath := root + "/shared/runs.jsonl"
+	legacyPath := root + "/legacy/runs.jsonl"
+	canonical, err := New(canonicalPath, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := New(legacyPath, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := canonical.RecordStart("shared-only", "backup", []string{"/shared"}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.RecordStart("legacy-only", "backup", []string{"/legacy"}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.RecordStart("shared-only", "backup", []string{"/legacy-conflict"}, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := MergeLegacyHistory(canonicalPath, legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Added != 1 || result.Duplicates != 1 {
+		t.Fatalf("merge result=%#v", result)
+	}
+	records, err := canonical.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 2 {
+		t.Fatalf("canonical records=%#v", records)
+	}
+	var shared *models.RunRecord
+	for i := range records {
+		if records[i].RunID == "shared-only" {
+			shared = &records[i]
+		}
+	}
+	if shared == nil || len(shared.SourcePaths) != 1 || shared.SourcePaths[0] != "/shared" {
+		t.Fatalf("canonical duplicate must win: %#v", shared)
+	}
+	legacyRecords, err := legacy.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(legacyRecords) != 2 {
+		t.Fatalf("legacy history changed: %#v", legacyRecords)
+	}
+}
+
+func TestMergeLegacyHistoryNoopsForSameOrMissingPath(t *testing.T) {
+	path := t.TempDir() + "/runs.jsonl"
+	if result, err := MergeLegacyHistory(path, path); err != nil || result.Added != 0 || result.Duplicates != 0 {
+		t.Fatalf("same-path merge result=%#v err=%v", result, err)
+	}
+	if result, err := MergeLegacyHistory(path, t.TempDir()+"/missing.jsonl"); err != nil || result.Added != 0 || result.Duplicates != 0 {
+		t.Fatalf("missing merge result=%#v err=%v", result, err)
+	}
+}
+
+func TestMergeLegacyHistoryDoesNotRewriteMalformedLegacySource(t *testing.T) {
+	root := t.TempDir()
+	canonicalPath := root + "/shared/runs.jsonl"
+	legacyPath := root + "/legacy/runs.jsonl"
+	if err := os.MkdirAll(filepath.Dir(legacyPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	valid := `{"archive_path":null,"bytes_processed":null,"completed_at":null,"destination_path":null,"error_message":null,"files_count":null,"operation":"backup","run_id":"legacy-valid","source_paths":[],"spec_snapshot":null,"started_at":"2026-08-31T12:00:00","status":"started"}`
+	original := []byte(valid + "\nnot-json\n")
+	if err := os.WriteFile(legacyPath, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := MergeLegacyHistory(canonicalPath, legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Added != 1 {
+		t.Fatalf("merge result=%#v", result)
+	}
+	after, err := os.ReadFile(legacyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(original) {
+		t.Fatalf("legacy history was rewritten: %q", after)
+	}
+	if _, err := os.Stat(legacyPath + ".corrupt"); !os.IsNotExist(err) {
+		t.Fatalf("migration must not quarantine/rewrite legacy source; stat err=%v", err)
+	}
+}
+
+func TestSharedRecoveryPreservesLiveLeaseAndRecoversUnownedRun(t *testing.T) {
+	root := t.TempDir()
+	control := &executioncontrol.Store{Path: root + "/execution/control.json"}
+	store, err := New(root+"/runs/runs.jsonl", 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := control.Acquire("active", "backup.snapshot", "job", "repo", "android"); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"active", "orphan"} {
+		if _, err := store.RecordStart(id, "backup", nil, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count, err := store.RecoverInterruptedWithControl(control)
+	if err != nil || count != 1 {
+		t.Fatalf("recovered=%d err=%v", count, err)
+	}
+	active, err := store.Get("active")
+	if err != nil || active.Status != "started" || active.CompletedAt != nil {
+		t.Fatalf("active run changed: %+v err=%v", active, err)
+	}
+	orphan, err := store.Get("orphan")
+	if err != nil || orphan.Status != "interrupted" {
+		t.Fatalf("orphan=%+v err=%v", orphan, err)
+	}
+	if err := control.Release("active"); err != nil {
+		t.Fatal(err)
+	}
+	count, err = store.RecoverInterruptedWithControl(control)
+	if err != nil || count != 1 {
+		t.Fatalf("released run recovery=%d err=%v", count, err)
 	}
 }

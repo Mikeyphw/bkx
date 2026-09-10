@@ -423,7 +423,19 @@ func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Res
 	}
 	arts := []Artifact{}
 	if result.SnapshotID != "" {
-		arts = append(arts, artifact("restic_snapshot", "restic://"+result.Repository+"/snapshots/"+result.SnapshotID, ""))
+		snapshotArtifact := artifact("restic_snapshot", "restic://"+result.Repository+"/snapshots/"+result.SnapshotID, "")
+		reused := result.BytesProcessed - result.DataAdded
+		if reused < 0 {
+			reused = 0
+		}
+		snapshotArtifact.Metadata = map[string]string{
+			"snapshot_id":     result.SnapshotID,
+			"files_processed": strconv.FormatInt(result.FilesProcessed, 10),
+			"bytes_processed": strconv.FormatInt(result.BytesProcessed, 10),
+			"data_added":      strconv.FormatInt(result.DataAdded, 10),
+			"bytes_reused":    strconv.FormatInt(reused, 10),
+		}
+		arts = append(arts, snapshotArtifact)
 	}
 	out := success(fmt.Sprintf("Restic snapshot %s completed.", result.SnapshotID), issues, arts)
 	out.Metrics = &ResultMetrics{FilesTotal: int64Ptr(result.FilesProcessed), BytesTotal: int64Ptr(result.BytesProcessed)}

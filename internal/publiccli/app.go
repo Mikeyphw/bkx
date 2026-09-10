@@ -95,9 +95,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		schedules:    schedulestore.Default(home),
 	}
 	if cfg.RunHistoryEnabled {
-		store, storeErr := runstore.New(runstore.DefaultPath(home), cfg.RunHistoryLimit, true)
+		runHistoryPath := runstore.DefaultPath(home)
+		if _, mergeErr := runstore.MergeLegacyHistory(runHistoryPath, runstore.LegacyDefaultPath(home)); mergeErr != nil {
+			return renderDomainError(ctx.render, globals.Trace, mergeErr)
+		}
+		store, storeErr := runstore.New(runHistoryPath, cfg.RunHistoryLimit, false)
 		if storeErr != nil {
 			return renderDomainError(ctx.render, globals.Trace, storeErr)
+		}
+		if _, recoverErr := store.RecoverInterruptedWithControl(ctx.control); recoverErr != nil {
+			return renderDomainError(ctx.render, globals.Trace, recoverErr)
 		}
 		ctx.store = store
 	}
@@ -306,6 +313,7 @@ Commands:
 Incremental snapshot lifecycle
 
 Commands:
+  browse
   diff
   forget
   list
@@ -429,6 +437,7 @@ var LeafHelp = map[string]string{
 	"repository remove":   "Usage: bkx repository remove REPOSITORY_ID\n",
 	"repository show":     "Usage: bkx repository show REPOSITORY_ID\n",
 	"snapshot list":       "Usage: bkx snapshot list [OPTIONS]\n",
+	"snapshot browse":     "Usage: bkx snapshot browse [OPTIONS] SNAPSHOT\n",
 	"snapshot show":       "Usage: bkx snapshot show [OPTIONS] SNAPSHOT\n",
 	"snapshot diff":       "Usage: bkx snapshot diff [OPTIONS] SOURCE TARGET\n",
 	"snapshot restore":    "Usage: bkx snapshot restore [OPTIONS] SNAPSHOT\n",

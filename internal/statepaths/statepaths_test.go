@@ -89,3 +89,15 @@ func TestCanonicalTermuxHomeRecognitionIsNarrow(t *testing.T) {
 		t.Fatal("temporary HOME must not trigger shared Android state")
 	}
 }
+
+func TestRunHistoryFollowsCanonicalStateResolution(t *testing.T) {
+	home := t.TempDir()
+	shared := filepath.Join(t.TempDir(), "shared")
+	t.Setenv(EnvStateDir, shared)
+	if got, want := RunHistoryPath(home), filepath.Join(shared, "runs", "runs.jsonl"); got != want {
+		t.Fatalf("run history path=%q want=%q", got, want)
+	}
+	if got, want := LegacyRunHistoryPath(home), filepath.Join(home, ".local", "share", "bkx", "runs", "runs.jsonl"); got != want {
+		t.Fatalf("legacy run history path=%q want=%q", got, want)
+	}
+}

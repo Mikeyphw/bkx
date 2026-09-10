@@ -11,6 +11,7 @@ import (
 
 	"bkx/internal/bridge"
 	"bkx/internal/contracts"
+	"bkx/internal/executioncontrol"
 	"bkx/internal/publiccli"
 	"bkx/internal/runstore"
 )
@@ -70,7 +71,23 @@ func optionalRunStore(path string) (*runstore.Store, error) {
 	if path == "-" {
 		return nil, nil
 	}
-	return runstore.New(path, 0, true)
+	if legacy := strings.TrimSpace(os.Getenv(runstore.EnvLegacyRunHistory)); legacy != "" {
+		if _, err := runstore.MergeLegacyHistory(path, legacy); err != nil {
+			return nil, err
+		}
+	}
+	store, err := runstore.New(path, 0, false)
+	if err != nil {
+		return nil, err
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := store.RecoverInterruptedWithControl(executioncontrol.Default(home)); err != nil {
+		return nil, err
+	}
+	return store, nil
 }
 
 type concurrentBridgeCommand struct {

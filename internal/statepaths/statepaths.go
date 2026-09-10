@@ -65,6 +65,14 @@ func ScheduleStorePath(home string) string {
 	return filepath.Join(Resolve(home).Root, "schedules", "schedules.json")
 }
 
+func RunHistoryPath(home string) string {
+	return filepath.Join(Resolve(home).Root, "runs", "runs.jsonl")
+}
+
+func LegacyRunHistoryPath(home string) string {
+	return filepath.Join(LegacyRoot(home), "runs", "runs.jsonl")
+}
+
 func LegacyJobStorePath(home string) string {
 	return filepath.Join(LegacyRoot(home), "jobs", "jobs.json")
 }

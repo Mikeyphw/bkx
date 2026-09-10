@@ -334,6 +334,9 @@ func safeRestoreMembers(archive string, selectors []string) ([]restoreMember, er
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				return nil, berror.WrapExternal("finishing compressed tar archive", archive, "go-codec", err)
+			}
 			break
 		}
 		if err != nil {
@@ -492,6 +495,9 @@ func extractMembersToStage(archive, stage string, members []restoreMember, progr
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
+			if _, err := io.Copy(io.Discard, rc); err != nil {
+				return nil, 0, berror.WrapExternal("finishing compressed tar archive", archive, "go-codec", err)
+			}
 			break
 		}
 		if err != nil {

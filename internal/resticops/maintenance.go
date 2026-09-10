@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -195,6 +196,17 @@ func ResolveSnapshot(spec models.RepositoryAccessSpec, selector string, options 
 	}
 	if value == "latest" {
 		return listed.Snapshots[0], nil
+	}
+	if strings.HasPrefix(value, "latest~") {
+		rawOffset := strings.TrimPrefix(value, "latest~")
+		offset, parseErr := strconv.Atoi(rawOffset)
+		if parseErr != nil || offset < 0 {
+			return models.SnapshotDescriptor{}, berror.Validation("latest snapshot selector must use latest~N with a non-negative integer", map[string]any{"snapshot": value})
+		}
+		if offset >= len(listed.Snapshots) {
+			return models.SnapshotDescriptor{}, berror.NotFound("Snapshot selector is older than the available snapshot history: "+value, map[string]any{"snapshot": value, "available": len(listed.Snapshots)})
+		}
+		return listed.Snapshots[offset], nil
 	}
 	matches := []models.SnapshotDescriptor{}
 	for _, item := range listed.Snapshots {
@@ -494,8 +506,9 @@ func CheckRepository(spec models.RepositoryAccessSpec, check CheckOptions, optio
 
 func ForgetSnapshot(spec models.RepositoryAccessSpec, selector string, options Options) (MaintenanceResult, error) {
 	started := time.Now()
-	if strings.TrimSpace(selector) == "latest" {
-		return MaintenanceResult{}, berror.Validation("BKX refuses 'latest' for snapshot forget; provide an explicit snapshot ID", nil)
+	selector = strings.TrimSpace(selector)
+	if selector == "latest" || strings.HasPrefix(selector, "latest~") {
+		return MaintenanceResult{}, berror.Validation("BKX refuses relative selectors for snapshot forget; provide an explicit snapshot ID", nil)
 	}
 	runner, repository, base, env, err := prepareAccess(spec, options)
 	if err != nil {

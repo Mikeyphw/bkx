@@ -82,12 +82,30 @@ private fun EventEditor(initial: BkxTaskerEventInput, onCancel: () -> Unit, onSa
     var remoteName by remember { mutableStateOf(initial.remoteName) }
     var requestId by remember { mutableStateOf(initial.requestIdPattern) }
     var errorCode by remember { mutableStateOf(initial.errorCode) }
+    var jobId by remember { mutableStateOf(initial.jobId) }
+    var repositoryId by remember { mutableStateOf(initial.repositoryId) }
+    var snapshotId by remember { mutableStateOf(initial.snapshotId) }
     var cadence by remember { mutableStateOf(initial.progressCadence) }
     ConditionScaffold("BKX Event", "Wake a Tasker profile when BKX publishes this event.", onCancel, {
-        onSave(BkxTaskerEventInput(eventType, operation.trim(), remoteFilter, remoteName.trim(), requestId.trim(), errorCode.trim(), cadence))
+        onSave(BkxTaskerEventInput(
+            eventType = eventType,
+            operation = operation.trim(),
+            remoteFilter = remoteFilter,
+            remoteName = remoteName.trim(),
+            requestIdPattern = requestId.trim(),
+            errorCode = errorCode.trim(),
+            jobId = jobId.trim(),
+            repositoryId = repositoryId.trim(),
+            snapshotId = snapshotId.trim(),
+            progressCadence = cadence,
+        ))
     }) {
         Picker("Event", BkxTaskerEventType.fromId(eventType).label, BkxTaskerEventType.entries.map { it.id to it.label }) { eventType = it }
-        FilterFields(operation, { operation = it }, remoteFilter, { remoteFilter = it }, remoteName, { remoteName = it }, requestId, { requestId = it }, errorCode, { errorCode = it })
+        FilterFields(
+            operation, { operation = it }, remoteFilter, { remoteFilter = it }, remoteName, { remoteName = it },
+            requestId, { requestId = it }, errorCode, { errorCode = it },
+            jobId, { jobId = it }, repositoryId, { repositoryId = it }, snapshotId, { snapshotId = it },
+        )
         if (eventType == BkxTaskerEventType.ProgressMilestone.id) {
             Picker("Progress cadence", cadenceLabel(cadence), listOf("recommended" to "Recommended milestones", "every_5" to "Every 5%", "every_10" to "Every 10%", "every_25" to "Every 25%", "every_50" to "Every 50%")) { cadence = it }
         }
@@ -103,11 +121,28 @@ private fun StateEditor(initial: BkxTaskerStateInput, onCancel: () -> Unit, onSa
     var remoteName by remember { mutableStateOf(initial.remoteName) }
     var requestId by remember { mutableStateOf(initial.requestIdPattern) }
     var errorCode by remember { mutableStateOf(initial.errorCode) }
+    var jobId by remember { mutableStateOf(initial.jobId) }
+    var repositoryId by remember { mutableStateOf(initial.repositoryId) }
+    var snapshotId by remember { mutableStateOf(initial.snapshotId) }
     ConditionScaffold("BKX State", "Keep a Tasker profile active while this BKX condition is true.", onCancel, {
-        onSave(BkxTaskerStateInput(stateType, operation.trim(), remoteFilter, remoteName.trim(), requestId.trim(), errorCode.trim()))
+        onSave(BkxTaskerStateInput(
+            stateType = stateType,
+            operation = operation.trim(),
+            remoteFilter = remoteFilter,
+            remoteName = remoteName.trim(),
+            requestIdPattern = requestId.trim(),
+            errorCode = errorCode.trim(),
+            jobId = jobId.trim(),
+            repositoryId = repositoryId.trim(),
+            snapshotId = snapshotId.trim(),
+        ))
     }) {
         Picker("State", BkxTaskerStateType.fromId(stateType).label, BkxTaskerStateType.entries.map { it.id to it.label }) { stateType = it }
-        FilterFields(operation, { operation = it }, remoteFilter, { remoteFilter = it }, remoteName, { remoteName = it }, requestId, { requestId = it }, errorCode, { errorCode = it })
+        FilterFields(
+            operation, { operation = it }, remoteFilter, { remoteFilter = it }, remoteName, { remoteName = it },
+            requestId, { requestId = it }, errorCode, { errorCode = it },
+            jobId, { jobId = it }, repositoryId, { repositoryId = it }, snapshotId, { snapshotId = it },
+        )
         VariablesCard()
     }
 }
@@ -142,6 +177,9 @@ private fun FilterFields(
     remoteName: String, onRemoteName: (String) -> Unit,
     requestId: String, onRequestId: (String) -> Unit,
     errorCode: String, onErrorCode: (String) -> Unit,
+    jobId: String, onJobId: (String) -> Unit,
+    repositoryId: String, onRepositoryId: (String) -> Unit,
+    snapshotId: String, onSnapshotId: (String) -> Unit,
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -152,6 +190,9 @@ private fun FilterFields(
             if (remoteFilter == "rclone") OutlinedTextField(remoteName, onRemoteName, Modifier.fillMaxWidth(), label = { Text("rclone remote name") }, singleLine = true)
             OutlinedTextField(requestId, onRequestId, Modifier.fillMaxWidth(), label = { Text("Request ID pattern") }, placeholder = { Text("nightly-*") }, singleLine = true)
             OutlinedTextField(errorCode, onErrorCode, Modifier.fillMaxWidth(), label = { Text("Error code") }, placeholder = { Text("BKX_*AUTH*") }, singleLine = true)
+            OutlinedTextField(jobId, onJobId, Modifier.fillMaxWidth(), label = { Text("Saved job ID") }, placeholder = { Text("phone-backup") }, singleLine = true)
+            OutlinedTextField(repositoryId, onRepositoryId, Modifier.fillMaxWidth(), label = { Text("Repository ID") }, placeholder = { Text("phone-drive") }, singleLine = true)
+            OutlinedTextField(snapshotId, onSnapshotId, Modifier.fillMaxWidth(), label = { Text("Snapshot ID") }, placeholder = { Text("latest") }, singleLine = true)
         }
     }
 }
@@ -175,6 +216,7 @@ private fun VariablesCard() {
             Text("Tasker variables", style = MaterialTheme.typography.titleMedium)
             Text("%bkx_event • %bkx_state • %bkx_operation • %bkx_request_id • %bkx_status • %bkx_progress", style = MaterialTheme.typography.bodySmall)
             Text("%bkx_files_done/total • %bkx_bytes_done/total • %bkx_archive • %bkx_remote • %bkx_error_code • %bkx_error • %bkx_phase • %bkx_timestamp", style = MaterialTheme.typography.bodySmall)
+            Text("%bkx_job_id • %bkx_run_id • %bkx_repository_id • %bkx_snapshot_id", style = MaterialTheme.typography.bodySmall)
         }
     }
 }

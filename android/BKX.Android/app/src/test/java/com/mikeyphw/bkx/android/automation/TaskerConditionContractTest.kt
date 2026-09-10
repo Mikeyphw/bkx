@@ -38,6 +38,47 @@ class TaskerConditionContractTest {
         ))
     }
 
+
+    @Test
+    fun v2IdentityFiltersMatchSavedJobRepositoryAndSnapshot() {
+        val signal = signal(
+            event = BkxTaskerEventType.SnapshotCreated.id,
+            operation = "jobs.run",
+            requestId = "tasker-job-1-job-run",
+            jobId = "phone-backup",
+            repositoryId = "phone-drive",
+            snapshotId = "a1b2c3d4",
+        )
+        assertTrue(BkxTaskerConditionMatcher.eventMatches(
+            BkxTaskerEventInput(
+                eventType = BkxTaskerEventType.SnapshotCreated.id,
+                jobId = "phone-*",
+                repositoryId = "*-drive",
+                snapshotId = "a1b2*",
+            ), signal,
+        ))
+        assertFalse(BkxTaskerConditionMatcher.eventMatches(
+            BkxTaskerEventInput(eventType = BkxTaskerEventType.SnapshotCreated.id, repositoryId = "offsite"), signal,
+        ))
+    }
+
+    @Test
+    fun v2ConditionOutputPreservesRunIdentity() {
+        val output = signal(
+            event = BkxTaskerEventType.JobCompleted.id,
+            operation = "jobs.run",
+            requestId = "run-123",
+            jobId = "phone-backup",
+            repositoryId = "phone-drive",
+            snapshotId = "snapshot-1",
+        ).copy(runId = "run-123").toOutput()
+
+        assertEquals("phone-backup", output.jobId)
+        assertEquals("run-123", output.runId)
+        assertEquals("phone-drive", output.repositoryId)
+        assertEquals("snapshot-1", output.snapshotId)
+    }
+
     @Test
     fun namedRcloneRemoteFilterDoesNotMatchAnotherRemote() {
         assertTrue(BkxTaskerConditionMatcher.remoteMatches("rclone", "nas", listOf("rclone:nas")))
@@ -58,12 +99,18 @@ class TaskerConditionContractTest {
         requestId: String = "",
         remotes: List<String> = emptyList(),
         errorCode: String = "",
+        jobId: String = "",
+        repositoryId: String = "",
+        snapshotId: String = "",
     ) = BkxTaskerSignal(
         event = event,
         operation = operation,
         requestId = requestId,
         remotes = remotes,
         errorCode = errorCode,
+        jobId = jobId,
+        repositoryId = repositoryId,
+        snapshotId = snapshotId,
         timestampEpochMillis = 1L,
     )
 }

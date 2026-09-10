@@ -20,6 +20,16 @@ enum class BkxTaskerEventType(val id: String, val label: String) {
     ArchiveCreated("archive_created", "Archive created"),
     OperationFailed("operation_failed", "Operation failed"),
     OperationCancelled("operation_cancelled", "Operation cancelled"),
+    JobStarted("job_started", "Saved job started"),
+    JobCompleted("job_completed", "Saved job completed"),
+    JobFailed("job_failed", "Saved job failed"),
+    JobCancelled("job_cancelled", "Saved job cancelled"),
+    SnapshotCreated("snapshot_created", "Snapshot created"),
+    RepositoryCheckPassed("repository_check_passed", "Repository check passed"),
+    RepositoryCheckFailed("repository_check_failed", "Repository check failed"),
+    RepositoryNeedsAttention("repository_needs_attention", "Repository needs attention"),
+    RetentionApplied("retention_applied", "Retention applied"),
+    RepositoryPruned("repository_pruned", "Repository pruned"),
     GoogleDriveAuthorizationRequired("google_drive_authorization_required", "Google Drive authorization required"),
     RemoteUnavailable("remote_unavailable", "Remote unavailable"),
     RemoteRecovered("remote_recovered", "Remote recovered");
@@ -36,6 +46,12 @@ enum class BkxTaskerStateType(val id: String, val label: String) {
     RestoreRunning("restore_running", "Restore running"),
     VerifyRunning("verify_running", "Verify running"),
     TransferRunning("transfer_running", "Transfer running"),
+    JobRunning("job_running", "Saved job running"),
+    RepositoryHealthy("repository_healthy", "Repository healthy"),
+    RepositoryNeedsAttention("repository_needs_attention", "Repository needs attention"),
+    LastJobSucceeded("last_job_succeeded", "Last saved job succeeded"),
+    LastJobFailed("last_job_failed", "Last saved job failed"),
+    LastJobCancelled("last_job_cancelled", "Last saved job cancelled"),
     GoogleDriveConnected("google_drive_connected", "Google Drive connected"),
     GoogleDriveNeedsAuthorization("google_drive_needs_authorization", "Google Drive needs authorization"),
     RemoteAvailable("remote_available", "Remote available"),
@@ -66,6 +82,9 @@ class BkxTaskerEventInput @JvmOverloads constructor(
     @field:TaskerInputField("remote_name", labelResIdName = "tasker_filter_remote_name") var remoteName: String = "",
     @field:TaskerInputField("request_id_pattern", labelResIdName = "tasker_filter_request_id") var requestIdPattern: String = "",
     @field:TaskerInputField("error_code", labelResIdName = "tasker_filter_error_code") var errorCode: String = "",
+    @field:TaskerInputField("job_id", labelResIdName = "tasker_filter_job_id") var jobId: String = "",
+    @field:TaskerInputField("repository_id", labelResIdName = "tasker_filter_repository_id") var repositoryId: String = "",
+    @field:TaskerInputField("snapshot_id", labelResIdName = "tasker_filter_snapshot_id") var snapshotId: String = "",
     @field:TaskerInputField("progress_cadence", labelResIdName = "tasker_progress_cadence") var progressCadence: String = "recommended",
 )
 
@@ -77,6 +96,9 @@ class BkxTaskerStateInput @JvmOverloads constructor(
     @field:TaskerInputField("remote_name", labelResIdName = "tasker_filter_remote_name") var remoteName: String = "",
     @field:TaskerInputField("request_id_pattern", labelResIdName = "tasker_filter_request_id") var requestIdPattern: String = "",
     @field:TaskerInputField("error_code", labelResIdName = "tasker_filter_error_code") var errorCode: String = "",
+    @field:TaskerInputField("job_id", labelResIdName = "tasker_filter_job_id") var jobId: String = "",
+    @field:TaskerInputField("repository_id", labelResIdName = "tasker_filter_repository_id") var repositoryId: String = "",
+    @field:TaskerInputField("snapshot_id", labelResIdName = "tasker_filter_snapshot_id") var snapshotId: String = "",
 )
 
 @TaskerInputRoot
@@ -96,6 +118,10 @@ class BkxTaskerEventUpdate @JvmOverloads constructor(
     @field:TaskerInputField("error") var error: String = "",
     @field:TaskerInputField("phase") var phase: String = "",
     @field:TaskerInputField("timestamp") var timestamp: String = "",
+    @field:TaskerInputField("job_id") var jobId: String = "",
+    @field:TaskerInputField("run_id") var runId: String = "",
+    @field:TaskerInputField("repository_id") var repositoryId: String = "",
+    @field:TaskerInputField("snapshot_id") var snapshotId: String = "",
 )
 
 @TaskerOutputObject
@@ -116,6 +142,10 @@ class BkxTaskerConditionOutput @JvmOverloads constructor(
     @get:TaskerOutputVariable("bkx_error") var error: String? = null,
     @get:TaskerOutputVariable("bkx_phase") var phase: String? = null,
     @get:TaskerOutputVariable("bkx_timestamp") var timestamp: String? = null,
+    @get:TaskerOutputVariable("bkx_job_id") var jobId: String? = null,
+    @get:TaskerOutputVariable("bkx_run_id") var runId: String? = null,
+    @get:TaskerOutputVariable("bkx_repository_id") var repositoryId: String? = null,
+    @get:TaskerOutputVariable("bkx_snapshot_id") var snapshotId: String? = null,
 )
 
 @Serializable
@@ -136,6 +166,10 @@ data class BkxTaskerSignal(
     val phase: String = "",
     val timestampEpochMillis: Long,
     val terminal: Boolean = false,
+    val jobId: String = "",
+    val runId: String = "",
+    val repositoryId: String = "",
+    val snapshotId: String = "",
 )
 
 internal fun BkxTaskerSignal.toUpdate(): BkxTaskerEventUpdate = BkxTaskerEventUpdate(
@@ -154,6 +188,10 @@ internal fun BkxTaskerSignal.toUpdate(): BkxTaskerEventUpdate = BkxTaskerEventUp
     error = error,
     phase = phase,
     timestamp = timestampEpochMillis.toString(),
+    jobId = jobId,
+    runId = runId,
+    repositoryId = repositoryId,
+    snapshotId = snapshotId,
 )
 
 internal fun BkxTaskerEventUpdate.toSignal(): BkxTaskerSignal = BkxTaskerSignal(
@@ -172,7 +210,15 @@ internal fun BkxTaskerEventUpdate.toSignal(): BkxTaskerSignal = BkxTaskerSignal(
     error = error,
     phase = phase,
     timestampEpochMillis = timestamp.toLongOrNull() ?: System.currentTimeMillis(),
-    terminal = event in setOf("operation_completed", "backup_completed", "restore_completed", "verify_completed", "transfer_completed", "operation_failed", "operation_cancelled"),
+    terminal = event in setOf(
+        "operation_completed", "backup_completed", "restore_completed", "verify_completed", "transfer_completed",
+        "operation_failed", "operation_cancelled", "job_completed", "job_failed", "job_cancelled",
+        "snapshot_created", "repository_check_passed", "repository_check_failed", "retention_applied", "repository_pruned",
+    ),
+    jobId = jobId,
+    runId = runId,
+    repositoryId = repositoryId,
+    snapshotId = snapshotId,
 )
 
 internal fun BkxTaskerSignal.toOutput(state: String? = null): BkxTaskerConditionOutput = BkxTaskerConditionOutput(
@@ -188,4 +234,6 @@ internal fun BkxTaskerSignal.toOutput(state: String? = null): BkxTaskerCondition
     remote = remotes.joinToString(",").ifBlank { null },
     errorCode = errorCode.ifBlank { null }, error = error.ifBlank { null },
     phase = phase.ifBlank { null }, timestamp = timestampEpochMillis.toString(),
+    jobId = jobId.ifBlank { null }, runId = runId.ifBlank { null },
+    repositoryId = repositoryId.ifBlank { null }, snapshotId = snapshotId.ifBlank { null },
 )

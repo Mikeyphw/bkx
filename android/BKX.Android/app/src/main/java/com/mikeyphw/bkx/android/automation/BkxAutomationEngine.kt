@@ -24,6 +24,8 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
 import com.mikeyphw.bkx.android.core.operations.OperationRuntimeState
+import com.mikeyphw.bkx.android.core.jobs.SavedJobBridgeCodec
+import com.mikeyphw.bkx.android.core.repositories.RepositoryBridgeCodec
 import com.mikeyphw.bkx.android.core.restore.RestoreDestinationPolicy
 import com.mikeyphw.bkx.android.core.restore.RestoreDestinationSelection
 import com.mikeyphw.bkx.android.core.restore.RestoreDraft
@@ -139,6 +141,12 @@ class BkxAutomationEngine(
                 AutomationAction.ArchiveInfo -> runArchiveInfo(request, progress)
                 AutomationAction.ArchiveBrowse -> runArchiveBrowse(request, progress)
                 AutomationAction.Transfer -> runTransfer(request, progress)
+                AutomationAction.RunSavedJob -> runSavedJob(request, progress)
+                AutomationAction.CreateSnapshot -> runCreateSnapshot(request, progress)
+                AutomationAction.RepositoryCheck -> runRepositoryCheck(request, progress)
+                AutomationAction.RetentionApply -> runRetentionApply(request, progress)
+                AutomationAction.RepositoryPrune -> runRepositoryPrune(request, progress)
+                AutomationAction.SnapshotRestore -> runSnapshotRestore(request, progress)
                 AutomationAction.Cancel -> runCancel(request, progress)
                 AutomationAction.Status -> runStatus(request)
             }
@@ -298,6 +306,102 @@ class BkxAutomationEngine(
         return terminalFromBridge(request, result)
     }
 
+    private suspend fun runSavedJob(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        val repositoryId = resolveJobRepository(request.jobId)
+        if (!repositoryId.isNullOrBlank()) refreshNamedRepository(request, repositoryId)?.let { return it }
+        progress.onStage("Running saved job")
+        val stage = stageId(request.requestId, "job-run")
+        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId.orEmpty()), true)
+            ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request.copy(repositoryId = repositoryId.orEmpty()), result)
+    }
+
+    private suspend fun runCreateSnapshot(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        refreshNamedRepository(request, request.repositoryId)?.let { return it }
+        progress.onStage("Creating snapshot")
+        val stage = stageId(request.requestId, "snapshot-create")
+        val result = runStage(
+            request,
+            stage,
+            TaskerV2RequestBuilder.createSnapshot(stage, request.repositoryId, splitAutomationList(request.source)),
+            true,
+        ) ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request, result)
+    }
+
+    private suspend fun runRepositoryCheck(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        refreshNamedRepository(request, request.repositoryId)?.let { return it }
+        progress.onStage("Checking repository")
+        val stage = stageId(request.requestId, "repository-check")
+        val result = runStage(request, stage, TaskerV2RequestBuilder.repositoryCheck(stage, request.repositoryId), true)
+            ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request, result)
+    }
+
+    private suspend fun runRetentionApply(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        refreshNamedRepository(request, request.repositoryId)?.let { return it }
+        progress.onStage(if (request.dryRun) "Previewing retention" else "Applying retention")
+        val stage = stageId(request.requestId, "retention-apply")
+        val result = runStage(
+            request,
+            stage,
+            TaskerV2RequestBuilder.retentionApply(stage, request.repositoryId, request.dryRun, request.confirmDestructive),
+            true,
+        ) ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request, result)
+    }
+
+    private suspend fun runRepositoryPrune(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        refreshNamedRepository(request, request.repositoryId)?.let { return it }
+        progress.onStage(if (request.dryRun) "Previewing prune" else "Pruning repository")
+        val stage = stageId(request.requestId, "repository-prune")
+        val result = runStage(
+            request,
+            stage,
+            TaskerV2RequestBuilder.repositoryPrune(stage, request.repositoryId, request.dryRun, request.confirmDestructive),
+            true,
+        ) ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request, result)
+    }
+
+    private suspend fun runSnapshotRestore(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        refreshNamedRepository(request, request.repositoryId)?.let { return it }
+        progress.onStage(if (request.dryRun) "Previewing snapshot restore" else "Restoring snapshot")
+        val stage = stageId(request.requestId, "snapshot-restore")
+        val result = runStage(
+            request,
+            stage,
+            TaskerV2RequestBuilder.restoreSnapshot(
+                requestId = stage,
+                repositoryId = request.repositoryId,
+                snapshotId = request.snapshotId,
+                destination = request.destination,
+                includes = request.restoreSubset,
+                overwrite = request.snapshotOverwrite,
+                dryRun = request.dryRun,
+            ),
+            true,
+        ) ?: return stateStore.terminal(request.requestId)!!
+        return terminalFromBridge(request, result)
+    }
+
+    private suspend fun resolveJobRepository(jobId: String): String? {
+        val requestId = "automation-catalog-job-${jobId.hashCode().toUInt().toString(16)}"
+        return when (val outcome = operationPort.execute(TaskerV2RequestBuilder.showJob(requestId, jobId), false)) {
+            is OperationOutcome.Completed -> SavedJobBridgeCodec.decodeArtifacts(outcome.result.artifacts).firstOrNull()?.operation?.repositoryRef
+            else -> null
+        }
+    }
+
+    private suspend fun refreshNamedRepository(request: AutomationRequest, repositoryId: String): AutomationResult? {
+        val requestId = "automation-catalog-repository-${repositoryId.hashCode().toUInt().toString(16)}"
+        val location = when (val outcome = operationPort.execute(TaskerV2RequestBuilder.showRepository(requestId, repositoryId), false)) {
+            is OperationOutcome.Completed -> RepositoryBridgeCodec.decodeArtifacts(outcome.result.artifacts).firstOrNull()?.location
+            else -> null
+        } ?: return null
+        return refreshManagedDrive(request, listOf(location))
+    }
+
     private suspend fun runCancel(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
         progress.onStage("Cancelling operation")
         val stage = stateStore.activeStage(request.targetRequestId) ?: request.targetRequestId
@@ -371,6 +475,14 @@ class BkxAutomationEngine(
             artifactSha256 = result.artifacts.mapNotNull { it.sha256 },
             filesTotal = result.metrics?.filesTotal,
             bytesTotal = result.metrics?.bytesTotal,
+            jobId = request.jobId,
+            runId = result.requestId,
+            repositoryId = request.repositoryId,
+            snapshotId = result.artifacts.asSequence()
+                .mapNotNull { it.metadata["snapshot_id"] ?: it.path.substringAfterLast("/snapshots/", "").takeIf(String::isNotBlank) }
+                .firstOrNull()
+                .orEmpty()
+                .ifBlank { request.snapshotId },
         ).also(stateStore::complete)
     }
 
@@ -381,6 +493,9 @@ class BkxAutomationEngine(
         summary = message,
         errorCode = code,
         errorMessage = message,
+        jobId = request.jobId,
+        repositoryId = request.repositoryId,
+        snapshotId = request.snapshotId,
     ).also(stateStore::complete)
 
     private fun archiveLocation(location: String): ArchiveLocation = ArchiveLocation(

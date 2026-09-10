@@ -11,5 +11,8 @@
     <string name="tasker_filter_remote_name">rclone remote name</string>
     <string name="tasker_filter_request_id">Request ID pattern</string>
     <string name="tasker_filter_error_code">Error code filter</string>
+    <string name="tasker_filter_job_id">Saved job ID</string>
+    <string name="tasker_filter_repository_id">Repository ID</string>
+    <string name="tasker_filter_snapshot_id">Snapshot ID</string>
     <string name="tasker_progress_cadence">Progress cadence</string>
 </resources>

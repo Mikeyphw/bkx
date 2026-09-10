@@ -11,6 +11,7 @@ data class BkxTaskerConditionSnapshot(
     val activeSignals: Map<String, BkxTaskerSignal> = emptyMap(),
     val terminalHistory: List<BkxTaskerSignal> = emptyList(),
     val remoteAvailability: Map<String, Boolean> = emptyMap(),
+    val repositoryHealth: Map<String, Boolean> = emptyMap(),
     val driveState: BkxTaskerDriveState = BkxTaskerDriveState.Unknown,
     val lastProgressBucket: Map<String, Int> = emptyMap(),
 )
@@ -59,13 +60,19 @@ internal object BkxTaskerConditionMatcher {
     fun eventMatches(input: BkxTaskerEventInput, signal: BkxTaskerSignal): Boolean {
         val selected = BkxTaskerEventType.fromId(input.eventType)
         if (selected != BkxTaskerEventType.Any && selected.id != signal.event) return false
-        if (!commonMatches(input.operation, input.remoteFilter, input.remoteName, input.requestIdPattern, input.errorCode, signal)) return false
+        if (!commonMatches(
+                input.operation, input.remoteFilter, input.remoteName, input.requestIdPattern, input.errorCode,
+                input.jobId, input.repositoryId, input.snapshotId, signal,
+            )) return false
         if (signal.event == BkxTaskerEventType.ProgressMilestone.id && !progressMatches(input.progressCadence, signal.progressPercent)) return false
         return true
     }
 
     fun stateSignalMatches(input: BkxTaskerStateInput, signal: BkxTaskerSignal): Boolean =
-        commonMatches(input.operation, input.remoteFilter, input.remoteName, input.requestIdPattern, input.errorCode, signal)
+        commonMatches(
+            input.operation, input.remoteFilter, input.remoteName, input.requestIdPattern, input.errorCode,
+            input.jobId, input.repositoryId, input.snapshotId, signal,
+        )
 
     fun operationMatches(filter: String, operation: String): Boolean = filter.trim().let { wanted ->
         wanted.isBlank() || globMatches(wanted, operation)
@@ -105,12 +112,18 @@ internal object BkxTaskerConditionMatcher {
         remoteName: String,
         requestPattern: String,
         errorCode: String,
+        jobId: String,
+        repositoryId: String,
+        snapshotId: String,
         signal: BkxTaskerSignal,
     ): Boolean {
         if (!operationMatches(operation, signal.operation)) return false
         if (!requestMatches(requestPattern, signal.requestId)) return false
         if (!remoteMatches(remoteFilter, remoteName, signal.remotes)) return false
         if (errorCode.isNotBlank() && !globMatches(errorCode.trim(), signal.errorCode)) return false
+        if (jobId.isNotBlank() && !globMatches(jobId.trim(), signal.jobId)) return false
+        if (repositoryId.isNotBlank() && !globMatches(repositoryId.trim(), signal.repositoryId)) return false
+        if (snapshotId.isNotBlank() && !globMatches(snapshotId.trim(), signal.snapshotId)) return false
         return true
     }
 

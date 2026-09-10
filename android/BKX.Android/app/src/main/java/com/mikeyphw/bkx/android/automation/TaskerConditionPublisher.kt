@@ -19,6 +19,7 @@ class BkxTaskerConditionPublisher(
         val signal = signalFor(request, operation, BkxTaskerEventType.OperationStarted.id)
         store.update { it.copy(activeSignals = it.activeSignals + (operation.requestId to signal)) }
         publish(signal)
+        if (request.operation == "jobs.run") publish(signal.copy(event = BkxTaskerEventType.JobStarted.id))
         notifyStateChanged()
     }
 
@@ -48,15 +49,32 @@ class BkxTaskerConditionPublisher(
         publish(terminal)
         when (result.status) {
             BridgeResultStatus.Success -> {
-                successAlias(request.operation)?.let { publish(terminal.copy(event = it, terminal = false)) }
+                successAliases(request.operation).forEach { publish(terminal.copy(event = it, terminal = false)) }
+                if (request.operation == "jobs.run" && terminal.snapshotId.isNotBlank()) {
+                    publish(terminal.copy(event = BkxTaskerEventType.SnapshotCreated.id, terminal = false))
+                }
                 archiveDisplayName(result)?.let { publish(terminal.copy(event = BkxTaskerEventType.ArchiveCreated.id, archive = it, terminal = false)) }
+                if (request.operation == "repository.check" && terminal.repositoryId.isNotBlank()) {
+                    updateRepositoryHealth(terminal.repositoryId, healthy = true)
+                }
                 markRemotesRecovered(terminal)
             }
             BridgeResultStatus.Failure -> {
                 publish(terminal.copy(event = BkxTaskerEventType.OperationFailed.id, terminal = false))
+                if (request.operation == "jobs.run") publish(terminal.copy(event = BkxTaskerEventType.JobFailed.id, terminal = false))
+                if (request.operation == "repository.check") {
+                    publish(terminal.copy(event = BkxTaskerEventType.RepositoryCheckFailed.id, terminal = false))
+                    if (terminal.repositoryId.isNotBlank()) {
+                        updateRepositoryHealth(terminal.repositoryId, healthy = false)
+                        publish(terminal.copy(event = BkxTaskerEventType.RepositoryNeedsAttention.id, terminal = false))
+                    }
+                }
                 markRemotesUnavailableIfApplicable(terminal)
             }
-            BridgeResultStatus.Cancelled -> publish(terminal.copy(event = BkxTaskerEventType.OperationCancelled.id, terminal = false))
+            BridgeResultStatus.Cancelled -> {
+                publish(terminal.copy(event = BkxTaskerEventType.OperationCancelled.id, terminal = false))
+                if (request.operation == "jobs.run") publish(terminal.copy(event = BkxTaskerEventType.JobCancelled.id, terminal = false))
+            }
         }
         notifyStateChanged()
     }
@@ -79,15 +97,28 @@ class BkxTaskerConditionPublisher(
             phase = operation?.lastPhase.orEmpty(),
             timestampEpochMillis = now,
             terminal = true,
+            jobId = request.payloadString("job_id"),
+            runId = request.requestId,
+            repositoryId = request.repositoryIdentity(),
+            snapshotId = request.payloadString("snapshot"),
         )
         rememberTerminal(signal)
         publish(signal)
         publish(signal.copy(event = BkxTaskerEventType.OperationFailed.id, terminal = false))
+        if (request.operation == "jobs.run") publish(signal.copy(event = BkxTaskerEventType.JobFailed.id, terminal = false))
+        if (request.operation == "repository.check") {
+            publish(signal.copy(event = BkxTaskerEventType.RepositoryCheckFailed.id, terminal = false))
+            if (signal.repositoryId.isNotBlank()) {
+                updateRepositoryHealth(signal.repositoryId, healthy = false)
+                publish(signal.copy(event = BkxTaskerEventType.RepositoryNeedsAttention.id, terminal = false))
+            }
+        }
         markRemotesUnavailableIfApplicable(signal)
         notifyStateChanged()
     }
 
     fun operationInterrupted(operation: ActiveOperation, failure: OperationFailureUiState) {
+        val previous = store.read().activeSignals[operation.requestId]
         val signal = BkxTaskerSignal(
             event = BkxTaskerEventType.OperationCompleted.id,
             operation = operation.operation,
@@ -103,10 +134,15 @@ class BkxTaskerConditionPublisher(
             phase = "interrupted",
             timestampEpochMillis = System.currentTimeMillis(),
             terminal = true,
+            jobId = previous?.jobId.orEmpty(),
+            runId = operation.requestId,
+            repositoryId = previous?.repositoryId.orEmpty(),
+            snapshotId = previous?.snapshotId.orEmpty(),
         )
         rememberTerminal(signal)
         publish(signal)
         publish(signal.copy(event = BkxTaskerEventType.OperationFailed.id, terminal = false))
+        if (signal.jobId.isNotBlank()) publish(signal.copy(event = BkxTaskerEventType.JobFailed.id, terminal = false))
         notifyStateChanged()
     }
 
@@ -158,6 +194,10 @@ class BkxTaskerConditionPublisher(
         error = result?.errors?.firstOrNull()?.message?.let(::sanitize).orEmpty(),
         phase = operation.lastPhase,
         timestampEpochMillis = System.currentTimeMillis(),
+        jobId = request.payloadString("job_id"),
+        runId = request.requestId,
+        repositoryId = result?.repositoryIdentity().orEmpty().ifBlank { request.repositoryIdentity() },
+        snapshotId = result?.snapshotIdentity().orEmpty().ifBlank { request.payloadString("snapshot") },
     )
 
     private fun rememberTerminal(signal: BkxTaskerSignal) {
@@ -217,13 +257,48 @@ class BkxTaskerConditionPublisher(
         artifact.label.contains("archive", true) || archiveSuffixes.any { suffix -> artifact.path.lowercase().endsWith(suffix) }
     }?.path?.substringAfterLast('/')?.substringAfterLast('\\')?.takeIf { it.isNotBlank() }
 
-    private fun successAlias(operation: String): String? = when (operation) {
-        "backup.create" -> BkxTaskerEventType.BackupCompleted.id
-        "restore.extract" -> BkxTaskerEventType.RestoreCompleted.id
-        "archive.verify" -> BkxTaskerEventType.VerifyCompleted.id
-        "transfer.run" -> BkxTaskerEventType.TransferCompleted.id
-        else -> null
+    private fun successAliases(operation: String): List<String> = buildList {
+        when (operation) {
+            "backup.create" -> add(BkxTaskerEventType.BackupCompleted.id)
+            "restore.extract", "snapshots.restore" -> add(BkxTaskerEventType.RestoreCompleted.id)
+            "archive.verify" -> add(BkxTaskerEventType.VerifyCompleted.id)
+            "transfer.run" -> add(BkxTaskerEventType.TransferCompleted.id)
+            "jobs.run" -> add(BkxTaskerEventType.JobCompleted.id)
+            "backup.snapshot" -> {
+                add(BkxTaskerEventType.BackupCompleted.id)
+                add(BkxTaskerEventType.SnapshotCreated.id)
+            }
+            "repository.check" -> add(BkxTaskerEventType.RepositoryCheckPassed.id)
+            "retention.apply" -> add(BkxTaskerEventType.RetentionApplied.id)
+            "repository.prune" -> add(BkxTaskerEventType.RepositoryPruned.id)
+        }
     }
+
+    private fun updateRepositoryHealth(repositoryId: String, healthy: Boolean) {
+        store.update { current ->
+            current.copy(repositoryHealth = current.repositoryHealth + (repositoryId to healthy))
+        }
+        notifyStateChanged()
+    }
+
+    private fun BridgeRequestEnvelope.payloadString(key: String): String =
+        (payload[key] as? JsonPrimitive)?.content.orEmpty()
+
+    private fun BridgeRequestEnvelope.repositoryIdentity(): String =
+        payloadString("repository_id").ifBlank { payloadString("repository_ref") }
+
+    private fun BridgeResultEnvelope.repositoryIdentity(): String = artifacts.asSequence()
+        .mapNotNull { it.metadata["repository_id"] }
+        .firstOrNull()
+        .orEmpty()
+
+    private fun BridgeResultEnvelope.snapshotIdentity(): String = artifacts.asSequence()
+        .mapNotNull { artifact ->
+            artifact.metadata["snapshot_id"]
+                ?: artifact.path.substringAfterLast("/snapshots/", "").takeIf { it.isNotBlank() }
+        }
+        .firstOrNull()
+        .orEmpty()
 
     private fun isRemoteFailure(code: String, message: String): Boolean {
         val value = "$code $message".lowercase()

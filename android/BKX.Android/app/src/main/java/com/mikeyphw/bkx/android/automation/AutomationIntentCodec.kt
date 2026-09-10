@@ -39,6 +39,12 @@ object AutomationIntentCodec {
         limit = bundle.intCompat(BkxAutomationContract.EXTRA_LIMIT) ?: 500,
         pageToken = bundle.getString(BkxAutomationContract.EXTRA_PAGE_TOKEN).orEmpty().trim(),
         pageSize = bundle.intCompat(BkxAutomationContract.EXTRA_PAGE_SIZE) ?: 100,
+        jobId = bundle.getString(BkxAutomationContract.EXTRA_JOB_ID).orEmpty().trim(),
+        repositoryId = bundle.getString(BkxAutomationContract.EXTRA_REPOSITORY_ID).orEmpty().trim(),
+        snapshotId = bundle.getString(BkxAutomationContract.EXTRA_SNAPSHOT_ID).orEmpty().trim(),
+        dryRun = bundle.booleanCompat(BkxAutomationContract.EXTRA_DRY_RUN, true),
+        confirmDestructive = bundle.booleanCompat(BkxAutomationContract.EXTRA_CONFIRM_DESTRUCTIVE, false),
+        snapshotOverwrite = bundle.getString(BkxAutomationContract.EXTRA_SNAPSHOT_OVERWRITE).orEmpty().ifBlank { "never" }.lowercase(),
     )
 
     fun normalizeRequestId(request: AutomationRequest): AutomationRequest = if (request.requestId.isBlank()) {
@@ -72,6 +78,12 @@ object AutomationIntentCodec {
         putInt(BkxAutomationContract.EXTRA_LIMIT, request.limit)
         putString(BkxAutomationContract.EXTRA_PAGE_TOKEN, request.pageToken)
         putInt(BkxAutomationContract.EXTRA_PAGE_SIZE, request.pageSize)
+        putString(BkxAutomationContract.EXTRA_JOB_ID, request.jobId)
+        putString(BkxAutomationContract.EXTRA_REPOSITORY_ID, request.repositoryId)
+        putString(BkxAutomationContract.EXTRA_SNAPSHOT_ID, request.snapshotId)
+        putBoolean(BkxAutomationContract.EXTRA_DRY_RUN, request.dryRun)
+        putBoolean(BkxAutomationContract.EXTRA_CONFIRM_DESTRUCTIVE, request.confirmDestructive)
+        putString(BkxAutomationContract.EXTRA_SNAPSHOT_OVERWRITE, request.snapshotOverwrite)
         putBoolean(BkxAutomationContract.EXTRA_WAIT_FOR_RESULT, waitForResult)
         putString(
             TaskerPluginContract.EXTRA_VARIABLE_REPLACE_KEYS,
@@ -92,6 +104,10 @@ object AutomationIntentCodec {
                 BkxAutomationContract.EXTRA_CHECKSUM,
                 BkxAutomationContract.EXTRA_ROOTS,
                 BkxAutomationContract.EXTRA_PAGE_TOKEN,
+                BkxAutomationContract.EXTRA_JOB_ID,
+                BkxAutomationContract.EXTRA_REPOSITORY_ID,
+                BkxAutomationContract.EXTRA_SNAPSHOT_ID,
+                BkxAutomationContract.EXTRA_SNAPSHOT_OVERWRITE,
             ).joinToString(" "),
         )
     }

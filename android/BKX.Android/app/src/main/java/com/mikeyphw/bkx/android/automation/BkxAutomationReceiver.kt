@@ -48,7 +48,16 @@ class BkxAutomationReceiver : BroadcastReceiver() {
             failOrdered("automation_dispatch_failed", "Android refused to enqueue BKX automation.")
             return
         }
-        val queued = AutomationResult(normalized.requestId, normalized.action, "running", summary = "BKX automation queued.")
+        val queued = AutomationResult(
+            requestId = normalized.requestId,
+            action = normalized.action,
+            status = "running",
+            summary = "BKX automation queued.",
+            jobId = normalized.jobId,
+            runId = normalized.requestId,
+            repositoryId = normalized.repositoryId,
+            snapshotId = normalized.snapshotId,
+        )
         setResultExtras(Bundle().apply { putBundle(TaskerPluginContract.EXTRA_VARIABLES, queued.taskerVariables()) })
         resultCode = if (bundle.getBoolean(BkxAutomationContract.EXTRA_WAIT_FOR_RESULT, true) && completionUri.isNotBlank()) {
             TaskerPluginContract.RESULT_CODE_PENDING

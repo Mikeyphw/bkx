@@ -73,6 +73,17 @@ class BkxTaskerStateRunner : TaskerPluginRunnerConditionState<BkxTaskerStateInpu
             BkxTaskerStateType.RestoreRunning -> running("restore.")
             BkxTaskerStateType.VerifyRunning -> running("archive.verify")
             BkxTaskerStateType.TransferRunning -> running("transfer.")
+            BkxTaskerStateType.JobRunning -> running("jobs.run")
+            BkxTaskerStateType.RepositoryHealthy -> repositoryHealth(snapshot, config, healthy = true)?.let(::satisfied)
+                ?: TaskerPluginResultConditionUnsatisfied()
+            BkxTaskerStateType.RepositoryNeedsAttention -> repositoryHealth(snapshot, config, healthy = false)?.let(::satisfied)
+                ?: TaskerPluginResultConditionUnsatisfied()
+            BkxTaskerStateType.LastJobSucceeded -> lastJobTerminal("success", snapshot, config)?.let(::satisfied)
+                ?: TaskerPluginResultConditionUnsatisfied()
+            BkxTaskerStateType.LastJobFailed -> lastJobTerminal("failure", snapshot, config)?.let(::satisfied)
+                ?: TaskerPluginResultConditionUnsatisfied()
+            BkxTaskerStateType.LastJobCancelled -> lastJobTerminal("cancelled", snapshot, config)?.let(::satisfied)
+                ?: TaskerPluginResultConditionUnsatisfied()
             BkxTaskerStateType.GoogleDriveConnected -> when (snapshot.driveState) {
                 BkxTaskerDriveState.Connected -> satisfied(remoteStateSignal("google-drive", "connected"))
                 BkxTaskerDriveState.Unknown, BkxTaskerDriveState.Connecting -> TaskerPluginResultConditionUnknown()
@@ -99,6 +110,34 @@ class BkxTaskerStateRunner : TaskerPluginRunnerConditionState<BkxTaskerStateInpu
         }
     }
 
+    private fun repositoryHealth(
+        snapshot: BkxTaskerConditionSnapshot,
+        config: BkxTaskerStateInput,
+        healthy: Boolean,
+    ): BkxTaskerSignal? = snapshot.repositoryHealth.entries
+        .asSequence()
+        .filter { it.value == healthy }
+        .map { (repositoryId, value) ->
+            BkxTaskerSignal(
+                event = "",
+                status = if (value) "healthy" else "needs_attention",
+                repositoryId = repositoryId,
+                phase = "repository",
+                timestampEpochMillis = System.currentTimeMillis(),
+            )
+        }
+        .firstOrNull { BkxTaskerConditionMatcher.stateSignalMatches(config, it) }
+
+    private fun lastJobTerminal(
+        status: String,
+        snapshot: BkxTaskerConditionSnapshot,
+        config: BkxTaskerStateInput,
+    ): BkxTaskerSignal? = snapshot.terminalHistory
+        .asSequence()
+        .filter { it.jobId.isNotBlank() }
+        .filter { it.status.equals(status, true) || (status == "failure" && it.status == "interrupted") }
+        .firstOrNull { BkxTaskerConditionMatcher.stateSignalMatches(config, it) }
+
     private fun com.mikeyphw.bkx.android.core.operations.ActiveOperation.toSignal() = BkxTaskerSignal(
         event = "",
         operation = operation,
@@ -111,6 +150,7 @@ class BkxTaskerStateRunner : TaskerPluginRunnerConditionState<BkxTaskerStateInpu
         bytesTotal = bytesTotal,
         phase = lastPhase,
         timestampEpochMillis = lastSeenEpochMillis,
+        runId = requestId,
     )
 
     private fun remoteStateSignal(remote: String, status: String) = BkxTaskerSignal(
@@ -137,6 +177,8 @@ class BkxTaskerEventHelper(config: TaskerPluginConfig<BkxTaskerEventInput>) :
         blurbBuilder.clear()
         blurbBuilder.append("BKX • ").append(BkxTaskerEventType.fromId(value.eventType).label)
         if (value.operation.isNotBlank()) blurbBuilder.append(" • ").append(value.operation)
+        if (value.jobId.isNotBlank()) blurbBuilder.append(" • job ").append(value.jobId)
+        if (value.repositoryId.isNotBlank()) blurbBuilder.append(" • repo ").append(value.repositoryId)
         if (value.remoteFilter != "any") blurbBuilder.append(" • ").append(value.remoteFilter.replace('_', ' '))
     }
 }
@@ -152,6 +194,8 @@ class BkxTaskerStateHelper(config: TaskerPluginConfig<BkxTaskerStateInput>) :
         blurbBuilder.clear()
         blurbBuilder.append("BKX • ").append(BkxTaskerStateType.fromId(value.stateType).label)
         if (value.operation.isNotBlank()) blurbBuilder.append(" • ").append(value.operation)
+        if (value.jobId.isNotBlank()) blurbBuilder.append(" • job ").append(value.jobId)
+        if (value.repositoryId.isNotBlank()) blurbBuilder.append(" • repo ").append(value.repositoryId)
         if (value.remoteFilter != "any") blurbBuilder.append(" • ").append(value.remoteFilter.replace('_', ' '))
     }
 }

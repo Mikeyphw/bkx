@@ -128,6 +128,13 @@ private fun TaskerConfigurationScreen(
     var limit by remember { mutableStateOf(initial.limit.toString()) }
     var pageToken by remember { mutableStateOf(initial.pageToken) }
     var pageSize by remember { mutableStateOf(initial.pageSize.toString()) }
+    var jobId by remember { mutableStateOf(initial.jobId) }
+    var repositoryId by remember { mutableStateOf(initial.repositoryId) }
+    var snapshotId by remember { mutableStateOf(initial.snapshotId) }
+    var snapshotOverwrite by remember { mutableStateOf(initial.snapshotOverwrite) }
+    var dryRun by remember { mutableStateOf(initial.dryRun) }
+    var confirmDestructive by remember { mutableStateOf(initial.confirmDestructive) }
+    val catalog = remember { BkxTaskerSharedCatalog.read() }
     var includeHidden by remember { mutableStateOf(initial.includeHidden) }
     var verifyAfter by remember { mutableStateOf(initial.verifyAfter) }
     var overwrite by remember { mutableStateOf(initial.overwrite) }
@@ -163,6 +170,12 @@ private fun TaskerConfigurationScreen(
         limit = limit.trim().toIntOrNull() ?: 500,
         pageToken = pageToken.trim(),
         pageSize = pageSize.trim().toIntOrNull() ?: 100,
+        jobId = jobId.trim(),
+        repositoryId = repositoryId.trim(),
+        snapshotId = snapshotId.trim(),
+        dryRun = dryRun,
+        confirmDestructive = confirmDestructive,
+        snapshotOverwrite = normalizeEditorChoice(snapshotOverwrite, "never"),
     )
     val editorErrors = taskerEditorErrors(
         request = request,
@@ -426,6 +439,97 @@ private fun TaskerConfigurationScreen(
                     }
                     AdvancedSection(showAdvanced = showAdvanced, onToggle = { showAdvanced = !showAdvanced }) {
                         ConfigField("Checksum", checksum, { checksum = it }, helper = "Optional expected checksum or Tasker variable.")
+                    }
+                }
+
+                AutomationAction.RunSavedJob -> {
+                    SectionCard("Run saved job", "Run the same revisioned job definition used by the BKX app and CLI.") {
+                        ConfigField(
+                            "Saved job ID",
+                            jobId,
+                            { jobId = it },
+                            required = true,
+                            helper = catalog.jobs.take(4).joinToString(prefix = "Shared jobs: ", separator = ", ") { it.jobId }
+                                .takeIf { catalog.jobs.isNotEmpty() } ?: "Use the job ID shown under Backup → Jobs. Tasker variables are supported.",
+                            error = editorErrorFor(editorErrors, "Saved job"),
+                        )
+                        if (catalog.jobs.isNotEmpty()) {
+                            Text("Available now: ${catalog.jobs.joinToString { "${it.name} (${it.jobId})" }}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                AutomationAction.CreateSnapshot -> {
+                    SectionCard("Create snapshot", "Create an incremental Restic snapshot in a named BKX repository.") {
+                        ConfigField("Repository ID", repositoryId, { repositoryId = it }, required = true,
+                            helper = repositoryCatalogHint(catalog), error = editorErrorFor(editorErrors, "Repository"))
+                        ConfigField("Source path(s)", source, { source = it }, required = true,
+                            helper = "One absolute local path per line; Tasker variables are supported.", minLines = 2,
+                            error = editorErrorFor(editorErrors, "Snapshot sources"))
+                    }
+                }
+
+                AutomationAction.RepositoryCheck -> {
+                    SectionCard("Check repository", "Run Restic repository integrity checks through BKX.") {
+                        ConfigField("Repository ID", repositoryId, { repositoryId = it }, required = true,
+                            helper = repositoryCatalogHint(catalog), error = editorErrorFor(editorErrors, "Repository"))
+                    }
+                }
+
+                AutomationAction.RetentionApply, AutomationAction.RepositoryPrune -> {
+                    SectionCard(action.label, action.editorDescription()) {
+                        ConfigField("Repository ID", repositoryId, { repositoryId = it }, required = true,
+                            helper = repositoryCatalogHint(catalog), error = editorErrorFor(editorErrors, "Repository"))
+                        ToggleRow(
+                            "Preview only",
+                            if (dryRun) "Safe dry-run; no repository data is changed." else "Real repository changes will be attempted.",
+                            dryRun,
+                        ) { dryRun = it; if (it) confirmDestructive = false }
+                    }
+                    if (!dryRun) {
+                        SafetyCard(
+                            title = "Explicit destructive approval",
+                            text = if (action == AutomationAction.RepositoryPrune)
+                                "Prune can permanently remove unreferenced repository data. BKX requires this switch in the saved Tasker configuration."
+                            else
+                                "Retention can forget snapshots according to the repository policy. BKX requires this switch in the saved Tasker configuration.",
+                        ) {
+                            ToggleRow("I approve this real maintenance run", "Required before Tasker can save a non-preview maintenance action.", confirmDestructive) {
+                                confirmDestructive = it
+                            }
+                        }
+                    }
+                }
+
+                AutomationAction.SnapshotRestore -> {
+                    SectionCard("Restore snapshot", "Restore a Restic snapshot through BKX with safe overwrite defaults.") {
+                        ConfigField("Repository ID", repositoryId, { repositoryId = it }, required = true,
+                            helper = repositoryCatalogHint(catalog), error = editorErrorFor(editorErrors, "Repository"))
+                        ConfigField("Snapshot ID", snapshotId, { snapshotId = it }, required = true,
+                            helper = "Snapshot ID, latest, or a Tasker variable.", error = editorErrorFor(editorErrors, "Snapshot id"))
+                        ConfigField("Destination", destination, { destination = it }, required = true,
+                            helper = "Absolute local destination path.", error = editorErrorFor(editorErrors, "Snapshot restore destination"))
+                        ConfigField("Restore subset", restoreSubset, { restoreSubset = it },
+                            helper = "Optional. One snapshot path per line; blank restores the whole snapshot.", minLines = 3)
+                        ChoiceField(
+                            "Overwrite policy",
+                            snapshotOverwrite,
+                            listOf("never" to "Never", "if-changed" to "If changed", "if-newer" to "If newer", "always" to "Always"),
+                            { snapshotOverwrite = it },
+                            "Never is the safe default.",
+                            editorErrorFor(editorErrors, "Snapshot overwrite"),
+                        )
+                        ToggleRow("Preview only", "Dry-run the restore without writing files.", dryRun) {
+                            dryRun = it
+                            if (it) confirmDestructive = false
+                        }
+                    }
+                    if (!dryRun) {
+                        SafetyCard("Restore approval", "A real automated restore requires explicit approval in this Tasker action.") {
+                            ToggleRow("I approve this real restore", "Required even when overwrite is Never.", confirmDestructive) {
+                                confirmDestructive = it
+                            }
+                        }
                     }
                 }
 
@@ -742,6 +846,10 @@ private fun taskerVariableDescription(name: String): String = when (name) {
     "%bkx_artifact_sha256" -> "Newline-separated SHA-256 values matching artifact paths."
     "%bkx_files_total" -> "Total files reported by the operation when available."
     "%bkx_bytes_total" -> "Total bytes reported by the operation when available."
+    "%bkx_job_id" -> "Shared saved-job ID when this action/event belongs to a job."
+    "%bkx_run_id" -> "Concrete BKX run/bridge request ID for correlation and cancellation."
+    "%bkx_repository_id" -> "Named repository ID when available."
+    "%bkx_snapshot_id" -> "Restic snapshot ID when available."
     else -> "BKX automation result variable."
 }
 
@@ -749,6 +857,9 @@ private fun AutomationAction.editorCategory(): String = when (this) {
     AutomationAction.Backup, AutomationAction.Restore, AutomationAction.Verify -> "Backup & recovery"
     AutomationAction.ArchiveList, AutomationAction.ArchiveInfo, AutomationAction.ArchiveBrowse -> "Archive tools"
     AutomationAction.Transfer -> "Files & remotes"
+    AutomationAction.RunSavedJob -> "Saved jobs"
+    AutomationAction.CreateSnapshot, AutomationAction.SnapshotRestore -> "Snapshots"
+    AutomationAction.RepositoryCheck, AutomationAction.RetentionApply, AutomationAction.RepositoryPrune -> "Repository maintenance"
     AutomationAction.Cancel, AutomationAction.Status -> "Operation control"
 }
 
@@ -760,9 +871,19 @@ private fun AutomationAction.editorDescription(): String = when (this) {
     AutomationAction.ArchiveInfo -> "Read metadata and summary information for one archive."
     AutomationAction.ArchiveBrowse -> "Browse archive contents page by page without extracting."
     AutomationAction.Transfer -> "Push, pull, or sync between local paths and rclone remotes."
+    AutomationAction.RunSavedJob -> "Run one shared BKX Saved Job by ID."
+    AutomationAction.CreateSnapshot -> "Create an incremental Restic snapshot in a named repository."
+    AutomationAction.RepositoryCheck -> "Check repository integrity without changing snapshot retention."
+    AutomationAction.RetentionApply -> "Preview or explicitly apply the repository's saved retention policy."
+    AutomationAction.RepositoryPrune -> "Preview or explicitly prune unreferenced Restic repository data."
+    AutomationAction.SnapshotRestore -> "Preview or explicitly restore a Restic snapshot with safe overwrite controls."
     AutomationAction.Cancel -> "Cancel a previously queued/running BKX automation request."
     AutomationAction.Status -> "Read the current or terminal status of a BKX automation request."
 }
+
+private fun repositoryCatalogHint(catalog: BkxTaskerCatalog): String =
+    if (catalog.repositories.isEmpty()) "Use the repository ID shown under Backup → Repositories. Tasker variables are supported."
+    else "Shared repositories: " + catalog.repositories.take(5).joinToString { it.repositoryId }
 
 private fun taskerEditorErrors(
     request: AutomationRequest,
@@ -817,6 +938,27 @@ private fun taskerEditorErrors(
             }
             if (request.transferMode == "sync" && !request.deleteExtraneous) add("Sync requires explicit destination-only delete approval.")
         }
+        AutomationAction.RunSavedJob -> if (request.jobId.isBlank()) add("Saved job id is required.")
+        AutomationAction.CreateSnapshot -> {
+            if (request.repositoryId.isBlank()) add("Repository id is required.")
+            val sources = splitAutomationList(request.source)
+            if (sources.isEmpty()) add("Snapshot sources are required.")
+            else if (sources.any { !validLocal(it) }) add("Snapshot sources must be absolute local paths or Tasker variables.")
+        }
+        AutomationAction.RepositoryCheck -> if (request.repositoryId.isBlank()) add("Repository id is required.")
+        AutomationAction.RetentionApply, AutomationAction.RepositoryPrune -> {
+            if (request.repositoryId.isBlank()) add("Repository id is required.")
+            if (!request.dryRun && !request.confirmDestructive) add("Real maintenance requires explicit destructive approval.")
+        }
+        AutomationAction.SnapshotRestore -> {
+            if (request.repositoryId.isBlank()) add("Repository id is required.")
+            if (request.snapshotId.isBlank()) add("Snapshot id is required.")
+            requiredLocation("Snapshot restore destination", request.destination, localOnly = true)
+            if (!taskerVariable(request.snapshotOverwrite) && request.snapshotOverwrite !in setOf("never", "if-changed", "if-newer", "always")) {
+                add("Snapshot overwrite mode must be Never, If changed, If newer, Always, or a Tasker variable.")
+            }
+            if (!request.dryRun && !request.confirmDestructive) add("Real snapshot restore requires explicit approval.")
+        }
         AutomationAction.Cancel, AutomationAction.Status -> if (request.targetRequestId.isBlank()) add("Target request id is required.")
     }
     if (request.action == AutomationAction.ArchiveBrowse) {
@@ -843,6 +985,12 @@ private fun AutomationRequest.blurb(): String = when (action) {
     AutomationAction.ArchiveInfo -> "Archive info ${archive.ifBlank { "archive" }}"
     AutomationAction.ArchiveBrowse -> "Browse ${archive.ifBlank { "archive" }}"
     AutomationAction.Transfer -> "${transferMode.ifBlank { "push" }} ${source.ifBlank { "source" }} → ${destination.ifBlank { "destination" }}"
+    AutomationAction.RunSavedJob -> "Run saved job ${jobId.ifBlank { "job" }}"
+    AutomationAction.CreateSnapshot -> "Snapshot → ${repositoryId.ifBlank { "repository" }}"
+    AutomationAction.RepositoryCheck -> "Check repository ${repositoryId.ifBlank { "repository" }}"
+    AutomationAction.RetentionApply -> "${if (dryRun) "Preview" else "Apply"} retention ${repositoryId.ifBlank { "repository" }}"
+    AutomationAction.RepositoryPrune -> "${if (dryRun) "Preview" else "Prune"} ${repositoryId.ifBlank { "repository" }}"
+    AutomationAction.SnapshotRestore -> "${if (dryRun) "Preview" else "Restore"} snapshot ${snapshotId.ifBlank { "snapshot" }}"
     AutomationAction.Cancel -> "Cancel ${targetRequestId.ifBlank { "BKX operation" }}"
     AutomationAction.Status -> "Status ${targetRequestId.ifBlank { "BKX operation" }}"
 }

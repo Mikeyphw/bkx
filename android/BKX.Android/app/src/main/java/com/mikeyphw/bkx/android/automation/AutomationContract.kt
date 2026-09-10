@@ -14,6 +14,12 @@ object BkxAutomationContract {
     const val ACTION_TRANSFER = ACTION_PREFIX + "TRANSFER"
     const val ACTION_CANCEL = ACTION_PREFIX + "CANCEL"
     const val ACTION_STATUS = ACTION_PREFIX + "STATUS"
+    const val ACTION_RUN_SAVED_JOB = ACTION_PREFIX + "RUN_SAVED_JOB"
+    const val ACTION_CREATE_SNAPSHOT = ACTION_PREFIX + "CREATE_SNAPSHOT"
+    const val ACTION_REPOSITORY_CHECK = ACTION_PREFIX + "REPOSITORY_CHECK"
+    const val ACTION_RETENTION_APPLY = ACTION_PREFIX + "RETENTION_APPLY"
+    const val ACTION_REPOSITORY_PRUNE = ACTION_PREFIX + "REPOSITORY_PRUNE"
+    const val ACTION_SNAPSHOT_RESTORE = ACTION_PREFIX + "SNAPSHOT_RESTORE"
 
     const val EXTRA_ACCESS_TOKEN = ACTION_PREFIX + "extra.ACCESS_TOKEN"
     const val EXTRA_ACTION = ACTION_PREFIX + "extra.ACTION"
@@ -46,6 +52,12 @@ object BkxAutomationContract {
     const val EXTRA_CALLBACK_ACTION = ACTION_PREFIX + "extra.CALLBACK_ACTION"
     const val EXTRA_RESULT_JSON = ACTION_PREFIX + "extra.RESULT_JSON"
     const val EXTRA_DISPATCH_ID = ACTION_PREFIX + "extra.DISPATCH_ID"
+    const val EXTRA_JOB_ID = ACTION_PREFIX + "extra.JOB_ID"
+    const val EXTRA_REPOSITORY_ID = ACTION_PREFIX + "extra.REPOSITORY_ID"
+    const val EXTRA_SNAPSHOT_ID = ACTION_PREFIX + "extra.SNAPSHOT_ID"
+    const val EXTRA_DRY_RUN = ACTION_PREFIX + "extra.DRY_RUN"
+    const val EXTRA_CONFIRM_DESTRUCTIVE = ACTION_PREFIX + "extra.CONFIRM_DESTRUCTIVE"
+    const val EXTRA_SNAPSHOT_OVERWRITE = ACTION_PREFIX + "extra.SNAPSHOT_OVERWRITE"
 
     val directActions = setOf(
         ACTION_BACKUP,
@@ -57,6 +69,12 @@ object BkxAutomationContract {
         ACTION_TRANSFER,
         ACTION_CANCEL,
         ACTION_STATUS,
+        ACTION_RUN_SAVED_JOB,
+        ACTION_CREATE_SNAPSHOT,
+        ACTION_REPOSITORY_CHECK,
+        ACTION_RETENTION_APPLY,
+        ACTION_REPOSITORY_PRUNE,
+        ACTION_SNAPSHOT_RESTORE,
     )
 }
 
@@ -97,7 +115,13 @@ enum class AutomationAction(val wireValue: String, val label: String) {
     ArchiveInfo("archive_info", "Archive info"),
     ArchiveBrowse("archive_browse", "Browse archive"),
     Transfer("transfer", "Transfer"),
-    Cancel("cancel", "Cancel operation"),
+    RunSavedJob("run_saved_job", "Run saved job"),
+    CreateSnapshot("create_snapshot", "Create snapshot"),
+    RepositoryCheck("repository_check", "Check repository"),
+    RetentionApply("retention_apply", "Apply retention"),
+    RepositoryPrune("repository_prune", "Prune repository"),
+    SnapshotRestore("snapshot_restore", "Restore snapshot"),
+    Cancel("cancel", "Cancel run"),
     Status("status", "Operation status");
 
     companion object {
@@ -112,6 +136,12 @@ enum class AutomationAction(val wireValue: String, val label: String) {
             BkxAutomationContract.ACTION_TRANSFER -> Transfer
             BkxAutomationContract.ACTION_CANCEL -> Cancel
             BkxAutomationContract.ACTION_STATUS -> Status
+            BkxAutomationContract.ACTION_RUN_SAVED_JOB -> RunSavedJob
+            BkxAutomationContract.ACTION_CREATE_SNAPSHOT -> CreateSnapshot
+            BkxAutomationContract.ACTION_REPOSITORY_CHECK -> RepositoryCheck
+            BkxAutomationContract.ACTION_RETENTION_APPLY -> RetentionApply
+            BkxAutomationContract.ACTION_REPOSITORY_PRUNE -> RepositoryPrune
+            BkxAutomationContract.ACTION_SNAPSHOT_RESTORE -> SnapshotRestore
             else -> null
         }
     }
@@ -144,9 +174,16 @@ data class AutomationRequest(
     val limit: Int = 500,
     val pageToken: String = "",
     val pageSize: Int = 100,
+    val jobId: String = "",
+    val repositoryId: String = "",
+    val snapshotId: String = "",
+    val dryRun: Boolean = true,
+    val confirmDestructive: Boolean = false,
+    val snapshotOverwrite: String = "never",
 ) {
     fun validate(): List<String> = buildList {
         fun validLocation(value: String): Boolean = value.startsWith("/") || Regex("^rclone://[A-Za-z0-9._-]+(?:/[^?#\\u0000]*)?$", RegexOption.IGNORE_CASE).matches(value)
+        fun stableId(value: String): Boolean = Regex("^[a-z0-9][a-z0-9._-]{0,127}$").matches(value.trim())
         when (action) {
             AutomationAction.Backup -> {
                 if (!source.startsWith("/")) add("Backup source must be an absolute local path.")
@@ -172,6 +209,24 @@ data class AutomationRequest(
                 if (transferMode !in setOf("push", "pull", "sync")) add("Transfer mode must be push, pull, or sync.")
                 if (transferMode == "sync" && !deleteExtraneous) add("Sync requires explicit delete_extraneous approval.")
             }
+            AutomationAction.RunSavedJob -> if (!stableId(jobId)) add("Saved job id is required and must use BKX stable-id syntax.")
+            AutomationAction.CreateSnapshot -> {
+                if (!stableId(repositoryId)) add("Repository id is required and must use BKX stable-id syntax.")
+                val snapshotSources = splitAutomationList(source)
+                if (snapshotSources.isEmpty() || snapshotSources.any { !it.startsWith("/") }) add("Snapshot sources must be absolute local paths.")
+            }
+            AutomationAction.RepositoryCheck -> if (!stableId(repositoryId)) add("Repository id is required and must use BKX stable-id syntax.")
+            AutomationAction.RetentionApply, AutomationAction.RepositoryPrune -> {
+                if (!stableId(repositoryId)) add("Repository id is required and must use BKX stable-id syntax.")
+                if (!dryRun && !confirmDestructive) add("Real retention/prune changes require explicit destructive confirmation.")
+            }
+            AutomationAction.SnapshotRestore -> {
+                if (!stableId(repositoryId)) add("Repository id is required and must use BKX stable-id syntax.")
+                if (snapshotId.isBlank()) add("Snapshot id is required.")
+                if (!destination.startsWith("/")) add("Snapshot restore destination must be an absolute local path.")
+                if (snapshotOverwrite !in setOf("never", "if-changed", "if-newer", "always")) add("Snapshot overwrite mode must be never, if-changed, if-newer, or always.")
+                if (!dryRun && !confirmDestructive) add("Real snapshot restore requires explicit confirmation.")
+            }
             AutomationAction.Cancel, AutomationAction.Status -> if (targetRequestId.isBlank()) add("Target request id is required.")
         }
     }
@@ -190,6 +245,10 @@ data class AutomationResult(
     val artifactSha256: List<String> = emptyList(),
     val filesTotal: Long? = null,
     val bytesTotal: Long? = null,
+    val jobId: String = "",
+    val runId: String = "",
+    val repositoryId: String = "",
+    val snapshotId: String = "",
 ) {
     val successful: Boolean get() = status == "success" || status == "accepted" || status == "running"
 
@@ -205,6 +264,10 @@ data class AutomationResult(
         "%bkx_artifact_sha256" to artifactSha256.joinToString("\n"),
         "%bkx_files_total" to filesTotal?.toString().orEmpty(),
         "%bkx_bytes_total" to bytesTotal?.toString().orEmpty(),
+        "%bkx_job_id" to jobId,
+        "%bkx_run_id" to runId,
+        "%bkx_repository_id" to repositoryId,
+        "%bkx_snapshot_id" to snapshotId,
     )
 
     fun taskerVariables(): Bundle = Bundle().apply {
@@ -215,7 +278,8 @@ data class AutomationResult(
         val relevantVariables = arrayOf(
             "%bkx_request_id", "%bkx_action", "%bkx_status", "%bkx_operation_request_id", "%bkx_summary",
             "%bkx_error_code", "%bkx_error_message", "%bkx_artifact_paths", "%bkx_artifact_sha256",
-            "%bkx_files_total", "%bkx_bytes_total",
+            "%bkx_files_total", "%bkx_bytes_total", "%bkx_job_id", "%bkx_run_id",
+            "%bkx_repository_id", "%bkx_snapshot_id",
         )
     }
 }

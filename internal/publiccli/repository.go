@@ -214,7 +214,12 @@ func repositoryInit(c *appContext, args []string) int {
 		raw = strings.TrimSpace(raw)
 		credentialRef = &raw
 	}
-	result, err := resticops.Init(models.RepositoryInitSpec{Engine: engine, Repository: repository, CredentialRef: credentialRef}, resticops.Options{})
+	lease, err := beginCLIExecution(c, "repository.init", "", repositoryLeaseID(c, repository))
+	if err != nil {
+		return commandErr(c, err)
+	}
+	defer lease.Close()
+	result, err := resticops.Init(models.RepositoryInitSpec{Engine: engine, Repository: repository, CredentialRef: credentialRef}, resticops.Options{Cancelled: lease.Cancelled})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -243,7 +248,12 @@ func repositoryCheck(c *appContext, args []string) int {
 		readData = *v
 	}
 	subset, _ := a.stringValue("read_data_subset")
-	result, err := resticops.CheckRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.CheckOptions{ReadData: readData, ReadDataSubset: subset}, resticops.Options{})
+	lease, err := beginCLIExecution(c, "repository.check", "", def.RepositoryID)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	defer lease.Close()
+	result, err := resticops.CheckRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.CheckOptions{ReadData: readData, ReadDataSubset: subset}, resticops.Options{Cancelled: lease.Cancelled})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -277,7 +287,18 @@ func repositoryPrune(c *appContext, args []string) int {
 	}
 	maxUnused, _ := a.stringValue("max_unused")
 	maxRepack, _ := a.stringValue("max_repack_size")
-	result, err := resticops.PruneRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.PruneOptions{DryRun: c.globals.DryRun, MaxUnused: maxUnused, MaxRepackSize: maxRepack}, resticops.Options{})
+	var options resticops.Options
+	var lease *cliExecutionLease
+	var err error
+	if !c.globals.DryRun {
+		lease, err = beginCLIExecution(c, "repository.prune", "", def.RepositoryID)
+		if err != nil {
+			return commandErr(c, err)
+		}
+		defer lease.Close()
+		options.Cancelled = lease.Cancelled
+	}
+	result, err := resticops.PruneRepository(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, resticops.PruneOptions{DryRun: c.globals.DryRun, MaxUnused: maxUnused, MaxRepackSize: maxRepack}, options)
 	if err != nil {
 		return commandErr(c, err)
 	}

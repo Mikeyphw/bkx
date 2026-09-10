@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"bkx/internal/jobstore"
+	"bkx/internal/models"
 	"bkx/internal/repositorystore"
 )
 
@@ -97,5 +98,40 @@ func TestSavedJobBridgeRejectsInlineSecretMaterial(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("expected inline secret rejection")
+	}
+}
+
+func TestSavedJobExecutionOverridesDoNotMutatePersistedParameters(t *testing.T) {
+	params := map[string]any{"verify": true, "nested": map[string]any{"count": 1}}
+	clone, err := cloneParameters(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyExecutionOverrides(clone, []string{"verify=false", "nested.count=2", "tag=night"}); err != nil {
+		t.Fatal(err)
+	}
+	if clone["verify"] != false {
+		t.Fatalf("verify=%v", clone["verify"])
+	}
+	if params["verify"] != true {
+		t.Fatal("execution override mutated persisted parameters")
+	}
+	if got := clone["nested"].(map[string]any)["count"]; got == params["nested"].(map[string]any)["count"] {
+		t.Fatalf("nested override did not change clone: %v", got)
+	}
+}
+
+func TestSavedJobExecutionOverrideRejectsInlineSecretAfterValidation(t *testing.T) {
+	operation := models.NewOperationSpecV2("backup.snapshot", map[string]any{"repository": "/tmp/repo", "sources": []any{"/tmp/source"}})
+	params, err := cloneParameters(operation.Parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyExecutionOverrides(params, []string{"password=unsafe"}); err != nil {
+		t.Fatal(err)
+	}
+	operation.Parameters = params
+	if err := models.ValidateOperationSpecV2(operation); err == nil {
+		t.Fatal("inline secret override must be rejected")
 	}
 }

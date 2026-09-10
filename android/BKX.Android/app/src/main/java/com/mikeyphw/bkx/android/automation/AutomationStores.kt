@@ -86,6 +86,7 @@ interface AutomationStatePort {
     fun terminal(requestId: String): AutomationResult?
     fun activeStage(requestId: String): String?
     fun markActive(requestId: String, operationRequestId: String)
+    fun clearActive(requestId: String)
     fun complete(result: AutomationResult)
 }
 
@@ -101,6 +102,10 @@ class SharedPreferencesAutomationStateStore(context: Context) : AutomationStateP
 
     override fun markActive(requestId: String, operationRequestId: String) {
         preferences.edit { putString("active:$requestId", operationRequestId) }
+    }
+
+    override fun clearActive(requestId: String) {
+        preferences.edit(commit = true) { remove("active:$requestId") }
     }
 
     override fun complete(result: AutomationResult) {
@@ -129,5 +134,6 @@ class InMemoryAutomationStateStore : AutomationStatePort {
     override fun terminal(requestId: String): AutomationResult? = terminals[requestId]
     override fun activeStage(requestId: String): String? = active[requestId]
     override fun markActive(requestId: String, operationRequestId: String) { active[requestId] = operationRequestId }
+    override fun clearActive(requestId: String) { active.remove(requestId) }
     override fun complete(result: AutomationResult) { active.remove(result.requestId); terminals[result.requestId] = result }
 }

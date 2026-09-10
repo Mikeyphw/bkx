@@ -53,6 +53,7 @@ object BkxAutomationContract {
     const val EXTRA_RESULT_JSON = ACTION_PREFIX + "extra.RESULT_JSON"
     const val EXTRA_DISPATCH_ID = ACTION_PREFIX + "extra.DISPATCH_ID"
     const val EXTRA_JOB_ID = ACTION_PREFIX + "extra.JOB_ID"
+    const val EXTRA_JOB_OVERRIDES = ACTION_PREFIX + "extra.JOB_OVERRIDES"
     const val EXTRA_REPOSITORY_ID = ACTION_PREFIX + "extra.REPOSITORY_ID"
     const val EXTRA_SNAPSHOT_ID = ACTION_PREFIX + "extra.SNAPSHOT_ID"
     const val EXTRA_DRY_RUN = ACTION_PREFIX + "extra.DRY_RUN"
@@ -175,6 +176,7 @@ data class AutomationRequest(
     val pageToken: String = "",
     val pageSize: Int = 100,
     val jobId: String = "",
+    val jobOverrides: List<String> = emptyList(),
     val repositoryId: String = "",
     val snapshotId: String = "",
     val dryRun: Boolean = true,
@@ -209,7 +211,12 @@ data class AutomationRequest(
                 if (transferMode !in setOf("push", "pull", "sync")) add("Transfer mode must be push, pull, or sync.")
                 if (transferMode == "sync" && !deleteExtraneous) add("Sync requires explicit delete_extraneous approval.")
             }
-            AutomationAction.RunSavedJob -> if (!stableId(jobId)) add("Saved job id is required and must use BKX stable-id syntax.")
+            AutomationAction.RunSavedJob -> {
+                if (!stableId(jobId)) add("Saved job id is required and must use BKX stable-id syntax.")
+                jobOverrides.forEach { value ->
+                    if (!value.contains('=') || value.substringBefore('=').trim().isBlank()) add("Saved-job overrides must use KEY=VALUE.")
+                }
+            }
             AutomationAction.CreateSnapshot -> {
                 if (!stableId(repositoryId)) add("Repository id is required and must use BKX stable-id syntax.")
                 val snapshotSources = splitAutomationList(source)

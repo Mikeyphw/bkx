@@ -10,9 +10,11 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/config"
+	"bkx/internal/executioncontrol"
 	"bkx/internal/jobstore"
 	"bkx/internal/repositorystore"
 	"bkx/internal/runstore"
+	"bkx/internal/schedulestore"
 	"bkx/internal/version"
 )
 
@@ -35,6 +37,8 @@ type appContext struct {
 	store        *runstore.Store
 	jobs         *jobstore.Store
 	repositories *repositorystore.Store
+	control      *executioncontrol.Store
+	schedules    *schedulestore.Store
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
@@ -87,6 +91,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		render:       renderer{json: globals.JSON, stdout: stdout, stderr: stderr},
 		jobs:         jobstore.Default(home),
 		repositories: repositorystore.Default(home),
+		control:      executioncontrol.Default(home),
+		schedules:    schedulestore.Default(home),
 	}
 	if cfg.RunHistoryEnabled {
 		store, storeErr := runstore.New(runstore.DefaultPath(home), cfg.RunHistoryLimit, true)
@@ -247,6 +253,7 @@ Commands:
   repository Local and remote backup repositories
   snapshot  Incremental snapshot lifecycle
   retention Snapshot retention policies
+  schedule  Saved-job schedules
   state     Shared control-plane state
   tools     Tool management
   transfer  Transfer operations
@@ -315,6 +322,19 @@ Commands:
   set
   show
 `,
+	"schedule": `Usage: bkx schedule COMMAND [ARGS]...
+
+Saved-job schedules
+
+Commands:
+  add
+  disable
+  enable
+  list
+  remove
+  show
+  set
+`,
 	"job": `Usage: bkx job COMMAND [ARGS]...
 
 Saved and replayable operations
@@ -338,6 +358,7 @@ Commands:
 View and replay run history
 
 Commands:
+  cancel
   list
   replay
   show
@@ -396,6 +417,7 @@ var LeafHelp = map[string]string{
 	"job export":          "Usage: bkx job export [OPTIONS] JOB_ID\n",
 	"job import":          "Usage: bkx job import [OPTIONS] FILE\n",
 	"job create-from-run": "Usage: bkx job create-from-run [OPTIONS] RUN_ID JOB_ID\n",
+	"run cancel":          "Usage: bkx run cancel REQUEST_ID\n",
 	"run list":            "Usage: bkx run list [OPTIONS]\n",
 	"run replay":          "Usage: bkx run replay [OPTIONS] RUN_ID\n",
 	"run show":            "Usage: bkx run show RUN_ID\n",
@@ -415,6 +437,13 @@ var LeafHelp = map[string]string{
 	"retention show":      "Usage: bkx retention show REPOSITORY_ID\n",
 	"retention clear":     "Usage: bkx retention clear REPOSITORY_ID\n",
 	"retention apply":     "Usage: bkx retention apply [OPTIONS] REPOSITORY_ID\n",
+	"schedule add":        "Usage: bkx schedule add [OPTIONS] SCHEDULE_ID\n",
+	"schedule disable":    "Usage: bkx schedule disable SCHEDULE_ID\n",
+	"schedule enable":     "Usage: bkx schedule enable SCHEDULE_ID\n",
+	"schedule list":       "Usage: bkx schedule list\n",
+	"schedule remove":     "Usage: bkx schedule remove SCHEDULE_ID\n",
+	"schedule show":       "Usage: bkx schedule show SCHEDULE_ID\n",
+	"schedule set":        "Usage: bkx schedule set [OPTIONS] SCHEDULE_ID\n",
 	"state status":        "Usage: bkx state status\n",
 	"tools detect":        "Usage: bkx tools detect [TOOL_NAME]...\n",
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",

@@ -43,6 +43,7 @@ import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferRequestBuilder
 import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
 import com.mikeyphw.bkx.android.core.transfer.TransferVerificationPlan
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -104,6 +105,8 @@ class BkxAutomationEngine(
     private val stateStore: AutomationStatePort,
     private val driveRefreshPort: ManagedDriveRefreshPort,
 ) {
+    private val executionInstanceId: String = UUID.randomUUID().toString().substring(0, 8)
+
     private val executions = ConcurrentHashMap<String, CompletableDeferred<AutomationResult>>()
     private val backupBuilder = BackupRequestBuilder()
     private val restoreBuilder = RestoreRequestBuilder()
@@ -311,7 +314,7 @@ class BkxAutomationEngine(
         if (!repositoryId.isNullOrBlank()) refreshNamedRepository(request, repositoryId)?.let { return it }
         progress.onStage("Running saved job")
         val stage = stageId(request.requestId, "job-run")
-        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId.orEmpty()), true)
+        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId.orEmpty(), request.jobOverrides), true)
             ?: return stateStore.terminal(request.requestId)!!
         return terminalFromBridge(request.copy(repositoryId = repositoryId.orEmpty()), result)
     }
@@ -504,6 +507,6 @@ class BkxAutomationEngine(
         stagedPath = location,
     )
 
-    private fun stageId(requestId: String, stage: String): String = "$requestId-$stage"
+    private fun stageId(requestId: String, stage: String): String = "$requestId-$stage-$executionInstanceId"
     private fun String.label(): String = trimEnd('/').substringAfterLast('/').substringAfterLast(':').ifBlank { this }
 }

@@ -141,6 +141,19 @@ func (d *Dispatcher) jobsDelete(p map[string]any) (Result, error) {
 	if !deleted {
 		return Result{}, berror.NotFound("Saved job not found: "+jobID, map[string]any{"job_id": jobID})
 	}
+	if d.Schedules != nil {
+		schedules, scheduleErr := d.Schedules.List()
+		if scheduleErr != nil {
+			return Result{}, scheduleErr
+		}
+		for _, schedule := range schedules {
+			if schedule.JobID == jobID {
+				if _, scheduleErr := d.Schedules.Delete(schedule.ScheduleID); scheduleErr != nil {
+					return Result{}, scheduleErr
+				}
+			}
+		}
+	}
 	return success("Saved job "+jobID+" deleted.", nil, []Artifact{{Label: "saved_job_deleted", Path: jobID}}), nil
 }
 
@@ -218,8 +231,26 @@ func (d *Dispatcher) jobsExecute(ctx OperationContext, p map[string]any, plan bo
 	if !plan && !job.Enabled {
 		return Result{}, berror.Validation("Saved job is disabled", map[string]any{"job_id": job.JobID})
 	}
+	operation := job.Operation
+	if rawOverrides, ok := p["overrides"]; ok && rawOverrides != nil {
+		overrides, err := executionOverrideStrings(rawOverrides)
+		if err != nil {
+			return Result{}, berror.Validation("saved-job overrides must be a list of KEY=VALUE strings", nil)
+		}
+		params, err := cloneParameters(operation.Parameters)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := applyExecutionOverrides(params, overrides); err != nil {
+			return Result{}, err
+		}
+		operation.Parameters = params
+		if err := models.ValidateOperationSpecV2(operation); err != nil {
+			return Result{}, berror.Validation("invalid saved-job execution override", map[string]any{"reason": err.Error()})
+		}
+	}
 	emit(ctx, "preparing", "Preparing saved job "+job.Name+".", floatPtr(.02))
-	return d.executeSavedOperation(ctx, job.Operation, plan)
+	return d.executeSavedOperation(ctx, operation, plan)
 }
 
 func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation models.OperationSpecV2, plan bool) (Result, error) {
@@ -380,4 +411,69 @@ func clonePayload(in map[string]any) map[string]any {
 	out := map[string]any{}
 	_ = json.Unmarshal(raw, &out)
 	return out
+}
+
+func cloneParameters(src map[string]any) (map[string]any, error) {
+	raw, err := json.Marshal(src)
+	if err != nil {
+		return nil, berror.Validation("saved job parameters are not JSON serializable", nil)
+	}
+	var out map[string]any
+	dec := json.NewDecoder(strings.NewReader(string(raw)))
+	dec.UseNumber()
+	if err := dec.Decode(&out); err != nil {
+		return nil, err
+	}
+	if out == nil {
+		out = map[string]any{}
+	}
+	return out, nil
+}
+
+func applyExecutionOverrides(params map[string]any, values []string) error {
+	for _, raw := range values {
+		pair := strings.SplitN(raw, "=", 2)
+		if len(pair) != 2 || strings.TrimSpace(pair[0]) == "" {
+			return berror.Validation("execution override must use KEY=VALUE", map[string]any{"value": raw})
+		}
+		keys := strings.Split(strings.TrimSpace(pair[0]), ".")
+		for _, key := range keys {
+			if strings.TrimSpace(key) == "" {
+				return berror.Validation("execution override path contains an empty segment", map[string]any{"value": raw})
+			}
+		}
+		var value any
+		dec := json.NewDecoder(strings.NewReader(pair[1]))
+		dec.UseNumber()
+		if err := dec.Decode(&value); err != nil {
+			value = pair[1]
+		}
+		current := params
+		for _, key := range keys[:len(keys)-1] {
+			next, ok := current[key].(map[string]any)
+			if !ok {
+				next = map[string]any{}
+				current[key] = next
+			}
+			current = next
+		}
+		current[keys[len(keys)-1]] = value
+	}
+	return nil
+}
+
+func executionOverrideStrings(value any) ([]string, error) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, fmt.Errorf("expected list")
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string")
+		}
+		out = append(out, text)
+	}
+	return out, nil
 }

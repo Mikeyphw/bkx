@@ -70,7 +70,7 @@ func optionalRunStore(path string) (*runstore.Store, error) {
 	if path == "-" {
 		return nil, nil
 	}
-	return runstore.New(path, 0, false)
+	return runstore.New(path, 0, true)
 }
 
 type concurrentBridgeCommand struct {

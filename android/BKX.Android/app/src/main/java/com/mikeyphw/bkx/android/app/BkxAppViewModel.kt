@@ -53,6 +53,9 @@ import com.mikeyphw.bkx.android.core.jobs.SavedJob
 import com.mikeyphw.bkx.android.core.jobs.SavedJobBridgeCodec
 import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
 import com.mikeyphw.bkx.android.core.jobs.SavedJobRequestBuilder
+import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleBridgeCodec
+import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
+import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleRequestBuilder
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
 import com.mikeyphw.bkx.android.core.operations.OperationFailureKind
@@ -177,6 +180,10 @@ sealed interface BkxHomeEvent {
     data class DeleteSavedJob(val jobId: String) : BkxHomeEvent
     data class PlanSavedJob(val jobId: String) : BkxHomeEvent
     data class RunSavedJob(val jobId: String) : BkxHomeEvent
+    data object RefreshSavedJobSchedules : BkxHomeEvent
+    data class PutSavedJobSchedule(val schedule: SavedJobScheduleDefinition) : BkxHomeEvent
+    data class SetSavedJobScheduleEnabled(val scheduleId: String, val enabled: Boolean) : BkxHomeEvent
+    data class DeleteSavedJobSchedule(val scheduleId: String) : BkxHomeEvent
     data class AddRepository(val spec: RepositoryCreateSpec) : BkxHomeEvent
     data class InitializeRepository(val repositoryId: String) : BkxHomeEvent
     data class CheckRepository(val repositoryId: String) : BkxHomeEvent
@@ -289,6 +296,7 @@ class BkxAppViewModel(
     private val restoreRequestBuilder = RestoreRequestBuilder()
     private val transferRequestBuilder = TransferRequestBuilder()
     private val savedJobRequestBuilder = SavedJobRequestBuilder
+    private val savedJobScheduleRequestBuilder = SavedJobScheduleRequestBuilder
     private val repositoryRequestBuilder = RepositoryRequestBuilder
     private val requestSequence = AtomicLong(0L)
     private val messageSequence = AtomicLong(0L)
@@ -310,6 +318,7 @@ class BkxAppViewModel(
         refreshOperations()
         refreshSettings()
         refreshSavedJobs()
+        refreshSavedJobSchedules()
         refreshRepositories()
     }
 
@@ -351,6 +360,10 @@ class BkxAppViewModel(
             is BkxHomeEvent.DeleteSavedJob -> deleteSavedJob(event.jobId)
             is BkxHomeEvent.PlanSavedJob -> executeSavedJob(event.jobId, plan = true)
             is BkxHomeEvent.RunSavedJob -> executeSavedJob(event.jobId, plan = false)
+            BkxHomeEvent.RefreshSavedJobSchedules -> refreshSavedJobSchedules()
+            is BkxHomeEvent.PutSavedJobSchedule -> putSavedJobSchedule(event.schedule)
+            is BkxHomeEvent.SetSavedJobScheduleEnabled -> setSavedJobScheduleEnabled(event.scheduleId, event.enabled)
+            is BkxHomeEvent.DeleteSavedJobSchedule -> deleteSavedJobSchedule(event.scheduleId)
             is BkxHomeEvent.AddRepository -> addRepository(event.spec)
             is BkxHomeEvent.InitializeRepository -> initializeRepository(event.repositoryId)
             is BkxHomeEvent.CheckRepository -> checkRepository(event.repositoryId)
@@ -1195,6 +1208,71 @@ class BkxAppViewModel(
         _state.update { current ->
             current.copy(
                 savedJobs = current.savedJobs.copy(actionInProgress = null, lastActionMessage = failure.message),
+                uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
+            )
+        }
+    }
+
+    private fun refreshSavedJobSchedules() {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleStatus = ScreenStatus.Loading)) }
+        executeRequest(
+            request = savedJobScheduleRequestBuilder.list(nextRequestId("schedules-list")),
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleStatus = ScreenStatus.Error(failure.title, failure.message), scheduleActionInProgress = null)) }
+            },
+        ) { result ->
+            val schedules = SavedJobScheduleBridgeCodec.decodeArtifacts(result.artifacts)
+            _state.update { current ->
+                current.copy(savedJobs = current.savedJobs.copy(
+                    scheduleStatus = if (schedules.isEmpty()) ScreenStatus.Empty("No recurring saved-job schedules yet.") else ScreenStatus.Content,
+                    schedules = schedules,
+                    scheduleActionInProgress = null,
+                ))
+            }
+        }
+    }
+
+    private fun putSavedJobSchedule(schedule: SavedJobScheduleDefinition) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleActionInProgress = "put:${schedule.scheduleId}")) }
+        executeRequest(
+            request = savedJobScheduleRequestBuilder.put(nextRequestId("schedule-put"), schedule),
+            recordInHistory = false,
+            onFailure = { failure -> scheduleActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleMessage = result.summary, scheduleActionInProgress = null)) }
+            refreshSavedJobSchedules()
+        }
+    }
+
+    private fun setSavedJobScheduleEnabled(scheduleId: String, enabled: Boolean) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleActionInProgress = "toggle:$scheduleId")) }
+        executeRequest(
+            request = savedJobScheduleRequestBuilder.setEnabled(nextRequestId("schedule-toggle"), scheduleId, enabled),
+            recordInHistory = false,
+            onFailure = { failure -> scheduleActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleMessage = result.summary, scheduleActionInProgress = null)) }
+            refreshSavedJobSchedules()
+        }
+    }
+
+    private fun deleteSavedJobSchedule(scheduleId: String) {
+        _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleActionInProgress = "delete:$scheduleId")) }
+        executeRequest(
+            request = savedJobScheduleRequestBuilder.delete(nextRequestId("schedule-delete"), scheduleId),
+            recordInHistory = false,
+            onFailure = { failure -> scheduleActionFailure(failure) },
+        ) { result ->
+            _state.update { current -> current.copy(savedJobs = current.savedJobs.copy(scheduleMessage = result.summary, scheduleActionInProgress = null)) }
+            refreshSavedJobSchedules()
+        }
+    }
+
+    private fun scheduleActionFailure(failure: OperationFailureUiState) {
+        _state.update { current ->
+            current.copy(
+                savedJobs = current.savedJobs.copy(scheduleActionInProgress = null, scheduleMessage = failure.message),
                 uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message),
             )
         }

@@ -169,7 +169,17 @@ func snapshotRestore(c *appContext, args []string) int {
 		return commandErr(c, err)
 	}
 	overwrite, _ := a.stringValue("overwrite")
-	result, err := resticops.RestoreSnapshot(access, a.Positionals[0], resticops.RestoreOptions{Target: abs, Includes: a.multiValue("include"), Excludes: a.multiValue("exclude"), Overwrite: overwrite, DryRun: c.globals.DryRun}, resticops.Options{})
+	var options resticops.Options
+	var lease *cliExecutionLease
+	if !c.globals.DryRun {
+		lease, err = beginCLIExecution(c, "snapshots.restore", "", repositoryLeaseID(c, access.Repository))
+		if err != nil {
+			return commandErr(c, err)
+		}
+		defer lease.Close()
+		options.Cancelled = lease.Cancelled
+	}
+	result, err := resticops.RestoreSnapshot(access, a.Positionals[0], resticops.RestoreOptions{Target: abs, Includes: a.multiValue("include"), Excludes: a.multiValue("exclude"), Overwrite: overwrite, DryRun: c.globals.DryRun}, options)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -197,7 +207,12 @@ func snapshotForget(c *appContext, args []string) int {
 	if err != nil {
 		return commandErr(c, err)
 	}
-	result, err := resticops.ForgetSnapshot(access, a.Positionals[0], resticops.Options{})
+	lease, err := beginCLIExecution(c, "snapshots.forget", "", repositoryLeaseID(c, access.Repository))
+	if err != nil {
+		return commandErr(c, err)
+	}
+	defer lease.Close()
+	result, err := resticops.ForgetSnapshot(access, a.Positionals[0], resticops.Options{Cancelled: lease.Cancelled})
 	if err != nil {
 		return commandErr(c, err)
 	}

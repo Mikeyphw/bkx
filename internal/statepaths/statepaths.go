@@ -57,6 +57,14 @@ func RepositoryStorePath(home string) string {
 	return filepath.Join(Resolve(home).Root, "repositories", "repositories.json")
 }
 
+func ExecutionControlPath(home string) string {
+	return filepath.Join(Resolve(home).Root, "execution", "control.json")
+}
+
+func ScheduleStorePath(home string) string {
+	return filepath.Join(Resolve(home).Root, "schedules", "schedules.json")
+}
+
 func LegacyJobStorePath(home string) string {
 	return filepath.Join(LegacyRoot(home), "jobs", "jobs.json")
 }

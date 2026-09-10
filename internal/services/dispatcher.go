@@ -19,6 +19,7 @@ import (
 	"bkx/internal/backupengine"
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
+	"bkx/internal/executioncontrol"
 	"bkx/internal/fsutil"
 	"bkx/internal/jobstore"
 	"bkx/internal/models"
@@ -27,6 +28,7 @@ import (
 	"bkx/internal/repositorystore"
 	"bkx/internal/resticops"
 	"bkx/internal/runstore"
+	"bkx/internal/schedulestore"
 	"bkx/internal/transferops"
 	"bkx/internal/validation"
 )
@@ -70,6 +72,7 @@ type Progress struct {
 }
 type OperationContext struct {
 	RequestID string
+	Owner     string
 	Cancelled func() bool
 	Progress  func(Progress)
 }
@@ -79,8 +82,10 @@ type StorageLocation struct {
 }
 type Dispatcher struct {
 	RunStore         *runstore.Store
+	Control          *executioncontrol.Store
 	Repositories     *repositorystore.Store
 	Jobs             *jobstore.Store
+	Schedules        *schedulestore.Store
 	StorageLocations []StorageLocation
 }
 
@@ -99,10 +104,11 @@ func NewWithRepositories(store *runstore.Store, repositories *repositorystore.St
 }
 
 func NewWithStores(store *runstore.Store, repositories *repositorystore.Store, jobs *jobstore.Store) *Dispatcher {
-	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, StorageLocations: defaultStorageLocations()}
+	home, _ := os.UserHomeDir()
+	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, Schedules: schedulestore.Default(home), Control: executioncontrol.Default(home), StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "schedules.delete", "schedules.list", "schedules.put", "schedules.set_enabled", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -113,7 +119,35 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 	if err := checkCancelled(ctx, "preparing"); err != nil {
 		return Result{}, err
 	}
-	switch strings.TrimSpace(operation) {
+	operation = strings.TrimSpace(operation)
+	if d.Control != nil && ctx.RequestID != "" && needsExecutionLease(operation) {
+		jobID, repositoryID := d.executionIdentity(operation, p)
+		if _, err := d.Control.Acquire(requestID(ctx), operation, jobID, repositoryID, ctx.Owner); err != nil {
+			return Result{}, err
+		}
+		defer d.Control.Release(requestID(ctx))
+		defer d.Control.ClearCancel(requestID(ctx))
+		callerCancelled := ctx.Cancelled
+		callerProgress := ctx.Progress
+		lastHeartbeat := time.Time{}
+		ctx.Cancelled = func() bool {
+			return (callerCancelled != nil && callerCancelled()) || d.Control.CancelRequested(requestID(ctx))
+		}
+		ctx.Progress = func(progress Progress) {
+			now := time.Now()
+			if lastHeartbeat.IsZero() || now.Sub(lastHeartbeat) >= 5*time.Second {
+				_ = d.Control.Heartbeat(requestID(ctx))
+				lastHeartbeat = now
+			}
+			if callerProgress != nil {
+				callerProgress(progress)
+			}
+		}
+		if ctx.Cancelled() {
+			return Result{}, ErrCancelled
+		}
+	}
+	switch operation {
 	case "backup.plan":
 		return d.backupPlan(ctx, p)
 	case "backup.create":
@@ -170,6 +204,14 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.jobsExecute(ctx, p, true)
 	case "jobs.run":
 		return d.jobsExecute(ctx, p, false)
+	case "schedules.list":
+		return d.schedulesList()
+	case "schedules.put":
+		return d.schedulesPut(p)
+	case "schedules.set_enabled":
+		return d.schedulesSetEnabled(p)
+	case "schedules.delete":
+		return d.schedulesDelete(p)
 	case "archive.list":
 		return d.archiveList(ctx, p)
 	case "archive.info":
@@ -200,6 +242,36 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return Result{}, berror.Validation("Unsupported GO10 service operation: "+operation, map[string]any{"operation": operation, "supported": SupportedOperations()})
 	}
 }
+func needsExecutionLease(operation string) bool {
+	switch operation {
+	case "backup.create", "backup.snapshot", "jobs.run", "repository.init", "repository.check", "repository.prune", "retention.apply", "restore.extract", "snapshots.forget", "snapshots.restore", "transfer.run":
+		return true
+	default:
+		return false
+	}
+}
+
+func (d *Dispatcher) executionIdentity(operation string, p map[string]any) (string, string) {
+	jobID := optionalString(p["job_id"])
+	repositoryID := optionalString(p["repository_ref"])
+	if repositoryID == "" {
+		repositoryID = optionalString(p["repository_id"])
+	}
+	if operation == "jobs.run" && jobID != "" && d.Jobs != nil {
+		if job, err := d.Jobs.Get(jobID); err == nil && job != nil && job.Operation.RepositoryRef != nil {
+			repositoryID = strings.TrimSpace(*job.Operation.RepositoryRef)
+		}
+	}
+	return jobID, repositoryID
+}
+
+func (d *Dispatcher) RequestCancellation(requestID string) error {
+	if d.Control == nil {
+		return nil
+	}
+	return d.Control.RequestCancel(requestID)
+}
+
 func decodePayload(raw json.RawMessage) (map[string]any, error) {
 	if len(raw) == 0 {
 		return map[string]any{}, nil

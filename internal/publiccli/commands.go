@@ -39,6 +39,13 @@ var commandHandlers = map[string]commandHandler{
 	"snapshot list":       snapshotList,
 	"snapshot restore":    snapshotRestore,
 	"snapshot show":       snapshotShow,
+	"schedule add":        scheduleAdd,
+	"schedule disable":    scheduleDisable,
+	"schedule enable":     scheduleEnable,
+	"schedule list":       scheduleList,
+	"schedule remove":     scheduleRemove,
+	"schedule show":       scheduleShow,
+	"schedule set":        scheduleSet,
 	"state status":        stateStatus,
 	"retention apply":     retentionApply,
 	"retention clear":     retentionClear,
@@ -58,6 +65,7 @@ var commandHandlers = map[string]commandHandler{
 	"job show":            jobShow,
 	"restore extract":     restoreExtract,
 	"restore pick":        restorePick,
+	"run cancel":          runCancel,
 	"run list":            runList,
 	"run replay":          runReplay,
 	"run show":            runShow,
@@ -239,7 +247,12 @@ func backupCreate(c *appContext, args []string) int {
 			}
 			return renderResult(c, plan, "backup_plan")
 		}
-		result, err := backupengine.Create(req, backupengine.Options{RunStore: c.store})
+		lease, err := beginCLIExecution(c, "backup.snapshot", "", repositoryLeaseID(c, repository))
+		if err != nil {
+			return commandErr(c, err)
+		}
+		defer lease.Close()
+		result, err := backupengine.Create(req, backupengine.Options{RunStore: c.store, RunID: lease.requestID, Cancelled: lease.Cancelled})
 		if err != nil {
 			return commandErr(c, err)
 		}

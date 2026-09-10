@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
@@ -291,6 +292,17 @@ func jobDelete(c *appContext, args []string) int {
 	if !deleted {
 		return commandErr(c, berror.NotFound("Saved job not found: "+a.Positionals[0], map[string]any{"job_id": a.Positionals[0]}))
 	}
+	if schedules, scheduleErr := c.schedules.List(); scheduleErr != nil {
+		return commandErr(c, scheduleErr)
+	} else {
+		for _, schedule := range schedules {
+			if schedule.JobID == a.Positionals[0] {
+				if _, scheduleErr := c.schedules.Delete(schedule.ScheduleID); scheduleErr != nil {
+					return commandErr(c, scheduleErr)
+				}
+			}
+		}
+	}
 	return renderResult(c, map[string]any{"job_id": a.Positionals[0], "deleted": true}, "job_delete")
 }
 
@@ -453,7 +465,16 @@ func dispatchSaved(c *appContext, op models.OperationSpecV2, sets []string, plan
 			}
 			return renderResult(c, result, "job_plan")
 		}
-		result, err := resticops.Backup(spec, resticops.Options{RunStore: c.store})
+		repositoryID := repositoryLeaseID(c, spec.Repository)
+		if op.RepositoryRef != nil {
+			repositoryID = strings.TrimSpace(*op.RepositoryRef)
+		}
+		lease, err := beginCLIExecution(c, "backup.snapshot", "", repositoryID)
+		if err != nil {
+			return commandErr(c, err)
+		}
+		defer lease.Close()
+		result, err := resticops.Backup(spec, resticops.Options{RunStore: c.store, RunID: lease.requestID, Cancelled: lease.Cancelled})
 		if err != nil {
 			return commandErr(c, err)
 		}
@@ -490,7 +511,7 @@ func dispatchSaved(c *appContext, op models.OperationSpecV2, sets []string, plan
 }
 
 func jobRun(c *appContext, args []string) int {
-	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}}
+	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}, "--request-id": {Key: "request_id", Kind: optionValue}}
 	a, ok := parseFor(c, "job run", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -506,7 +527,17 @@ func jobRun(c *appContext, args []string) int {
 	if !j.Enabled {
 		return commandErr(c, berror.Validation("Saved job is disabled", map[string]any{"job_id": j.JobID}))
 	}
-	return dispatchSaved(c, j.Operation, a.multiValue("set"), false)
+	requestID, set := a.stringValue("request_id")
+	if !set || strings.TrimSpace(requestID) == "" {
+		requestID = fmt.Sprintf("cli-job-%d-%d", os.Getpid(), time.Now().UnixNano())
+	}
+	payload, _ := json.Marshal(map[string]any{"job_id": j.JobID, "overrides": a.multiValue("set")})
+	d := services.NewWithStores(c.store, c.repositories, c.jobs)
+	result, err := d.Dispatch(services.OperationContext{RequestID: requestID, Owner: "cli"}, "jobs.run", payload)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	return renderResult(c, result, "job_run")
 }
 func jobPlan(c *appContext, args []string) int {
 	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}}

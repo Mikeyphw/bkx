@@ -145,7 +145,18 @@ func retentionApply(c *appContext, args []string) int {
 	if !c.globals.DryRun && !confirm {
 		return commandErr(c, berror.Validation("retention apply requires --confirm unless --dry-run is active", map[string]any{"action": "Run with --dry-run first, then rerun with --confirm."}))
 	}
-	result, err := resticops.ApplyRetention(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, *def.Retention, c.globals.DryRun, resticops.Options{})
+	var options resticops.Options
+	var lease *cliExecutionLease
+	var err error
+	if !c.globals.DryRun {
+		lease, err = beginCLIExecution(c, "retention.apply", "", def.RepositoryID)
+		if err != nil {
+			return commandErr(c, err)
+		}
+		defer lease.Close()
+		options.Cancelled = lease.Cancelled
+	}
+	result, err := resticops.ApplyRetention(models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef}, *def.Retention, c.globals.DryRun, options)
 	if err != nil {
 		return commandErr(c, err)
 	}

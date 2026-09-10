@@ -17,12 +17,14 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
@@ -40,6 +42,8 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeJson
 import com.mikeyphw.bkx.android.core.jobs.OperationSpecV2
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
 import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
+import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
+import com.mikeyphw.bkx.android.automation.BkxSavedJobScheduler
 import com.mikeyphw.bkx.android.core.jobs.SecretReference
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
@@ -72,6 +76,14 @@ fun SavedJobsScreen(
     var creating by rememberSaveable { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SavedJob?>(null) }
     var cloneTarget by remember { mutableStateOf<SavedJob?>(null) }
+    var scheduleCreating by rememberSaveable { mutableStateOf(false) }
+    var scheduleEditing by remember { mutableStateOf<SavedJobScheduleDefinition?>(null) }
+    var scheduleDeleteTarget by remember { mutableStateOf<SavedJobScheduleDefinition?>(null) }
+    val context = LocalContext.current
+
+    LaunchedEffect(state.savedJobs.schedules) {
+        BkxSavedJobScheduler.reconcile(context)
+    }
 
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
@@ -112,6 +124,39 @@ fun SavedJobsScreen(
         state.savedJobs.lastActionMessage?.takeIf { it.isNotBlank() }?.let { message ->
             BkxSurfaceCard { Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
+
+        BkxDivider()
+        BkxSectionHeader(title = "Schedules", action = "Refresh", onAction = { onEvent(BkxHomeEvent.RefreshSavedJobSchedules) })
+        Text(
+            "Recurring schedules are shared with the BKX CLI and reconciled with Android JobScheduler. Android may batch periodic work to protect battery.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Button(
+            onClick = { scheduleCreating = true; scheduleEditing = null },
+            enabled = state.savedJobs.items.isNotEmpty() && state.savedJobs.scheduleActionInProgress == null,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text("New schedule") }
+        when (val scheduleStatus = state.savedJobs.scheduleStatus) {
+            ScreenStatus.Loading -> BkxSurfaceCard { Text("Loading schedules…") }
+            is ScreenStatus.Empty -> BkxSurfaceCard { Text(scheduleStatus.message, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            is ScreenStatus.Error -> BkxSurfaceCard {
+                Text(scheduleStatus.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error)
+                Text(scheduleStatus.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            ScreenStatus.Content -> state.savedJobs.schedules.forEach { schedule ->
+                SavedJobScheduleCard(
+                    schedule = schedule,
+                    jobName = state.savedJobs.items.firstOrNull { it.jobId == schedule.jobId }?.name ?: schedule.jobId,
+                    busy = state.savedJobs.scheduleActionInProgress != null,
+                    onToggle = { enabled -> onEvent(BkxHomeEvent.SetSavedJobScheduleEnabled(schedule.scheduleId, enabled)) },
+                    onEdit = { scheduleEditing = schedule; scheduleCreating = false },
+                    onDelete = { scheduleDeleteTarget = schedule },
+                )
+            }
+        }
+        state.savedJobs.scheduleMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 
     if (creating || editing != null) {
@@ -126,6 +171,29 @@ fun SavedJobsScreen(
                 creating = false
                 editing = null
             },
+        )
+    }
+
+    if (scheduleCreating || scheduleEditing != null) {
+        SavedJobScheduleEditorDialog(
+            existing = scheduleEditing,
+            jobs = state.savedJobs.items,
+            onDismiss = { scheduleCreating = false; scheduleEditing = null },
+            onSave = { schedule ->
+                onEvent(BkxHomeEvent.PutSavedJobSchedule(schedule))
+                scheduleCreating = false
+                scheduleEditing = null
+            },
+        )
+    }
+
+    scheduleDeleteTarget?.let { schedule ->
+        AlertDialog(
+            onDismissRequest = { scheduleDeleteTarget = null },
+            title = { Text("Delete schedule?") },
+            text = { Text("${schedule.scheduleId} will stop launching ${schedule.jobId}. The saved job itself is not deleted.") },
+            confirmButton = { Button(onClick = { onEvent(BkxHomeEvent.DeleteSavedJobSchedule(schedule.scheduleId)); scheduleDeleteTarget = null }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { scheduleDeleteTarget = null }) { Text("Cancel") } },
         )
     }
 
@@ -181,6 +249,115 @@ private fun SavedJobCard(
             TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Delete") }
         }
     }
+}
+
+@Composable
+private fun SavedJobScheduleCard(
+    schedule: SavedJobScheduleDefinition,
+    jobName: String,
+    busy: Boolean,
+    onToggle: (Boolean) -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    BkxSurfaceCard {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(schedule.scheduleId, style = MaterialTheme.typography.titleMedium)
+                Text(jobName, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            BkxStatusPill(if (schedule.enabled) "ENABLED" else "PAUSED")
+        }
+        BkxKeyValue("Every", "${schedule.intervalMinutes} min")
+        BkxKeyValue("Network", when (schedule.network) { "unmetered" -> "Unmetered"; "any" -> "Any network"; else -> "No network required" })
+        BkxKeyValue("Charging", if (schedule.requireCharging) "Required" else "Not required")
+        BkxSettingSwitch(
+            title = "Enabled",
+            summary = "Pause this schedule without deleting it.",
+            checked = schedule.enabled,
+            onCheckedChange = onToggle,
+            enabled = !busy,
+        )
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onEdit, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Edit") }
+            TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Delete") }
+        }
+    }
+}
+
+@Composable
+private fun SavedJobScheduleEditorDialog(
+    existing: SavedJobScheduleDefinition?,
+    jobs: List<SavedJob>,
+    onDismiss: () -> Unit,
+    onSave: (SavedJobScheduleDefinition) -> Unit,
+) {
+    var scheduleId by remember(existing?.scheduleId) { mutableStateOf(existing?.scheduleId.orEmpty()) }
+    var jobId by remember(existing?.scheduleId) { mutableStateOf(existing?.jobId ?: jobs.firstOrNull()?.jobId.orEmpty()) }
+    var interval by remember(existing?.scheduleId) { mutableStateOf((existing?.intervalMinutes ?: 60L).toString()) }
+    var network by remember(existing?.scheduleId) { mutableStateOf(existing?.network ?: "none") }
+    var charging by remember(existing?.scheduleId) { mutableStateOf(existing?.requireCharging ?: false) }
+    var enabled by remember(existing?.scheduleId) { mutableStateOf(existing?.enabled ?: true) }
+    val intervalMinutes = interval.toLongOrNull()
+    val valid = scheduleId.matches(Regex("^[a-z0-9][a-z0-9._-]{0,127}$")) && jobId.isNotBlank() && intervalMinutes != null && intervalMinutes >= 15L
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "New schedule" else "Edit schedule") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = scheduleId,
+                    onValueChange = { if (existing == null) scheduleId = normalizeIdInput(it) },
+                    label = { Text("Schedule ID") },
+                    enabled = existing == null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Saved job", style = MaterialTheme.typography.labelLarge)
+                jobs.forEach { job ->
+                    FilterChip(selected = jobId == job.jobId, onClick = { jobId = job.jobId }, label = { Text(job.name) })
+                }
+                OutlinedTextField(
+                    value = interval,
+                    onValueChange = { interval = it.filter(Char::isDigit) },
+                    label = { Text("Repeat every (minutes)") },
+                    supportingText = { Text("Minimum 15 minutes. Android may batch periodic jobs.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text("Network requirement", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = network == "none", onClick = { network = "none" }, label = { Text("None") })
+                    FilterChip(selected = network == "any", onClick = { network = "any" }, label = { Text("Any") })
+                    FilterChip(selected = network == "unmetered", onClick = { network = "unmetered" }, label = { Text("Unmetered") })
+                }
+                BkxSettingSwitch("Require charging", "Run only while the device is charging.", charging, { charging = it })
+                BkxSettingSwitch("Enabled", "Disabled schedules remain saved but do not run.", enabled, { enabled = it })
+                if (!valid) Text("Use a valid ID, select a job, and choose an interval of at least 15 minutes.", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = valid,
+                onClick = {
+                    onSave(
+                        SavedJobScheduleDefinition(
+                            scheduleId = scheduleId,
+                            jobId = jobId,
+                            enabled = enabled,
+                            intervalMinutes = intervalMinutes ?: 15L,
+                            requireCharging = charging,
+                            network = network,
+                            createdAt = existing?.createdAt.orEmpty(),
+                            updatedAt = existing?.updatedAt.orEmpty(),
+                        ),
+                    )
+                },
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

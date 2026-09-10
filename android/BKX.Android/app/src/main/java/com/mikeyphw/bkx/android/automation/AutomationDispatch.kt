@@ -72,6 +72,18 @@ object AutomationDispatcher {
         }
     }
 
+    fun recoverPending(context: Context): Int {
+        val appContext = context.applicationContext ?: context
+        val store = AutomationDispatchStore(appContext)
+        val ids = store.pendingIds()
+        val state = SharedPreferencesAutomationStateStore(appContext)
+        ids.forEach { id ->
+            store.read(id)?.request?.requestId?.takeIf(String::isNotBlank)?.let(state::clearActive)
+            scheduleFallback(appContext, id)
+        }
+        return ids.size
+    }
+
     fun create(
         request: AutomationRequest,
         taskerCompletionIntentUri: String = "",

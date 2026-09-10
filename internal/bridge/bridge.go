@@ -128,8 +128,12 @@ type RuntimeAdapter struct {
 }
 
 func NewAndroid(store *runstore.Store) *RuntimeAdapter {
+	dispatcher := services.New(store)
+	if dispatcher.Control != nil {
+		_, _ = dispatcher.Control.RecoverStale()
+	}
 	return &RuntimeAdapter{
-		services:  services.New(store),
+		services:  dispatcher,
 		runtime:   AndroidRuntime,
 		cancelled: map[string]struct{}{},
 		progress:  map[string]Progress{},
@@ -156,6 +160,11 @@ func (r *RuntimeAdapter) Readiness() Readiness {
 		"jobs.crud",
 		"jobs.run",
 		"jobs.plan",
+		"execution.shared_locks",
+		"run.cancel.shared",
+		"run.recovery.stale_lease",
+		"jobs.schedules.shared",
+		"jobs.schedules.android_jobscheduler",
 	)
 	if rcloneops.Available() {
 		caps = append(caps,
@@ -288,6 +297,7 @@ func (r *RuntimeAdapter) Execute(raw string) Result {
 	} else {
 		ctx := services.OperationContext{
 			RequestID: requestID,
+			Owner:     "android",
 			Cancelled: func() bool { return r.isCancelled(requestID) },
 			Progress: func(p services.Progress) {
 				r.emitService(requestID, p)
@@ -342,6 +352,9 @@ func (r *RuntimeAdapter) handleCancelOperation(request Request) Result {
 	r.mu.Lock()
 	r.cancelled[target] = struct{}{}
 	r.mu.Unlock()
+	if err := r.services.RequestCancellation(target); err != nil {
+		return failure(request.RequestID, err)
+	}
 	return success(request.RequestID, fmt.Sprintf("Cancellation recorded for %s.", target), nil, nil)
 }
 

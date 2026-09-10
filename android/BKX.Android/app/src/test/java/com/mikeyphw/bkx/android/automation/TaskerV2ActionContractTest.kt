@@ -10,10 +10,13 @@ import org.junit.Test
 class TaskerV2ActionContractTest {
     @Test
     fun savedJobAndSnapshotBuildersUseSharedBridgeOperations() {
-        val job = TaskerV2RequestBuilder.runSavedJob("run-1", "phone-backup", "phone-drive")
+        val job = TaskerV2RequestBuilder.runSavedJob(
+            "run-1", "phone-backup", "phone-drive", listOf("verify=false", "tags=[\"night\"]"),
+        )
         assertEquals("jobs.run", job.operation)
         assertEquals("phone-backup", (job.payload["job_id"] as JsonPrimitive).content)
         assertEquals("phone-drive", (job.payload["repository_ref"] as JsonPrimitive).content)
+        assertEquals(2, (job.payload["overrides"] as JsonArray).size)
 
         val snapshot = TaskerV2RequestBuilder.createSnapshot(
             requestId = "snapshot-1",
@@ -53,6 +56,17 @@ class TaskerV2ActionContractTest {
         val real = preview.copy(dryRun = false)
         assertFalse(real.validate().isEmpty())
         assertTrue(real.copy(confirmDestructive = true).validate().isEmpty())
+    }
+
+    @Test
+    fun savedJobOverridesAreExecutionOnlyKeyValuePairs() {
+        val request = AutomationRequest(
+            action = AutomationAction.RunSavedJob,
+            jobId = "phone-backup",
+            jobOverrides = listOf("verify=false", "tags=[\"night\"]"),
+        )
+        assertTrue(request.validate().isEmpty())
+        assertTrue(request.copy(jobOverrides = listOf("broken")).validate().any { it.contains("KEY=VALUE") })
     }
 
     @Test

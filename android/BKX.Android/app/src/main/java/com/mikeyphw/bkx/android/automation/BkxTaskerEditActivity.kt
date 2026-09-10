@@ -129,6 +129,7 @@ private fun TaskerConfigurationScreen(
     var pageToken by remember { mutableStateOf(initial.pageToken) }
     var pageSize by remember { mutableStateOf(initial.pageSize.toString()) }
     var jobId by remember { mutableStateOf(initial.jobId) }
+    var jobOverrides by remember { mutableStateOf(initial.jobOverrides.joinToString("\n")) }
     var repositoryId by remember { mutableStateOf(initial.repositoryId) }
     var snapshotId by remember { mutableStateOf(initial.snapshotId) }
     var snapshotOverwrite by remember { mutableStateOf(initial.snapshotOverwrite) }
@@ -171,6 +172,7 @@ private fun TaskerConfigurationScreen(
         pageToken = pageToken.trim(),
         pageSize = pageSize.trim().toIntOrNull() ?: 100,
         jobId = jobId.trim(),
+        jobOverrides = splitAutomationList(jobOverrides),
         repositoryId = repositoryId.trim(),
         snapshotId = snapshotId.trim(),
         dryRun = dryRun,
@@ -456,6 +458,14 @@ private fun TaskerConfigurationScreen(
                         if (catalog.jobs.isNotEmpty()) {
                             Text("Available now: ${catalog.jobs.joinToString { "${it.name} (${it.jobId})" }}", style = MaterialTheme.typography.bodySmall)
                         }
+                        ConfigField(
+                            "Execution overrides",
+                            jobOverrides,
+                            { jobOverrides = it },
+                            helper = "Optional execution-only KEY=VALUE entries, one per line. They never modify the saved job revision. JSON values are accepted.",
+                            minLines = 3,
+                            error = editorErrorFor(editorErrors, "override"),
+                        )
                     }
                 }
 

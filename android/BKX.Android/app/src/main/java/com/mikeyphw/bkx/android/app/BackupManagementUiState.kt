@@ -2,6 +2,7 @@ package com.mikeyphw.bkx.android.app
 
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
+import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.core.repositories.RepositoryDefinition
 import com.mikeyphw.bkx.android.core.repositories.SnapshotDescriptor
 import com.mikeyphw.bkx.android.core.repositories.SnapshotDiffSummary
@@ -14,6 +15,10 @@ data class SavedJobsUiState(
     val items: List<SavedJob> = emptyList(),
     val actionInProgress: String? = null,
     val lastActionMessage: String? = null,
+    val scheduleStatus: ScreenStatus = ScreenStatus.Loading,
+    val schedules: List<SavedJobScheduleDefinition> = emptyList(),
+    val scheduleActionInProgress: String? = null,
+    val scheduleMessage: String? = null,
 )
 
 data class RepositoriesUiState(

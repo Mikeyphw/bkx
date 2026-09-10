@@ -40,6 +40,7 @@ object AutomationIntentCodec {
         pageToken = bundle.getString(BkxAutomationContract.EXTRA_PAGE_TOKEN).orEmpty().trim(),
         pageSize = bundle.intCompat(BkxAutomationContract.EXTRA_PAGE_SIZE) ?: 100,
         jobId = bundle.getString(BkxAutomationContract.EXTRA_JOB_ID).orEmpty().trim(),
+        jobOverrides = splitAutomationList(bundle.getString(BkxAutomationContract.EXTRA_JOB_OVERRIDES)),
         repositoryId = bundle.getString(BkxAutomationContract.EXTRA_REPOSITORY_ID).orEmpty().trim(),
         snapshotId = bundle.getString(BkxAutomationContract.EXTRA_SNAPSHOT_ID).orEmpty().trim(),
         dryRun = bundle.booleanCompat(BkxAutomationContract.EXTRA_DRY_RUN, true),
@@ -79,6 +80,7 @@ object AutomationIntentCodec {
         putString(BkxAutomationContract.EXTRA_PAGE_TOKEN, request.pageToken)
         putInt(BkxAutomationContract.EXTRA_PAGE_SIZE, request.pageSize)
         putString(BkxAutomationContract.EXTRA_JOB_ID, request.jobId)
+        putString(BkxAutomationContract.EXTRA_JOB_OVERRIDES, request.jobOverrides.joinToString("\n"))
         putString(BkxAutomationContract.EXTRA_REPOSITORY_ID, request.repositoryId)
         putString(BkxAutomationContract.EXTRA_SNAPSHOT_ID, request.snapshotId)
         putBoolean(BkxAutomationContract.EXTRA_DRY_RUN, request.dryRun)
@@ -105,6 +107,7 @@ object AutomationIntentCodec {
                 BkxAutomationContract.EXTRA_ROOTS,
                 BkxAutomationContract.EXTRA_PAGE_TOKEN,
                 BkxAutomationContract.EXTRA_JOB_ID,
+                BkxAutomationContract.EXTRA_JOB_OVERRIDES,
                 BkxAutomationContract.EXTRA_REPOSITORY_ID,
                 BkxAutomationContract.EXTRA_SNAPSHOT_ID,
                 BkxAutomationContract.EXTRA_SNAPSHOT_OVERWRITE,

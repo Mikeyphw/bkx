@@ -123,7 +123,7 @@ func TestCreateDryRunDoesNotMutate(t *testing.T) {
 	}
 }
 
-func TestCreateCancellationAfterArchivePreventsPublicationAndMarksInterrupted(t *testing.T) {
+func TestCreateCancellationAfterArchivePreventsPublicationAndMarksCancelled(t *testing.T) {
 	src := fixture(t)
 	dest := filepath.Join(t.TempDir(), "final")
 	store, err := runstore.New(filepath.Join(t.TempDir(), "runs.jsonl"), 20, false)
@@ -147,7 +147,7 @@ func TestCreateCancellationAfterArchivePreventsPublicationAndMarksInterrupted(t 
 		t.Fatalf("cancelled backup published destination: %v", statErr)
 	}
 	record, err := store.Get("cancelled")
-	if err != nil || record == nil || record.Status != "interrupted" {
+	if err != nil || record == nil || record.Status != "cancelled" {
 		t.Fatalf("record=%+v err=%v", record, err)
 	}
 }

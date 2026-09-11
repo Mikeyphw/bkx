@@ -25,10 +25,10 @@ fun formatTime(epochMillis: Long?): String = if (epochMillis == null) {
 }
 
 fun operationLabel(operation: String): String = when (operation) {
-    "backup.create" -> "Backup"
+    "backup", "backup.create", "backup.snapshot" -> "Backup"
     "archive.verify" -> "Archive verification"
     "restore.extract" -> "Restore"
-    "transfer.run" -> "Transfer"
+    "transfer", "transfer.run" -> "Transfer"
     "backup.plan" -> "Backup review"
     "restore.preview" -> "Restore review"
     "transfer.plan" -> "Transfer review"

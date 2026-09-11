@@ -51,6 +51,7 @@ type Artifact struct {
 	Metadata              map[string]string `json:"metadata,omitempty"`
 }
 type ResultMetrics struct {
+	DurationMS *int64 `json:"duration_ms,omitempty"`
 	FilesTotal *int64 `json:"files_total,omitempty"`
 	BytesTotal *int64 `json:"bytes_total,omitempty"`
 }
@@ -62,6 +63,8 @@ type Result struct {
 	Metrics   *ResultMetrics `json:"metrics,omitempty"`
 }
 type Progress struct {
+	RunID      string   `json:"run_id,omitempty"`
+	JobID      string   `json:"job_id,omitempty"`
 	Phase      string   `json:"phase"`
 	Message    string   `json:"message"`
 	Progress   *float64 `json:"progress,omitempty"`
@@ -72,6 +75,7 @@ type Progress struct {
 }
 type OperationContext struct {
 	RequestID string
+	JobID     string
 	Owner     string
 	Cancelled func() bool
 	Progress  func(Progress)
@@ -108,7 +112,7 @@ func NewWithStores(store *runstore.Store, repositories *repositorystore.Store, j
 	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, Schedules: schedulestore.Default(home), Control: executioncontrol.Default(home), StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.show", "schedules.delete", "schedules.list", "schedules.put", "schedules.set_enabled", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.replay", "runs.show", "schedules.delete", "schedules.list", "schedules.put", "schedules.set_enabled", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -230,6 +234,8 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.transferRun(ctx, p)
 	case "runs.list":
 		return d.runsList(p)
+	case "runs.replay":
+		return d.runsReplay(ctx, p)
 	case "runs.show":
 		return d.runsShow(p)
 	case "storage.locations":
@@ -244,7 +250,7 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 }
 func needsExecutionLease(operation string) bool {
 	switch operation {
-	case "backup.create", "backup.snapshot", "jobs.run", "repository.init", "repository.check", "repository.prune", "retention.apply", "restore.extract", "snapshots.forget", "snapshots.restore", "transfer.run":
+	case "backup.create", "backup.snapshot", "jobs.run", "runs.replay", "repository.init", "repository.check", "repository.prune", "retention.apply", "restore.extract", "snapshots.forget", "snapshots.restore", "transfer.run":
 		return true
 	default:
 		return false
@@ -260,6 +266,14 @@ func (d *Dispatcher) executionIdentity(operation string, p map[string]any) (stri
 	if operation == "jobs.run" && jobID != "" && d.Jobs != nil {
 		if job, err := d.Jobs.Get(jobID); err == nil && job != nil && job.Operation.RepositoryRef != nil {
 			repositoryID = strings.TrimSpace(*job.Operation.RepositoryRef)
+		}
+	}
+	if operation == "runs.replay" && d.RunStore != nil {
+		if source, err := d.RunStore.Get(optionalString(p["run_id"])); err == nil && source != nil {
+			jobID = source.JobID
+			if source.OperationSpecSnapshot != nil && source.OperationSpecSnapshot.RepositoryRef != nil {
+				repositoryID = strings.TrimSpace(*source.OperationSpecSnapshot.RepositoryRef)
+			}
 		}
 	}
 	return jobID, repositoryID
@@ -363,7 +377,9 @@ func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Resul
 	if r.Success {
 		word = "completed"
 	}
-	return Result{Status: status, Summary: fmt.Sprintf("Backup %s: %d files, %d bytes written.", word, r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: arts}, nil
+	out := Result{Status: status, Summary: fmt.Sprintf("Backup %s: %d files, %d bytes written.", word, r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: arts}
+	out.Metrics = &ResultMetrics{DurationMS: int64Ptr(r.DurationMS), FilesTotal: int64Ptr(int64(r.FilesProcessed)), BytesTotal: int64Ptr(r.BytesWritten)}
+	return out, nil
 }
 
 func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Result, error) {
@@ -415,6 +431,9 @@ func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Res
 		emitDetailed(ctx, stage, fmt.Sprintf("%s: %d files, %d bytes.", title(stage), files, bytes), nil, int64Ptr(files), nil, int64Ptr(bytes), nil)
 	}})
 	if err != nil {
+		if errors.Is(err, resticops.ErrCancelled) {
+			return Result{}, ErrCancelled
+		}
 		return Result{}, err
 	}
 	issues := []Issue{}
@@ -438,7 +457,7 @@ func (d *Dispatcher) backupSnapshot(ctx OperationContext, p map[string]any) (Res
 		arts = append(arts, snapshotArtifact)
 	}
 	out := success(fmt.Sprintf("Restic snapshot %s completed.", result.SnapshotID), issues, arts)
-	out.Metrics = &ResultMetrics{FilesTotal: int64Ptr(result.FilesProcessed), BytesTotal: int64Ptr(result.BytesProcessed)}
+	out.Metrics = &ResultMetrics{DurationMS: int64Ptr(result.DurationMS), FilesTotal: int64Ptr(result.FilesProcessed), BytesTotal: int64Ptr(result.BytesProcessed)}
 	return out, nil
 }
 
@@ -988,7 +1007,9 @@ func (d *Dispatcher) transferRun(ctx OperationContext, p map[string]any) (Result
 	if status == StatusSuccess {
 		word = "completed"
 	}
-	return Result{Status: status, Summary: fmt.Sprintf("Transfer %s: %d files, %d bytes.", word, r.FilesTransferred, r.BytesTransferred), Errors: issues, Artifacts: []Artifact{}}, nil
+	out := Result{Status: status, Summary: fmt.Sprintf("Transfer %s: %d files, %d bytes.", word, r.FilesTransferred, r.BytesTransferred), Errors: issues, Artifacts: []Artifact{}}
+	out.Metrics = &ResultMetrics{DurationMS: int64Ptr(r.DurationMS), FilesTotal: int64Ptr(r.FilesTransferred), BytesTotal: int64Ptr(r.BytesTransferred)}
+	return out, nil
 }
 
 func (d *Dispatcher) filesystemList(ctx OperationContext, p map[string]any) (Result, error) {
@@ -1162,13 +1183,7 @@ func (d *Dispatcher) runsList(p map[string]any) (Result, error) {
 	}
 	arts := []Artifact{}
 	for _, r := range records {
-		var completed any
-		if r.CompletedAt != nil {
-			completed = pythonISO(*r.CompletedAt)
-		}
-		summary := map[string]any{"run_id": r.RunID, "operation": r.Operation, "status": r.Status, "started_at": pythonISO(r.StartedAt), "completed_at": completed, "source_count": len(r.SourcePaths)}
-		tok, _ := token(summary)
-		arts = append(arts, artifact("run", "embedded://runs/"+r.RunID, tok))
+		arts = append(arts, runRecordArtifact(r))
 	}
 	return success(fmt.Sprintf("%d BKX runs available.", total), nil, arts), nil
 }
@@ -1190,20 +1205,25 @@ func (d *Dispatcher) runsShow(p map[string]any) (Result, error) {
 	if r == nil {
 		return Result{}, berror.NotFound("Run not found: "+id, map[string]any{"run_id": id})
 	}
-	detail := map[string]any{
-		"run_id": r.RunID, "operation": r.Operation, "status": r.Status, "timing": nil,
-		"source_paths": r.SourcePaths, "destination_path": r.DestinationPath, "archive_path": r.ArchivePath,
-		"files_count": r.FilesCount, "bytes_processed": r.BytesProcessed, "error_message": r.ErrorMessage, "spec_snapshot": r.SpecSnapshot,
+	return success(fmt.Sprintf("Run %s: %s is %s.", r.RunID, r.Operation, r.Status), nil, []Artifact{runRecordArtifact(*r)}), nil
+}
+
+func runRecordArtifact(record models.RunRecord) Artifact {
+	raw, _ := json.Marshal(record)
+	metadata := map[string]string{
+		"run_id":       record.RunID,
+		"operation":    record.Operation,
+		"status":       record.Status,
+		"phase":        record.Phase,
+		"job_id":       record.JobID,
+		"job_revision": fmt.Sprintf("%d", record.JobRevision),
+		"started_at":   record.StartedAt,
+		"run_json":     string(raw),
 	}
-	if r.CompletedAt != nil {
-		if started, e1 := time.Parse(time.RFC3339Nano, r.StartedAt); e1 == nil {
-			if completed, e2 := time.Parse(time.RFC3339Nano, *r.CompletedAt); e2 == nil {
-				detail["timing"] = []any{pythonISO(r.StartedAt), pythonFloatNumber(completed.Sub(started).Seconds())}
-			}
-		}
+	if record.CompletedAt != nil {
+		metadata["completed_at"] = *record.CompletedAt
 	}
-	tok, _ := token(detail)
-	return success(fmt.Sprintf("Run %s: %s is %s.", r.RunID, r.Operation, r.Status), nil, []Artifact{artifact("run", "embedded://runs/"+r.RunID, tok)}), nil
+	return Artifact{Label: "run", Path: "embedded://runs/" + record.RunID, Metadata: metadata}
 }
 func backupSpecFromBridge(p map[string]any, dry bool) (models.BackupSpec, error) {
 	source, err := mapping(p, "source", nil)
@@ -1441,6 +1461,7 @@ func emitDetailed(ctx OperationContext, phase, msg string, f *float64, filesDone
 		f = &v
 	}
 	ctx.Progress(Progress{
+		RunID: requestID(ctx), JobID: strings.TrimSpace(ctx.JobID),
 		Phase: phase, Message: msg, Progress: f,
 		FilesDone: filesDone, FilesTotal: filesTotal,
 		BytesDone: bytesDone, BytesTotal: bytesTotal,

@@ -459,10 +459,17 @@ private fun TaskerConfigurationScreen(
                             Text("Available now: ${catalog.jobs.joinToString { "${it.name} (${it.jobId})" }}", style = MaterialTheme.typography.bodySmall)
                         }
                         ConfigField(
+                            "Repository override",
+                            repositoryId,
+                            { repositoryId = it },
+                            helper = "Optional. Leave blank to use the saved job repository, or select another shared repository for this run only. ${repositoryCatalogHint(catalog)}",
+                            error = editorErrorFor(editorErrors, "Saved-job repository override"),
+                        )
+                        ConfigField(
                             "Execution overrides",
                             jobOverrides,
                             { jobOverrides = it },
-                            helper = "Optional execution-only KEY=VALUE entries, one per line. They never modify the saved job revision. JSON values are accepted.",
+                            helper = "Optional execution-only KEY=VALUE entries, one per line. source=/path, repository=repo-id, tags=[...] and other validated operation fields never modify the saved job revision.",
                             minLines = 3,
                             error = editorErrorFor(editorErrors, "override"),
                         )
@@ -860,6 +867,11 @@ private fun taskerVariableDescription(name: String): String = when (name) {
     "%bkx_run_id" -> "Concrete BKX run/bridge request ID for correlation and cancellation."
     "%bkx_repository_id" -> "Named repository ID when available."
     "%bkx_snapshot_id" -> "Restic snapshot ID when available."
+    "%bkx_files_processed" -> "Files processed by the completed operation when available."
+    "%bkx_bytes_processed" -> "Logical bytes processed by the completed operation when available."
+    "%bkx_bytes_added" -> "New Restic repository data added by an incremental snapshot when available."
+    "%bkx_bytes_reused" -> "Logical bytes reused from existing Restic data when available."
+    "%bkx_duration_ms" -> "Completed operation duration in milliseconds."
     else -> "BKX automation result variable."
 }
 

@@ -220,7 +220,7 @@ func TestServiceProgressMetricsCrossAndroidBridge(t *testing.T) {
 	progress := 0.25
 	filesDone, filesTotal := int64(2), int64(8)
 	bytesDone, bytesTotal := int64(256), int64(2048)
-	rt.emitDetailed("metrics-1", "archiving", "Writing", &progress, &filesDone, &filesTotal, &bytesDone, &bytesTotal)
+	rt.emitDetailed("metrics-1", "run-metrics-1", "job-metrics-1", "archiving", "Writing", &progress, &filesDone, &filesTotal, &bytesDone, &bytesTotal)
 
 	got, err := rt.Progress("metrics-1")
 	if err != nil {

@@ -6,7 +6,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PersonalSigningContractTest {
-    private val androidRoot = File(System.getProperty("user.dir")).parentFile
+    private val androidRoot = File(requireNotNull(System.getProperty("user.dir"))).parentFile
         ?: error("Unable to resolve Android project root")
 
     @Test

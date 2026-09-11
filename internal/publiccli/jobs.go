@@ -8,12 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/models"
-	"bkx/internal/resticops"
+	"bkx/internal/runstore"
 	"bkx/internal/services"
-	"bkx/internal/transferops"
 )
 
 func jobCommonOptions() map[string]optionSpec {
@@ -397,121 +395,8 @@ func applySets(params map[string]any, values []string) error {
 	return nil
 }
 
-func dispatchSaved(c *appContext, op models.OperationSpecV2, sets []string, plan bool) int {
-	params := cloneMap(op.Parameters)
-	if err := applySets(params, sets); err != nil {
-		return commandErr(c, err)
-	}
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return commandErr(c, berror.Validation("job parameters are not JSON serializable", nil))
-	}
-	// Saved CLI jobs use the canonical Go operation models. This preserves
-	// multi-source backup semantics and lets historical SpecSnapshots replay
-	// without translating them through the Android bridge payload shape.
-	switch op.Operation {
-	case "backup.create":
-		var spec models.BackupSpec
-		if err := json.Unmarshal(raw, &spec); err != nil {
-			return commandErr(c, berror.Validation("invalid backup job parameters", map[string]any{"reason": err.Error()}))
-		}
-		if plan {
-			spec.DryRun = true
-			result, err := backupops.PlanBackup(spec)
-			if err != nil {
-				return commandErr(c, err)
-			}
-			return renderResult(c, result, "job_plan")
-		}
-		spec.DryRun = c.globals.DryRun
-		result, err := backupops.Create(spec, false, backupops.Options{RunStore: c.store})
-		if err != nil {
-			return commandErr(c, err)
-		}
-		return renderResult(c, result, "job_run")
-	case "backup.snapshot":
-		var spec models.SnapshotBackupSpec
-		if err := json.Unmarshal(raw, &spec); err != nil {
-			return commandErr(c, berror.Validation("invalid snapshot backup job parameters", map[string]any{"reason": err.Error()}))
-		}
-		if spec.Engine == "" {
-			spec.Engine = models.BackupEngineRestic
-		}
-		if op.RepositoryRef != nil {
-			definition, err := c.repositories.Resolve(strings.TrimSpace(*op.RepositoryRef))
-			if err != nil {
-				return commandErr(c, err)
-			}
-			if spec.Repository != "" && strings.TrimSpace(spec.Repository) != definition.Location {
-				return commandErr(c, berror.Validation("Saved snapshot job contains both repository_ref and a conflicting repository location", map[string]any{"repository_ref": *op.RepositoryRef}))
-			}
-			spec.Repository = definition.Location
-			if spec.Engine != definition.Engine {
-				return commandErr(c, berror.Validation("Saved snapshot job engine does not match named repository", map[string]any{"repository_ref": *op.RepositoryRef, "engine": spec.Engine, "repository_engine": definition.Engine}))
-			}
-			if spec.CredentialRef == nil {
-				spec.CredentialRef = definition.CredentialRef
-			}
-		}
-		if spec.CredentialRef == nil && len(op.CredentialRefs) > 0 {
-			ref := op.CredentialRefs[0].ID
-			spec.CredentialRef = &ref
-		}
-		if plan || c.globals.DryRun {
-			spec.DryRun = true
-			result, err := resticops.PlanBackup(spec)
-			if err != nil {
-				return commandErr(c, err)
-			}
-			return renderResult(c, result, "job_plan")
-		}
-		repositoryID := repositoryLeaseID(c, spec.Repository)
-		if op.RepositoryRef != nil {
-			repositoryID = strings.TrimSpace(*op.RepositoryRef)
-		}
-		lease, err := beginCLIExecution(c, "backup.snapshot", "", repositoryID)
-		if err != nil {
-			return commandErr(c, err)
-		}
-		defer lease.Close()
-		result, err := resticops.Backup(spec, resticops.Options{RunStore: c.store, RunID: lease.requestID, Cancelled: lease.Cancelled})
-		if err != nil {
-			return commandErr(c, err)
-		}
-		return renderResult(c, result, "job_run")
-	case "transfer.run":
-		var spec models.TransferSpec
-		if err := json.Unmarshal(raw, &spec); err != nil {
-			return commandErr(c, berror.Validation("invalid transfer job parameters", map[string]any{"reason": err.Error()}))
-		}
-		if plan || c.globals.DryRun {
-			spec.DryRun = true
-		}
-		result, err := transferops.Run(spec, transferops.Options{RunStore: c.store})
-		if err != nil {
-			return commandErr(c, err)
-		}
-		return renderResult(c, result, map[bool]string{true: "job_plan", false: "job_run"}[plan])
-	}
-	operation := op.Operation
-	if plan {
-		switch operation {
-		case "backup.create":
-			operation = "backup.plan"
-		case "transfer.run":
-			operation = "transfer.plan"
-		}
-	}
-	d := services.New(c.store)
-	result, err := d.Dispatch(services.OperationContext{}, operation, raw)
-	if err != nil {
-		return commandErr(c, err)
-	}
-	return renderResult(c, result, map[bool]string{true: "job_plan", false: "job_run"}[plan])
-}
-
 func jobRun(c *appContext, args []string) int {
-	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}, "--request-id": {Key: "request_id", Kind: optionValue}}
+	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}, "--request-id": {Key: "request_id", Kind: optionValue}, "--dry-run": {Key: "dry_run", Kind: optionBoolTrue}}
 	a, ok := parseFor(c, "job run", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -531,13 +416,20 @@ func jobRun(c *appContext, args []string) int {
 	if !set || strings.TrimSpace(requestID) == "" {
 		requestID = fmt.Sprintf("cli-job-%d-%d", os.Getpid(), time.Now().UnixNano())
 	}
+	plan := c.globals.DryRun || a.Bools["dry_run"]
 	payload, _ := json.Marshal(map[string]any{"job_id": j.JobID, "overrides": a.multiValue("set")})
 	d := services.NewWithStores(c.store, c.repositories, c.jobs)
-	result, err := d.Dispatch(services.OperationContext{RequestID: requestID, Owner: "cli"}, "jobs.run", payload)
+	operation := "jobs.run"
+	renderKind := "job_run"
+	if plan {
+		operation = "jobs.plan"
+		renderKind = "job_plan"
+	}
+	result, err := d.Dispatch(services.OperationContext{RequestID: requestID, Owner: "cli"}, operation, payload)
 	if err != nil {
 		return commandErr(c, err)
 	}
-	return renderResult(c, result, "job_run")
+	return renderResult(c, result, renderKind)
 }
 func jobPlan(c *appContext, args []string) int {
 	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}}
@@ -553,44 +445,26 @@ func jobPlan(c *appContext, args []string) int {
 	if j == nil {
 		return code
 	}
-	return dispatchSaved(c, j.Operation, a.multiValue("set"), true)
+	payload, _ := json.Marshal(map[string]any{"job_id": j.JobID, "overrides": a.multiValue("set")})
+	d := services.NewWithStores(c.store, c.repositories, c.jobs)
+	result, err := d.Dispatch(services.OperationContext{Owner: "cli"}, "jobs.plan", payload)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	return renderResult(c, result, "job_plan")
 }
 
 func replayOperation(record models.RunRecord) (models.OperationSpecV2, error) {
-	values := record.SpecSnapshot
-	if typed, ok := values["values"].(map[string]any); ok {
-		values = cloneMap(typed)
-	}
-	delete(values, "_resolved_destination")
-	delete(values, "_archive_path")
-	op := ""
-	switch record.Operation {
-	case "backup":
-		if engine, _ := values["engine"].(string); strings.EqualFold(engine, models.BackupEngineRestic) {
-			op = "backup.snapshot"
-		} else {
-			op = "backup.create"
-		}
-	case "transfer":
-		op = "transfer.run"
-	default:
-		return models.OperationSpecV2{}, berror.Validation("historical operation is not replayable yet", map[string]any{"operation": record.Operation})
-	}
-	spec := models.NewOperationSpecV2(op, values)
-	if op == "backup.snapshot" {
-		if rawRef, ok := values["credential_ref"].(string); ok && strings.TrimSpace(rawRef) != "" {
-			delete(spec.Parameters, "credential_ref")
-			spec.CredentialRefs = []models.SecretReference{{ID: strings.TrimSpace(rawRef), Purpose: "restic repository password"}}
-		}
-	}
-	if err := models.ValidateOperationSpecV2(spec); err != nil {
-		return spec, berror.Validation("historical spec snapshot cannot be replayed", map[string]any{"reason": err.Error()})
-	}
-	return spec, nil
+	return runstore.ReplayOperation(record)
 }
 
 func runReplay(c *appContext, args []string) int {
-	a, ok := parseFor(c, "run replay", args, map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}})
+	specs := map[string]optionSpec{
+		"--set":        {Key: "set", Kind: optionMultiValue},
+		"--request-id": {Key: "request_id", Kind: optionValue},
+		"--dry-run":    {Key: "dry_run", Kind: optionBoolTrue},
+	}
+	a, ok := parseFor(c, "run replay", args, specs)
 	if !ok {
 		return berror.ExitOK
 	}
@@ -601,18 +475,21 @@ func runReplay(c *appContext, args []string) int {
 	if c.store == nil {
 		return commandErr(c, berror.Validation("Run history is disabled", nil))
 	}
-	r, err := c.store.Get(a.Positionals[0])
+	requestID, set := a.stringValue("request_id")
+	if !set || strings.TrimSpace(requestID) == "" {
+		requestID = fmt.Sprintf("cli-replay-%d-%d", os.Getpid(), time.Now().UnixNano())
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"run_id":    a.Positionals[0],
+		"overrides": a.multiValue("set"),
+		"dry_run":   c.globals.DryRun || a.Bools["dry_run"],
+	})
+	d := services.NewWithStores(c.store, c.repositories, c.jobs)
+	result, err := d.Dispatch(services.OperationContext{RequestID: requestID, Owner: "cli"}, "runs.replay", payload)
 	if err != nil {
 		return commandErr(c, err)
 	}
-	if r == nil {
-		return commandErr(c, berror.NotFound("Run not found: "+a.Positionals[0], map[string]any{"run_id": a.Positionals[0]}))
-	}
-	op, err := replayOperation(*r)
-	if err != nil {
-		return commandErr(c, err)
-	}
-	return dispatchSaved(c, op, a.multiValue("set"), false)
+	return renderResult(c, result, map[bool]string{true: "job_plan", false: "job_run"}[c.globals.DryRun || a.Bools["dry_run"]])
 }
 
 func jobCreateFromRun(c *appContext, args []string) int {

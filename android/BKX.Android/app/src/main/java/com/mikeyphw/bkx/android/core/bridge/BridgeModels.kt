@@ -70,6 +70,8 @@ data class BridgeArtifact(
 data class BridgeProgressEnvelope(
     @SerialName("protocol_version") val protocolVersion: Int = BridgeJson.SUPPORTED_PROTOCOL_VERSION,
     @SerialName("request_id") val requestId: String,
+    @SerialName("run_id") val runId: String? = null,
+    @SerialName("job_id") val jobId: String? = null,
     val seq: Long,
     val phase: String,
     val message: String,

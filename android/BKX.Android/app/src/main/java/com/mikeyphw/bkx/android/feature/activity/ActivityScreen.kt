@@ -139,6 +139,9 @@ fun ActivityScreen(
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
+                    if (run.operation in setOf("jobs.run", "backup", "backup.create", "backup.snapshot", "transfer", "transfer.run")) {
+                        OutlinedButton(onClick = { onEvent(BkxHomeEvent.ReplayRun(run.requestId, run.jobId)) }) { Text("Run again") }
+                    }
                 }
             }
         }

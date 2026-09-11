@@ -80,12 +80,26 @@ class TaskerV2ActionContractTest {
             runId = "tasker-1-job-run",
             repositoryId = "phone-drive",
             snapshotId = "abc123",
+            filesProcessed = 42,
+            bytesProcessed = 1024,
+            bytesAdded = 256,
+            bytesReused = 768,
+            durationMillis = 987,
         )
         val values = result.taskerVariableValues()
         assertEquals("phone-backup", values["%bkx_job_id"])
         assertEquals("tasker-1-job-run", values["%bkx_run_id"])
         assertEquals("phone-drive", values["%bkx_repository_id"])
         assertEquals("abc123", values["%bkx_snapshot_id"])
+        assertEquals("42", values["%bkx_files_processed"])
+        assertEquals("1024", values["%bkx_bytes_processed"])
+        assertEquals("256", values["%bkx_bytes_added"])
+        assertEquals("768", values["%bkx_bytes_reused"])
+        assertEquals("987", values["%bkx_duration_ms"])
+        assertEquals("true", values["%bkx_success"])
+        assertEquals("", values["%bkx_message"])
+        assertTrue(AutomationResult.relevantVariables.contains("%bkx_success"))
+        assertTrue(AutomationResult.relevantVariables.contains("%bkx_message"))
         assertTrue(values.containsKey("%bkx_status"))
         assertTrue(values.containsKey("%bkx_error_code"))
     }

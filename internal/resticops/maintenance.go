@@ -497,8 +497,11 @@ func CheckRepository(spec models.RepositoryAccessSpec, check CheckOptions, optio
 	if v := strings.TrimSpace(check.ReadDataSubset); v != "" {
 		args = append(args, "--read-data-subset", v)
 	}
-	_, stderr, runErr := runner.Run(args, env)
+	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
+		if errors.Is(runErr, ErrCancelled) {
+			return MaintenanceResult{}, ErrCancelled
+		}
 		return MaintenanceResult{}, external("checking Restic repository", repository, stderr, runErr)
 	}
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "check", DurationMS: time.Since(started).Milliseconds()}, nil
@@ -520,8 +523,11 @@ func ForgetSnapshot(spec models.RepositoryAccessSpec, selector string, options O
 	}
 	args := append([]string{}, base...)
 	args = append(args, "forget", snapshot.ID)
-	_, stderr, runErr := runner.Run(args, env)
+	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
+		if errors.Is(runErr, ErrCancelled) {
+			return MaintenanceResult{}, ErrCancelled
+		}
 		return MaintenanceResult{}, external("forgetting Restic snapshot", repository, stderr, runErr)
 	}
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "forget", SnapshotID: snapshot.ID, DurationMS: time.Since(started).Milliseconds()}, nil
@@ -574,8 +580,11 @@ func ApplyRetention(spec models.RepositoryAccessSpec, policy models.RetentionPol
 	if dryRun {
 		args = append(args, "--dry-run")
 	}
-	_, stderr, runErr := runner.Run(args, env)
+	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
+		if errors.Is(runErr, ErrCancelled) {
+			return MaintenanceResult{}, ErrCancelled
+		}
 		return MaintenanceResult{}, external("applying Restic retention policy", repository, stderr, runErr)
 	}
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "retention", DryRun: dryRun, DurationMS: time.Since(started).Milliseconds()}, nil
@@ -598,8 +607,11 @@ func PruneRepository(spec models.RepositoryAccessSpec, prune PruneOptions, optio
 	if v := strings.TrimSpace(prune.MaxRepackSize); v != "" {
 		args = append(args, "--max-repack-size", v)
 	}
-	_, stderr, runErr := runner.Run(args, env)
+	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
+		if errors.Is(runErr, ErrCancelled) {
+			return MaintenanceResult{}, ErrCancelled
+		}
 		return MaintenanceResult{}, external("pruning Restic repository", repository, stderr, runErr)
 	}
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "prune", DryRun: prune.DryRun, DurationMS: time.Since(started).Milliseconds()}, nil

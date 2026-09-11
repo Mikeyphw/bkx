@@ -87,6 +87,8 @@ data class ActiveOperation(
 @Serializable
 data class OperationProgressEvent(
     @SerialName("request_id") val requestId: String,
+    @SerialName("run_id") val runId: String = requestId,
+    @SerialName("job_id") val jobId: String? = null,
     val seq: Long,
     val phase: String,
     val message: String,
@@ -111,6 +113,8 @@ data class OperationProgressEvent(
             observedAtEpochMillis: Long,
         ): OperationProgressEvent = OperationProgressEvent(
             requestId = envelope.requestId,
+            runId = envelope.runId ?: envelope.requestId,
+            jobId = envelope.jobId,
             seq = envelope.seq,
             phase = envelope.phase,
             message = envelope.message,

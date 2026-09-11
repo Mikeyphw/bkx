@@ -1,7 +1,7 @@
 package com.mikeyphw.bkx.android.core.backup
 
+import com.mikeyphw.bkx.android.core.bridge.BridgeJson
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -9,7 +9,7 @@ import org.junit.Test
 class SnapshotBackupModelsTest {
     @Test
     fun snapshotSpecUsesSameResticWireNamesAsGoCore() {
-        val encoded = Json.encodeToString(
+        val encoded = BridgeJson.json.encodeToString(
             SnapshotBackupSpec(
                 repository = "/data/local/bkx-restic",
                 credentialRef = "phone-repo",

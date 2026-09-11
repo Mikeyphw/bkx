@@ -307,6 +307,7 @@ Commands:
   prune
   remove
   show
+  status
 `,
 	"snapshot": `Usage: bkx snapshot COMMAND [ARGS]...
 
@@ -436,12 +437,13 @@ var LeafHelp = map[string]string{
 	"repository prune":    "Usage: bkx repository prune [OPTIONS] REPOSITORY_ID\n",
 	"repository remove":   "Usage: bkx repository remove REPOSITORY_ID\n",
 	"repository show":     "Usage: bkx repository show REPOSITORY_ID\n",
-	"snapshot list":       "Usage: bkx snapshot list [OPTIONS]\n",
-	"snapshot browse":     "Usage: bkx snapshot browse [OPTIONS] SNAPSHOT\n",
-	"snapshot show":       "Usage: bkx snapshot show [OPTIONS] SNAPSHOT\n",
-	"snapshot diff":       "Usage: bkx snapshot diff [OPTIONS] SOURCE TARGET\n",
-	"snapshot restore":    "Usage: bkx snapshot restore [OPTIONS] SNAPSHOT\n",
-	"snapshot forget":     "Usage: bkx snapshot forget [OPTIONS] SNAPSHOT_ID\n",
+	"repository status":   "Usage: bkx repository status REPOSITORY_ID\n",
+	"snapshot list":       "Usage: bkx snapshot list [OPTIONS] [JOB_OR_REPOSITORY]\n",
+	"snapshot browse":     "Usage: bkx snapshot browse [OPTIONS] [JOB_OR_REPOSITORY] SNAPSHOT\n",
+	"snapshot show":       "Usage: bkx snapshot show [OPTIONS] [JOB_OR_REPOSITORY] SNAPSHOT\n",
+	"snapshot diff":       "Usage: bkx snapshot diff [OPTIONS] [JOB_OR_REPOSITORY] SOURCE TARGET\n",
+	"snapshot restore":    "Usage: bkx snapshot restore [OPTIONS] [JOB_OR_REPOSITORY] SNAPSHOT\n",
+	"snapshot forget":     "Usage: bkx snapshot forget [OPTIONS] [JOB_OR_REPOSITORY] SNAPSHOT_ID\n",
 	"retention set":       "Usage: bkx retention set [OPTIONS] REPOSITORY_ID\n",
 	"retention show":      "Usage: bkx retention show REPOSITORY_ID\n",
 	"retention clear":     "Usage: bkx retention clear REPOSITORY_ID\n",

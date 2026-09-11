@@ -28,6 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
 import com.mikeyphw.bkx.android.app.ui.components.BkxDivider
 import com.mikeyphw.bkx.android.app.ui.components.BkxKeyValue
@@ -45,8 +46,18 @@ import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.automation.BkxSavedJobScheduler
 import com.mikeyphw.bkx.android.core.jobs.SecretReference
+import com.mikeyphw.bkx.android.core.repositories.RepositoryDefinition
+import com.mikeyphw.bkx.android.core.runs.RunSummary
+import com.mikeyphw.bkx.android.feature.home.formatTime
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 private enum class JobPreset(val label: String, val operation: String, val template: String) {
     Snapshot(
@@ -89,7 +100,7 @@ fun SavedJobsScreen(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
     ) {
-        BkxPageHeader("Saved jobs", "Create reusable operations once, then run the exact same job from Android, the BKX CLI, and later Tasker.")
+        BkxPageHeader("Saved jobs", "Create reusable operations once, then run the exact same job from Android, the BKX CLI, and Tasker.")
         BkxSurfaceCard {
             Text("Shared with on-device CLI", style = MaterialTheme.typography.titleMedium)
             BkxKeyValue("State", BkxSharedStateContract.ROOT)
@@ -113,10 +124,13 @@ fun SavedJobsScreen(
                     job = job,
                     repositoryName = job.operation.repositoryRef?.let { id -> state.repositories.items.firstOrNull { it.repositoryId == id }?.name },
                     busy = state.savedJobs.actionInProgress != null,
+                    lastRun = state.recentRuns.firstOrNull { it.jobId == job.jobId },
                     onRun = { onEvent(BkxHomeEvent.RunSavedJob(job.jobId)) },
                     onPlan = { onEvent(BkxHomeEvent.PlanSavedJob(job.jobId)) },
                     onEdit = { editing = job; creating = false },
                     onClone = { cloneTarget = job },
+                    onHistory = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.History)) },
+                    onSnapshots = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Snapshots)) },
                     onDelete = { deleteTarget = job },
                 )
             }
@@ -162,7 +176,7 @@ fun SavedJobsScreen(
     if (creating || editing != null) {
         SavedJobEditorDialog(
             existing = editing,
-            repositories = state.repositories.items.map { it.repositoryId to it.name },
+            repositories = state.repositories.items,
             onDismiss = { creating = false; editing = null },
             onSave = { draft ->
                 val current = editing
@@ -220,10 +234,13 @@ private fun SavedJobCard(
     job: SavedJob,
     repositoryName: String?,
     busy: Boolean,
+    lastRun: RunSummary?,
     onRun: () -> Unit,
     onPlan: () -> Unit,
     onEdit: () -> Unit,
     onClone: () -> Unit,
+    onHistory: () -> Unit,
+    onSnapshots: () -> Unit,
     onDelete: () -> Unit,
 ) {
     BkxSurfaceCard {
@@ -239,6 +256,9 @@ private fun SavedJobCard(
         BkxKeyValue("Revision", job.revision.toString())
         job.operation.repositoryRef?.let { BkxKeyValue("Repository", repositoryName ?: it) }
         if (job.tags.isNotEmpty()) BkxKeyValue("Tags", job.tags.joinToString(", "))
+        lastRun?.let { run ->
+            BkxKeyValue("Last run", "${run.status.name} · ${formatTime(run.finishedAtEpochMillis ?: run.startedAtEpochMillis)}")
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = onRun, enabled = job.enabled && !busy, modifier = Modifier.weight(1f)) { Text("Run now") }
             OutlinedButton(onClick = onPlan, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Plan") }
@@ -247,6 +267,10 @@ private fun SavedJobCard(
             TextButton(onClick = onEdit, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Edit") }
             TextButton(onClick = onClone, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Clone") }
             TextButton(onClick = onDelete, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Delete") }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onHistory, modifier = Modifier.weight(1f)) { Text("History") }
+            TextButton(onClick = onSnapshots, modifier = Modifier.weight(1f)) { Text("Snapshots") }
         }
     }
 }
@@ -363,69 +387,198 @@ private fun SavedJobScheduleEditorDialog(
 @Composable
 private fun SavedJobEditorDialog(
     existing: SavedJob?,
-    repositories: List<Pair<String, String>>,
+    repositories: List<RepositoryDefinition>,
     onDismiss: () -> Unit,
     onSave: (SavedJobDraft) -> Unit,
 ) {
-    val initialPreset = JobPreset.entries.firstOrNull { it.operation == existing?.operation?.operation } ?: JobPreset.Snapshot
+    val matchingPreset = JobPreset.entries.firstOrNull { it.operation == existing?.operation?.operation }
+    val initialPreset = matchingPreset ?: JobPreset.Snapshot
+    val initialParameters = existing?.operation?.parameters ?: presetParameters(initialPreset)
     var preset by remember(existing?.jobId) { mutableStateOf(initialPreset) }
     var jobId by remember(existing?.jobId) { mutableStateOf(existing?.jobId.orEmpty()) }
     var name by remember(existing?.jobId) { mutableStateOf(existing?.name.orEmpty()) }
     var description by remember(existing?.jobId) { mutableStateOf(existing?.description.orEmpty()) }
-    var operation by remember(existing?.jobId) { mutableStateOf(existing?.operation?.operation ?: preset.operation) }
-    var parametersJson by remember(existing?.jobId) { mutableStateOf(existing?.operation?.parameters?.toString() ?: preset.template) }
+    var operation by remember(existing?.jobId) { mutableStateOf(existing?.operation?.operation ?: initialPreset.operation) }
+    var parametersJson by remember(existing?.jobId) { mutableStateOf(initialParameters.toString()) }
     var repositoryRef by remember(existing?.jobId) { mutableStateOf(existing?.operation?.repositoryRef.orEmpty()) }
     var credentialRefs by remember(existing?.jobId) { mutableStateOf(existing?.operation?.credentialRefs?.joinToString(",") { it.id }.orEmpty()) }
     var tags by remember(existing?.jobId) { mutableStateOf(existing?.tags?.joinToString(",").orEmpty()) }
     var enabled by remember(existing?.jobId) { mutableStateOf(existing?.enabled ?: true) }
+    var sources by remember(existing?.jobId) { mutableStateOf(initialParameters.stringList("sources").joinToString("\n")) }
+    var excludes by remember(existing?.jobId) { mutableStateOf(initialParameters.stringList("excludes").joinToString("\n")) }
+    var destination by remember(existing?.jobId) { mutableStateOf(initialParameters.stringValue("destination")) }
+    var archiveName by remember(existing?.jobId) { mutableStateOf(initialParameters.stringValue("archive_name")) }
+    var verify by remember(existing?.jobId) { mutableStateOf(initialParameters.booleanValue("verify", true)) }
+    var advanced by remember(existing?.jobId) { mutableStateOf(existing != null && matchingPreset == null) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    fun selectPreset(option: JobPreset) {
+        preset = option
+        operation = option.operation
+        val params = presetParameters(option)
+        parametersJson = params.toString()
+        sources = params.stringList("sources").joinToString("\n")
+        excludes = params.stringList("excludes").joinToString("\n")
+        destination = params.stringValue("destination")
+        archiveName = params.stringValue("archive_name")
+        verify = params.booleanValue("verify", true)
+        if (option != JobPreset.Snapshot) repositoryRef = ""
+    }
+
+    val selectedRepository = repositories.firstOrNull { it.repositoryId == repositoryRef }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New saved job" else "Edit saved job") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Preset", style = MaterialTheme.typography.labelLarge)
+                OutlinedTextField(value = jobId, onValueChange = { if (existing == null) jobId = normalizeIdInput(it) }, label = { Text("Job ID") }, enabled = existing == null, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Job name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
+
+                Text("Backup type", style = MaterialTheme.typography.labelLarge)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JobPreset.entries.forEach { option ->
-                        FilterChip(
-                            selected = preset == option,
-                            onClick = {
-                                preset = option
-                                operation = option.operation
-                                parametersJson = option.template
-                                if (option != JobPreset.Snapshot) repositoryRef = ""
-                            },
-                            label = { Text(option.label) },
-                        )
+                        FilterChip(selected = preset == option && operation == option.operation, onClick = { selectPreset(option) }, label = { Text(option.label) })
                     }
                 }
-                OutlinedTextField(value = jobId, onValueChange = { if (existing == null) jobId = normalizeIdInput(it) }, label = { Text("Job ID") }, enabled = existing == null, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Description") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = operation, onValueChange = { operation = it.trim() }, label = { Text("Operation") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (repositories.isNotEmpty()) {
-                    Text("Repository reference", style = MaterialTheme.typography.labelLarge)
-                    repositories.forEach { (id, repoName) ->
-                        FilterChip(selected = repositoryRef == id, onClick = { repositoryRef = if (repositoryRef == id) "" else id }, label = { Text(repoName) })
+                if (preset == JobPreset.Snapshot && operation == preset.operation) {
+                    Text("Incremental snapshots only store new or changed data after the first backup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else if (preset == JobPreset.Archive && operation == preset.operation) {
+                    Text("Portable archive creates an independent Bakery backup file.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                OutlinedTextField(
+                    value = sources,
+                    onValueChange = { sources = it },
+                    label = { Text("Sources") },
+                    supportingText = { Text("One path per line or comma-separated.") },
+                    minLines = 2,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (preset != JobPreset.Transfer || operation != preset.operation) {
+                    OutlinedTextField(
+                        value = excludes,
+                        onValueChange = { excludes = it },
+                        label = { Text("Exclusions") },
+                        supportingText = { Text("Optional patterns, one per line or comma-separated.") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                if (preset == JobPreset.Snapshot && operation == preset.operation) {
+                    Text("Repository", style = MaterialTheme.typography.labelLarge)
+                    if (repositories.isEmpty()) {
+                        Text("Create a repository first, then select it here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        repositories.forEach { repository ->
+                            FilterChip(
+                                selected = repositoryRef == repository.repositoryId,
+                                onClick = { repositoryRef = repository.repositoryId },
+                                label = { Text(repository.name) },
+                            )
+                        }
+                    }
+                    BkxKeyValue("Retention", if (selectedRepository?.retention != null) "Uses selected repository policy" else "Not configured on selected repository")
+                } else {
+                    OutlinedTextField(
+                        value = destination,
+                        onValueChange = { destination = it },
+                        label = { Text(if (preset == JobPreset.Archive) "Archive folder" else "Destination") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (preset == JobPreset.Archive && operation == preset.operation) {
+                        OutlinedTextField(value = archiveName, onValueChange = { archiveName = it }, label = { Text("Archive name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     }
                 }
-                OutlinedTextField(value = repositoryRef, onValueChange = { repositoryRef = it.trim() }, label = { Text("Repository ID (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = credentialRefs, onValueChange = { credentialRefs = it }, label = { Text("Credential reference IDs") }, supportingText = { Text("IDs only; never paste passwords or tokens here.") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                BkxSettingSwitch("Verify after backup", "Verify the result after the operation when supported.", verify, { verify = it })
+                BkxKeyValue("Notifications", "Uses BKX operation notification settings")
                 OutlinedTextField(value = tags, onValueChange = { tags = it }, label = { Text("Tags") }, supportingText = { Text("Comma-separated") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = parametersJson, onValueChange = { parametersJson = it }, label = { Text("Operation parameters (JSON)") }, minLines = 6, modifier = Modifier.fillMaxWidth())
                 BkxSettingSwitch(title = "Enabled", summary = "Disabled jobs can be planned but cannot run.", checked = enabled, onCheckedChange = { enabled = it })
+
+                BkxSettingSwitch(
+                    title = "Advanced settings",
+                    summary = "Edit the raw operation contract, reference IDs, and JSON only when needed.",
+                    checked = advanced,
+                    onCheckedChange = { advanced = it },
+                )
+                if (advanced) {
+                    OutlinedTextField(value = operation, onValueChange = { operation = it.trim() }, label = { Text("Operation ID") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = repositoryRef, onValueChange = { repositoryRef = it.trim() }, label = { Text("Repository ID (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = credentialRefs, onValueChange = { credentialRefs = it }, label = { Text("Credential reference IDs") }, supportingText = { Text("IDs only; never paste passwords or tokens here.") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = parametersJson, onValueChange = { parametersJson = it }, label = { Text("Operation parameters (JSON)") }, minLines = 6, modifier = Modifier.fillMaxWidth())
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
             Button(onClick = {
-                val result = buildDraft(jobId, name, description, tags, enabled, operation, parametersJson, repositoryRef, credentialRefs)
-                result.onSuccess(onSave).onFailure { error = it.message ?: "Invalid job" }
+                val friendlyJson = if (!advanced && operation == preset.operation) {
+                    friendlyParametersJson(parametersJson, preset, sources, excludes, destination, archiveName, verify)
+                } else {
+                    Result.success(parametersJson)
+                }
+                friendlyJson
+                    .mapCatching { effectiveJson -> buildDraft(jobId, name, description, tags, enabled, operation, effectiveJson, repositoryRef, credentialRefs).getOrThrow() }
+                    .onSuccess(onSave)
+                    .onFailure { error = it.message ?: "Invalid job" }
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+private fun presetParameters(preset: JobPreset): JsonObject = BridgeJson.json.parseToJsonElement(preset.template).jsonObject
+
+private fun JsonObject.stringList(key: String): List<String> = runCatching {
+    get(key)?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
+}.getOrNull().orEmpty()
+
+private fun JsonObject.stringValue(key: String): String = runCatching { get(key)?.jsonPrimitive?.contentOrNull.orEmpty() }.getOrDefault("")
+
+private fun JsonObject.booleanValue(key: String, fallback: Boolean): Boolean = runCatching { get(key)?.jsonPrimitive?.booleanOrNull }.getOrNull() ?: fallback
+
+private fun pathList(value: String): List<String> = value
+    .lineSequence()
+    .flatMap { it.split(',').asSequence() }
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .distinct()
+    .toList()
+
+private fun friendlyParametersJson(
+    raw: String,
+    preset: JobPreset,
+    sources: String,
+    excludes: String,
+    destination: String,
+    archiveName: String,
+    verify: Boolean,
+): Result<String> = runCatching {
+    val base = BridgeJson.json.parseToJsonElement(raw).jsonObject
+    val parsedSources = pathList(sources)
+    require(parsedSources.isNotEmpty()) { "Add at least one source." }
+    val owned = when (preset) {
+        JobPreset.Snapshot -> setOf("engine", "sources", "excludes", "verify")
+        JobPreset.Archive -> setOf("sources", "excludes", "destination", "archive_name", "verify")
+        JobPreset.Transfer -> setOf("sources", "destination", "verify")
+    }
+    buildJsonObject {
+        base.filterKeys { it !in owned }.forEach { (key, value) -> put(key, value) }
+        put("sources", JsonArray(parsedSources.map { JsonPrimitive(it) }))
+        if (preset != JobPreset.Transfer) put("excludes", JsonArray(pathList(excludes).map { JsonPrimitive(it) }))
+        put("verify", JsonPrimitive(verify))
+        when (preset) {
+            JobPreset.Snapshot -> put("engine", JsonPrimitive("restic"))
+            JobPreset.Archive -> {
+                destination.trim().takeIf { it.isNotBlank() }?.let { put("destination", JsonPrimitive(it)) }
+                archiveName.trim().takeIf { it.isNotBlank() }?.let { put("archive_name", JsonPrimitive(it)) }
+            }
+            JobPreset.Transfer -> destination.trim().takeIf { it.isNotBlank() }?.let { put("destination", JsonPrimitive(it)) }
+        }
+    }.toString()
 }
 
 @Composable
@@ -458,6 +611,10 @@ private fun buildDraft(
     credentialRefs: String,
 ): Result<SavedJobDraft> = runCatching {
     val parameters = BridgeJson.json.parseToJsonElement(parametersJson).jsonObject
+    val normalizedOperation = operation.trim()
+    if (normalizedOperation == "backup.snapshot") {
+        require(repositoryRef.trim().isNotBlank()) { "Select a repository for an incremental snapshot job." }
+    }
     SavedJobDraft(
         jobId = jobId.trim(),
         name = name.trim(),
@@ -465,7 +622,7 @@ private fun buildDraft(
         tags = csv(tags),
         enabled = enabled,
         operation = OperationSpecV2(
-            operation = operation.trim(),
+            operation = normalizedOperation,
             parameters = parameters,
             repositoryRef = repositoryRef.trim().takeIf { it.isNotBlank() },
             credentialRefs = csv(credentialRefs).map { SecretReference(it) },

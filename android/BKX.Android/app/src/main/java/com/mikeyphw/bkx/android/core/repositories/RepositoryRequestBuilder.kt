@@ -110,7 +110,8 @@ object RepositoryRequestBuilder {
     }
 
     fun snapshotForget(requestId: String, repository: RepositoryDefinition, snapshotId: String, confirm: Boolean): BridgeRequestEnvelope {
-        require(snapshotId.trim() != "latest") { "forget requires an explicit snapshot id" }
+        val selector = snapshotId.trim()
+        require(selector != "latest" && !selector.startsWith("latest~")) { "forget requires an explicit snapshot id" }
         return BridgeRequestEnvelope(requestId = requestId, operation = OPERATION_SNAPSHOTS_FORGET, payload = repositoryPayload(repository) {
             put("snapshot", requireSnapshot(snapshotId)); put("confirm", confirm)
         })

@@ -53,7 +53,7 @@ daemon_idle_timeout_ms = 900000
 
 parallel = true
 build_cache = true
-fail_fast = true
+fail_fast = false
 offline = false
 
 args = [
@@ -106,6 +106,7 @@ preflight = [
     ":app:verifyBkxAndroidSigningPlaceholders",
     ":app:verifyBkxPersonalSigningContract",
     ":app:verifyBkxAndroidReleaseDocs",
+    ":app:verifyBkxBackupAutomationRoadmapFinalSeal",
 ]
 
 compile = [

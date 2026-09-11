@@ -41,6 +41,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * Process-scoped owner for embedded BKX execution.
@@ -62,7 +64,6 @@ class BkxOperationCoordinator(
     private val appContext = context?.let { it.applicationContext ?: it }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stateMutex = Mutex()
-    private val foregroundOperationMutex = Mutex()
     private val progressTracker = OperationProgressTracker()
     private val executions = ConcurrentHashMap<String, CompletableDeferred<OperationOutcome>>()
     private val _runtimeState = MutableStateFlow(OperationRuntimeState())
@@ -174,13 +175,9 @@ class BkxOperationCoordinator(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         manageForeground: Boolean,
-    ): OperationOutcome = if (request.operation in FOREGROUND_OPERATIONS) {
-        foregroundOperationMutex.withLock { executeOwnedSerialized(request, recordInHistory, manageForeground) }
-    } else {
-        executeOwnedSerialized(request, recordInHistory, manageForeground)
-    }
+    ): OperationOutcome = executeOwnedConcurrent(request, recordInHistory, manageForeground)
 
-    private suspend fun executeOwnedSerialized(
+    private suspend fun executeOwnedConcurrent(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         manageForeground: Boolean,
@@ -223,7 +220,7 @@ class BkxOperationCoordinator(
                     terminalNotification = operation to result.toOperationResultUiState()
                     taskerConditionPublisher?.operationTerminal(request, operation, result)
                 }
-                if (recordInHistory) persistRun(request.operation, startedAt, completedAt, result)
+                if (recordInHistory) persistRun(request, startedAt, completedAt, result)
                 OperationOutcome.Completed(result)
             }
         } catch (error: Throwable) {
@@ -243,7 +240,7 @@ class BkxOperationCoordinator(
                 terminalNotification?.let { (operation, result) ->
                     if (context != null) runCatching { BkxOperationForegroundService.publishTerminal(context, operation, result) }
                 }
-                stopForegroundShell()
+                stopForegroundShellIfIdle(request.requestId)
             }
         }
     }
@@ -282,7 +279,7 @@ class BkxOperationCoordinator(
             next
         }
 
-    private suspend fun persistRun(operation: String, startedAt: Long, completedAt: Long, result: BridgeResultEnvelope) {
+    private suspend fun persistRun(request: BridgeRequestEnvelope, startedAt: Long, completedAt: Long, result: BridgeResultEnvelope) {
         val status = when (result.status) {
             BridgeResultStatus.Success -> RunStatus.Success
             BridgeResultStatus.Failure -> RunStatus.Failure
@@ -297,7 +294,8 @@ class BkxOperationCoordinator(
         runSummaryStore.upsert(
             RunSummary(
                 requestId = result.requestId,
-                operation = operation,
+                operation = request.operation,
+                jobId = request.payload["job_id"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
                 status = status,
                 startedAtEpochMillis = startedAt,
                 finishedAtEpochMillis = completedAt,
@@ -326,7 +324,14 @@ class BkxOperationCoordinator(
         }
     }
 
-    private fun stopForegroundShell() {
+    private suspend fun stopForegroundShellIfIdle(completedRequestId: String) {
+        val state = snapshot()
+        val anotherForegroundOperationIsActive = state.activeOperations.values.any { operation ->
+            operation.requestId != completedRequestId &&
+                operation.operation in FOREGROUND_OPERATIONS &&
+                operation.status in ACTIVE_STATUSES
+        }
+        if (anotherForegroundOperationIsActive) return
         val context = appContext ?: return
         runCatching { context.stopService(Intent(context, BkxOperationForegroundService::class.java)) }
     }

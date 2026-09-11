@@ -83,6 +83,7 @@ type Result struct {
 type Options struct {
 	RunStore  *runstore.Store
 	RunID     string
+	RunOrigin *runstore.SavedJobOrigin
 	Cancelled func() bool
 	Progress  func(ProgressEvent)
 }
@@ -371,11 +372,14 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 	if runID == "" {
 		runID = randomRunID()
 	}
+	options.RunID = runID
 	if options.RunStore != nil {
 		snapshot := snapshotSpec(valid)
-		if _, err := options.RunStore.RecordStart(runID, "transfer", valid.Sources, &destination, nil, snapshot); err != nil {
+		if _, err := options.RunStore.RecordStartWithOrigin(runID, "transfer", valid.Sources, &destination, nil, snapshot, options.RunOrigin); err != nil {
 			return Result{}, err
 		}
+		_, _ = options.RunStore.RecordPhase(runID, "preparing")
+		_, _ = options.RunStore.RecordPhase(runID, "running")
 	}
 	complete := func(status string, files, bytes int64, opErr error) {
 		if options.RunStore == nil {
@@ -392,7 +396,7 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 	var doneFiles, doneBytes int64
 	for _, mapping := range mappings {
 		if isCancelled(options) {
-			complete("interrupted", doneFiles, doneBytes, ErrCancelled)
+			complete("cancelled", doneFiles, doneBytes, ErrCancelled)
 			return Result{}, ErrCancelled
 		}
 		if err := copyOne(mapping, valid, func(copied int64) {
@@ -403,7 +407,7 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 		}, options); err != nil {
 			status := "failed"
 			if errors.Is(err, ErrCancelled) {
-				status = "interrupted"
+				status = "cancelled"
 			}
 			complete(status, doneFiles, doneBytes, err)
 			return Result{}, err
@@ -418,6 +422,9 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 	verification := boolptrIf(valid.Verify, true)
 	checksum := boolptrIf(valid.Verify || valid.Checksum != nil, true)
 	result := Result{Success: true, Direction: valid.Direction, DryRun: false, FilesTransferred: doneFiles, BytesTransferred: doneBytes, Source: &first, Destination: &destination, VerificationPassed: verification, ChecksumVerified: checksum, Warnings: []string{}, Errors: []string{}, DurationMS: time.Since(started).Milliseconds()}
+	if options.RunStore != nil {
+		_, _ = options.RunStore.RecordPhase(runID, "finalizing")
+	}
 	complete("success", doneFiles, doneBytes, nil)
 	return result, nil
 }
@@ -441,10 +448,13 @@ func runRcloneTransfer(valid models.TransferSpec, options Options, started time.
 	if runID == "" {
 		runID = randomRunID()
 	}
+	options.RunID = runID
 	if options.RunStore != nil {
-		if _, err := options.RunStore.RecordStart(runID, "transfer", valid.Sources, &destination, nil, snapshotSpec(valid)); err != nil {
+		if _, err := options.RunStore.RecordStartWithOrigin(runID, "transfer", valid.Sources, &destination, nil, snapshotSpec(valid), options.RunOrigin); err != nil {
 			return Result{}, err
 		}
+		_, _ = options.RunStore.RecordPhase(runID, "preparing")
+		_, _ = options.RunStore.RecordPhase(runID, "running")
 	}
 	complete := func(status string, files, bytes int64, opErr error) {
 		if options.RunStore == nil {
@@ -471,7 +481,7 @@ func runRcloneTransfer(valid models.TransferSpec, options Options, started time.
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || isCancelled(options) {
-			complete("interrupted", 0, 0, ErrCancelled)
+			complete("cancelled", 0, 0, ErrCancelled)
 			return Result{}, ErrCancelled
 		}
 		wrapped := berror.WrapExternal("running rclone transfer", valid.Destination, "rclone", err)
@@ -480,6 +490,9 @@ func runRcloneTransfer(valid models.TransferSpec, options Options, started time.
 	}
 	verified := boolptrIf(valid.Verify, true)
 	checksum := boolptrIf(valid.Verify || valid.Checksum != nil, true)
+	if options.RunStore != nil {
+		_, _ = options.RunStore.RecordPhase(runID, "finalizing")
+	}
 	complete("success", result.Files, result.Bytes, nil)
 	return Result{
 		Success: true, Direction: valid.Direction, DryRun: false,

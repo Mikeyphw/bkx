@@ -21,6 +21,7 @@ object SavedJobRequestBuilder {
     const val OPERATION_DELETE = "jobs.delete"
     const val OPERATION_PLAN = "jobs.plan"
     const val OPERATION_RUN = "jobs.run"
+    const val OPERATION_REPLAY_RUN = "runs.replay"
 
     fun list(requestId: String): BridgeRequestEnvelope = BridgeRequestEnvelope(requestId = requestId, operation = OPERATION_LIST)
     fun show(requestId: String, jobId: String): BridgeRequestEnvelope = idRequest(requestId, OPERATION_SHOW, jobId)
@@ -57,6 +58,14 @@ object SavedJobRequestBuilder {
 
     fun plan(requestId: String, jobId: String, repositoryBackendHint: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_PLAN, jobId, repositoryBackendHint)
     fun run(requestId: String, jobId: String, repositoryBackendHint: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_RUN, jobId, repositoryBackendHint)
+    fun replay(requestId: String, runId: String, jobId: String? = null): BridgeRequestEnvelope = BridgeRequestEnvelope(
+        requestId = requestId,
+        operation = OPERATION_REPLAY_RUN,
+        payload = buildJsonObject {
+            put("run_id", runId.trim().also { require(it.isNotBlank()) { "run id must not be blank" } })
+            jobId?.trim()?.takeIf { it.isNotBlank() }?.let { put("job_id", requireJobId(it)) }
+        },
+    )
 
     private fun executionRequest(requestId: String, operation: String, jobId: String, repositoryBackendHint: String?): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId,

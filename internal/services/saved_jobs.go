@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"bkx/internal/berror"
 	"bkx/internal/models"
 	"bkx/internal/resticops"
+	"bkx/internal/runstore"
 	"bkx/internal/transferops"
 )
 
@@ -231,29 +233,56 @@ func (d *Dispatcher) jobsExecute(ctx OperationContext, p map[string]any, plan bo
 	if !plan && !job.Enabled {
 		return Result{}, berror.Validation("Saved job is disabled", map[string]any{"job_id": job.JobID})
 	}
-	operation := job.Operation
-	if rawOverrides, ok := p["overrides"]; ok && rawOverrides != nil {
-		overrides, err := executionOverrideStrings(rawOverrides)
-		if err != nil {
-			return Result{}, berror.Validation("saved-job overrides must be a list of KEY=VALUE strings", nil)
-		}
-		params, err := cloneParameters(operation.Parameters)
-		if err != nil {
-			return Result{}, err
-		}
-		if err := applyExecutionOverrides(params, overrides); err != nil {
-			return Result{}, err
-		}
-		operation.Parameters = params
-		if err := models.ValidateOperationSpecV2(operation); err != nil {
-			return Result{}, berror.Validation("invalid saved-job execution override", map[string]any{"reason": err.Error()})
-		}
+	ctx.JobID = job.JobID
+	operation, err := applyOperationExecutionOverrides(job.Operation, p["overrides"], optionalString(p["repository_ref"]))
+	if err != nil {
+		return Result{}, berror.Validation("invalid saved-job execution override", map[string]any{"reason": err.Error()})
 	}
 	emit(ctx, "preparing", "Preparing saved job "+job.Name+".", floatPtr(.02))
-	return d.executeSavedOperation(ctx, operation, plan)
+	var origin *runstore.SavedJobOrigin
+	if !plan {
+		origin = &runstore.SavedJobOrigin{JobID: job.JobID, Revision: job.Revision, Operation: operation}
+	}
+	return d.executeSavedOperation(ctx, operation, plan, origin)
 }
 
-func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation models.OperationSpecV2, plan bool) (Result, error) {
+func (d *Dispatcher) runsReplay(ctx OperationContext, p map[string]any) (Result, error) {
+	if d.RunStore == nil {
+		return Result{}, berror.Validation("Run history is not configured for this service dispatcher", nil)
+	}
+	runID := strings.TrimSpace(optionalString(p["run_id"]))
+	if runID == "" {
+		return Result{}, berror.Validation("runs.replay requires run_id", nil)
+	}
+	source, err := d.RunStore.Get(runID)
+	if err != nil {
+		return Result{}, err
+	}
+	if source == nil {
+		return Result{}, berror.NotFound("Run not found: "+runID, map[string]any{"run_id": runID})
+	}
+	ctx.JobID = source.JobID
+	operation, err := runstore.ReplayOperation(*source)
+	if err != nil {
+		return Result{}, err
+	}
+	operation, err = applyOperationExecutionOverrides(operation, p["overrides"], optionalString(p["repository_ref"]))
+	if err != nil {
+		return Result{}, berror.Validation("invalid historical replay override", map[string]any{"reason": err.Error()})
+	}
+	plan, err := boolDefault(p, "dry_run", false)
+	if err != nil {
+		return Result{}, err
+	}
+	emit(ctx, "preparing", "Preparing historical run replay.", floatPtr(.02))
+	var origin *runstore.SavedJobOrigin
+	if !plan && source.JobID != "" && source.JobRevision > 0 {
+		origin = &runstore.SavedJobOrigin{JobID: source.JobID, Revision: source.JobRevision, Operation: operation}
+	}
+	return d.executeSavedOperation(ctx, operation, plan, origin)
+}
+
+func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation models.OperationSpecV2, plan bool, origin *runstore.SavedJobOrigin) (Result, error) {
 	raw, err := json.Marshal(operation.Parameters)
 	if err != nil {
 		return Result{}, berror.Validation("saved job parameters are not JSON serializable", nil)
@@ -275,10 +304,13 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 			return result, nil
 		}
 		spec.DryRun = false
-		r, err := backupops.Create(spec, false, backupops.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(e backupops.ProgressEvent) {
+		r, err := backupops.Create(spec, false, backupops.Options{RunStore: d.RunStore, RunID: requestID(ctx), RunOrigin: origin, Cancelled: ctx.Cancelled, Progress: func(e backupops.ProgressEvent) {
 			emitDetailed(ctx, e.Stage, fmt.Sprintf("%s: %d files, %d bytes.", title(e.Stage), e.Files, e.Bytes), nil, int64Ptr(e.Files), nil, int64Ptr(e.Bytes), nil)
 		}})
 		if err != nil {
+			if errors.Is(err, backupops.ErrCancelled) {
+				return Result{}, ErrCancelled
+			}
 			return Result{}, err
 		}
 		issues := []Issue{}
@@ -293,7 +325,9 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 			digest := r.Checksums[filepath.Base(path)]
 			artifacts = append(artifacts, artifact("backup_archive", path, digest))
 		}
-		return Result{Status: map[bool]string{true: StatusSuccess, false: "failure"}[r.Success], Summary: fmt.Sprintf("Saved backup completed: %d files, %d bytes.", r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: artifacts}, nil
+		result := Result{Status: map[bool]string{true: StatusSuccess, false: "failure"}[r.Success], Summary: fmt.Sprintf("Saved backup completed: %d files, %d bytes.", r.FilesProcessed, r.BytesWritten), Errors: issues, Artifacts: artifacts}
+		result.Metrics = &ResultMetrics{DurationMS: int64Ptr(r.DurationMS), FilesTotal: int64Ptr(int64(r.FilesProcessed)), BytesTotal: int64Ptr(r.BytesWritten)}
+		return result, nil
 
 	case "backup.snapshot":
 		var spec models.SnapshotBackupSpec
@@ -332,10 +366,13 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 			return success("Incremental snapshot plan ready for "+p.Repository+".", nil, nil), nil
 		}
 		spec.DryRun = false
-		r, err := resticops.Backup(spec, resticops.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(e resticops.ProgressEvent) {
+		r, err := resticops.Backup(spec, resticops.Options{RunStore: d.RunStore, RunID: requestID(ctx), RunOrigin: origin, Cancelled: ctx.Cancelled, Progress: func(e resticops.ProgressEvent) {
 			emitDetailed(ctx, e.Stage, fmt.Sprintf("%s: %d files, %d bytes.", title(e.Stage), e.Files, e.Bytes), nil, int64Ptr(e.Files), nil, int64Ptr(e.Bytes), nil)
 		}})
 		if err != nil {
+			if errors.Is(err, resticops.ErrCancelled) {
+				return Result{}, ErrCancelled
+			}
 			return Result{}, err
 		}
 		issues := []Issue{}
@@ -344,10 +381,22 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 		}
 		artifacts := []Artifact{}
 		if r.SnapshotID != "" {
-			artifacts = append(artifacts, artifact("restic_snapshot", "restic://"+r.Repository+"/snapshots/"+r.SnapshotID, ""))
+			reused := r.BytesProcessed - r.DataAdded
+			if reused < 0 {
+				reused = 0
+			}
+			snapshotArtifact := artifact("restic_snapshot", "restic://"+r.Repository+"/snapshots/"+r.SnapshotID, "")
+			snapshotArtifact.Metadata = map[string]string{
+				"snapshot_id":     r.SnapshotID,
+				"files_processed": fmt.Sprintf("%d", r.FilesProcessed),
+				"bytes_processed": fmt.Sprintf("%d", r.BytesProcessed),
+				"data_added":      fmt.Sprintf("%d", r.DataAdded),
+				"bytes_reused":    fmt.Sprintf("%d", reused),
+			}
+			artifacts = append(artifacts, snapshotArtifact)
 		}
 		result := success("Restic snapshot "+r.SnapshotID+" completed.", issues, artifacts)
-		result.Metrics = &ResultMetrics{FilesTotal: int64Ptr(r.FilesProcessed), BytesTotal: int64Ptr(r.BytesProcessed)}
+		result.Metrics = &ResultMetrics{DurationMS: int64Ptr(r.DurationMS), FilesTotal: int64Ptr(r.FilesProcessed), BytesTotal: int64Ptr(r.BytesProcessed)}
 		return result, nil
 
 	case "transfer.run":
@@ -366,10 +415,13 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 			return result, nil
 		}
 		spec.DryRun = false
-		r, err := transferops.Run(spec, transferops.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(e transferops.ProgressEvent) {
+		r, err := transferops.Run(spec, transferops.Options{RunStore: d.RunStore, RunID: requestID(ctx), RunOrigin: origin, Cancelled: ctx.Cancelled, Progress: func(e transferops.ProgressEvent) {
 			emitDetailed(ctx, "transferring", "Running saved transfer.", nil, int64Ptr(e.FilesTransferred), int64Ptr(e.TotalFiles), int64Ptr(e.BytesTransferred), int64Ptr(e.TotalBytes))
 		}})
 		if err != nil {
+			if errors.Is(err, transferops.ErrCancelled) {
+				return Result{}, ErrCancelled
+			}
 			return Result{}, err
 		}
 		issues := []Issue{}
@@ -379,7 +431,9 @@ func (d *Dispatcher) executeSavedOperation(ctx OperationContext, operation model
 		for _, e := range r.Errors {
 			issues = append(issues, errorIssue("transfer_error", e))
 		}
-		return Result{Status: map[bool]string{true: StatusSuccess, false: "failure"}[r.Success], Summary: fmt.Sprintf("Saved transfer completed: %d files, %d bytes.", r.FilesTransferred, r.BytesTransferred), Errors: issues, Artifacts: []Artifact{}}, nil
+		result := Result{Status: map[bool]string{true: StatusSuccess, false: "failure"}[r.Success], Summary: fmt.Sprintf("Saved transfer completed: %d files, %d bytes.", r.FilesTransferred, r.BytesTransferred), Errors: issues, Artifacts: []Artifact{}}
+		result.Metrics = &ResultMetrics{DurationMS: int64Ptr(r.DurationMS), FilesTotal: int64Ptr(r.FilesTransferred), BytesTotal: int64Ptr(r.BytesTransferred)}
+		return result, nil
 	}
 
 	params := clonePayload(operation.Parameters)
@@ -428,6 +482,80 @@ func cloneParameters(src map[string]any) (map[string]any, error) {
 		out = map[string]any{}
 	}
 	return out, nil
+}
+
+// applyOperationExecutionOverrides applies controlled, one-run-only overrides to
+// a cloned OperationSpecV2. It never mutates the stored SavedJob revision.
+// `source=/path` is an ergonomic alias for a one-element `sources` list, while
+// repository/repository_ref replace the operation's repository reference and
+// intentionally drop repository-bound credential references so the selected
+// repository resolves its own secret reference at execution time.
+func applyOperationExecutionOverrides(operation models.OperationSpecV2, rawOverrides any, repositoryOverride string) (models.OperationSpecV2, error) {
+	params, err := cloneParameters(operation.Parameters)
+	if err != nil {
+		return operation, err
+	}
+	operation.Parameters = params
+
+	setRepository := func(value string) error {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return berror.Validation("repository override must not be empty", nil)
+		}
+		operation.RepositoryRef = &value
+		delete(operation.Parameters, "repository")
+		delete(operation.Parameters, "credential_ref")
+		operation.CredentialRefs = nil
+		return nil
+	}
+	if strings.TrimSpace(repositoryOverride) != "" {
+		if err := setRepository(repositoryOverride); err != nil {
+			return operation, err
+		}
+	}
+
+	if rawOverrides != nil {
+		values, err := executionOverrideStrings(rawOverrides)
+		if err != nil {
+			return operation, berror.Validation("execution overrides must be a list of KEY=VALUE strings", nil)
+		}
+		generic := make([]string, 0, len(values))
+		for _, raw := range values {
+			pair := strings.SplitN(raw, "=", 2)
+			if len(pair) != 2 || strings.TrimSpace(pair[0]) == "" {
+				return operation, berror.Validation("execution override must use KEY=VALUE", map[string]any{"value": raw})
+			}
+			key := strings.TrimSpace(pair[0])
+			switch key {
+			case "source":
+				value := strings.TrimSpace(pair[1])
+				if value == "" {
+					return operation, berror.Validation("source override must not be empty", nil)
+				}
+				operation.Parameters["sources"] = []any{value}
+			case "repository", "repository_ref":
+				value := strings.TrimSpace(pair[1])
+				if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+					var decoded string
+					if err := json.Unmarshal([]byte(value), &decoded); err == nil {
+						value = decoded
+					}
+				}
+				if err := setRepository(value); err != nil {
+					return operation, err
+				}
+			default:
+				generic = append(generic, raw)
+			}
+		}
+		if err := applyExecutionOverrides(operation.Parameters, generic); err != nil {
+			return operation, err
+		}
+	}
+	if err := models.ValidateOperationSpecV2(operation); err != nil {
+		return operation, err
+	}
+	return operation, nil
 }
 
 func applyExecutionOverrides(params map[string]any, values []string) error {

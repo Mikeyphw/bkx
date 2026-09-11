@@ -33,6 +33,7 @@ var commandHandlers = map[string]commandHandler{
 	"repository prune":    repositoryPrune,
 	"repository remove":   repositoryRemove,
 	"repository show":     repositoryShow,
+	"repository status":   repositoryStatus,
 	"snapshot browse":     snapshotBrowse,
 	"snapshot diff":       snapshotDiff,
 	"snapshot forget":     snapshotForget,
@@ -717,6 +718,9 @@ type runSummary struct {
 	RunID       string  `json:"run_id"`
 	Operation   string  `json:"operation"`
 	Status      string  `json:"status"`
+	Phase       string  `json:"phase,omitempty"`
+	JobID       string  `json:"job_id,omitempty"`
+	JobRevision int64   `json:"job_revision,omitempty"`
 	StartedAt   string  `json:"started_at"`
 	CompletedAt *string `json:"completed_at"`
 	SourceCount int     `json:"source_count"`
@@ -755,7 +759,10 @@ func runList(c *appContext, args []string) int {
 	}
 	summaries := make([]runSummary, 0, len(records))
 	for _, r := range records {
-		summaries = append(summaries, runSummary{r.RunID, r.Operation, r.Status, r.StartedAt, r.CompletedAt, len(r.SourcePaths)})
+		summaries = append(summaries, runSummary{
+			RunID: r.RunID, Operation: r.Operation, Status: r.Status, Phase: r.Phase, JobID: r.JobID, JobRevision: r.JobRevision,
+			StartedAt: r.StartedAt, CompletedAt: r.CompletedAt, SourceCount: len(r.SourcePaths),
+		})
 	}
 	return renderResult(c, runListResult{Runs: summaries, TotalCount: count, Limit: limit}, "run_list")
 }
@@ -787,7 +794,13 @@ func runShow(c *appContext, args []string) int {
 			timing = []any{record.StartedAt, end.Sub(start).Seconds()}
 		}
 	}
-	payload := map[string]any{"run_id": record.RunID, "operation": record.Operation, "status": record.Status, "timing": timing, "source_paths": record.SourcePaths, "destination_path": record.DestinationPath, "archive_path": record.ArchivePath, "files_count": record.FilesCount, "bytes_processed": record.BytesProcessed, "error_message": record.ErrorMessage, "spec_snapshot": record.SpecSnapshot}
+	payload := map[string]any{
+		"run_id": record.RunID, "operation": record.Operation, "status": record.Status, "phase": record.Phase,
+		"job_id": record.JobID, "job_revision": record.JobRevision, "timing": timing,
+		"source_paths": record.SourcePaths, "destination_path": record.DestinationPath, "archive_path": record.ArchivePath,
+		"files_count": record.FilesCount, "bytes_processed": record.BytesProcessed, "error_message": record.ErrorMessage,
+		"spec_snapshot": record.SpecSnapshot, "operation_spec_snapshot": record.OperationSpecSnapshot,
+	}
 	return renderResult(c, payload, "run_show")
 }
 

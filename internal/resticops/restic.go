@@ -104,6 +104,7 @@ type Options struct {
 	Environ   []string
 	RunStore  *runstore.Store
 	RunID     string
+	RunOrigin *runstore.SavedJobOrigin
 	Cancelled func() bool
 	Progress  func(ProgressEvent)
 }
@@ -399,6 +400,7 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 	if runID == "" {
 		runID = randomRunID()
 	}
+	options.RunID = runID
 	destination := normalized.Repository
 	if options.RunStore != nil {
 		snapshot := map[string]any{
@@ -410,9 +412,10 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		if normalized.CredentialRef != nil {
 			snapshot["credential_ref"] = *normalized.CredentialRef
 		}
-		if _, err := options.RunStore.RecordStart(runID, "backup", normalized.Sources, &destination, nil, snapshot); err != nil {
+		if _, err := options.RunStore.RecordStartWithOrigin(runID, "backup", normalized.Sources, &destination, nil, snapshot, options.RunOrigin); err != nil {
 			return BackupResult{}, err
 		}
+		_, _ = options.RunStore.RecordPhase(runID, "preparing")
 	}
 	complete := func(status string, result *BackupResult, opErr error) {
 		if options.RunStore == nil {
@@ -431,7 +434,7 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		_, _ = options.RunStore.RecordCompletion(runID, status, files, bytes, msg)
 	}
 	if options.Cancelled != nil && options.Cancelled() {
-		complete("interrupted", nil, ErrCancelled)
+		complete("cancelled", nil, ErrCancelled)
 		return BackupResult{}, ErrCancelled
 	}
 	args := []string{"--json"}
@@ -445,8 +448,16 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 	}
 	args = append(args, normalized.Sources...)
 	emit(options, "snapshotting", 0, 0)
-	stdout, stderr, runErr := runner.Run(args, env)
+	unlockBase := append([]string{}, backendArgs...)
+	unlockBase = append(unlockBase, "--repo", commandRepo)
+	stdout, stderr, runErr := runWithStaleLockRecovery(runner, args, env, unlockBase, options.Cancelled, func(stage string) {
+		emit(options, stage, 0, 0)
+	}, func(line []byte) { emitBackupProgressLine(line, options) })
 	if runErr != nil {
+		if errors.Is(runErr, ErrCancelled) {
+			complete("cancelled", nil, ErrCancelled)
+			return BackupResult{}, ErrCancelled
+		}
 		wrapped := external("creating Restic snapshot", normalized.Repository, stderr, runErr)
 		complete("failed", nil, wrapped)
 		return BackupResult{}, wrapped
@@ -461,10 +472,18 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		emit(options, "verifying", result.FilesProcessed, result.BytesProcessed)
 		checkArgs := append([]string{}, backendArgs...)
 		checkArgs = append(checkArgs, "--repo", commandRepo, "check")
-		_, checkErrText, checkErr := runner.Run(checkArgs, env)
+		_, checkErrText, checkErr := runWithStaleLockRecovery(runner, checkArgs, env, unlockBase, options.Cancelled, func(stage string) {
+			emit(options, stage, result.FilesProcessed, result.BytesProcessed)
+		}, nil)
 		ok := checkErr == nil
 		result.VerificationPassed = &ok
 		if checkErr != nil {
+			if errors.Is(checkErr, ErrCancelled) {
+				result.Success = false
+				result.DurationMS = time.Since(started).Milliseconds()
+				complete("cancelled", &result, ErrCancelled)
+				return result, ErrCancelled
+			}
 			wrapped := external("checking Restic repository", normalized.Repository, checkErrText, checkErr)
 			result.Success = false
 			result.DurationMS = time.Since(started).Milliseconds()
@@ -473,6 +492,7 @@ func Backup(spec models.SnapshotBackupSpec, options Options) (BackupResult, erro
 		}
 	}
 	result.DurationMS = time.Since(started).Milliseconds()
+	emit(options, "finalizing", result.FilesProcessed, result.BytesProcessed)
 	complete("success", &result, nil)
 	return result, nil
 }
@@ -550,9 +570,85 @@ func parseBackupJSON(data []byte, options Options) (summaryMessage, error) {
 }
 
 func emit(options Options, stage string, files, bytes int64) {
+	if options.RunStore != nil && options.RunID != "" {
+		phase := "running"
+		switch stage {
+		case "recovering_stale_lock":
+			phase = "preparing"
+		case "verifying":
+			phase = "verifying"
+		case "finalizing":
+			phase = "finalizing"
+		}
+		_, _ = options.RunStore.RecordPhase(options.RunID, phase)
+	}
 	if options.Progress != nil {
 		options.Progress(ProgressEvent{Stage: stage, Files: files, Bytes: bytes})
 	}
+}
+
+// runWithStaleLockRecovery retries an operation once after asking Restic to
+// remove only stale locks. It intentionally never uses `unlock --remove-all`,
+// because another BKX/client process may legitimately own a live repository lock.
+func runWithStaleLockRecovery(
+	runner Runner,
+	args []string,
+	env []string,
+	unlockBase []string,
+	cancelled func() bool,
+	onRecovery func(string),
+	onStdoutLine func([]byte),
+) ([]byte, []byte, error) {
+	stdout, stderr, runErr := runResticCommand(runner, args, env, cancelled, onStdoutLine)
+	if runErr == nil || !isRepositoryLockError(stderr) || (cancelled != nil && cancelled()) {
+		return stdout, stderr, runErr
+	}
+	if onRecovery != nil {
+		onRecovery("recovering_stale_lock")
+	}
+	unlockArgs := append([]string{}, unlockBase...)
+	unlockArgs = append(unlockArgs, "unlock")
+	_, unlockStderr, unlockErr := runResticCommand(runner, unlockArgs, env, cancelled, nil)
+	if unlockErr != nil {
+		return stdout, append(stderr, unlockStderr...), runErr
+	}
+	if onRecovery != nil {
+		onRecovery("retrying_operation")
+	}
+	return runResticCommand(runner, args, env, cancelled, onStdoutLine)
+}
+
+// runResticCommand uses Restic's streaming runner whenever available so a
+// caller can cancel a long-running backup/check/prune and Android/Tasker can
+// receive progress before process completion. Buffered test runners and custom
+// integrations continue to work through the legacy Runner contract.
+func runResticCommand(runner Runner, args []string, env []string, cancelled func() bool, onStdoutLine func([]byte)) ([]byte, []byte, error) {
+	if streaming, ok := runner.(StreamingRunner); ok {
+		var stdout bytes.Buffer
+		stderr, err := streaming.RunStreaming(args, env, cancelled, func(line []byte) {
+			stdout.Write(line)
+			stdout.WriteByte('\n')
+			if onStdoutLine != nil {
+				onStdoutLine(line)
+			}
+		})
+		return stdout.Bytes(), stderr, err
+	}
+	return runner.Run(args, env)
+}
+
+func emitBackupProgressLine(line []byte, options Options) {
+	var status statusMessage
+	if json.Unmarshal(bytes.TrimSpace(line), &status) == nil && status.MessageType == "status" {
+		emit(options, "snapshotting", status.FilesDone, status.BytesDone)
+	}
+}
+
+func isRepositoryLockError(stderr []byte) bool {
+	text := strings.ToLower(string(stderr))
+	return strings.Contains(text, "repository is already locked") ||
+		strings.Contains(text, "repository already locked") ||
+		strings.Contains(text, "unable to create lock")
 }
 func ptr(v int64) *int64 { return &v }
 func randomRunID() string {

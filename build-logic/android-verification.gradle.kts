@@ -816,7 +816,12 @@ tasks.register("verifyBkxRuntimeHardeningContract") {
         check("startProgressPoller" in coordinatorText && "backendPort.progress" in coordinatorText) {
             "Embedded progress must be consumed while an operation is active."
         }
-        check("foregroundOperationMutex" in coordinatorText) { "Long foreground operations must serialize their service lifecycle." }
+        check("foregroundOperationMutex" !in coordinatorText && "executeOwnedConcurrent" in coordinatorText) {
+            "Unrelated repositories must not be serialized behind a process-global foreground-operation mutex."
+        }
+        check("stopForegroundShellIfIdle" in coordinatorText && "anotherForegroundOperationIsActive" in coordinatorText) {
+            "Concurrent foreground operations must keep the service alive until the last foreground operation finishes."
+        }
         check("modeProvider = { settings.readNow().rootAccessMode }" in graphText) { "Root preference must resolve dynamically for the next operation." }
         check("requestRoutes" in gatewayText && "requestIdFrom" in gatewayText) { "Root/local execution route must stay pinned for progress and cancellation of an active request." }
         check("Interrupted" in operationsText && "bounded(" in operationsText) { "Interrupted state and bounded operation history must remain persisted contracts." }
@@ -1105,7 +1110,11 @@ tasks.register("verifyBkxGoProductionCutoverContract") {
         check("com.chaquo.python" !in rootText && "bkx.android_api" !in rootText && "ProcessBuilder(" !in rootText) {
             "Privileged service must not retain Python or arbitrary process execution."
         }
-        check("LOCAL_STATE_NAMESPACE = \"go-local\"" in gatewayText && "setOf(LOCAL_STATE_NAMESPACE, \"go-root\")" in gatewayText) {
+        check(
+            "LOCAL_STATE_NAMESPACE = \"go-local\"" in gatewayText &&
+                "ROOT_STATE_NAMESPACE = \"go-root\"" in gatewayText &&
+                "setOf(LOCAL_STATE_NAMESPACE, ROOT_STATE_NAMESPACE)" in gatewayText
+        ) {
             "Local/root Go state ownership isolation is missing."
         }
         check("go-native-android" in localTestText) {
@@ -1257,4 +1266,150 @@ tasks.named("bkxAndroidReleaseSeal") {
         "verifyBkxGoOnlyAndroidRuntimeContract",
         "verifyBkxFinalReleaseContract",
     )
+}
+
+tasks.register("verifyBkxBackupAutomationRoadmapFinalSeal") {
+    group = "verification"
+    description = "Verify the BR01-BR20 Saved Jobs, Restic, Android, Tasker, scheduling, migration, and cross-client parity seal."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val finalDoc = repositoryRoot.resolve("docs/BR19_BR20_FINAL_BACKUP_AUTOMATION_SEAL.md")
+    val savedJobsDoc = repositoryRoot.resolve("docs/guide/SAVED_JOBS_V2.md")
+    val taskerDoc = rootProject.layout.projectDirectory.file("docs/AUTOMATION_TASKER.md").asFile
+    val statePaths = repositoryRoot.resolve("internal/statepaths/statepaths.go")
+    val runStore = repositoryRoot.resolve("internal/runstore/store.go")
+    val publicCli = repositoryRoot.resolve("internal/publiccli/app.go")
+    val resticMaintenance = repositoryRoot.resolve("internal/resticops/maintenance.go")
+    val dispatcher = repositoryRoot.resolve("internal/services/dispatcher.go")
+    val savedJobService = repositoryRoot.resolve("internal/services/saved_jobs.go")
+    val snapshotCli = repositoryRoot.resolve("internal/publiccli/snapshot.go")
+    val repositoryCli = repositoryRoot.resolve("internal/publiccli/repository.go")
+    val jobsCli = repositoryRoot.resolve("internal/publiccli/jobs.go")
+    val bridgeRuntime = repositoryRoot.resolve("internal/bridge/bridge.go")
+    val gateway = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt").asFile
+    val automation = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/automation/AutomationContract.kt").asFile
+    val taskerEditor = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/automation/BkxTaskerEditActivity.kt").asFile
+    val taskerEngine = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/automation/BkxAutomationEngine.kt").asFile
+    val runHistoryBridge = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/runs/RunHistoryBridge.kt").asFile
+    val coordinator = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt").asFile
+    val manifest = layout.projectDirectory.file("src/main/AndroidManifest.xml").asFile
+    val jobsScreen = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/feature/backup/SavedJobsScreen.kt").asFile
+    val repositoriesScreen = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/feature/backup/RepositoriesScreen.kt").asFile
+    val snapshotsScreen = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/feature/backup/SnapshotsScreen.kt").asFile
+    val unitTestRoot = layout.projectDirectory.dir("src/test").asFile
+    val androidTestRoot = layout.projectDirectory.dir("src/androidTest").asFile
+
+    inputs.files(
+        finalDoc, savedJobsDoc, taskerDoc, statePaths, runStore, publicCli,
+        resticMaintenance, dispatcher, savedJobService, snapshotCli, repositoryCli, jobsCli, bridgeRuntime,
+        gateway, automation, taskerEditor, taskerEngine, runHistoryBridge, coordinator, manifest,
+        jobsScreen, repositoriesScreen, snapshotsScreen,
+    )
+    inputs.dir(unitTestRoot)
+    inputs.dir(androidTestRoot)
+
+    doLast {
+        check(finalDoc.isFile) { "BR19+BR20 final roadmap seal document is missing." }
+        val finalText = finalDoc.readText()
+        listOf("BR01+02", "BR19+20", "latest~N", "run_id", "overwrite=never", "full-validation overlay").forEach { token ->
+            check(token in finalText) { "Final roadmap document missing token: $token" }
+        }
+
+        val stateText = statePaths.readText()
+        listOf("JobStorePath", "RepositoryStorePath", "ScheduleStorePath", "ExecutionControlPath", "RunHistoryPath", "SharedAndroidRoot").forEach { token ->
+            check(token in stateText) { "Shared control plane missing path contract: $token" }
+        }
+        check("MergeLegacyHistory" in runStore.readText()) { "Legacy run history union migration is missing." }
+
+        val cliText = publicCli.readText()
+        listOf("\"job run\"", "\"run replay\"", "\"snapshot browse\"", "\"schedule add\"", "\"state status\"").forEach { token ->
+            check(token in cliText) { "Final CLI surface missing token: $token" }
+        }
+        check("strings.HasPrefix(value, \"latest~\")" in resticMaintenance.readText()) {
+            "Restic latest~N snapshot selector support is missing."
+        }
+
+        val dispatcherText = dispatcher.readText()
+        listOf("\"backup.snapshot\"", "\"repositories.add\"", "\"snapshots.restore\"", "\"repository.prune\"", "\"retention.apply\"", "\"jobs.run\"", "\"runs.replay\"", "\"schedules.put\"", "\"bytes_reused\"", "run_json").forEach { token ->
+            check(token in dispatcherText) { "Shared service surface missing token: $token" }
+        }
+        val runStoreText = runStore.readText()
+        listOf("RecordStartWithOrigin", "RecordPhase", "ReplayOperation", "cancelled", "interrupted").forEach { token ->
+            check(token in runStoreText) { "Durable run/provenance contract missing token: $token" }
+        }
+        val savedJobServiceText = savedJobService.readText()
+        listOf("applyOperationExecutionOverrides", "case \"source\"", "case \"repository\", \"repository_ref\"", "RunOrigin: origin", "data_added", "bytes_reused").forEach { token ->
+            check(token in savedJobServiceText) { "Saved-job execution parity missing token: $token" }
+        }
+        check("snapshotContextAccess" in snapshotCli.readText() && "snapshotAccessAndPositionals" in snapshotCli.readText()) {
+            "Snapshot CLI positional saved-job/repository context is missing."
+        }
+        check("func repositoryStatus" in repositoryCli.readText()) { "repository status CLI is missing." }
+        check("operation = \"jobs.plan\"" in jobsCli.readText()) { "job run --dry-run must dispatch the saved-job planning path." }
+        val bridgeRuntimeText = bridgeRuntime.readText()
+        check("json:\"run_id,omitempty\"" in bridgeRuntimeText && "json:\"job_id,omitempty\"" in bridgeRuntimeText && "p.RunID" in bridgeRuntimeText && "p.JobID" in bridgeRuntimeText) {
+            "Shared progress contract must carry run_id and job_id."
+        }
+
+        val gatewayText = gateway.readText()
+        check("desiredStateRoot.resolve(\"runs\").resolve(\"runs.jsonl\")" in gatewayText && "BKX_LEGACY_RUN_HISTORY" in gatewayText) {
+            "Android run history is not converged on the shared control plane."
+        }
+        val automationText = automation.readText()
+        listOf("RunSavedJob", "CreateSnapshot", "RepositoryCheck", "RetentionApply", "RepositoryPrune", "SnapshotRestore", "%bkx_job_id", "%bkx_run_id", "%bkx_repository_id", "%bkx_snapshot_id", "%bkx_files_processed", "%bkx_bytes_processed", "%bkx_bytes_added", "%bkx_bytes_reused", "%bkx_duration_ms", "%bkx_success", "%bkx_message").forEach { token ->
+            check(token in automationText) { "Tasker V2 final contract missing token: $token" }
+        }
+        listOf("Repository override", "source=/path", "repository=repo-id").forEach { token ->
+            check(token in taskerEditor.readText()) { "Tasker Saved Job override UX missing token: $token" }
+        }
+        listOf("savedJobRepositoryOverride", "bytesAdded", "bytesReused", "durationMillis").forEach { token ->
+            check(token in taskerEngine.readText()) { "Tasker effective repository/metrics producer missing token: $token" }
+        }
+        val runHistoryBridgeText = runHistoryBridge.readText()
+        listOf("runs.list", "run_json", "Instant.parse", "LocalDateTime.parse", "ZoneId.systemDefault").forEach { token ->
+            check(token in runHistoryBridgeText) { "Android canonical run-history bridge missing token: $token" }
+        }
+        val coordinatorText = coordinator.readText()
+        check("foregroundOperationMutex" !in coordinatorText) { "Android still globally serializes unrelated repository operations." }
+        check("stopForegroundShellIfIdle" in coordinatorText && "anotherForegroundOperationIsActive" in coordinatorText) {
+            "Concurrent foreground operations do not preserve foreground-service lifetime."
+        }
+
+        check(jobsScreen.isFile && repositoriesScreen.isFile && snapshotsScreen.isFile) {
+            "Android Jobs/Repositories/Snapshots product surfaces are incomplete."
+        }
+        val manifestText = manifest.readText()
+        listOf("RECEIVE_BOOT_COMPLETED", "BkxSavedJobScheduleService", "BkxAutomationRecoveryReceiver", "MY_PACKAGE_REPLACED").forEach { token ->
+            check(token in manifestText) { "Android scheduling/recovery manifest contract missing: $token" }
+        }
+
+        val savedJobsText = savedJobsDoc.readText()
+        check("canonical Saved Job V2 store" in savedJobsText && "SharedPreferences job store remains only as a compatibility/migration source" in savedJobsText) {
+            "Saved Jobs documentation still describes a split authoritative store."
+        }
+        val taskerText = taskerDoc.readText()
+        listOf("Run saved job", "Create snapshot", "Prune repository", "%bkx_bytes_added", "%bkx_duration_ms").forEach { token ->
+            check(token in taskerText) { "Tasker documentation missing V2 final contract token: $token" }
+        }
+
+        val unsupportedTestImports = listOf("import kotlin.test", "import org.junit.jupiter")
+        listOf(unitTestRoot, androidTestRoot).forEach { root ->
+            if (root.isDirectory) {
+                root.walkTopDown()
+                    .filter { it.isFile && it.extension == "kt" }
+                    .forEach { testFile ->
+                        val testText = testFile.readText()
+                        unsupportedTestImports.forEach { unsupportedImport ->
+                            check(unsupportedImport !in testText) {
+                                "Unsupported Android test framework import '$unsupportedImport' in ${testFile.relativeTo(layout.projectDirectory.asFile)}; use project-standard JUnit 4."
+                            }
+                        }
+                    }
+            }
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxBackupAutomationRoadmapFinalSeal")
 }

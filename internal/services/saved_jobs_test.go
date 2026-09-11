@@ -135,3 +135,47 @@ func TestSavedJobExecutionOverrideRejectsInlineSecretAfterValidation(t *testing.
 		t.Fatal("inline secret override must be rejected")
 	}
 }
+
+func TestSavedJobControlledOverridesRewriteExecutionSpecOnly(t *testing.T) {
+	oldRepo := "repo-old"
+	operation := models.OperationSpecV2{
+		SchemaVersion: models.OperationSpecV2SchemaVersion,
+		Operation:     "backup.snapshot",
+		Parameters: map[string]any{
+			"engine":         "restic",
+			"repository":     "/old/path",
+			"credential_ref": "old-secret-ref",
+			"sources":        []any{"/old/source"},
+			"verify":         true,
+		},
+		RepositoryRef:  &oldRepo,
+		CredentialRefs: []models.SecretReference{{ID: "old-secret-ref", Purpose: "restic repository password"}},
+	}
+	updated, err := applyOperationExecutionOverrides(
+		operation,
+		[]any{"source=/new/source", "verify=false"},
+		"repo-new",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.RepositoryRef == nil || *updated.RepositoryRef != "repo-new" {
+		t.Fatalf("repository ref=%v", updated.RepositoryRef)
+	}
+	if _, exists := updated.Parameters["repository"]; exists {
+		t.Fatalf("embedded repository survived repository override: %#v", updated.Parameters)
+	}
+	if _, exists := updated.Parameters["credential_ref"]; exists || len(updated.CredentialRefs) != 0 {
+		t.Fatalf("old repository credential references survived override: %#v / %#v", updated.Parameters, updated.CredentialRefs)
+	}
+	sources, ok := updated.Parameters["sources"].([]any)
+	if !ok || len(sources) != 1 || sources[0] != "/new/source" {
+		t.Fatalf("sources=%#v", updated.Parameters["sources"])
+	}
+	if updated.Parameters["verify"] != false {
+		t.Fatalf("verify=%#v", updated.Parameters["verify"])
+	}
+	if *operation.RepositoryRef != "repo-old" || operation.Parameters["repository"] != "/old/path" {
+		t.Fatalf("persisted operation mutated: %#v", operation)
+	}
+}

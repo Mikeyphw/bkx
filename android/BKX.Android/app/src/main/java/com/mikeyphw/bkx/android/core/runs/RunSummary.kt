@@ -10,6 +10,7 @@ enum class RunStatus {
     @SerialName("success") Success,
     @SerialName("failure") Failure,
     @SerialName("cancelled") Cancelled,
+    @SerialName("interrupted") Interrupted,
 }
 
 @Serializable
@@ -35,6 +36,7 @@ data class RunArtifactSummary(
 data class RunSummary(
     val requestId: String,
     val operation: String,
+    val jobId: String? = null,
     val status: RunStatus,
     val startedAtEpochMillis: Long,
     val finishedAtEpochMillis: Long? = null,
@@ -42,6 +44,8 @@ data class RunSummary(
     val artifacts: List<RunArtifactSummary> = emptyList(),
     val verification: VerificationState = VerificationState.NotRequested,
     val summary: String = "",
+    val jobRevision: Long? = null,
+    val phase: String? = null,
 ) {
     init {
         require(requestId.isNotBlank()) { "request id must not be blank" }

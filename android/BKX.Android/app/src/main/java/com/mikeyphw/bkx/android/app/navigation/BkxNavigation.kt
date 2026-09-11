@@ -45,6 +45,6 @@ fun BackendReadiness.toSetupActions(): List<SetupRemediationAction> = when (this
 
 enum class ArchiveDetailSection { Overview, Contents, Restore }
 
-enum class BackupRoute { Overview, Jobs, Snapshots, Repositories }
+enum class BackupRoute { Overview, Jobs, Snapshots, Repositories, History }
 
 enum class MoreRoute { Overview, GoogleDrive, Remotes, Transfer, Automation, Diagnostics }

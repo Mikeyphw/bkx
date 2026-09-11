@@ -39,6 +39,88 @@ func snapshotAccess(c *appContext, a leafArgs) (models.RepositoryAccessSpec, err
 	return models.RepositoryAccessSpec{Repository: repository, CredentialRef: credentialRef}, nil
 }
 
+// snapshotContextAccess supports the BR09+10 positional ergonomics used by the
+// roadmap while retaining the explicit --repository/--repository-ref form.
+// A context may be either a saved-job id (preferred when ids collide) or a
+// named repository id. Saved jobs resolve only through their non-secret
+// repository reference / credential references; no secret material is copied
+// into the job or command line.
+func snapshotContextAccess(c *appContext, selector string, credentialOverride *string) (models.RepositoryAccessSpec, error) {
+	selector = strings.TrimSpace(selector)
+	if selector == "" {
+		return models.RepositoryAccessSpec{}, berror.Validation("snapshot job/repository context must not be empty", nil)
+	}
+	job, err := c.jobs.Get(selector)
+	if err != nil {
+		return models.RepositoryAccessSpec{}, err
+	}
+	if job != nil {
+		ref := ""
+		if job.Operation.RepositoryRef != nil {
+			ref = strings.TrimSpace(*job.Operation.RepositoryRef)
+		}
+		if ref != "" {
+			def, err := c.repositories.Resolve(ref)
+			if err != nil {
+				return models.RepositoryAccessSpec{}, err
+			}
+			credentialRef := def.CredentialRef
+			if credentialOverride != nil {
+				credentialRef = credentialOverride
+			}
+			return models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: credentialRef}, nil
+		}
+		if raw, ok := job.Operation.Parameters["repository"].(string); ok && strings.TrimSpace(raw) != "" {
+			credentialRef := credentialOverride
+			if credentialRef == nil && len(job.Operation.CredentialRefs) > 0 {
+				ref := strings.TrimSpace(job.Operation.CredentialRefs[0].ID)
+				if ref != "" {
+					credentialRef = &ref
+				}
+			}
+			return models.RepositoryAccessSpec{Repository: strings.TrimSpace(raw), CredentialRef: credentialRef}, nil
+		}
+		return models.RepositoryAccessSpec{}, berror.Validation("saved job does not reference a snapshot repository", map[string]any{"job_id": selector, "operation": job.Operation.Operation})
+	}
+	def, err := c.repositories.Get(selector)
+	if err != nil {
+		return models.RepositoryAccessSpec{}, err
+	}
+	if def == nil {
+		return models.RepositoryAccessSpec{}, berror.NotFound("Saved job or repository not found: "+selector, map[string]any{"selector": selector})
+	}
+	credentialRef := def.CredentialRef
+	if credentialOverride != nil {
+		credentialRef = credentialOverride
+	}
+	return models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: credentialRef}, nil
+}
+
+func snapshotAccessAndPositionals(c *appContext, a leafArgs, snapshotPositionals int) (models.RepositoryAccessSpec, []string, error) {
+	_, hasRepository := a.stringValue("repository")
+	_, hasRef := a.stringValue("repository_ref")
+	var credentialOverride *string
+	if raw, set := a.stringValue("credential_ref"); set {
+		raw = strings.TrimSpace(raw)
+		credentialOverride = &raw
+	}
+	if hasRepository || hasRef {
+		if len(a.Positionals) != snapshotPositionals {
+			return models.RepositoryAccessSpec{}, nil, berror.Validation(fmt.Sprintf("expected %d snapshot argument(s) when repository flags are used", snapshotPositionals), nil)
+		}
+		access, err := snapshotAccess(c, a)
+		return access, append([]string(nil), a.Positionals...), err
+	}
+	if len(a.Positionals) != snapshotPositionals+1 {
+		return models.RepositoryAccessSpec{}, nil, berror.Validation("provide a saved-job/repository context positionally, or use exactly one of --repository or --repository-ref", nil)
+	}
+	access, err := snapshotContextAccess(c, a.Positionals[0], credentialOverride)
+	if err != nil {
+		return models.RepositoryAccessSpec{}, nil, err
+	}
+	return access, append([]string(nil), a.Positionals[1:]...), nil
+}
+
 func mergeOptions(base map[string]optionSpec, extra map[string]optionSpec) map[string]optionSpec {
 	out := map[string]optionSpec{}
 	for k, v := range base {
@@ -56,11 +138,7 @@ func snapshotList(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if len(a.Positionals) != 0 {
-		usageError(c.stderr, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
-		return berror.ExitUsage
-	}
-	access, err := snapshotAccess(c, a)
+	access, _, err := snapshotAccessAndPositionals(c, a, 0)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -79,11 +157,7 @@ func snapshotBrowse(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if err := requirePositionals(a.Positionals, 1, 1, "SNAPSHOT"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
-	}
-	access, err := snapshotAccess(c, a)
+	access, positionals, err := snapshotAccessAndPositionals(c, a, 1)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -92,7 +166,7 @@ func snapshotBrowse(c *appContext, args []string) int {
 	if v, ok := a.triBool("recursive"); ok && v != nil {
 		recursive = *v
 	}
-	result, err := resticops.BrowseSnapshot(access, a.Positionals[0], path, recursive, resticops.Options{})
+	result, err := resticops.BrowseSnapshot(access, positionals[0], path, recursive, resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -104,15 +178,11 @@ func snapshotShow(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if err := requirePositionals(a.Positionals, 1, 1, "SNAPSHOT"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
-	}
-	access, err := snapshotAccess(c, a)
+	access, positionals, err := snapshotAccessAndPositionals(c, a, 1)
 	if err != nil {
 		return commandErr(c, err)
 	}
-	item, err := resticops.ResolveSnapshot(access, a.Positionals[0], resticops.Options{})
+	item, err := resticops.ResolveSnapshot(access, positionals[0], resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -125,11 +195,7 @@ func snapshotDiff(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if err := requirePositionals(a.Positionals, 2, 2, "SOURCE TARGET"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
-	}
-	access, err := snapshotAccess(c, a)
+	access, positionals, err := snapshotAccessAndPositionals(c, a, 2)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -137,7 +203,7 @@ func snapshotDiff(c *appContext, args []string) int {
 	if v, ok := a.triBool("metadata"); ok && v != nil {
 		metadata = *v
 	}
-	result, err := resticops.DiffSnapshots(access, a.Positionals[0], a.Positionals[1], metadata, resticops.Options{})
+	result, err := resticops.DiffSnapshots(access, positionals[0], positionals[1], metadata, resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -152,19 +218,15 @@ func snapshotRestore(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if err := requirePositionals(a.Positionals, 1, 1, "SNAPSHOT"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+	access, positionals, err := snapshotAccessAndPositionals(c, a, 1)
+	if err != nil {
+		return commandErr(c, err)
 	}
 	target, set := a.stringValue("target")
 	if !set {
 		return commandErr(c, berror.Validation("--target is required", nil))
 	}
 	abs, err := canonicalOptionalPath(target)
-	if err != nil {
-		return commandErr(c, err)
-	}
-	access, err := snapshotAccess(c, a)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -179,7 +241,7 @@ func snapshotRestore(c *appContext, args []string) int {
 		defer lease.Close()
 		options.Cancelled = lease.Cancelled
 	}
-	result, err := resticops.RestoreSnapshot(access, a.Positionals[0], resticops.RestoreOptions{Target: abs, Includes: a.multiValue("include"), Excludes: a.multiValue("exclude"), Overwrite: overwrite, DryRun: c.globals.DryRun}, options)
+	result, err := resticops.RestoreSnapshot(access, positionals[0], resticops.RestoreOptions{Target: abs, Includes: a.multiValue("include"), Excludes: a.multiValue("exclude"), Overwrite: overwrite, DryRun: c.globals.DryRun}, options)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -192,9 +254,9 @@ func snapshotForget(c *appContext, args []string) int {
 	if !ok {
 		return berror.ExitOK
 	}
-	if err := requirePositionals(a.Positionals, 1, 1, "SNAPSHOT_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+	access, positionals, err := snapshotAccessAndPositionals(c, a, 1)
+	if err != nil {
+		return commandErr(c, err)
 	}
 	confirm := false
 	if v, ok := a.triBool("confirm"); ok && v != nil {
@@ -203,16 +265,12 @@ func snapshotForget(c *appContext, args []string) int {
 	if !confirm {
 		return commandErr(c, berror.Validation("snapshot forget requires --confirm; it never prunes automatically", map[string]any{"action": "Review the snapshot ID, then rerun with --confirm."}))
 	}
-	access, err := snapshotAccess(c, a)
-	if err != nil {
-		return commandErr(c, err)
-	}
 	lease, err := beginCLIExecution(c, "snapshots.forget", "", repositoryLeaseID(c, access.Repository))
 	if err != nil {
 		return commandErr(c, err)
 	}
 	defer lease.Close()
-	result, err := resticops.ForgetSnapshot(access, a.Positionals[0], resticops.Options{Cancelled: lease.Cancelled})
+	result, err := resticops.ForgetSnapshot(access, positionals[0], resticops.Options{Cancelled: lease.Cancelled})
 	if err != nil {
 		return commandErr(c, err)
 	}

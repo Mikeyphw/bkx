@@ -73,6 +73,7 @@ type Result struct {
 type Options struct {
 	RunStore  *runstore.Store
 	RunID     string
+	RunOrigin *runstore.SavedJobOrigin
 	Cancelled func() bool
 	Progress  func(ProgressEvent)
 }
@@ -248,12 +249,14 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 	if runID == "" {
 		runID = randomRunID()
 	}
+	options.RunID = runID
 	if options.RunStore != nil {
 		snapshot := snapshotSpec(valid, destination, archivePath)
-		_, err = options.RunStore.RecordStart(runID, "backup", valid.Sources, destination, archivePath, snapshot)
+		_, err = options.RunStore.RecordStartWithOrigin(runID, "backup", valid.Sources, destination, archivePath, snapshot, options.RunOrigin)
 		if err != nil {
 			return Result{}, err
 		}
+		_, _ = options.RunStore.RecordPhase(runID, "preparing")
 	}
 	complete := func(status string, result *Result, opErr error) {
 		if options.RunStore == nil {
@@ -277,7 +280,7 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 	}
 
 	if isCancelled(options) {
-		complete("interrupted", nil, ErrCancelled)
+		complete("cancelled", nil, ErrCancelled)
 		return Result{}, ErrCancelled
 	}
 
@@ -319,7 +322,7 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 				_ = os.Remove(part)
 			}
 		}
-		complete("interrupted", nil, ErrCancelled)
+		complete("cancelled", nil, ErrCancelled)
 		return Result{}, ErrCancelled
 	}
 
@@ -396,7 +399,7 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 		for _, i := range order {
 			if isCancelled(options) {
 				rollbackRemote()
-				complete("interrupted", nil, ErrCancelled)
+				complete("cancelled", nil, ErrCancelled)
 				return Result{}, ErrCancelled
 			}
 			partResult, copyErr := runtime.CopyTo(context.Background(), archiveParts[i], finalParts[i], rcloneops.TransferOptions{
@@ -440,7 +443,7 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 			final = *archivePath
 		}
 		if isCancelled(options) {
-			complete("interrupted", nil, ErrCancelled)
+			complete("cancelled", nil, ErrCancelled)
 			return Result{}, ErrCancelled
 		}
 
@@ -477,7 +480,7 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 				for _, path := range published {
 					_ = os.Remove(path)
 				}
-				complete("interrupted", nil, ErrCancelled)
+				complete("cancelled", nil, ErrCancelled)
 				return Result{}, ErrCancelled
 			}
 			partBytes, publishErr := publishFile(archiveParts[i], finalParts[i], valid.Verify, func(bytes int64) {
@@ -829,6 +832,16 @@ func randomRunID() string {
 
 func isCancelled(options Options) bool { return options.Cancelled != nil && options.Cancelled() }
 func emit(options Options, stage string, files, bytes int64) {
+	if options.RunStore != nil && options.RunID != "" {
+		phase := "running"
+		switch stage {
+		case "complete":
+			phase = "finalizing"
+		case "verifying":
+			phase = "verifying"
+		}
+		_, _ = options.RunStore.RecordPhase(options.RunID, phase)
+	}
 	if options.Progress != nil {
 		options.Progress(ProgressEvent{Stage: stage, Files: files, Bytes: bytes})
 	}

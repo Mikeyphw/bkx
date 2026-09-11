@@ -57,4 +57,13 @@ class SavedJobBridgeUiContractTest {
         val request = SavedJobRequestBuilder.update("req-2", "phone-backup", 7, draft)
         assertTrue(request.payload.toString().contains("\"expected_revision\":7"))
     }
+    @Test
+    fun historicalReplayUsesSharedRunOperationAndPreservesKnownJobIdentity() {
+        val request = SavedJobRequestBuilder.replay("req-replay", "run-123", "phone-backup")
+        assertEquals("runs.replay", request.operation)
+        assertTrue(request.payload.toString().contains("\"run_id\":\"run-123\""))
+        assertTrue(request.payload.toString().contains("\"job_id\":\"phone-backup\""))
+        assertFalse(request.payload.toString().contains("password", ignoreCase = true))
+    }
+
 }

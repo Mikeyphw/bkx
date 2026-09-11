@@ -215,3 +215,102 @@ func TestNormalizeRepositoryRejectsNativeProviderBackends(t *testing.T) {
 		t.Fatalf("got=%q err=%v", got, err)
 	}
 }
+
+func TestBackupRecoversOnlyStaleResticLocksWithoutRemoveAll(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(t.TempDir(), "repo")
+	ref := "local"
+	fake := &recordingSequenceRunner{responses: []response{
+		{stderr: []byte("Fatal: repository is already locked by PID 42 on old-host"), err: errors.New("exit 1")},
+		{},
+		{stdout: []byte("{\"message_type\":\"summary\",\"snapshot_id\":\"after-unlock\",\"total_files_processed\":1,\"total_bytes_processed\":10,\"data_added\":3}\n")},
+	}}
+	got, err := Backup(models.SnapshotBackupSpec{Engine: models.BackupEngineRestic, Repository: repo, CredentialRef: &ref, Sources: []string{source}}, Options{
+		Runner: fake, Environ: []string{"BKX_CREDENTIAL_LOCAL=pw"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SnapshotID != "after-unlock" || len(fake.calls) != 3 {
+		t.Fatalf("result=%+v calls=%v", got, fake.calls)
+	}
+	unlock := strings.Join(fake.calls[1], " ")
+	if !strings.Contains(unlock, " unlock") || strings.Contains(unlock, "--remove-all") {
+		t.Fatalf("unsafe stale-lock recovery command: %v", fake.calls[1])
+	}
+}
+
+type recordingSequenceRunner struct {
+	responses []response
+	calls     [][]string
+}
+
+func (s *recordingSequenceRunner) Run(args []string, env []string) ([]byte, []byte, error) {
+	s.calls = append(s.calls, append([]string(nil), args...))
+	idx := len(s.calls) - 1
+	if idx >= len(s.responses) {
+		return nil, nil, errors.New("unexpected call")
+	}
+	r := s.responses[idx]
+	return r.stdout, r.stderr, r.err
+}
+
+func TestBackupUsesStreamingRunnerForLiveProgressAndCancellation(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "source")
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(t.TempDir(), "repo")
+	credential := "local"
+	runner := &streamingBackupRunner{}
+	var progress []ProgressEvent
+	got, err := Backup(models.SnapshotBackupSpec{
+		Engine: models.BackupEngineRestic, Repository: repo, CredentialRef: &credential, Sources: []string{source}, Verify: false,
+	}, Options{
+		Runner:    runner,
+		Environ:   []string{"BKX_CREDENTIAL_LOCAL=pw"},
+		Cancelled: func() bool { return false },
+		Progress:  func(event ProgressEvent) { progress = append(progress, event) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.bufferedCalls != 0 || runner.streamingCalls != 1 {
+		t.Fatalf("expected streaming execution, buffered=%d streaming=%d", runner.bufferedCalls, runner.streamingCalls)
+	}
+	if got.SnapshotID != "streamed" || got.FilesProcessed != 2 || got.BytesProcessed != 20 || got.DataAdded != 5 {
+		t.Fatalf("result=%+v", got)
+	}
+	seenLive := false
+	for _, event := range progress {
+		if event.Stage == "snapshotting" && event.Files == 1 && event.Bytes == 10 {
+			seenLive = true
+		}
+	}
+	if !seenLive {
+		t.Fatalf("streamed status progress not emitted: %+v", progress)
+	}
+}
+
+type streamingBackupRunner struct {
+	bufferedCalls  int
+	streamingCalls int
+}
+
+func (r *streamingBackupRunner) Run(args []string, env []string) ([]byte, []byte, error) {
+	r.bufferedCalls++
+	return nil, nil, errors.New("buffered runner should not be used")
+}
+
+func (r *streamingBackupRunner) RunStreaming(args []string, env []string, cancelled func() bool, onStdoutLine func([]byte)) ([]byte, error) {
+	r.streamingCalls++
+	if cancelled != nil && cancelled() {
+		return nil, ErrCancelled
+	}
+	onStdoutLine([]byte(`{"message_type":"status","files_done":1,"bytes_done":10,"percent_done":0.5}`))
+	onStdoutLine([]byte(`{"message_type":"summary","snapshot_id":"streamed","total_files_processed":2,"total_bytes_processed":20,"data_added":5}`))
+	return nil, nil
+}

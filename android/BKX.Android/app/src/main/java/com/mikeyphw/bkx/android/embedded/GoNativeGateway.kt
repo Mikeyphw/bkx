@@ -100,7 +100,8 @@ class GoNativeGateway(
         val tmp = appContext.cacheDir.resolve("bkx-$stateNamespace-tmp").apply { mkdirs() }
         val state = appContext.filesDir.resolve("bkx/$stateNamespace").apply { mkdirs() }
         val stderr = state.resolve("runtime.stderr.log")
-        val runHistory = state.resolve("runs.jsonl")
+        val legacyRunHistory = state.resolve("runs.jsonl")
+        val runHistory = desiredStateRoot.resolve("runs").resolve("runs.jsonl")
         val builder = ProcessBuilder(
             runtimeFile().absolutePath,
             "android-runtime",
@@ -110,6 +111,7 @@ class GoNativeGateway(
         builder.environment()["HOME"] = home.absolutePath
         builder.environment()["TMPDIR"] = tmp.absolutePath
         builder.environment()[BkxSharedStateContract.ENVIRONMENT] = desiredStateRoot.absolutePath
+        builder.environment()["BKX_LEGACY_RUN_HISTORY"] = legacyRunHistory.absolutePath
         val rcloneConfig = appContext.filesDir.resolve("bkx/rclone/rclone.conf").also { it.parentFile?.mkdirs() }
         builder.environment()["BKX_RCLONE_PATH"] = rcloneRuntimeFile().absolutePath
         builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath

@@ -82,6 +82,8 @@ import com.mikeyphw.bkx.android.core.repositories.SnapshotBridgeCodec
 import com.mikeyphw.bkx.android.core.repositories.SnapshotDescriptor
 import com.mikeyphw.bkx.android.core.repositories.SnapshotOverwriteMode
 import com.mikeyphw.bkx.android.core.restore.RestoreDestinationPolicy
+import com.mikeyphw.bkx.android.core.runs.RunHistoryBridgeCodec
+import com.mikeyphw.bkx.android.core.runs.RunHistoryRequestBuilder
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
@@ -180,6 +182,7 @@ sealed interface BkxHomeEvent {
     data class DeleteSavedJob(val jobId: String) : BkxHomeEvent
     data class PlanSavedJob(val jobId: String) : BkxHomeEvent
     data class RunSavedJob(val jobId: String) : BkxHomeEvent
+    data class ReplayRun(val runId: String, val jobId: String? = null) : BkxHomeEvent
     data object RefreshSavedJobSchedules : BkxHomeEvent
     data class PutSavedJobSchedule(val schedule: SavedJobScheduleDefinition) : BkxHomeEvent
     data class SetSavedJobScheduleEnabled(val scheduleId: String, val enabled: Boolean) : BkxHomeEvent
@@ -314,7 +317,8 @@ class BkxAppViewModel(
         }
         refreshGoogleDriveAuthorization(allowConsent = false)
         refreshBackend()
-        refreshRuns()
+        // Startup is cache-first. Canonical Go history sync is triggered by explicit/history/post-operation refreshes.
+        publishCachedRuns()
         refreshOperations()
         refreshSettings()
         refreshSavedJobs()
@@ -351,6 +355,7 @@ class BkxAppViewModel(
             is BkxHomeEvent.OpenBackupRoute -> {
                 _state.update { it.copy(backupRoute = event.route) }
                 if (event.route == BackupRoute.Snapshots) ensureSnapshotRepositoryAndRefresh()
+                if (event.route == BackupRoute.History) refreshRuns()
             }
             BkxHomeEvent.RefreshSavedJobs -> refreshSavedJobs()
             BkxHomeEvent.RefreshRepositories -> refreshRepositories()
@@ -360,6 +365,7 @@ class BkxAppViewModel(
             is BkxHomeEvent.DeleteSavedJob -> deleteSavedJob(event.jobId)
             is BkxHomeEvent.PlanSavedJob -> executeSavedJob(event.jobId, plan = true)
             is BkxHomeEvent.RunSavedJob -> executeSavedJob(event.jobId, plan = false)
+            is BkxHomeEvent.ReplayRun -> replayRun(event.runId, event.jobId)
             BkxHomeEvent.RefreshSavedJobSchedules -> refreshSavedJobSchedules()
             is BkxHomeEvent.PutSavedJobSchedule -> putSavedJobSchedule(event.schedule)
             is BkxHomeEvent.SetSavedJobScheduleEnabled -> setSavedJobScheduleEnabled(event.scheduleId, event.enabled)
@@ -1204,6 +1210,21 @@ class BkxAppViewModel(
         }
     }
 
+    private fun replayRun(runId: String, jobId: String?) {
+        val request = savedJobRequestBuilder.replay(nextRequestId("run-replay"), runId, jobId)
+        executeRequest(
+            request = request,
+            recordInHistory = true,
+            feedbackDestination = BkxDestination.Backup,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), failure.message)) }
+            },
+        ) { result ->
+            _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), result.summary)) }
+            refreshRuns()
+        }
+    }
+
     private fun jobActionFailure(failure: OperationFailureUiState) {
         _state.update { current ->
             current.copy(
@@ -1666,20 +1687,41 @@ class BkxAppViewModel(
     }
 
     private fun refreshRuns() {
-        viewModelScope.launch {
-            val runs = runSummaryStore.recentRuns(limit = 20)
-            _state.update { current ->
-                current.copy(
-                    recentRuns = runs,
-                    screenStatuses = current.screenStatuses + (
-                        BkxDestination.Activity to if (runs.isEmpty() && current.operationRuntime.activeOperations.isEmpty()) {
-                            ScreenStatus.Empty("No backup, restore, verification, or transfer activity yet.")
-                        } else {
-                            ScreenStatus.Content
-                        }
-                    ),
-                )
+        val request = RunHistoryRequestBuilder.list(nextRequestId("runs-list"), limit = 50)
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { publishCachedRuns() },
+        ) { result ->
+            val sharedRuns = RunHistoryBridgeCodec.decodeArtifacts(result.artifacts)
+            viewModelScope.launch {
+                sharedRuns.forEach { runSummaryStore.upsert(it) }
+                val cached = runSummaryStore.recentRuns(limit = 50)
+                val sharedById = sharedRuns.associateBy { it.requestId }
+                val merged = (cached.filterNot { it.requestId in sharedById } + sharedRuns)
+                    .sortedByDescending { it.startedAtEpochMillis }
+                    .take(20)
+                publishRuns(merged)
             }
+        }
+    }
+
+    private fun publishCachedRuns() {
+        viewModelScope.launch { publishRuns(runSummaryStore.recentRuns(limit = 20)) }
+    }
+
+    private fun publishRuns(runs: List<RunSummary>) {
+        _state.update { current ->
+            current.copy(
+                recentRuns = runs,
+                screenStatuses = current.screenStatuses + (
+                    BkxDestination.Activity to if (runs.isEmpty() && current.operationRuntime.activeOperations.isEmpty()) {
+                        ScreenStatus.Empty("No backup, restore, verification, or transfer activity yet.")
+                    } else {
+                        ScreenStatus.Content
+                    }
+                ),
+            )
         }
     }
 

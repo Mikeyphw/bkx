@@ -58,6 +58,8 @@ import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
 import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.feature.home.formatBytes
+import com.mikeyphw.bkx.android.feature.home.formatTime
+import com.mikeyphw.bkx.android.feature.home.operationLabel
 import com.mikeyphw.bkx.android.storage.BkxStorageLocations
 
 @Composable
@@ -75,12 +77,50 @@ fun BackupScreen(
             FilterChip(selected = state.backupRoute == BackupRoute.Jobs, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Jobs)) }, label = { Text("Jobs") })
             FilterChip(selected = state.backupRoute == BackupRoute.Snapshots, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Snapshots)) }, label = { Text("Snapshots") })
             FilterChip(selected = state.backupRoute == BackupRoute.Repositories, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Repositories)) }, label = { Text("Repositories") })
+            FilterChip(selected = state.backupRoute == BackupRoute.History, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.History)) }, label = { Text("History") })
         }
         when (state.backupRoute) {
             BackupRoute.Overview -> BackupCreateScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Jobs -> SavedJobsScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Snapshots -> SnapshotsScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Repositories -> RepositoriesScreen(state, onEvent, Modifier.weight(1f))
+            BackupRoute.History -> BackupHistoryScreen(state, onEvent, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun BackupHistoryScreen(
+    state: BkxHomeUiState,
+    onEvent: (BkxHomeEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
+    ) {
+        BkxPageHeader("Backup history", "Replay a completed backup or transfer from its historical execution snapshot. Saved-job replays keep the exact job revision used by that run.")
+        OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshRuns) }, modifier = Modifier.fillMaxWidth()) { Text("Refresh") }
+        if (state.recentRuns.isEmpty()) {
+            BkxSurfaceCard { Text("No completed backup work yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else {
+            state.recentRuns.forEach { run ->
+                val replayable = run.operation in setOf("jobs.run", "backup", "backup.create", "backup.snapshot", "transfer", "transfer.run")
+                BkxSurfaceCard {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(operationLabel(run.operation), style = MaterialTheme.typography.titleMedium)
+                            Text(formatTime(run.finishedAtEpochMillis ?: run.startedAtEpochMillis), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        BkxStatusPill(run.status.name.uppercase())
+                    }
+                    run.jobId?.let { BkxKeyValue("Saved job", it) }
+                    if (run.summary.isNotBlank()) Text(run.summary, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (replayable) {
+                        OutlinedButton(onClick = { onEvent(BkxHomeEvent.ReplayRun(run.requestId, run.jobId)) }, modifier = Modifier.fillMaxWidth()) { Text("Run again") }
+                    }
+                }
+            }
         }
     }
 }

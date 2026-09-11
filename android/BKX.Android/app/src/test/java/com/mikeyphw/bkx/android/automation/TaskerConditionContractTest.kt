@@ -80,6 +80,22 @@ class TaskerConditionContractTest {
     }
 
     @Test
+    fun processedCountAliasesMirrorLegacyProgressOutputs() {
+        val output = BkxTaskerSignal(
+            event = BkxTaskerEventType.ProgressMilestone.id,
+            filesDone = 7,
+            filesTotal = 10,
+            bytesDone = 700,
+            bytesTotal = 1000,
+            timestampEpochMillis = 1L,
+        ).toOutput()
+        assertEquals("7", output.filesDone)
+        assertEquals("7", output.filesProcessed)
+        assertEquals("700", output.bytesDone)
+        assertEquals("700", output.bytesProcessed)
+    }
+
+    @Test
     fun namedRcloneRemoteFilterDoesNotMatchAnotherRemote() {
         assertTrue(BkxTaskerConditionMatcher.remoteMatches("rclone", "nas", listOf("rclone:nas")))
         assertFalse(BkxTaskerConditionMatcher.remoteMatches("rclone", "nas", listOf("rclone:offsite")))

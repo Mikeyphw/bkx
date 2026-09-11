@@ -25,7 +25,13 @@ BKX accepts Tasker/Locale edit/fire traffic only through its dedicated plug-in s
 | Archive info | local or `rclone://` archive | — |
 | Archive browse | local or `rclone://` archive | page token, page size |
 | Transfer | one or more local/`rclone://` sources; local/`rclone://` destination | push/pull/sync, checksum, overwrite, verification, explicit sync deletion approval |
-| Cancel | target automation/request ID | — |
+| Run saved job | shared `job_id` | execution-only `KEY=VALUE` overrides; never rewrites the saved revision |
+| Create snapshot | shared `repository_id`; one or more absolute local sources | Restic snapshot through the named repository |
+| Check repository | shared `repository_id` | explicit repository integrity check |
+| Apply retention | shared `repository_id` | preview by default; real apply requires explicit destructive approval |
+| Prune repository | shared `repository_id` | preview by default; real prune requires explicit destructive approval |
+| Restore snapshot | shared `repository_id` and snapshot selector/ID | preview by default; overwrite=`never`; real restore requires explicit approval |
+| Cancel | target automation/request ID | cross-process cancellation through shared execution control |
 | Status | target automation/request ID | — |
 
 `rclone://` values are credential-free references only. BKX never accepts an rclone password, OAuth token, Google access token, config blob, or arbitrary shell command through automation extras.
@@ -45,6 +51,15 @@ When asynchronous completion is supported and **Wait for final result** is enabl
 - `%bkx_artifact_sha256` (newline-separated)
 - `%bkx_files_total`
 - `%bkx_bytes_total`
+- `%bkx_files_processed`
+- `%bkx_bytes_processed`
+- `%bkx_bytes_added`
+- `%bkx_bytes_reused`
+- `%bkx_duration_ms`
+- `%bkx_job_id`
+- `%bkx_run_id`
+- `%bkx_repository_id`
+- `%bkx_snapshot_id`
 
 A Tasker host without asynchronous completion support receives the accepted/queued result immediately; the BKX foreground notification remains the execution indicator.
 
@@ -153,13 +168,13 @@ BKX automation is bidirectional. **BKX Action** continues to execute work; **BKX
 
 ### BKX Event
 
-Available event selectors are: Any BKX event, Operation started, Progress milestone, Operation completed, Backup completed, Restore completed, Verify completed, Transfer completed, Archive created, Operation failed, Operation cancelled, Google Drive authorization required, Remote unavailable, and Remote recovered.
+Available event selectors include the legacy operation events plus Saved job started/completed/failed/cancelled, Snapshot created, Repository check passed/failed, Repository needs attention, Retention applied, and Repository pruned. Existing event wire values remain supported.
 
 Progress publication is throttled at canonical 5% buckets. A backend jump from 24% to 26% publishes `%bkx_progress=25`; files/bytes remain the latest real counters. The Tasker editor can further filter progress to recommended milestones (0/10/25/50/75/90/100), every 5%, every 10%, every 25%, or every 50%.
 
 ### BKX State
 
-Available state selectors are: Any operation running, Backup running, Restore running, Verify running, Transfer running, Google Drive connected, Google Drive needs authorization, Remote available, Last operation succeeded, Last operation failed, and Last operation cancelled.
+Available state selectors include the legacy operation states plus Saved job running, Repository healthy, Repository needs attention, Last saved job succeeded, Last saved job failed, and Last saved job cancelled. Existing state wire values remain supported.
 
 `Google Drive connected` is true only after BKX has observed a successful authorization result. Merely finding a stored Google Drive configuration is not treated as proof that an OAuth token remains valid. Unknown connectivity is returned to Tasker as unknown rather than a false connected state.
 
@@ -178,3 +193,11 @@ Tasker signals deliberately exclude Google OAuth access/refresh tokens, rclone s
 `Remote unavailable` is emitted when a remote operation produces a remote/network/authentication-style failure and that remote was not already known unavailable. A later successful operation against that remote emits `Remote recovered`. These are observations from real BKX operations/authorization, not synthetic network polling.
 
 The official Tasker condition library handles `QUERY_CONDITION`. Its Action receiver/service are explicitly removed from manifest merge, so the existing capability-protected BKX Action receiver remains the single owner of `FIRE_SETTING`.
+
+## BR20 v6 Saved Job parity details
+
+**Run saved job** is a client of the same Saved Job executor used by Android and CLI. Its optional repository selector is an execution-only override: BKX resolves the selected repository and its credential reference for that run without modifying the stored job revision. `source=/absolute/path` is accepted as a convenience override for a one-item `sources` list; normal `KEY=VALUE` overrides remain available for typed operation parameters.
+
+The completion variable set is additive and backward compatible. In addition to `%bkx_status`, `%bkx_summary`, and the existing error variables, Tasker receives `%bkx_success` and `%bkx_message`. Saved Restic jobs also return `%bkx_snapshot_id`, `%bkx_files_processed`, `%bkx_bytes_processed`, `%bkx_bytes_added`, `%bkx_bytes_reused`, and `%bkx_duration_ms` when the engine reports them.
+
+The shared progress document uses the operation request as `run_id` and also includes `job_id` for Saved Job executions, together with phase/message/progress/files/bytes. Tasker lifecycle Events remain boundary-oriented rather than emitting one event for every percentage update; ongoing progress belongs to BKX state/progress queries.

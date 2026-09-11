@@ -21,8 +21,17 @@ import (
 
 const EnvLegacyRunHistory = "BKX_LEGACY_RUN_HISTORY"
 
-var validStatuses = map[string]bool{"started": true, "success": true, "failed": true, "interrupted": true}
+var validStatuses = map[string]bool{"started": true, "success": true, "failed": true, "cancelled": true, "interrupted": true}
+var validPhases = map[string]bool{"queued": true, "preparing": true, "running": true, "finalizing": true, "verifying": true, "succeeded": true, "failed": true, "cancelled": true, "interrupted": true}
 var validOperations = map[string]bool{"backup": true, "archive": true, "transfer": true, "restore": true, "run": true, "unknown": true}
+
+// SavedJobOrigin is immutable provenance captured atomically with RecordStart.
+// It contains only the validated OperationSpecV2, whose credential fields are references.
+type SavedJobOrigin struct {
+	JobID     string
+	Revision  int64
+	Operation models.OperationSpecV2
+}
 
 type Store struct {
 	Path           string
@@ -322,6 +331,7 @@ func (s *Store) RecoverInterruptedWithControl(control *executioncontrol.Store) (
 		for i := range records {
 			if records[i].Status == "started" && !active[records[i].RunID] {
 				records[i].Status = "interrupted"
+				records[i].Phase = "interrupted"
 				records[i].CompletedAt = &now
 				if records[i].ErrorMessage == nil || *records[i].ErrorMessage == "" {
 					msg := "Run interrupted before completion"
@@ -339,10 +349,37 @@ func (s *Store) RecoverInterruptedWithControl(control *executioncontrol.Store) (
 }
 
 func (s *Store) RecordStart(runID, operation string, sources []string, destination, archive *string, snapshot map[string]any) (models.RunRecord, error) {
+	return s.RecordStartWithOrigin(runID, operation, sources, destination, archive, snapshot, nil)
+}
+
+// RecordStartWithOrigin writes run lifecycle state and saved-job provenance in
+// one atomic history update. An interrupted run therefore still knows the exact
+// job revision/effective spec that started it.
+func (s *Store) RecordStartWithOrigin(runID, operation string, sources []string, destination, archive *string, snapshot map[string]any, origin *SavedJobOrigin) (models.RunRecord, error) {
 	if !validOperations[operation] {
 		return models.RunRecord{}, berror.Validation("Invalid run operation", map[string]any{"operation": operation})
 	}
-	record := models.RunRecord{ArchivePath: archive, CompletedAt: nil, DestinationPath: destination, Operation: operation, RunID: runID, SourcePaths: append([]string(nil), sources...), SpecSnapshot: snapshot, StartedAt: nowISO(), Status: "started"}
+	record := models.RunRecord{ArchivePath: archive, CompletedAt: nil, DestinationPath: destination, Operation: operation, RunID: runID, SourcePaths: append([]string(nil), sources...), SpecSnapshot: snapshot, StartedAt: nowISO(), Status: "started", Phase: "queued"}
+	if origin != nil {
+		jobID := strings.TrimSpace(origin.JobID)
+		if jobID == "" || origin.Revision < 1 {
+			return models.RunRecord{}, berror.Validation("Saved-job run origin requires job_id and positive revision", map[string]any{"job_id": jobID, "revision": origin.Revision})
+		}
+		if err := models.ValidateOperationSpecV2(origin.Operation); err != nil {
+			return models.RunRecord{}, berror.Validation("Invalid saved-job operation snapshot", map[string]any{"reason": err.Error()})
+		}
+		encoded, err := json.Marshal(origin.Operation)
+		if err != nil {
+			return models.RunRecord{}, err
+		}
+		var cloned models.OperationSpecV2
+		if err := json.Unmarshal(encoded, &cloned); err != nil {
+			return models.RunRecord{}, err
+		}
+		record.JobID = jobID
+		record.JobRevision = origin.Revision
+		record.OperationSpecSnapshot = &cloned
+	}
 	if err := validateRecord(record); err != nil {
 		return models.RunRecord{}, err
 	}
@@ -363,7 +400,7 @@ func (s *Store) RecordStart(runID, operation string, sources []string, destinati
 }
 
 func (s *Store) RecordCompletion(runID, status string, filesCount, bytesProcessed *int64, errorMessage *string) (models.RunRecord, error) {
-	if status != "success" && status != "failed" && status != "interrupted" {
+	if status != "success" && status != "failed" && status != "cancelled" && status != "interrupted" {
 		return models.RunRecord{}, berror.Validation("Invalid run completion status", map[string]any{"status": status})
 	}
 	if filesCount != nil && *filesCount < 0 {
@@ -384,6 +421,7 @@ func (s *Store) RecordCompletion(runID, status string, filesCount, bytesProcesse
 				now := nowISO()
 				records[i].CompletedAt = &now
 				records[i].Status = status
+				records[i].Phase = terminalPhase(status)
 				records[i].FilesCount = filesCount
 				records[i].BytesProcessed = bytesProcessed
 				records[i].ErrorMessage = errorMessage
@@ -398,6 +436,159 @@ func (s *Store) RecordCompletion(runID, status string, filesCount, bytesProcesse
 		return s.writeUnlocked(records)
 	})
 	return updated, err
+}
+
+func terminalPhase(status string) string {
+	switch status {
+	case "success":
+		return "succeeded"
+	case "failed":
+		return "failed"
+	case "cancelled":
+		return "cancelled"
+	case "interrupted":
+		return "interrupted"
+	default:
+		return ""
+	}
+}
+
+// RecordPhase durably records the canonical lifecycle phase for an active run.
+// Legacy status remains stable for compatibility while phase provides the
+// richer BR18 queued/preparing/running/finalizing/verifying lifecycle.
+func (s *Store) RecordPhase(runID, phase string) (models.RunRecord, error) {
+	phase = strings.TrimSpace(strings.ToLower(phase))
+	if !validPhases[phase] {
+		return models.RunRecord{}, berror.Validation("Invalid run phase", map[string]any{"phase": phase})
+	}
+	var updated models.RunRecord
+	found := false
+	err := s.withLock(func() error {
+		records, err := s.loadUnlocked(true)
+		if err != nil {
+			return err
+		}
+		for i := range records {
+			if records[i].RunID != runID {
+				continue
+			}
+			if records[i].CompletedAt != nil {
+				return berror.Validation("Completed run phase cannot be changed", map[string]any{"run_id": runID, "phase": records[i].Phase})
+			}
+			records[i].Phase = phase
+			updated = records[i]
+			found = true
+			break
+		}
+		if !found {
+			return berror.NotFound("Run not found: "+runID, map[string]any{"run_id": runID})
+		}
+		return s.writeUnlocked(records)
+	})
+	return updated, err
+}
+
+// RecordSavedJobOrigin binds a run to the exact revision and effective
+// OperationSpecV2 used to execute it. Credentials remain references only.
+func (s *Store) RecordSavedJobOrigin(runID, jobID string, revision int64, spec models.OperationSpecV2) (models.RunRecord, error) {
+	jobID = strings.TrimSpace(jobID)
+	if jobID == "" || revision < 1 {
+		return models.RunRecord{}, berror.Validation("Saved-job run origin requires job_id and positive revision", map[string]any{"job_id": jobID, "revision": revision})
+	}
+	if err := models.ValidateOperationSpecV2(spec); err != nil {
+		return models.RunRecord{}, berror.Validation("Invalid saved-job operation snapshot", map[string]any{"reason": err.Error()})
+	}
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		return models.RunRecord{}, err
+	}
+	var cloned models.OperationSpecV2
+	if err := json.Unmarshal(encoded, &cloned); err != nil {
+		return models.RunRecord{}, err
+	}
+	var updated models.RunRecord
+	found := false
+	err = s.withLock(func() error {
+		records, err := s.loadUnlocked(true)
+		if err != nil {
+			return err
+		}
+		for i := range records {
+			if records[i].RunID != runID {
+				continue
+			}
+			records[i].JobID = jobID
+			records[i].JobRevision = revision
+			records[i].OperationSpecSnapshot = &cloned
+			updated = records[i]
+			found = true
+			break
+		}
+		if !found {
+			return berror.NotFound("Run not found: "+runID, map[string]any{"run_id": runID})
+		}
+		return s.writeUnlocked(records)
+	})
+	return updated, err
+}
+
+// ReplayOperation reconstructs the exact effective OperationSpecV2 when a
+// BR20 run-origin snapshot exists, falling back to the historical v1 run
+// snapshot format for migrated runs.
+func ReplayOperation(record models.RunRecord) (models.OperationSpecV2, error) {
+	if record.OperationSpecSnapshot != nil {
+		encoded, err := json.Marshal(record.OperationSpecSnapshot)
+		if err != nil {
+			return models.OperationSpecV2{}, err
+		}
+		var cloned models.OperationSpecV2
+		if err := json.Unmarshal(encoded, &cloned); err != nil {
+			return models.OperationSpecV2{}, err
+		}
+		if err := models.ValidateOperationSpecV2(cloned); err != nil {
+			return cloned, berror.Validation("historical operation spec snapshot cannot be replayed", map[string]any{"reason": err.Error()})
+		}
+		return cloned, nil
+	}
+	values := map[string]any{}
+	if record.SpecSnapshot != nil {
+		encoded, err := json.Marshal(record.SpecSnapshot)
+		if err != nil {
+			return models.OperationSpecV2{}, err
+		}
+		if err := json.Unmarshal(encoded, &values); err != nil {
+			return models.OperationSpecV2{}, err
+		}
+	}
+	if typed, ok := values["values"].(map[string]any); ok {
+		values = typed
+	}
+	delete(values, "_resolved_destination")
+	delete(values, "_archive_path")
+	op := ""
+	switch record.Operation {
+	case "backup":
+		if engine, _ := values["engine"].(string); strings.EqualFold(engine, models.BackupEngineRestic) {
+			op = "backup.snapshot"
+		} else {
+			op = "backup.create"
+		}
+	case "transfer":
+		op = "transfer.run"
+	default:
+		return models.OperationSpecV2{}, berror.Validation("historical operation is not replayable yet", map[string]any{"operation": record.Operation})
+	}
+	spec := models.NewOperationSpecV2(op, values)
+	if op == "backup.snapshot" {
+		if rawRef, ok := values["credential_ref"].(string); ok && strings.TrimSpace(rawRef) != "" {
+			delete(spec.Parameters, "credential_ref")
+			spec.CredentialRefs = []models.SecretReference{{ID: strings.TrimSpace(rawRef), Purpose: "restic repository password"}}
+		}
+	}
+	if err := models.ValidateOperationSpecV2(spec); err != nil {
+		return spec, berror.Validation("historical spec snapshot cannot be replayed", map[string]any{"reason": err.Error()})
+	}
+	return spec, nil
 }
 
 func (s *Store) List(limit int, operation string) ([]models.RunRecord, error) {
@@ -501,6 +692,23 @@ func validateRecord(r models.RunRecord) error {
 	}
 	if !validStatuses[r.Status] {
 		return fmt.Errorf("invalid status: %s", r.Status)
+	}
+	if r.Phase != "" && !validPhases[r.Phase] {
+		return fmt.Errorf("invalid phase: %s", r.Phase)
+	}
+	if r.JobRevision < 0 {
+		return fmt.Errorf("job_revision must not be negative")
+	}
+	if r.JobID == "" && r.JobRevision != 0 {
+		return fmt.Errorf("job_revision requires job_id")
+	}
+	if r.OperationSpecSnapshot != nil {
+		if r.JobID == "" || r.JobRevision < 1 {
+			return fmt.Errorf("operation_spec_snapshot requires saved-job origin metadata")
+		}
+		if err := models.ValidateOperationSpecV2(*r.OperationSpecSnapshot); err != nil {
+			return fmt.Errorf("invalid operation_spec_snapshot: %w", err)
+		}
 	}
 	for _, v := range r.SourcePaths {
 		_ = v

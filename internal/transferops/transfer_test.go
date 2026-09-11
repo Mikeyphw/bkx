@@ -228,7 +228,7 @@ func TestChecksumAlgorithmAndExpectedDigest(t *testing.T) {
 	}
 }
 
-func TestCancellationBeforePublicationMarksRunInterrupted(t *testing.T) {
+func TestCancellationBeforePublicationMarksRunCancelled(t *testing.T) {
 	root := t.TempDir()
 	source := writeFile(t, filepath.Join(root, "source.txt"), string(make([]byte, 2*1024*1024)))
 	destination := filepath.Join(root, "dest.txt")
@@ -252,7 +252,7 @@ func TestCancellationBeforePublicationMarksRunInterrupted(t *testing.T) {
 	if err != nil || record == nil {
 		t.Fatalf("record=%v err=%v", record, err)
 	}
-	if record.Status != "interrupted" || record.Operation != "transfer" {
+	if record.Status != "cancelled" || record.Operation != "transfer" {
 		t.Fatalf("record=%+v", record)
 	}
 }

@@ -56,16 +56,20 @@ type TransferSpec struct {
 }
 
 type RunRecord struct {
-	ArchivePath     *string        `json:"archive_path"`
-	BytesProcessed  *int64         `json:"bytes_processed"`
-	CompletedAt     *string        `json:"completed_at"`
-	DestinationPath *string        `json:"destination_path"`
-	ErrorMessage    *string        `json:"error_message"`
-	FilesCount      *int64         `json:"files_count"`
-	Operation       string         `json:"operation"`
-	RunID           string         `json:"run_id"`
-	SourcePaths     []string       `json:"source_paths"`
-	SpecSnapshot    map[string]any `json:"spec_snapshot"`
-	StartedAt       string         `json:"started_at"`
-	Status          string         `json:"status"`
+	ArchivePath           *string          `json:"archive_path"`
+	BytesProcessed        *int64           `json:"bytes_processed"`
+	CompletedAt           *string          `json:"completed_at"`
+	DestinationPath       *string          `json:"destination_path"`
+	ErrorMessage          *string          `json:"error_message"`
+	FilesCount            *int64           `json:"files_count"`
+	Operation             string           `json:"operation"`
+	RunID                 string           `json:"run_id"`
+	SourcePaths           []string         `json:"source_paths"`
+	SpecSnapshot          map[string]any   `json:"spec_snapshot"`
+	StartedAt             string           `json:"started_at"`
+	Status                string           `json:"status"`
+	Phase                 string           `json:"phase,omitempty"`
+	JobID                 string           `json:"job_id,omitempty"`
+	JobRevision           int64            `json:"job_revision,omitempty"`
+	OperationSpecSnapshot *OperationSpecV2 `json:"operation_spec_snapshot,omitempty"`
 }

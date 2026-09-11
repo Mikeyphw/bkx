@@ -149,6 +149,43 @@ func repositoryShow(c *appContext, args []string) int {
 	return renderResult(c, item, "repository")
 }
 
+func repositoryStatus(c *appContext, args []string) int {
+	a, ok := parseFor(c, "repository status", args, map[string]optionSpec{})
+	if !ok {
+		return berror.ExitOK
+	}
+	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
+		usageError(c.stderr, err)
+		return berror.ExitUsage
+	}
+	def, code := getRepository(c, a.Positionals[0])
+	if def == nil {
+		return code
+	}
+	listed, err := resticops.ListSnapshots(
+		models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef},
+		resticops.SnapshotListOptions{},
+		resticops.Options{},
+	)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	type repositoryStatusResult struct {
+		Repository     models.RepositoryDefinition `json:"repository"`
+		Reachable      bool                        `json:"reachable"`
+		SnapshotCount  int                         `json:"snapshot_count"`
+		LatestSnapshot *models.SnapshotDescriptor  `json:"latest_snapshot,omitempty"`
+	}
+	var latest *models.SnapshotDescriptor
+	if len(listed.Snapshots) > 0 {
+		copy := listed.Snapshots[0]
+		latest = &copy
+	}
+	return renderResult(c, repositoryStatusResult{
+		Repository: *def, Reachable: true, SnapshotCount: listed.Total, LatestSnapshot: latest,
+	}, "repository_status")
+}
+
 func repositoryRemove(c *appContext, args []string) int {
 	a, ok := parseFor(c, "repository remove", args, map[string]optionSpec{})
 	if !ok {

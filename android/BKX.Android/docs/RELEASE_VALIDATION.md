@@ -96,3 +96,18 @@ For native Termux builds, compiler selection is probe-driven. A candidate that f
 ### Tasker Event / State conditions
 
 `verifyBkxAutomationProductContract` also seals the bidirectional condition surface. It requires the pinned Tasker condition library, distinct Event/State configuration activities, Action-component manifest removal, authoritative coordinator and Google Drive publisher hooks, canonical progress buckets, bounded redacted condition state, all promised Event/State selectors, and the `%bkx_*` output-variable contract. `testDebugUnitTest` covers wildcard/remote/progress matching; `lintDebug` and `bkxAndroidReleaseSeal` remain release blockers.
+
+## BR19+BR20 backup automation final seal
+
+The final Saved Jobs/Restic/Android/Tasker roadmap gate is `:app:verifyBkxBackupAutomationRoadmapFinalSeal`. It is also a dependency of `:app:bkxAndroidReleaseSeal` and verifies the shared jobs/repositories/schedules/run-history control plane, Restic `latest~N` selectors, Android Jobs/Repositories/Snapshots surfaces, Tasker V2 actions/metrics, and reboot/scheduling recovery contracts. The canonical roadmap evidence is `../../docs/BR19_BR20_FINAL_BACKUP_AUTOMATION_SEAL.md`.
+
+This BR19+BR20 overlay is the first full-validation step for the BR01–BR20 series; earlier roadmap overlays intentionally used no full Gradle validation.
+
+### BR20 v6 standalone parity closure
+
+`bkx_br20_android_final_backup_automation_seal_v6.zip` is the standalone final BR20 overlay for the same post-BR19 baseline; it supersedes the failed v4 and interim v5 artifacts. The final gate additionally seals atomic Saved Job provenance and replay, canonical Go-to-Android run history, distinct cancelled/interrupted phases, conservative Restic stale-lock recovery, repository/job lease concurrency, Tasker effective repository overrides and rich result metrics, foreground-service lifetime under concurrent repositories, `repository status`, positional snapshot context, and the product-oriented Saved Job editor. The artifact validator still requires the real declared `github.com/klauspost/compress v1.18.4` module and runs `go mod verify`, `go test ./...`, and `go vet ./...` before the explicit Android tasks.
+
+
+### BR20 v7 validation/startup hotfix
+
+`bkx_br20_full_backup_jobs_tasker_release_seal_v7.zip` supersedes v6 on the same post-BR19 baseline. It preserves all BR20 v6 feature work while fixing the final validation mismatch around repository-safe concurrency and making Android startup cache-first for run history. The release gate must reject any stale `foregroundOperationMutex` requirement, require idle-aware foreground-service lifetime for concurrent repositories, and verify that `BkxAppViewModel.init` does not start canonical `runs.list` I/O. Full validation is still required.

@@ -98,6 +98,8 @@ type Result struct {
 type Progress struct {
 	ProtocolVersion int      `json:"protocol_version"`
 	RequestID       string   `json:"request_id"`
+	RunID           string   `json:"run_id,omitempty"`
+	JobID           string   `json:"job_id,omitempty"`
 	Seq             int64    `json:"seq"`
 	Phase           string   `json:"phase"`
 	Message         string   `json:"message"`
@@ -359,14 +361,14 @@ func (r *RuntimeAdapter) handleCancelOperation(request Request) Result {
 }
 
 func (r *RuntimeAdapter) emitService(requestID string, p services.Progress) {
-	r.emitDetailed(requestID, p.Phase, p.Message, p.Progress, p.FilesDone, p.FilesTotal, p.BytesDone, p.BytesTotal)
+	r.emitDetailed(requestID, p.RunID, p.JobID, p.Phase, p.Message, p.Progress, p.FilesDone, p.FilesTotal, p.BytesDone, p.BytesTotal)
 }
 
 func (r *RuntimeAdapter) emit(requestID, phase, message string, progress *float64) {
-	r.emitDetailed(requestID, phase, message, progress, nil, nil, nil, nil)
+	r.emitDetailed(requestID, requestID, "", phase, message, progress, nil, nil, nil, nil)
 }
 
-func (r *RuntimeAdapter) emitDetailed(requestID, phase, message string, progress *float64, filesDone, filesTotal, bytesDone, bytesTotal *int64) {
+func (r *RuntimeAdapter) emitDetailed(requestID, runID, jobID, phase, message string, progress *float64, filesDone, filesTotal, bytesDone, bytesTotal *int64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	seq := r.seq[requestID] + 1
@@ -387,6 +389,8 @@ func (r *RuntimeAdapter) emitDetailed(requestID, phase, message string, progress
 	r.progress[requestID] = Progress{
 		ProtocolVersion: ProtocolVersion,
 		RequestID:       requestID,
+		RunID:           runID,
+		JobID:           jobID,
 		Seq:             seq,
 		Phase:           phase,
 		Message:         message,

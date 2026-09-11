@@ -1,10 +1,10 @@
 package com.mikeyphw.bkx.android.core.repositories
 
 import com.mikeyphw.bkx.android.core.bridge.BridgeArtifact
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
 
 class SnapshotBridgeUiContractTest {
     private val repository = RepositoryDefinition(

@@ -245,3 +245,74 @@ func TestSharedRecoveryPreservesLiveLeaseAndRecoversUnownedRun(t *testing.T) {
 		t.Fatalf("released run recovery=%d err=%v", count, err)
 	}
 }
+
+func TestDurablePhasesCancellationAndSavedJobReplaySnapshot(t *testing.T) {
+	store, err := New(filepath.Join(t.TempDir(), "runs.jsonl"), 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repo := "phone-drive"
+	op := models.OperationSpecV2{
+		SchemaVersion: models.OperationSpecV2SchemaVersion,
+		Operation:     "backup.snapshot",
+		Parameters: map[string]any{
+			"engine":  "restic",
+			"sources": []any{"/source"},
+		},
+		RepositoryRef:  &repo,
+		CredentialRefs: []models.SecretReference{{ID: "restic-phone-drive", Purpose: "restic repository password"}},
+	}
+	origin, err := store.RecordStartWithOrigin(
+		"job-run-1",
+		"backup",
+		[]string{"/source"},
+		nil,
+		nil,
+		map[string]any{"engine": "restic"},
+		&SavedJobOrigin{JobID: "phone-backup", Revision: 3, Operation: op},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if origin.Phase != "queued" {
+		t.Fatalf("start phase=%s", origin.Phase)
+	}
+	if got, err := store.RecordPhase("job-run-1", "preparing"); err != nil || got.Phase != "preparing" {
+		t.Fatalf("phase=%+v err=%v", got, err)
+	}
+	if origin.JobID != "phone-backup" || origin.JobRevision != 3 || origin.OperationSpecSnapshot == nil {
+		t.Fatalf("origin=%+v", origin)
+	}
+	replayed, err := ReplayOperation(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replayed.Operation != "backup.snapshot" || replayed.RepositoryRef == nil || *replayed.RepositoryRef != repo || len(replayed.CredentialRefs) != 1 {
+		t.Fatalf("replayed=%+v", replayed)
+	}
+	finished, err := store.RecordCompletion("job-run-1", "cancelled", nil, nil, ptr("cancelled by caller"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finished.Status != "cancelled" || finished.Phase != "cancelled" {
+		t.Fatalf("finished=%+v", finished)
+	}
+}
+
+func TestLegacyReplayStillWorksWithoutBR20OriginMetadata(t *testing.T) {
+	record := models.RunRecord{
+		RunID:        "legacy",
+		Operation:    "transfer",
+		Status:       "success",
+		StartedAt:    "2026-09-01T00:00:00Z",
+		SourcePaths:  []string{"/a"},
+		SpecSnapshot: map[string]any{"sources": []any{"/a"}, "destination": "/b", "direction": "push", "dry_run": false, "overwrite": false, "verify": true},
+	}
+	op, err := ReplayOperation(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if op.Operation != "transfer.run" {
+		t.Fatalf("operation=%s", op.Operation)
+	}
+}

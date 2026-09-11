@@ -46,6 +46,7 @@ type Result struct {
 	FilesProcessed     int64             `json:"files_processed"`
 	BytesProcessed     int64             `json:"bytes_processed"`
 	DataAdded          int64             `json:"data_added,omitempty"`
+	BytesReused        int64             `json:"bytes_reused,omitempty"`
 	VerificationPassed *bool             `json:"verification_passed,omitempty"`
 	Warnings           []string          `json:"warnings"`
 	Errors             []string          `json:"errors,omitempty"`
@@ -141,10 +142,15 @@ func Create(req Request, options Options) (Result, error) {
 			}
 		}
 		r, err := resticops.Backup(models.SnapshotBackupSpec{Engine: engine, Repository: *req.Repository, CredentialRef: req.CredentialRef, Sources: req.Sources, Excludes: req.Excludes, Includes: req.Includes, Tags: req.Tags, Verify: req.Verify, DryRun: req.DryRun}, ro)
-		if err != nil {
-			return Result{Success: r.Success, DryRun: req.DryRun, Engine: engine, SnapshotID: r.SnapshotID, Repository: r.Repository, FilesProcessed: r.FilesProcessed, BytesProcessed: r.BytesProcessed, DataAdded: r.DataAdded, VerificationPassed: r.VerificationPassed, Warnings: r.Warnings, DurationMS: r.DurationMS}, err
+		bytesReused := r.BytesProcessed - r.DataAdded
+		if bytesReused < 0 {
+			bytesReused = 0
 		}
-		return Result{Success: r.Success, DryRun: req.DryRun, Engine: engine, SnapshotID: r.SnapshotID, Repository: r.Repository, FilesProcessed: r.FilesProcessed, BytesProcessed: r.BytesProcessed, DataAdded: r.DataAdded, VerificationPassed: r.VerificationPassed, Warnings: r.Warnings, DurationMS: r.DurationMS}, nil
+		result := Result{Success: r.Success, DryRun: req.DryRun, Engine: engine, SnapshotID: r.SnapshotID, Repository: r.Repository, FilesProcessed: r.FilesProcessed, BytesProcessed: r.BytesProcessed, DataAdded: r.DataAdded, BytesReused: bytesReused, VerificationPassed: r.VerificationPassed, Warnings: r.Warnings, DurationMS: r.DurationMS}
+		if err != nil {
+			return result, err
+		}
+		return result, nil
 	}
 	return Result{}, fmt.Errorf("unreachable backup engine %q", engine)
 }

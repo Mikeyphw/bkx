@@ -6,7 +6,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AutomationProductContractTest {
-    private val projectRoot = File(System.getProperty("user.dir"))
+    private val projectRoot = File(requireNotNull(System.getProperty("user.dir")))
+    private val androidRoot = requireNotNull(projectRoot.parentFile) { "Unable to resolve Android project root" }
     private val mainRoot = File(projectRoot, "src/main/java/com/mikeyphw/bkx/android")
 
     @Test
@@ -102,7 +103,7 @@ class AutomationProductContractTest {
     @Test
     fun taskerEventAndStateConditionsUseAuthoritativeBkxSignals() {
         val manifest = File(projectRoot, "src/main/AndroidManifest.xml").readText()
-        val versions = File(projectRoot, "gradle/libs.versions.toml").readText()
+        val versions = File(androidRoot, "gradle/libs.versions.toml").readText()
         val build = File(projectRoot, "build.gradle.kts").readText()
         val graph = File(mainRoot, "app/di/DefaultBackendGraph.kt").readText()
         val coordinator = File(mainRoot, "app/runtime/BkxOperationCoordinator.kt").readText()
@@ -129,6 +130,25 @@ class AutomationProductContractTest {
         assertFalse(publisher.contains("accessToken"))
         assertFalse(publisher.contains("refreshToken"))
         assertFalse(publisher.contains("capability_token"))
+    }
+
+    @Test
+    fun backupHistoryReadsCanonicalGoRunsAndDoesNotGloballySerializeRepositories() {
+        val viewModel = File(mainRoot, "app/BkxAppViewModel.kt").readText()
+        val coordinator = File(mainRoot, "app/runtime/BkxOperationCoordinator.kt").readText()
+        val runBridge = File(mainRoot, "core/runs/RunHistoryBridge.kt").readText()
+        val backupScreen = File(mainRoot, "feature/backup/BackupScreen.kt").readText()
+        val activityScreen = File(mainRoot, "feature/activity/ActivityScreen.kt").readText()
+
+        assertTrue(runBridge.contains("runs.list"))
+        assertTrue(runBridge.contains("run_json"))
+        assertTrue(viewModel.contains("RunHistoryBridgeCodec.decodeArtifacts"))
+        assertTrue(viewModel.contains("RunHistoryRequestBuilder.list"))
+        assertTrue(backupScreen.contains("BackupRoute.History"))
+        assertTrue(backupScreen.contains("Run again"))
+        assertTrue(activityScreen.contains("Run again"))
+        assertFalse(coordinator.contains("foregroundOperationMutex"))
+        assertTrue(coordinator.contains("executeOwnedConcurrent"))
     }
 
 }

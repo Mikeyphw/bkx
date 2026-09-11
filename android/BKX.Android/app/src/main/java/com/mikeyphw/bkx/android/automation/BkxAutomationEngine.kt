@@ -310,13 +310,15 @@ class BkxAutomationEngine(
     }
 
     private suspend fun runSavedJob(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
-        val repositoryId = resolveJobRepository(request.jobId)
-        if (!repositoryId.isNullOrBlank()) refreshNamedRepository(request, repositoryId)?.let { return it }
+        val configuredRepository = request.repositoryId.takeIf(String::isNotBlank)
+        val overrideRepository = savedJobRepositoryOverride(request.jobOverrides)
+        val repositoryId = overrideRepository ?: configuredRepository ?: resolveJobRepository(request.jobId).orEmpty()
+        if (repositoryId.isNotBlank()) refreshNamedRepository(request, repositoryId)?.let { return it }
         progress.onStage("Running saved job")
         val stage = stageId(request.requestId, "job-run")
-        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId.orEmpty(), request.jobOverrides), true)
+        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId, request.jobOverrides), true)
             ?: return stateStore.terminal(request.requestId)!!
-        return terminalFromBridge(request.copy(repositoryId = repositoryId.orEmpty()), result)
+        return terminalFromBridge(request.copy(repositoryId = repositoryId), result)
     }
 
     private suspend fun runCreateSnapshot(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
@@ -466,6 +468,7 @@ class BkxAutomationEngine(
             BridgeResultStatus.Failure -> "failure"
             BridgeResultStatus.Cancelled -> "cancelled"
         }
+        val snapshotMetrics = result.artifacts.firstOrNull { it.label == "restic_snapshot" }?.metadata.orEmpty()
         return AutomationResult(
             requestId = request.requestId,
             action = request.action,
@@ -486,6 +489,11 @@ class BkxAutomationEngine(
                 .firstOrNull()
                 .orEmpty()
                 .ifBlank { request.snapshotId },
+            filesProcessed = snapshotMetrics["files_processed"]?.toLongOrNull() ?: result.metrics?.filesTotal,
+            bytesProcessed = snapshotMetrics["bytes_processed"]?.toLongOrNull() ?: result.metrics?.bytesTotal,
+            bytesAdded = snapshotMetrics["data_added"]?.toLongOrNull(),
+            bytesReused = snapshotMetrics["bytes_reused"]?.toLongOrNull(),
+            durationMillis = result.metrics?.durationMillis,
         ).also(stateStore::complete)
     }
 
@@ -500,6 +508,17 @@ class BkxAutomationEngine(
         repositoryId = request.repositoryId,
         snapshotId = request.snapshotId,
     ).also(stateStore::complete)
+
+
+private fun savedJobRepositoryOverride(overrides: List<String>): String? = overrides.asSequence()
+    .mapNotNull { raw ->
+        val separator = raw.indexOf('=')
+        if (separator <= 0) return@mapNotNull null
+        val key = raw.substring(0, separator).trim()
+        if (key !in setOf("repository", "repository_ref")) return@mapNotNull null
+        raw.substring(separator + 1).trim().removeSurrounding("\"").takeIf(String::isNotBlank)
+    }
+    .lastOrNull()
 
     private fun archiveLocation(location: String): ArchiveLocation = ArchiveLocation(
         archiveId = "automation-archive",

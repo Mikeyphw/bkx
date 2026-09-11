@@ -1,9 +1,9 @@
 package com.mikeyphw.bkx.android.core.repositories
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
-import kotlin.test.assertFalse
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.fail
+import org.junit.Test
 
 class SnapshotMaintenanceModelsTest {
     private val repository = RepositoryDefinition(
@@ -25,7 +25,14 @@ class SnapshotMaintenanceModelsTest {
     }
 
     @Test fun forgetRefusesLatestSelector() {
-        assertFailsWith<IllegalArgumentException> { RepositoryRequestBuilder.snapshotForget("r1", repository, "latest", confirm = true) }
+        for (selector in listOf("latest", "latest~0", "latest~1", " latest~2 ", "latest~-1", "latest~bad")) {
+            try {
+                RepositoryRequestBuilder.snapshotForget("r1", repository, selector, confirm = true)
+                fail("Expected IllegalArgumentException for relative snapshot selector: $selector")
+            } catch (_: IllegalArgumentException) {
+                // Expected: destructive forget requires an immutable snapshot ID.
+            }
+        }
     }
 
     @Test fun pruneDefaultsToDryRunAndUnconfirmed() {
@@ -35,7 +42,12 @@ class SnapshotMaintenanceModelsTest {
     }
 
     @Test fun retentionCountsCannotBeZero() {
-        assertFailsWith<IllegalArgumentException> { RetentionPolicy(keepLast = 0) }
+        try {
+            RetentionPolicy(keepLast = 0)
+            fail("Expected IllegalArgumentException for zero retention count")
+        } catch (_: IllegalArgumentException) {
+            // Expected: enabled retention buckets must keep at least one snapshot.
+        }
         assertEquals(7, RetentionPolicy(keepDaily = 7).keepDaily)
     }
 }

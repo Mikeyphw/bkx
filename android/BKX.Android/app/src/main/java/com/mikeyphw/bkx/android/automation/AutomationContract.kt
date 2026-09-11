@@ -213,6 +213,7 @@ data class AutomationRequest(
             }
             AutomationAction.RunSavedJob -> {
                 if (!stableId(jobId)) add("Saved job id is required and must use BKX stable-id syntax.")
+                if (repositoryId.isNotBlank() && !stableId(repositoryId)) add("Saved-job repository override must use BKX stable-id syntax.")
                 jobOverrides.forEach { value ->
                     if (!value.contains('=') || value.substringBefore('=').trim().isBlank()) add("Saved-job overrides must use KEY=VALUE.")
                 }
@@ -256,6 +257,11 @@ data class AutomationResult(
     val runId: String = "",
     val repositoryId: String = "",
     val snapshotId: String = "",
+    val filesProcessed: Long? = null,
+    val bytesProcessed: Long? = null,
+    val bytesAdded: Long? = null,
+    val bytesReused: Long? = null,
+    val durationMillis: Long? = null,
 ) {
     val successful: Boolean get() = status == "success" || status == "accepted" || status == "running"
 
@@ -263,8 +269,10 @@ data class AutomationResult(
         "%bkx_request_id" to requestId,
         "%bkx_action" to action.wireValue,
         "%bkx_status" to status,
+        "%bkx_success" to successful.toString(),
         "%bkx_operation_request_id" to operationRequestId,
         "%bkx_summary" to summary,
+        "%bkx_message" to summary,
         "%bkx_error_code" to errorCode,
         "%bkx_error_message" to errorMessage,
         "%bkx_artifact_paths" to artifactPaths.joinToString("\n"),
@@ -275,6 +283,11 @@ data class AutomationResult(
         "%bkx_run_id" to runId,
         "%bkx_repository_id" to repositoryId,
         "%bkx_snapshot_id" to snapshotId,
+        "%bkx_files_processed" to filesProcessed?.toString().orEmpty(),
+        "%bkx_bytes_processed" to bytesProcessed?.toString().orEmpty(),
+        "%bkx_bytes_added" to bytesAdded?.toString().orEmpty(),
+        "%bkx_bytes_reused" to bytesReused?.toString().orEmpty(),
+        "%bkx_duration_ms" to durationMillis?.toString().orEmpty(),
     )
 
     fun taskerVariables(): Bundle = Bundle().apply {
@@ -283,10 +296,12 @@ data class AutomationResult(
 
     companion object {
         val relevantVariables = arrayOf(
-            "%bkx_request_id", "%bkx_action", "%bkx_status", "%bkx_operation_request_id", "%bkx_summary",
+            "%bkx_request_id", "%bkx_action", "%bkx_status", "%bkx_success", "%bkx_operation_request_id", "%bkx_summary", "%bkx_message",
             "%bkx_error_code", "%bkx_error_message", "%bkx_artifact_paths", "%bkx_artifact_sha256",
             "%bkx_files_total", "%bkx_bytes_total", "%bkx_job_id", "%bkx_run_id",
             "%bkx_repository_id", "%bkx_snapshot_id",
+            "%bkx_files_processed", "%bkx_bytes_processed", "%bkx_bytes_added",
+            "%bkx_bytes_reused", "%bkx_duration_ms",
         )
     }
 }

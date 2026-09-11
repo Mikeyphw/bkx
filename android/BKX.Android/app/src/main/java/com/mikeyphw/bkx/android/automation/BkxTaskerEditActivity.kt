@@ -794,7 +794,7 @@ private fun ConfigField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,
-    modifier: Modifier = Modifier.fillMaxWidth(),
+    modifier: Modifier = Modifier,
     required: Boolean = false,
     helper: String? = null,
     error: String? = null,

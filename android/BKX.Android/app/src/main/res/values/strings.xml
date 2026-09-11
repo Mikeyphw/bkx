@@ -1,18 +1,27 @@
-<resources>
+<resources
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/tasker_event_type,@string/tasker_state_type,@string/tasker_filter_operation,@string/tasker_filter_remote,@string/tasker_filter_remote_name,@string/tasker_filter_request_id,@string/tasker_filter_error_code,@string/tasker_filter_job_id,@string/tasker_filter_repository_id,@string/tasker_filter_snapshot_id,@string/tasker_progress_cadence">
     <string name="app_name">BKX</string>
     <string name="tasker_plugin_name">BKX Automation</string>
 
     <string name="tasker_event_plugin_name">BKX Event</string>
     <string name="tasker_state_plugin_name">BKX State</string>
-    <string name="tasker_event_type">Event</string>
-    <string name="tasker_state_type">State</string>
-    <string name="tasker_filter_operation">Operation filter</string>
-    <string name="tasker_filter_remote">Storage filter</string>
-    <string name="tasker_filter_remote_name">rclone remote name</string>
-    <string name="tasker_filter_request_id">Request ID pattern</string>
-    <string name="tasker_filter_error_code">Error code filter</string>
-    <string name="tasker_filter_job_id">Saved job ID</string>
-    <string name="tasker_filter_repository_id">Repository ID</string>
-    <string name="tasker_filter_snapshot_id">Snapshot ID</string>
-    <string name="tasker_progress_cadence">Progress cadence</string>
+
+    <!--
+      These labels are resolved reflectively by TaskerInputField.labelResIdName.
+      Android Lint cannot see string-by-name resource lookups, so keep the exact
+      resources for optimized resource shrinking and suppress only this known
+      false-positive UnusedResources diagnostic on each reflective label.
+    -->
+    <string name="tasker_event_type" tools:ignore="UnusedResources">Event</string>
+    <string name="tasker_state_type" tools:ignore="UnusedResources">State</string>
+    <string name="tasker_filter_operation" tools:ignore="UnusedResources">Operation filter</string>
+    <string name="tasker_filter_remote" tools:ignore="UnusedResources">Storage filter</string>
+    <string name="tasker_filter_remote_name" tools:ignore="UnusedResources">rclone remote name</string>
+    <string name="tasker_filter_request_id" tools:ignore="UnusedResources">Request ID pattern</string>
+    <string name="tasker_filter_error_code" tools:ignore="UnusedResources">Error code filter</string>
+    <string name="tasker_filter_job_id" tools:ignore="UnusedResources">Saved job ID</string>
+    <string name="tasker_filter_repository_id" tools:ignore="UnusedResources">Repository ID</string>
+    <string name="tasker_filter_snapshot_id" tools:ignore="UnusedResources">Snapshot ID</string>
+    <string name="tasker_progress_cadence" tools:ignore="UnusedResources">Progress cadence</string>
 </resources>

@@ -27,3 +27,12 @@ class RootPathPolicyTest {
         assertTrue(RootPathPolicy.requiresRoot("/mnt/media_rw/1234-5678"))
     }
 }
+
+class RootPathPolicyBr23Test {
+    @Test
+    fun rejectsModernAndroidRestrictedSharedAliases() {
+        assertFalse(RootPathPolicy.requiresRoot("/sdcard/Android/data/com.example"))
+        assertTrue(RootPathPolicy.restrictedWriteReason("/sdcard/Android/data/com.example")!!.contains("restricted"))
+        assertTrue(RootPathPolicy.restrictedWriteReason("/storage/emulated/0/Android/obb/com.example")!!.contains("restricted"))
+    }
+}

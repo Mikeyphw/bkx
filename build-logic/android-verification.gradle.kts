@@ -1512,3 +1512,144 @@ tasks.register("verifyBkxRuntimeLifetimeForegroundCancellationSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxRuntimeLifetimeForegroundCancellationSeal")
 }
+
+
+tasks.register("verifyBkxAndroidGoBridgeResultContractSeal") {
+    group = "verification"
+    description = "BR22 seal: Android-Go bridge session/result contract must remain status-aware and request-pinned."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val gateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeGateway.kt")
+    val wire = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/GoNativeSessionWire.kt")
+    val backend = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt")
+    val bridgeJson = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeJson.kt")
+    val bridgeModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeModels.kt")
+    val viewModel = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt")
+    val opModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/operations/OperationModels.kt")
+    val mainGo = repositoryRootDir.resolve("cmd/bkx/main.go")
+    val artifactMetadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
+
+    inputs.files(gateway, wire, backend, bridgeJson, bridgeModels, viewModel, opModels, mainGo, artifactMetadata)
+
+    doLast {
+        val gatewayText = gateway.readText()
+        val wireText = wire.readText()
+        val backendText = backend.readText()
+        val bridgeJsonText = bridgeJson.readText()
+        val bridgeModelsText = bridgeModels.readText()
+        val viewModelText = viewModel.readText()
+        val opModelsText = opModels.readText()
+        val mainText = mainGo.readText()
+        val metadataText = artifactMetadata.readText()
+
+        check("PendingCommand" in gatewayText && "sessionId" in gatewayText && "completePendingForSession" in gatewayText) {
+            "BR22 requires session-scoped pending replies so old readers cannot fail replacement-session commands."
+        }
+        check("invalidateOnFailure = false" in gatewayText && "progressJson" in gatewayText && "cancelJson" in gatewayText) {
+            "BR22 progress/cancel probes must not invalidate the shared execute session."
+        }
+        check("MAX_COMMAND_BYTES" in wireText && "MAX_REPLY_BYTES" in wireText) {
+            "BR22 requires explicit Android bridge command/reply size ceilings."
+        }
+        check("publish(files.requestFilePath, requestJson)" in backendText && backendText.indexOf("publish(files.requestFilePath, requestJson)") < backendText.indexOf("gateway.executeJson(requestJson)")) {
+            "BR22 request descriptors must be durable before execution starts."
+        }
+        check("parseFinalResult(resultJson, expectedRequestId = request.requestId)" in backendText && "parseProgress(gateway.progressJson(requestId), expectedRequestId = requestId)" in backendText) {
+            "BR22 embedded backend must pin result and progress routes to the requested request_id."
+        }
+        check("BridgeRequestIdPolicy.requireValid(requestId)" in bridgeModelsText && "failure result must include" in bridgeModelsText) {
+            "BR22 bridge models must enforce request ids and failure evidence."
+        }
+        check("fun parseFinalResult(raw: String, expectedRequestId: String? = null)" in bridgeJsonText && "fun parseProgress(raw: String, expectedRequestId: String? = null)" in bridgeJsonText) {
+            "BR22 BridgeJson must expose expected-request-id parsing."
+        }
+        check("deliverFailureResults" in viewModelText && "OperationFailureMapper.fromFinalResult(result)" in viewModelText) {
+            "BR22 ViewModel must route terminal backend failures through failure handlers by default."
+        }
+        check("fromFinalResult(result: BridgeResultEnvelope)" in opModelsText) {
+            "BR22 must expose a typed final-result-to-failure mapper."
+        }
+        check("maxBridgeSessionConcurrency" in mainText && "maxBridgeSessionReplyBytes" in mainText && "semaphore <- struct{}{}" in mainText) {
+            "BR22 Go bridge session must bound goroutine fanout and outbound reply size."
+        }
+        check("\"commit\"" in metadataText && "fix(android): seal BKX Android-Go bridge result contracts" in metadataText) {
+            "BR22 overlay artifact must carry Devtool commit metadata."
+        }
+    }
+}
+
+tasks.register("verifyBkxStorageFilesystemRootSafetySeal") {
+    group = "verification"
+    description = "BR23 seal: storage, filesystem and root route policy must stay canonical, lease-aware, and capacity-aware."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val pathPolicy = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/files/AndroidPathPolicy.kt")
+    val stagedPlanner = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/files/StagedFilePlanner.kt")
+    val providerPort = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/files/ProviderStagingPort.kt")
+    val providerManager = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/files/AndroidProviderStagingManager.kt")
+    val rootPolicy = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/root/RootExecutionPolicy.kt")
+    val rootGateway = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/embedded/RootAwareGateway.kt")
+    val storageModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/storage/StorageAccessModels.kt")
+    val storageManager = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/storage/AndroidStorageAccessManager.kt")
+    val goPathPolicy = repositoryRootDir.resolve("internal/validation/path_policy.go")
+    val goValidation = repositoryRootDir.resolve("internal/validation/validation.go")
+    val goDispatcher = repositoryRootDir.resolve("internal/services/dispatcher.go")
+    val metadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
+
+    inputs.files(pathPolicy, stagedPlanner, providerPort, providerManager, rootPolicy, rootGateway, storageModels, storageManager, goPathPolicy, goValidation, goDispatcher, metadata)
+
+    doLast {
+        val pathPolicyText = pathPolicy.readText()
+        val stagedPlannerText = stagedPlanner.readText()
+        val providerPortText = providerPort.readText()
+        val providerManagerText = providerManager.readText()
+        val rootPolicyText = rootPolicy.readText()
+        val rootGatewayText = rootGateway.readText()
+        val storageModelsText = storageModels.readText()
+        val storageManagerText = storageManager.readText()
+        val goPathPolicyText = goPathPolicy.readText()
+        val goValidationText = goValidation.readText()
+        val goDispatcherText = goDispatcher.readText()
+        val metadataText = metadata.readText()
+
+        check("restrictedWriteReason" in pathPolicyText && "/Android/data" in pathPolicyText && "/Android/obb" in pathPolicyText) {
+            "BR23 requires canonical Android path policy for restricted shared-storage trees."
+        }
+        check("InsufficientStagingCapacity" in stagedPlannerText && "STAGING_HEADROOM_BYTES" in stagedPlannerText) {
+            "BR23 staging planner must enforce provider staging capacity evidence."
+        }
+        check("leaseId" in providerPortText && "releaseStagingLease" in providerPortText && "isStagingLeaseActive" in providerPortText) {
+            "BR23 provider staging contract must expose leases."
+        }
+        check("StatFs" in providerManagerText && "ACTIVE_LEASE_MARKER" in providerManagerText && "activeLeaseIds" in providerManagerText) {
+            "BR23 provider staging manager must reserve capacity and protect active staging leases."
+        }
+        check("RootExecutionRequest" in rootPolicyText && "rootSensitivePaths" in rootPolicyText && "RootExecutionRoute.Blocked" in rootPolicyText) {
+            "BR23 root policy must be request/path-aware and fail closed for root-sensitive local fallback."
+        }
+        check("candidatePathsFrom" in rootGatewayText && "route(parsed.request)" in rootGatewayText) {
+            "BR23 root gateway must route based on effective request paths."
+        }
+        check("usableForDirectFileAccess" in storageModelsText && "restrictedWriteReason" in storageManagerText) {
+            "BR23 storage discovery must report direct usability truth."
+        }
+        check("RequireSafeLocalWriteDestination" in goPathPolicyText && "RequireSafeLocalReadPath" in goPathPolicyText && "IsContentURI" in goPathPolicyText) {
+            "BR23 Go validation must enforce local path policy and content URI staging."
+        }
+        check("RequireSafeLocalWriteDestination(destination)" in goValidationText && "Transfer destination must be a staged filesystem path" in goValidationText) {
+            "BR23 transfer/restore validation must reject protected destinations and content URIs."
+        }
+        check("storageMetadata" in goDispatcherText && "validation.RequireSafeLocalReadPath" in goDispatcherText) {
+            "BR23 dispatcher must expose storage usability metadata and protect filesystem operations."
+        }
+        check("\"commit\"" in metadataText && "fix(android): seal BKX storage filesystem root safety" in metadataText) {
+            "BR23 overlay artifact must carry Devtool commit metadata."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxStorageFilesystemRootSafetySeal")
+}

@@ -50,3 +50,15 @@ func TestGO20OnlyMaintenanceAndAndroidRootsRemainInternal(t *testing.T) {
 		}
 	}
 }
+
+func TestBR22BridgeSessionResourceLimitsAreExplicit(t *testing.T) {
+	if maxBridgeSessionCommandBytes != 4*1024*1024 {
+		t.Fatalf("unexpected command limit: %d", maxBridgeSessionCommandBytes)
+	}
+	if maxBridgeSessionReplyBytes != 4*1024*1024 {
+		t.Fatalf("unexpected reply limit: %d", maxBridgeSessionReplyBytes)
+	}
+	if maxBridgeSessionConcurrency <= 0 || maxBridgeSessionConcurrency > 32 {
+		t.Fatalf("unexpected session concurrency limit: %d", maxBridgeSessionConcurrency)
+	}
+}

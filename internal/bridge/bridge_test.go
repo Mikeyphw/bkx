@@ -328,3 +328,14 @@ func TestPostV1RepositoryExtensionsAreExecutableWithoutAdvertisingRegistryDrift(
 		}
 	}
 }
+
+func TestBR22FinalResultEnvelopeRequiresFailureEvidence(t *testing.T) {
+	rt := NewAndroid(nil)
+	result := rt.Execute(requestJSON(t, "missing-br22", "filesystem.stat", map[string]any{"path": filepath.Join(t.TempDir(), "missing")}))
+	if result.Status != "failure" || result.Summary == "" || len(result.Errors) == 0 {
+		t.Fatalf("failure results must carry summary and typed errors: %#v", result)
+	}
+	if result.RequestID != "missing-br22" {
+		t.Fatalf("failure result lost request identity: %#v", result)
+	}
+}

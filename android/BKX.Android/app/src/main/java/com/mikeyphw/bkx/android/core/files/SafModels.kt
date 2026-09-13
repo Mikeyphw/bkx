@@ -67,12 +67,16 @@ data class StagedFileRecord(
     val lifetime: StagingLifetime,
     val cost: StagingCost,
     val grantState: UriGrantState,
+    val leaseId: String? = null,
+    val leaseExpiresAtEpochMillis: Long? = null,
 ) {
     init {
         require(sourceUri.startsWith(CONTENT_URI_PREFIX)) { "The original SAF source must remain a content:// URI." }
-        require(!stagedPath.startsWith(CONTENT_URI_PREFIX)) { "A staged path must not be a content URI." }
+        require(!ContentUriPathPolicy.isContentUri(stagedPath)) { "A staged path must not be a content URI." }
         require(stagedPath.startsWith("/")) { "A staged path must be an explicit shared filesystem path." }
         require(sha256 == null || SHA256_REGEX.matches(sha256)) { "sha256 must be lowercase hex when present." }
+        require(leaseId == null || leaseId.isNotBlank()) { "leaseId must be non-blank when present." }
+        require(leaseExpiresAtEpochMillis == null || leaseExpiresAtEpochMillis > 0L) { "lease expiry must be positive when present." }
     }
 }
 
@@ -113,6 +117,14 @@ sealed interface FileAccessIssue {
         override val title = "Unavailable staging location"
         override val message = "$path is unavailable: $reason"
         override val remediationSteps = listOf("Select a different staging location in Settings.")
+    }
+
+    @Serializable
+    data class InsufficientStagingCapacity(val requiredBytes: Long, val availableBytes: Long) : FileAccessIssue {
+        override val code = "insufficient_staging_capacity"
+        override val title = "Not enough staging space"
+        override val message = "BKX needs $requiredBytes bytes available for provider staging, but Android reported $availableBytes bytes."
+        override val remediationSteps = listOf("Free storage space or choose a smaller provider selection before running BKX.")
     }
 }
 

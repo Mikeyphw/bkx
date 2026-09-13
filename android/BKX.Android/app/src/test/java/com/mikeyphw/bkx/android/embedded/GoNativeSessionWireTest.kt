@@ -32,11 +32,22 @@ class GoNativeSessionWireTest {
         assertEquals("go-native-android", value.jsonObject.getValue("runtime").jsonPrimitive.content)
     }
 
-    @Test(expected = IllegalArgumentException::class)
-    fun replyRejectsUnexpectedFields() {
-        GoNativeSessionWire.reply(
-            """{"id":"android-9","value":null,"extra":true}""",
+    @Test
+    fun replyAllowsForwardCompatibleMetadataFields() {
+        val value = GoNativeSessionWire.reply(
+            """{"id":"android-9","value":null,"session":"s1"}""",
             "android-9",
+        )
+
+        assertEquals(kotlinx.serialization.json.JsonNull, value)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun commandRejectsOversizedPayloadBeforeWritingToSession() {
+        GoNativeSessionWire.command(
+            id = "android-oversize",
+            entrypoint = "execute",
+            requestJson = "{\"protocol_version\":1,\"request_id\":\"big\",\"operation\":\"backup.plan\",\"payload\":{\"blob\":\"${"x".repeat(GoNativeSessionWire.MAX_COMMAND_BYTES)}\"}}",
         )
     }
 

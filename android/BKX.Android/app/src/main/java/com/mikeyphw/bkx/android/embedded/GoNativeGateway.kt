@@ -8,6 +8,7 @@ import java.io.BufferedWriter
 import java.io.File
 import java.io.OutputStreamWriter
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -35,11 +36,12 @@ class GoNativeGateway(
     private val stateLock = Any()
     private val writeLock = Any()
     private val sequence = AtomicLong()
-    private val pending = ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val pending = ConcurrentHashMap<String, PendingCommand>()
 
     @Volatile private var process: Process? = null
     @Volatile private var writer: BufferedWriter? = null
     @Volatile private var sessionStateRoot: String? = null
+    @Volatile private var sessionId: Long = 0L
 
     override fun isAvailable(): Boolean =
         Build.SUPPORTED_ABIS.any { it == ABI } && runtimeFile().let { it.isFile && it.canExecute() }
@@ -50,50 +52,52 @@ class GoNativeGateway(
         request("execute", requestJson = requestJson, timeoutMillis = EXECUTE_TIMEOUT_MS)
 
     override suspend fun progressJson(requestId: String): String =
-        request("progress", requestId = requestId, timeoutMillis = PROGRESS_TIMEOUT_MS)
+        request("progress", requestId = requestId, timeoutMillis = PROGRESS_TIMEOUT_MS, invalidateOnFailure = false)
 
     override suspend fun cancelJson(requestId: String): String =
-        request("cancel", requestId = requestId, timeoutMillis = CANCEL_TIMEOUT_MS)
+        request("cancel", requestId = requestId, timeoutMillis = CANCEL_TIMEOUT_MS, invalidateOnFailure = false)
 
     private suspend fun request(
         entrypoint: String,
         requestId: String? = null,
         requestJson: String? = null,
         timeoutMillis: Long = DEFAULT_TIMEOUT_MS,
+        invalidateOnFailure: Boolean = true,
     ): String = withContext(Dispatchers.IO) {
         check(isAvailable()) { "Generated BKX Go runtime is unavailable for this ABI." }
+        val session = ensureSession()
         val commandId = "android-${sequence.incrementAndGet()}"
         val deferred = CompletableDeferred<String>()
-        pending[commandId] = deferred
+        val pendingCommand = PendingCommand(session.id, entrypoint, deferred)
+        pending[commandId] = pendingCommand
         try {
-            val sessionWriter = ensureSession()
             val command = GoNativeSessionWire.command(commandId, entrypoint, requestId, requestJson)
             synchronized(writeLock) {
-                sessionWriter.write(command)
-                sessionWriter.newLine()
-                sessionWriter.flush()
+                session.writer.write(command)
+                session.writer.newLine()
+                session.writer.flush()
             }
             val rawReply = withTimeout(timeoutMillis) { deferred.await() }
             GoNativeSessionWire.reply(rawReply, commandId).toString()
         } catch (error: Throwable) {
-            invalidateSession(error)
+            if (invalidateOnFailure) {
+                invalidateSession(error, session.id)
+            }
             throw error
         } finally {
-            pending.remove(commandId)
+            pending.remove(commandId, pendingCommand)
         }
     }
 
-    private fun ensureSession(): BufferedWriter = synchronized(stateLock) {
+    private fun ensureSession(): SessionHandle = synchronized(stateLock) {
         val desiredStateRoot = desiredStateRoot()
         val current = process
         val currentWriter = writer
         if (current != null && isAlive(current) && currentWriter != null && sessionStateRoot == desiredStateRoot.absolutePath) {
-            return@synchronized currentWriter
+            return@synchronized SessionHandle(sessionId, currentWriter)
         }
         if (current != null) {
-            writer = null
-            current.destroy()
-            process = null
+            closeCurrentSessionLocked(current, IllegalStateException("BKX Go runtime session replaced."))
         }
 
         val home = appContext.filesDir.resolve("bkx/$stateNamespace/home").apply { mkdirs() }
@@ -117,15 +121,17 @@ class GoNativeGateway(
         builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath
         val started = builder.start()
         val startedWriter = BufferedWriter(OutputStreamWriter(started.outputStream, Charsets.UTF_8))
+        val newSessionId = sessionId + 1L
         process = started
         writer = startedWriter
         sessionStateRoot = desiredStateRoot.absolutePath
-        startReader(started)
+        sessionId = newSessionId
+        startReader(started, newSessionId)
         startErrorReader(started, stderr)
-        startedWriter
+        SessionHandle(newSessionId, startedWriter)
     }
 
-    private fun startReader(started: Process) {
+    private fun startReader(started: Process, readerSessionId: Long) {
         Thread({
             try {
                 started.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -134,16 +140,16 @@ class GoNativeGateway(
                             kotlinx.serialization.json.Json.parseToJsonElement(line)
                                 .jsonObject["id"]?.jsonPrimitive?.content
                         }.getOrNull()
-                        if (id != null) pending[id]?.complete(line)
+                        if (id != null) pending[id]?.takeIf { it.sessionId == readerSessionId }?.deferred?.complete(line)
                     }
                 }
                 if (isAlive(started)) started.destroy()
-                failPending(IllegalStateException("BKX Go runtime session ended."))
+                completePendingForSession(readerSessionId, IllegalStateException("BKX Go runtime session ended."))
             } catch (error: Throwable) {
-                failPending(error)
+                completePendingForSession(readerSessionId, error)
             } finally {
                 synchronized(stateLock) {
-                    if (process === started) {
+                    if (process === started && sessionId == readerSessionId) {
                         process = null
                         writer = null
                         sessionStateRoot = null
@@ -160,7 +166,7 @@ class GoNativeGateway(
         Thread({
             runCatching {
                 started.errorStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
-                    lines.forEach { line -> logFile.appendText(line + "\n") }
+                    lines.forEach { line -> appendBoundedRuntimeLog(logFile, line) }
                 }
             }
         }, "bkx-go-runtime-stderr").apply {
@@ -176,16 +182,35 @@ class GoNativeGateway(
         true
     }
 
-    private fun invalidateSession(error: Throwable) = synchronized(stateLock) {
+    private fun invalidateSession(error: Throwable, expectedSessionId: Long) = synchronized(stateLock) {
+        if (sessionId != expectedSessionId) return@synchronized
+        process?.let { closeCurrentSessionLocked(it, error) }
         writer = null
-        process?.destroy()
         process = null
         sessionStateRoot = null
-        failPending(error)
+    }
+
+    private fun closeCurrentSessionLocked(current: Process, error: Throwable) {
+        val closingSession = sessionId
+        writer = null
+        current.destroy()
+        if (!current.waitFor(SESSION_SHUTDOWN_GRACE_MS, TimeUnit.MILLISECONDS)) {
+            current.destroyForcibly()
+            current.waitFor(SESSION_SHUTDOWN_FORCE_MS, TimeUnit.MILLISECONDS)
+        }
+        process = null
+        sessionStateRoot = null
+        completePendingForSession(closingSession, error)
+    }
+
+    private fun completePendingForSession(closingSession: Long, error: Throwable) {
+        pending.values
+            .filter { it.sessionId == closingSession }
+            .forEach { pendingCommand -> pendingCommand.deferred.completeExceptionally(error) }
     }
 
     private fun failPending(error: Throwable) {
-        pending.values.forEach { deferred -> deferred.completeExceptionally(error) }
+        pending.values.forEach { pendingCommand -> pendingCommand.deferred.completeExceptionally(error) }
     }
 
     fun close() = synchronized(stateLock) {
@@ -194,6 +219,13 @@ class GoNativeGateway(
         process = null
         sessionStateRoot = null
         failPending(IllegalStateException("BKX Go runtime session closed."))
+    }
+
+    private fun appendBoundedRuntimeLog(logFile: File, line: String) {
+        if (logFile.length() > MAX_STDERR_LOG_BYTES) {
+            logFile.writeText("[bkx] stderr log rotated after ${MAX_STDERR_LOG_BYTES} bytes\n", Charsets.UTF_8)
+        }
+        logFile.appendText(line.take(MAX_STDERR_LINE_CHARS) + "\n", Charsets.UTF_8)
     }
 
 
@@ -232,5 +264,20 @@ class GoNativeGateway(
         const val PROGRESS_TIMEOUT_MS = 10_000L
         const val CANCEL_TIMEOUT_MS = 20_000L
         const val EXECUTE_TIMEOUT_MS = 6L * 60L * 60L * 1000L
+        const val SESSION_SHUTDOWN_GRACE_MS = 750L
+        const val SESSION_SHUTDOWN_FORCE_MS = 250L
+        const val MAX_STDERR_LOG_BYTES = 512L * 1024L
+        const val MAX_STDERR_LINE_CHARS = 8 * 1024
     }
+
+    private data class SessionHandle(
+        val id: Long,
+        val writer: BufferedWriter,
+    )
+
+    private data class PendingCommand(
+        val sessionId: Long,
+        val entrypoint: String,
+        val deferred: CompletableDeferred<String>,
+    )
 }

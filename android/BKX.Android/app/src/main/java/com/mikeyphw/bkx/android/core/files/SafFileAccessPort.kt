@@ -23,11 +23,19 @@ data class StagingEvidence(
     val sizeBytes: Long?,
     val sha256: String?,
     val requiresHashing: Boolean = sha256 == null,
-)
+    val availableBytes: Long? = null,
+) {
+    init {
+        require(sizeBytes == null || sizeBytes >= 0L) { "sizeBytes must be non-negative when reported." }
+        require(availableBytes == null || availableBytes >= 0L) { "availableBytes must be non-negative when reported." }
+    }
+}
 
 object ContentUriPathPolicy {
+    fun isContentUri(candidate: String): Boolean = candidate.trim().lowercase().startsWith(CONTENT_URI_PREFIX)
+
     fun requireNotContentUriPath(candidate: String) {
-        if (candidate.startsWith(CONTENT_URI_PREFIX)) {
+        if (isContentUri(candidate)) {
             throw FileAccessPolicyException(FileAccessIssue.ContentUriAsPathRejected(candidate))
         }
     }

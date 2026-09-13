@@ -218,3 +218,9 @@ memory_guard_mb = 0
 no_daemon = true
 low_priority = false
 
+
+# Devtool overlay commit metadata. Keep this in overlay artifacts so apply creates the commit.
+[commit]
+enabled = true
+strategy = "single"
+message = "fix(android): seal BKX storage filesystem root safety"

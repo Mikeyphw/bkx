@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -102,21 +103,39 @@ type concurrentBridgeReply struct {
 	Value any    `json:"value"`
 }
 
+const (
+	maxBridgeSessionCommandBytes = 4 * 1024 * 1024
+	maxBridgeSessionReplyBytes   = 4 * 1024 * 1024
+	maxBridgeSessionConcurrency  = 16
+)
+
 // runConcurrentBridgeSession is the Android process transport. Execute runs in
 // its own goroutine so progress and cancellation remain serviceable while a
 // long operation is active.
 func runConcurrentBridgeSession(rt *bridge.RuntimeAdapter) int {
 	scanner := bufio.NewScanner(os.Stdin)
 	buffer := make([]byte, 0, 64*1024)
-	scanner.Buffer(buffer, 4*1024*1024)
-	encoder := json.NewEncoder(os.Stdout)
+	scanner.Buffer(buffer, maxBridgeSessionCommandBytes)
 	var writeMu sync.Mutex
 	var wg sync.WaitGroup
+	semaphore := make(chan struct{}, maxBridgeSessionConcurrency)
 
-	write := func(reply concurrentBridgeReply) {
+	write := func(reply concurrentBridgeReply) bool {
+		var buf bytes.Buffer
+		if err := json.NewEncoder(&buf).Encode(reply); err != nil {
+			reply.Value = map[string]any{"session_error": "could not encode bridge reply: " + err.Error()}
+			buf.Reset()
+			_ = json.NewEncoder(&buf).Encode(reply)
+		}
+		if buf.Len() > maxBridgeSessionReplyBytes {
+			reply.Value = map[string]any{"session_error": "bridge reply exceeds 4 MiB output limit"}
+			buf.Reset()
+			_ = json.NewEncoder(&buf).Encode(reply)
+		}
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		_ = encoder.Encode(reply)
+		_, err := os.Stdout.Write(buf.Bytes())
+		return err == nil
 	}
 
 	for scanner.Scan() {
@@ -133,9 +152,11 @@ func runConcurrentBridgeSession(rt *bridge.RuntimeAdapter) int {
 			write(concurrentBridgeReply{ID: "unknown", Value: map[string]any{"session_error": "missing command id"}})
 			continue
 		}
+		semaphore <- struct{}{}
 		wg.Add(1)
 		go func(command concurrentBridgeCommand) {
 			defer wg.Done()
+			defer func() { <-semaphore }()
 			var value any
 			switch command.Entrypoint {
 			case "readiness":

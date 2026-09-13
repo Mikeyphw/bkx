@@ -298,3 +298,12 @@ func TestCreateSplitPublishesAllPartsAndLogicalArchiveVerifies(t *testing.T) {
 		t.Fatalf("logical checksum mismatch: verify=%s result=%s", verified.ArchiveChecksums["sha256"], result.Checksums["archive"])
 	}
 }
+
+func TestBR23BackupPlanRejectsProtectedLocalDestination(t *testing.T) {
+	src := fixture(t)
+	dest := "/sdcard/Android/data/com.example"
+	_, err := PlanBackup(backupSpec(src, &dest))
+	if err == nil {
+		t.Fatal("protected Android/data destination accepted")
+	}
+}

@@ -5,6 +5,8 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestFiles
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
+import java.io.File
+import kotlinx.serialization.encodeToString
 
 class FakeBackendPort(
     private var readiness: BackendReadiness = BackendReadiness.Ready(
@@ -33,6 +35,7 @@ class FakeBackendPort(
             "run.cancel",
         ),
     ),
+    private val finalResult: BridgeResultEnvelope? = null,
 ) : BackendPort {
     val submittedRequests = mutableListOf<Pair<BridgeRequestEnvelope, BridgeRequestFiles>>()
     val cancellations = mutableListOf<Pair<String, String>>()
@@ -48,6 +51,15 @@ class FakeBackendPort(
         files: BridgeRequestFiles,
     ): BackendSubmission {
         submittedRequests += request to files
+        if (readiness is BackendReadiness.Ready) {
+            finalResult?.let { result ->
+                val normalized = result.copy(requestId = request.requestId)
+                File(files.resultFilePath).parentFile?.mkdirs()
+                File(files.resultFilePath).writeText(
+                    BridgeJson.json.encodeToString(BridgeResultEnvelope.serializer(), normalized),
+                )
+            }
+        }
         return BackendSubmission(
             requestId = request.requestId,
             accepted = readiness is BackendReadiness.Ready,

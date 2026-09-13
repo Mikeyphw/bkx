@@ -2,6 +2,7 @@ package com.mikeyphw.bkx.android.storage
 
 import android.annotation.SuppressLint
 
+import com.mikeyphw.bkx.android.core.files.AndroidPathPolicy
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -21,6 +22,8 @@ data class StorageLocation(
     val path: String,
     val kind: StorageLocationKind,
     val requiresRoot: Boolean,
+    val usableForDirectFileAccess: Boolean = true,
+    val unavailableReason: String? = null,
 )
 
 // These are intentional canonical paths for foreign/root-owned storage, not this app's filesDir.
@@ -52,22 +55,11 @@ object BkxStorageLocations {
 // RootPathPolicy must recognize literal protected Android filesystem roots and the /sdcard compatibility alias.
 @SuppressLint("SdCardPath")
 object RootPathPolicy {
-    fun isTermuxPrivate(path: String): Boolean = normalize(path).let {
-        it == BkxStorageLocations.TERMUX_FILES || it.startsWith("${BkxStorageLocations.TERMUX_FILES}/")
-    }
+    fun canonicalize(path: String): String = AndroidPathPolicy.canonicalize(path).ifBlank { "/" }
 
-    fun requiresRoot(path: String): Boolean {
-        val normalized = normalize(path)
-        if (normalized.startsWith("/storage/") || normalized == "/sdcard" || normalized.startsWith("/sdcard/")) {
-            return false
-        }
-        return normalized.startsWith("/data/") ||
-            normalized.startsWith("/system/") ||
-            normalized.startsWith("/vendor/") ||
-            normalized.startsWith("/product/") ||
-            normalized.startsWith("/metadata/") ||
-            normalized.startsWith("/mnt/media_rw/")
-    }
+    fun isTermuxPrivate(path: String): Boolean = AndroidPathPolicy.isTermuxPrivate(path)
 
-    private fun normalize(path: String): String = path.trim().replace('\\', '/').trimEnd('/').ifBlank { "/" }
+    fun restrictedWriteReason(path: String): String? = AndroidPathPolicy.restrictedWriteReason(path)
+
+    fun requiresRoot(path: String): Boolean = AndroidPathPolicy.rootSensitiveReason(path) != null && !AndroidPathPolicy.isSharedStorage(path)
 }

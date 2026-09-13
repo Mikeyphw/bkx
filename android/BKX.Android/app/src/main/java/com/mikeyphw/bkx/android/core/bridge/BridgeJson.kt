@@ -19,15 +19,19 @@ object BridgeJson {
 
     fun encodeRequest(request: BridgeRequestEnvelope): String {
         requireSupported(request.protocolVersion)
+        BridgeRequestIdPolicy.requireValid(request.requestId)
+        require(request.operation.isNotBlank()) { "bridge operation must not be blank" }
         return json.encodeToString(request)
     }
 
     fun encodeCancel(cancel: BridgeCancelEnvelope): String {
         requireSupported(cancel.protocolVersion)
+        BridgeRequestIdPolicy.requireValid(cancel.requestId)
+        require(cancel.action == "cancel") { "bridge cancel action must be cancel" }
         return json.encodeToString(cancel)
     }
 
-    fun parseFinalResult(raw: String): BridgeResultEnvelope {
+    fun parseFinalResult(raw: String, expectedRequestId: String? = null): BridgeResultEnvelope {
         val trimmed = raw.trim()
         if (trimmed.isEmpty()) {
             throw BridgeProtocolException("Final backend result is empty.")
@@ -43,11 +47,14 @@ object BridgeJson {
             throw BridgeProtocolException("Final backend result is not a valid bridge result JSON document.", exc)
         }
         requireSupported(parsed.protocolVersion)
+        BridgeRequestIdPolicy.requireValid(parsed.requestId)
+        if (expectedRequestId != null && parsed.requestId != expectedRequestId) {
+            throw BridgeProtocolException("Final backend result request id ${parsed.requestId} did not match expected $expectedRequestId.")
+        }
         return parsed
     }
 
-
-    fun parseProgress(raw: String): BridgeProgressEnvelope? {
+    fun parseProgress(raw: String, expectedRequestId: String? = null): BridgeProgressEnvelope? {
         val trimmed = raw.trim()
         if (trimmed.isEmpty() || trimmed == "null") return null
         val parsed = try {
@@ -58,6 +65,10 @@ object BridgeJson {
             throw BridgeProtocolException("Embedded progress is not valid bridge progress JSON.", exc)
         }
         requireSupported(parsed.protocolVersion)
+        BridgeRequestIdPolicy.requireValid(parsed.requestId)
+        if (expectedRequestId != null && parsed.requestId != expectedRequestId) {
+            throw BridgeProtocolException("Progress request id ${parsed.requestId} did not match expected $expectedRequestId.")
+        }
         return parsed
     }
 

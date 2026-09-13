@@ -531,3 +531,30 @@ esac
 		t.Fatalf("result=%+v", result)
 	}
 }
+
+func TestBR23FilesystemRejectsContentUriAndProtectedPseudoPath(t *testing.T) {
+	d := New(nil)
+	if _, err := d.Dispatch(OperationContext{}, "filesystem.stat", raw(map[string]any{"path": "content://provider/document/1"})); err == nil {
+		t.Fatal("filesystem.stat accepted a content URI as a POSIX path")
+	}
+	if _, err := d.Dispatch(OperationContext{}, "filesystem.list", raw(map[string]any{"path": "/proc/self", "show_hidden": true, "limit": 10, "offset": 0})); err == nil {
+		t.Fatal("filesystem.list accepted a pseudo-filesystem path")
+	}
+}
+
+func TestBR23StorageLocationsExposeUsabilityMetadata(t *testing.T) {
+	root := t.TempDir()
+	d := New(nil)
+	d.StorageLocations = []StorageLocation{{Label: "fixture", Path: root}}
+	result, err := d.Dispatch(OperationContext{}, "storage.locations", raw(map[string]any{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Artifacts) != 1 {
+		t.Fatalf("storage=%+v", result)
+	}
+	metadata := result.Artifacts[0].Metadata
+	if metadata["usable_for_direct_file_access"] != "true" || metadata["canonical_path"] == "" {
+		t.Fatalf("metadata=%v", metadata)
+	}
+}

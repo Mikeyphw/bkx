@@ -7,12 +7,17 @@ class StagedFilePlanner {
         if (restriction != null) {
             throw FileAccessPolicyException(restriction)
         }
+        val requiredBytes = evidence.sizeBytes?.plus(STAGING_HEADROOM_BYTES)
+        val availableBytes = evidence.availableBytes
+        if (requiredBytes != null && availableBytes != null && availableBytes < requiredBytes) {
+            throw FileAccessPolicyException(FileAccessIssue.InsufficientStagingCapacity(requiredBytes, availableBytes))
+        }
         if (selection.grant.state != UriGrantState.Active) {
             throw FileAccessPolicyException(FileAccessIssue.GrantLost(selection.uri))
         }
         return StagedFileRecord(
             sourceUri = selection.uri,
-            stagedPath = stagingPath,
+            stagedPath = AndroidPathPolicy.canonicalize(stagingPath),
             sizeBytes = evidence.sizeBytes,
             sha256 = evidence.sha256,
             lifetime = StagingLifetime.PerRequest,
@@ -30,26 +35,29 @@ class StagedFilePlanner {
         evidence.requiresHashing -> "The selected content will be copied and hashed before BKX receives a staged path."
         else -> "The selected content will be copied to the configured staging location before BKX runs."
     }
+
+    companion object {
+        const val STAGING_HEADROOM_BYTES = 32L * 1024L * 1024L
+    }
 }
 
 object RestrictedLocationPolicy {
     fun classify(path: String): FileAccessIssue? {
-        val normalized = path.trim().replace('\\', '/')
+        if (ContentUriPathPolicy.isContentUri(path)) {
+            return FileAccessIssue.ContentUriAsPathRejected(path)
+        }
+        if (AndroidPathPolicy.containsTraversal(path)) {
+            return FileAccessIssue.RestrictedLocation(path, "path traversal segments are not allowed in staging destinations")
+        }
+        val normalized = AndroidPathPolicy.canonicalize(path)
         if (normalized.isBlank()) {
             return FileAccessIssue.UnavailableLocation(path, "staging location is blank")
         }
-        if (!normalized.startsWith("/")) {
+        if (!path.trim().replace('\', '/').startsWith("/")) {
             return FileAccessIssue.UnavailableLocation(path, "staging location must be an absolute shared path")
         }
-        if (normalized == "/" || normalized == "~") {
-            return FileAccessIssue.RestrictedLocation(normalized, "root-level access is not a user-visible SAF grant")
-        }
-        val blockedSegments = listOf("/Android/data", "/Android/obb", "/proc", "/sys", "/dev")
-        val blocked = blockedSegments.firstOrNull { segment ->
-            normalized == segment || normalized.startsWith("$segment/")
-        }
-        return blocked?.let {
-            FileAccessIssue.RestrictedLocation(it, "Android storage restrictions make this location unavailable to the BKX app")
+        return AndroidPathPolicy.restrictedWriteReason(normalized)?.let { reason ->
+            FileAccessIssue.RestrictedLocation(normalized, reason)
         }
     }
 }

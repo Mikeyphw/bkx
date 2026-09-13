@@ -66,11 +66,12 @@ class EmbeddedBkxBackend(
 
         try {
             val requestJson = BridgeJson.encodeRequest(request)
+            // Publish the request descriptor before execution so long-running work has
+            // durable route evidence even if Android is recreated before final result.
+            publish(files.requestFilePath, requestJson)
             val resultJson = gateway.executeJson(requestJson)
             // Parse before publishing so malformed runtime output can never become a final result.
-            val result = BridgeJson.parseFinalResult(resultJson)
-            require(result.requestId == request.requestId) { "embedded result request id mismatch" }
-            publish(files.requestFilePath, requestJson)
+            BridgeJson.parseFinalResult(resultJson, expectedRequestId = request.requestId)
             publish(files.resultFilePath, resultJson)
             BackendSubmission(request.requestId, accepted = true, readiness = readiness)
         } catch (exc: Exception) {
@@ -86,7 +87,7 @@ class EmbeddedBkxBackend(
 
     override suspend fun progress(requestId: String): BridgeProgressEnvelope? = withContext(ioDispatcher) {
         try {
-            BridgeJson.parseProgress(gateway.progressJson(requestId))
+            BridgeJson.parseProgress(gateway.progressJson(requestId), expectedRequestId = requestId)
         } catch (_: Exception) {
             null
         }
@@ -100,9 +101,9 @@ class EmbeddedBkxBackend(
         try {
             val result = gateway.cancelJson(requestId)
             // Validate the cancellation acknowledgement before publishing it.
-            BridgeJson.parseFinalResult(result)
+            val acknowledgement = BridgeJson.parseFinalResult(result, expectedRequestId = requestId)
             publish(cancelFilePath, BridgeJson.encodeCancel(com.mikeyphw.bkx.android.core.bridge.BridgeCancelEnvelope(requestId = requestId)))
-            BackendSubmission(requestId, accepted = true, readiness = readiness)
+            BackendSubmission(requestId, accepted = acknowledgement.status == com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus.Success, readiness = readiness)
         } catch (exc: Exception) {
             BackendSubmission(
                 requestId = requestId,

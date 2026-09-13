@@ -9,13 +9,18 @@ data class ProviderStagedItem(
     val filesCopied: Long,
     val bytesCopied: Long,
     val sha256: String? = null,
+    val leaseId: String,
+    val leaseExpiresAtEpochMillis: Long,
 ) {
     init {
-        require(sourceUri.startsWith(CONTENT_URI_PREFIX))
+        require(ContentUriPathPolicy.isContentUri(sourceUri))
         require(displayName.isNotBlank())
         require(stagedPath.startsWith("/"))
+        require(!ContentUriPathPolicy.isContentUri(stagedPath))
         require(filesCopied >= 0L)
         require(bytesCopied >= 0L)
+        require(leaseId.isNotBlank())
+        require(leaseExpiresAtEpochMillis > 0L)
     }
 }
 
@@ -23,4 +28,6 @@ data class ProviderStagedItem(
 interface ProviderStagingPort {
     suspend fun stageDocument(uri: String): ProviderStagedItem
     suspend fun stageTree(uri: String): ProviderStagedItem
+    fun releaseStagingLease(leaseId: String): Boolean = false
+    fun isStagingLeaseActive(leaseId: String): Boolean = false
 }

@@ -21,6 +21,8 @@ import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
 import com.mikeyphw.bkx.android.core.operations.OperationFailureKind
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
 import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
+import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
+import com.mikeyphw.bkx.android.core.jobs.OperationSpecV2
 import com.mikeyphw.bkx.android.core.runs.InMemoryRunSummaryStore
 import com.mikeyphw.bkx.android.core.bridge.BridgeError
 import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
@@ -323,6 +325,34 @@ class BkxAppViewModelTest {
 
         assertEquals(OperationFailureKind.PermissionDenied, viewModel.state.value.operationRuntime.failureStates["op-cancel"]?.kind)
         assertTrue(viewModel.state.value.operationResult is OperationResultUiState.Failed)
+    }
+
+
+    @Test
+    fun domainFailureDoesNotMutateSavedJobAsSuccess() = runTest(dispatcher) {
+        val backend = FakeBackendPort(
+            readiness = BackendReadiness.Ready("0.0.1", 1, setOf("jobs.create"), "go-native-android"),
+            finalResult = BridgeResultEnvelope(
+                protocolVersion = 1,
+                requestId = "placeholder",
+                status = BridgeResultStatus.Failure,
+                summary = "job create failed",
+                errors = listOf(BridgeError("validation_error", "bad job")),
+            ),
+        )
+        val viewModel = viewModel(backend = backend)
+        val draft = SavedJobDraft(
+            jobId = "job-fail",
+            name = "Failing job",
+            operation = OperationSpecV2(operation = "backup.create"),
+        )
+
+        advanceUntilIdle()
+        viewModel.onEvent(BkxHomeEvent.CreateSavedJob(draft))
+        advanceUntilIdle()
+
+        assertEquals(null, viewModel.state.value.savedJobs.actionInProgress)
+        assertTrue(viewModel.state.value.savedJobs.lastActionMessage.orEmpty().contains("bad job"))
     }
 
     private fun viewModel(

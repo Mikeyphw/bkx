@@ -199,7 +199,7 @@ func ValidateSplitSize(value *int64) (*int64, error) {
 }
 
 func IsRemoteLocation(value string) bool {
-	if !strings.Contains(value, "://") {
+	if !strings.Contains(value, "://") || IsContentURI(value) {
 		return false
 	}
 	parsed, err := url.Parse(value)
@@ -210,6 +210,9 @@ func NormalizeTransferLocation(value, fieldName string) (string, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" || strings.ContainsRune(raw, '\x00') {
 		return "", berror.Validation(fieldName+" must not be empty", map[string]any{"field": fieldName})
+	}
+	if IsContentURI(raw) {
+		return "", berror.Validation(fieldName+" must be a staged filesystem path, not a content URI", map[string]any{"field": fieldName, "value": value})
 	}
 	if IsRemoteLocation(raw) {
 		parsed, err := url.Parse(raw)
@@ -257,8 +260,12 @@ func ValidateBackupSpec(spec models.BackupSpec) (models.BackupSpec, error) {
 		return models.BackupSpec{}, berror.Validation("At least one source path is required", nil)
 	}
 	for _, source := range spec.Sources {
-		if strings.TrimSpace(source) == "" {
+		trimmed := strings.TrimSpace(source)
+		if trimmed == "" {
 			return models.BackupSpec{}, berror.Validation("Backup sources must be non-empty paths", nil)
+		}
+		if _, err := RequireSafeLocalReadPath(trimmed); err != nil {
+			return models.BackupSpec{}, err
 		}
 	}
 	if spec.ArchiveName != nil {
@@ -308,8 +315,35 @@ func ValidateArchiveCreateSpec(spec models.ArchiveCreateSpec) (models.ArchiveCre
 }
 
 func ValidateRestoreSpec(spec models.RestoreSpec) (models.RestoreSpec, error) {
-	if strings.TrimSpace(spec.Archive) == "" {
+	archive := strings.TrimSpace(spec.Archive)
+	if archive == "" {
 		return models.RestoreSpec{}, berror.Validation("Restore archive must be a Path", nil)
+	}
+	if IsContentURI(archive) {
+		return models.RestoreSpec{}, berror.Validation("Restore archive must be a staged filesystem path, not a content URI", map[string]any{"archive": archive})
+	}
+	if !IsRemoteLocation(archive) {
+		clean, err := RequireSafeLocalReadPath(archive)
+		if err != nil {
+			return models.RestoreSpec{}, err
+		}
+		spec.Archive = clean
+	}
+	if spec.Destination != nil {
+		destination := strings.TrimSpace(*spec.Destination)
+		if destination == "" {
+			return models.RestoreSpec{}, berror.Validation("Restore destination must not be blank when provided", nil)
+		}
+		if IsContentURI(destination) {
+			return models.RestoreSpec{}, berror.Validation("Restore destination must be a filesystem path, not a content URI", map[string]any{"destination": destination})
+		}
+		if !IsRemoteLocation(destination) {
+			clean, err := RequireSafeLocalWriteDestination(destination)
+			if err != nil {
+				return models.RestoreSpec{}, err
+			}
+			spec.Destination = &clean
+		}
 	}
 	seen := map[string]bool{}
 	normalized := make([]string, 0, len(spec.Paths))
@@ -348,15 +382,35 @@ func ValidateTransferSpec(spec models.TransferSpec) (models.TransferSpec, error)
 		return models.TransferSpec{}, berror.Validation("Sync is a mirror operation and requires explicit approval to delete destination-only files", map[string]any{"delete_extraneous_on_sync": false})
 	}
 	for _, source := range spec.Sources {
-		if strings.TrimSpace(source) == "" {
+		trimmed := strings.TrimSpace(source)
+		if trimmed == "" {
 			return models.TransferSpec{}, berror.Validation("Transfer source entries must be Path or URI strings", nil)
 		}
-		if spec.Direction == "push" && IsRemoteLocation(strings.TrimSpace(source)) {
+		if IsContentURI(trimmed) {
+			return models.TransferSpec{}, berror.Validation("Transfer sources must be staged filesystem paths, not content URIs", map[string]any{"source": trimmed})
+		}
+		if spec.Direction == "push" && IsRemoteLocation(trimmed) {
 			return models.TransferSpec{}, berror.Validation("Push sources must be local paths", nil)
 		}
+		if !IsRemoteLocation(trimmed) {
+			clean, err := RequireSafeLocalReadPath(trimmed)
+			if err != nil {
+				return models.TransferSpec{}, err
+			}
+			_ = clean
+		}
 	}
-	if spec.Direction == "pull" && IsRemoteLocation(strings.TrimSpace(spec.Destination)) {
+	destination := strings.TrimSpace(spec.Destination)
+	if IsContentURI(destination) {
+		return models.TransferSpec{}, berror.Validation("Transfer destination must be a staged filesystem path or supported remote URI, not a content URI", map[string]any{"destination": destination})
+	}
+	if spec.Direction == "pull" && IsRemoteLocation(destination) {
 		return models.TransferSpec{}, berror.Validation("Pull destination must be local", nil)
+	}
+	if !IsRemoteLocation(destination) {
+		if _, err := RequireSafeLocalWriteDestination(destination); err != nil {
+			return models.TransferSpec{}, err
+		}
 	}
 	if spec.Checksum != nil {
 		checksum := strings.TrimSpace(*spec.Checksum)

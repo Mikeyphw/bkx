@@ -226,6 +226,33 @@ object OperationFailureMapper {
         explicitAction = null,
     )
 
+    fun fromFinalResult(result: BridgeResultEnvelope): OperationFailureUiState = when (result.status) {
+        BridgeResultStatus.Success -> OperationFailureUiState(
+            kind = OperationFailureKind.Unknown,
+            code = "BKX_SUCCESS_NOT_FAILURE",
+            title = "BKX operation completed",
+            message = result.summary.ifBlank { "BKX operation completed successfully." },
+            actions = emptyList(),
+            retryAllowed = false,
+        )
+        BridgeResultStatus.Cancelled -> OperationFailureUiState(
+            kind = OperationFailureKind.Cancelled,
+            code = "BKX_OPERATION_CANCELLED",
+            title = "BKX operation cancelled",
+            message = result.summary.ifBlank { "BKX cancelled this operation before completion." },
+            actions = listOf("Review partial artifacts", "Start a new request"),
+            retryAllowed = true,
+        )
+        BridgeResultStatus.Failure -> result.errors.firstOrNull()?.let(::fromBridgeError)
+            ?: OperationFailureUiState(
+                kind = OperationFailureKind.Unknown,
+                code = "BKX_OPERATION_FAILED",
+                title = "BKX operation failed",
+                message = result.summary.ifBlank { "BKX returned failure without a typed error." },
+                actions = listOf("Open engine diagnostics", "Retry operation"),
+            )
+    }
+
     fun fromProtocolException(message: String): OperationFailureUiState = OperationFailureUiState(
         kind = OperationFailureKind.MalformedResult,
         code = "BKX_MALFORMED_RESULT",

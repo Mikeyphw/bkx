@@ -3,22 +3,25 @@ package com.mikeyphw.bkx.android.files
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.StatFs
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.core.net.toUri
 import com.mikeyphw.bkx.android.core.files.CONTENT_URI_PREFIX
+import com.mikeyphw.bkx.android.core.files.ContentUriPathPolicy
 import com.mikeyphw.bkx.android.core.files.ProviderStagedItem
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.files.UserSelectionKind
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
  * Streams content:// resources into app-private cache paths for the exceptional
- * case where a provider (Drive, DocumentsProvider, etc.) has no direct path.
+ * case where a provider (Drive, DocumentsProvider, etc.) has no real path.
  * Direct filesystem/root paths remain the primary BKX storage architecture.
  */
 class AndroidProviderStagingManager(
@@ -27,28 +30,66 @@ class AndroidProviderStagingManager(
     private val appContext = context.applicationContext ?: context
     private val resolver = appContext.contentResolver
     private val stagingRoot = File(appContext.cacheDir, "bkx/provider-staging")
+    private val activeLeaseIds = ConcurrentHashMap.newKeySet<String>()
 
     override suspend fun stageDocument(uri: String): ProviderStagedItem = withContext(Dispatchers.IO) {
         val parsed = requireContentUri(uri)
         persistReadGrant(parsed)
         val name = queryDisplayName(parsed).safeName("provider-file")
-        val requestDir = newRequestDirectory()
-        val target = File(requestDir, name)
+        val expectedSize = querySize(parsed)
+        reserveCapacity(expectedSize ?: MIN_UNKNOWN_STREAM_RESERVE_BYTES)
+        val lease = newRequestDirectory()
+        val target = File(lease.directory, name)
         val copy = copyDocument(parsed, target)
-        ProviderStagedItem(uri, name, target.absolutePath, UserSelectionKind.Document, 1, copy.bytes, copy.sha256)
+        ProviderStagedItem(
+            sourceUri = uri,
+            displayName = name,
+            stagedPath = target.absolutePath,
+            kind = UserSelectionKind.Document,
+            filesCopied = 1,
+            bytesCopied = copy.bytes,
+            sha256 = copy.sha256,
+            leaseId = lease.id,
+            leaseExpiresAtEpochMillis = lease.expiresAtEpochMillis,
+        )
     }
 
     override suspend fun stageTree(uri: String): ProviderStagedItem = withContext(Dispatchers.IO) {
         val treeUri = requireContentUri(uri)
         persistReadGrant(treeUri)
+        reserveCapacity(MIN_UNKNOWN_TREE_RESERVE_BYTES)
         val treeId = DocumentsContract.getTreeDocumentId(treeUri)
         val rootDocument = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeId)
         val rootName = queryDisplayName(rootDocument).safeName("provider-folder")
-        val requestDir = newRequestDirectory()
-        val targetRoot = File(requestDir, rootName).also { check(it.mkdirs()) { "Could not create provider staging folder." } }
+        val lease = newRequestDirectory()
+        val targetRoot = File(lease.directory, rootName).also { check(it.mkdirs()) { "Could not create provider staging folder." } }
         val totals = CopyTotals()
         copyTree(treeUri, treeId, targetRoot, totals, depth = 0)
-        ProviderStagedItem(uri, rootName, targetRoot.absolutePath, UserSelectionKind.Tree, totals.files, totals.bytes)
+        ProviderStagedItem(
+            sourceUri = uri,
+            displayName = rootName,
+            stagedPath = targetRoot.absolutePath,
+            kind = UserSelectionKind.Tree,
+            filesCopied = totals.files,
+            bytesCopied = totals.bytes,
+            sha256 = null,
+            leaseId = lease.id,
+            leaseExpiresAtEpochMillis = lease.expiresAtEpochMillis,
+        )
+    }
+
+    override fun releaseStagingLease(leaseId: String): Boolean {
+        val id = leaseId.trim()
+        if (id.isBlank()) return false
+        activeLeaseIds.remove(id)
+        val dir = File(stagingRoot, id)
+        File(dir, ACTIVE_LEASE_MARKER).delete()
+        return dir.deleteRecursively()
+    }
+
+    override fun isStagingLeaseActive(leaseId: String): Boolean {
+        val id = leaseId.trim()
+        return id.isNotBlank() && (id in activeLeaseIds || File(File(stagingRoot, id), ACTIVE_LEASE_MARKER).exists())
     }
 
     private fun copyTree(treeUri: Uri, documentId: String, destination: File, totals: CopyTotals, depth: Int) {
@@ -127,39 +168,71 @@ class AndroidProviderStagingManager(
         } else null
     }
 
+    private fun querySize(uri: Uri): Long? = resolver.query(
+        uri,
+        arrayOf(OpenableColumns.SIZE),
+        null,
+        null,
+        null,
+    ).use { cursor ->
+        if (cursor != null && cursor.moveToFirst()) {
+            val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (index >= 0 && !cursor.isNull(index)) cursor.getLong(index).takeIf { it >= 0L } else null
+        } else null
+    }
+
     private fun persistReadGrant(uri: Uri) {
         runCatching {
             resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
 
-    private fun newRequestDirectory(): File {
+    private fun newRequestDirectory(): StagingLease {
         stagingRoot.mkdirs()
         pruneOldStaging()
-        return File(stagingRoot, "item-${System.currentTimeMillis()}-${System.nanoTime().toString(16)}").also {
+        val id = "item-${System.currentTimeMillis()}-${System.nanoTime().toString(16)}"
+        val expiresAt = System.currentTimeMillis() + STAGING_MAX_AGE_MS
+        val dir = File(stagingRoot, id).also {
             check(it.mkdirs()) { "Could not create provider staging directory." }
         }
+        File(dir, ACTIVE_LEASE_MARKER).writeText(expiresAt.toString())
+        activeLeaseIds += id
+        return StagingLease(id, dir, expiresAt)
     }
 
     private fun pruneOldStaging() {
         val cutoff = System.currentTimeMillis() - STAGING_MAX_AGE_MS
         stagingRoot.listFiles().orEmpty()
-            .filter { it.lastModified() in 1 until cutoff }
+            .filter { file ->
+                file.lastModified() in 1 until cutoff &&
+                    file.name !in activeLeaseIds &&
+                    File(file, ACTIVE_LEASE_MARKER).lastModified().let { markerTime -> markerTime == 0L || markerTime < cutoff }
+            }
             .forEach { it.deleteRecursively() }
     }
 
+    private fun reserveCapacity(requiredBytes: Long) {
+        stagingRoot.mkdirs()
+        val stat = StatFs(stagingRoot.absolutePath)
+        val requiredWithHeadroom = requiredBytes + STAGING_HEADROOM_BYTES
+        check(stat.availableBytes >= requiredWithHeadroom) {
+            "Provider staging needs at least $requiredWithHeadroom bytes free, but only ${stat.availableBytes} bytes are available."
+        }
+    }
+
     private fun requireContentUri(raw: String): Uri {
-        require(raw.startsWith(CONTENT_URI_PREFIX)) { "Provider staging accepts content:// URIs only." }
+        require(ContentUriPathPolicy.isContentUri(raw)) { "Provider staging accepts content:// URIs only." }
         return raw.toUri()
     }
 
     private fun String?.safeName(fallback: String): String {
-        val candidate = this.orEmpty().trim().replace(Regex("[\\/\\u0000-\\u001f]"), "_").trim('.', ' ')
+        val candidate = this.orEmpty().trim().replace(Regex("[\/\u0000-\u001f]"), "_").trim('.', ' ')
         return candidate.take(MAX_NAME_CHARS).ifBlank { fallback }
     }
 
     private data class CopyResult(val bytes: Long, val sha256: String)
     private data class CopyTotals(var entries: Long = 0L, var files: Long = 0L, var bytes: Long = 0L)
+    private data class StagingLease(val id: String, val directory: File, val expiresAtEpochMillis: Long)
 
     private companion object {
         const val COPY_BUFFER_BYTES = 1024 * 1024
@@ -167,5 +240,9 @@ class AndroidProviderStagingManager(
         const val MAX_TREE_ENTRIES = 100_000L
         const val MAX_NAME_CHARS = 180
         const val STAGING_MAX_AGE_MS = 24L * 60L * 60L * 1000L
+        const val STAGING_HEADROOM_BYTES = 32L * 1024L * 1024L
+        const val MIN_UNKNOWN_STREAM_RESERVE_BYTES = 64L * 1024L * 1024L
+        const val MIN_UNKNOWN_TREE_RESERVE_BYTES = 512L * 1024L * 1024L
+        const val ACTIVE_LEASE_MARKER = ".bkx-active-lease"
     }
 }

@@ -88,6 +88,45 @@ class EmbeddedBkxBackendTest {
         assertFalse(root.resolve("result.json").exists())
     }
 
+
+    @Test
+    fun submitPublishesRequestBeforeRejectingMalformedResult() = runTest {
+        val gateway = FakeGateway(resultJson = "not-json")
+        val backend = EmbeddedBkxBackend(gateway, StandardTestDispatcher(testScheduler))
+        val root = Files.createTempDirectory("bkx-embedded-test").toFile()
+        val files = BridgeRequestFiles(
+            requestId = "req-durable",
+            requestFilePath = root.resolve("req-durable/request.json").path,
+            resultFilePath = root.resolve("req-durable/result.json").path,
+            progressFilePath = root.resolve("req-durable/progress.jsonl").path,
+            cancelFilePath = root.resolve("req-durable/cancel.json").path,
+        )
+
+        val submission = backend.submit(
+            request = BridgeRequestEnvelope(requestId = "req-durable", operation = "backup.plan"),
+            files = files,
+        )
+
+        assertFalse(submission.accepted)
+        assertTrue(root.resolve("req-durable/request.json").isFile)
+        assertFalse(root.resolve("req-durable/result.json").exists())
+    }
+
+    @Test
+    fun progressAndCancelArePinnedToTheRequestedRoute() = runTest {
+        val gateway = FakeGateway(
+            progressJson = """{"protocol_version":1,"request_id":"other","seq":1,"phase":"running","message":"wrong route"}""",
+            cancelJson = """{"protocol_version":1,"request_id":"other","status":"success","summary":"wrong","errors":[],"artifacts":[]}""",
+        )
+        val backend = EmbeddedBkxBackend(gateway, StandardTestDispatcher(testScheduler))
+        val root = Files.createTempDirectory("bkx-embedded-test").toFile()
+
+        assertEquals(null, backend.progress("req-pinned"))
+        val submission = backend.cancel("req-pinned", root.resolve("cancel.json").path)
+
+        assertFalse(submission.accepted)
+    }
+
     @Test
     fun cancelUsesEmbeddedGatewayAndPublishesNoShellCommand() = runTest {
         val gateway = FakeGateway()
@@ -105,6 +144,8 @@ class EmbeddedBkxBackendTest {
     private class FakeGateway(
         private val resultJson: String = """{"protocol_version":1,"request_id":"req-1","status":"success","summary":"embedded ok","errors":[],"artifacts":[]}""",
         private val readinessDocument: String = """{"protocol_version":1,"backend_version":"0.0.1","runtime":"go-native-android","python_version":"none","capabilities":["backup.plan"]}""",
+        private val progressJson: String = "null",
+        private val cancelJson: String? = null,
     ) : EmbeddedRuntimeGateway {
         var lastRequestJson: String? = null
         var cancelledRequestId: String? = null
@@ -121,11 +162,11 @@ class EmbeddedBkxBackendTest {
             }
         }
 
-        override suspend fun progressJson(requestId: String): String = "null"
+        override suspend fun progressJson(requestId: String): String = progressJson
 
         override suspend fun cancelJson(requestId: String): String {
             cancelledRequestId = requestId
-            return """{"protocol_version":1,"request_id":"$requestId","status":"success","summary":"cancel recorded","errors":[],"artifacts":[]}"""
+            return cancelJson ?: """{"protocol_version":1,"request_id":"$requestId","status":"success","summary":"cancel recorded","errors":[],"artifacts":[]}"""
         }
     }
 }

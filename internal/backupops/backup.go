@@ -117,7 +117,7 @@ func Normalize(spec models.BackupSpec) (models.BackupSpec, *string, string, *str
 	sources := make([]string, 0, len(valid.Sources))
 	seen := map[string]bool{}
 	for _, source := range valid.Sources {
-		canonical, err := validation.CanonicalLocalPath(source)
+		canonical, err := validation.RequireSafeLocalReadPath(source)
 		if err != nil {
 			return models.BackupSpec{}, nil, "", nil, err
 		}
@@ -149,7 +149,7 @@ func Normalize(spec models.BackupSpec) (models.BackupSpec, *string, string, *str
 			if validation.IsRemoteLocation(raw) {
 				return models.BackupSpec{}, nil, "", nil, berror.Validation("Unsupported backup remote location; use rclone://remote/path", map[string]any{"destination": raw})
 			}
-			canonical, err = validation.CanonicalLocalPath(raw)
+			canonical, err = validation.RequireSafeLocalWriteDestination(raw)
 		}
 		if err != nil {
 			return models.BackupSpec{}, nil, "", nil, err
@@ -177,7 +177,7 @@ func Normalize(spec models.BackupSpec) (models.BackupSpec, *string, string, *str
 			canonical, err = rcloneops.JoinURI(*destination, name+".bakery")
 		} else {
 			path := filepath.Join(*destination, name+".bakery")
-			canonical, err = validation.CanonicalLocalPath(path)
+			canonical, err = validation.RequireSafeLocalWriteDestination(path)
 			if err == nil {
 				for _, source := range sources {
 					if overlapsBackupOutput(source, canonical) {
@@ -202,6 +202,11 @@ func PlanBackup(spec models.BackupSpec) (Plan, error) {
 	files, bytes, err := measureSources(valid.Sources)
 	if err != nil {
 		return Plan{}, err
+	}
+	if archivePath != nil && !rcloneops.IsLocation(*archivePath) && bytes > 0 {
+		if err := validation.EnsureCapacityForWriteDestination(*archivePath, bytes); err != nil {
+			return Plan{}, err
+		}
 	}
 	outputName := "(resolved by backend)"
 	if archivePath != nil {

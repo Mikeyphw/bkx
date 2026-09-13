@@ -11,7 +11,13 @@ data class BridgeRequestEnvelope(
     @SerialName("request_id") val requestId: String,
     val operation: String,
     val payload: JsonObject = buildJsonObject { },
-)
+) {
+    init {
+        BridgeRequestIdPolicy.requireValid(requestId)
+        require(operation.isNotBlank()) { "bridge operation must not be blank" }
+        BridgeJson.requireSupported(protocolVersion)
+    }
+}
 
 @Serializable
 data class BridgeResultEnvelope(
@@ -22,7 +28,15 @@ data class BridgeResultEnvelope(
     val errors: List<BridgeError> = emptyList(),
     val artifacts: List<BridgeArtifact> = emptyList(),
     val metrics: BridgeMetrics? = null,
-)
+) {
+    init {
+        BridgeJson.requireSupported(protocolVersion)
+        BridgeRequestIdPolicy.requireValid(requestId)
+        require(status != BridgeResultStatus.Failure || summary.isNotBlank() || errors.isNotEmpty()) {
+            "failure result must include a summary or typed errors"
+        }
+    }
+}
 
 @Serializable
 enum class BridgeResultStatus {
@@ -49,7 +63,12 @@ data class BridgeError(
     val code: String,
     val message: String,
     val action: String = "",
-)
+) {
+    init {
+        require(code.isNotBlank()) { "bridge error code must not be blank" }
+        require(message.isNotBlank()) { "bridge error message must not be blank" }
+    }
+}
 
 @Serializable
 data class BridgeArtifact(
@@ -61,6 +80,8 @@ data class BridgeArtifact(
     val metadata: Map<String, String> = emptyMap(),
 ) {
     init {
+        require(label.isNotBlank()) { "artifact label must not be blank" }
+        require(path.isNotBlank()) { "artifact path must not be blank" }
         require(sizeBytes == null || sizeBytes >= 0L) { "artifact size_bytes must be non-negative" }
         require(modifiedAtEpochMillis == null || modifiedAtEpochMillis >= 0L) { "artifact modified_at_epoch_millis must be non-negative" }
     }
@@ -80,14 +101,33 @@ data class BridgeProgressEnvelope(
     @SerialName("files_total") val filesTotal: Long? = null,
     @SerialName("bytes_done") val bytesDone: Long? = null,
     @SerialName("bytes_total") val bytesTotal: Long? = null,
-)
+) {
+    init {
+        BridgeJson.requireSupported(protocolVersion)
+        BridgeRequestIdPolicy.requireValid(requestId)
+        require(seq >= 0L) { "progress seq must be non-negative" }
+        require(phase.isNotBlank()) { "progress phase must not be blank" }
+        require(message.isNotBlank()) { "progress message must not be blank" }
+        require(progress == null || progress in 0.0..1.0) { "progress must be between 0.0 and 1.0" }
+        require(filesDone == null || filesDone >= 0L) { "files_done must be non-negative" }
+        require(filesTotal == null || filesTotal >= 0L) { "files_total must be non-negative" }
+        require(bytesDone == null || bytesDone >= 0L) { "bytes_done must be non-negative" }
+        require(bytesTotal == null || bytesTotal >= 0L) { "bytes_total must be non-negative" }
+    }
+}
 
 @Serializable
 data class BridgeCancelEnvelope(
     @SerialName("protocol_version") val protocolVersion: Int = BridgeJson.SUPPORTED_PROTOCOL_VERSION,
     @SerialName("request_id") val requestId: String,
     val action: String = "cancel",
-)
+) {
+    init {
+        BridgeJson.requireSupported(protocolVersion)
+        BridgeRequestIdPolicy.requireValid(requestId)
+        require(action == "cancel") { "bridge cancel action must be cancel" }
+    }
+}
 
 data class BridgeRequestFiles(
     val requestId: String,
@@ -97,7 +137,7 @@ data class BridgeRequestFiles(
     val cancelFilePath: String,
 ) {
     init {
-        require(requestId.isNotBlank()) { "requestId must not be blank" }
+        BridgeRequestIdPolicy.requireValid(requestId)
         require(requestFilePath.isNotBlank()) { "requestFilePath must not be blank" }
         require(resultFilePath.isNotBlank()) { "resultFilePath must not be blank" }
         require(progressFilePath.isNotBlank()) { "progressFilePath must not be blank" }

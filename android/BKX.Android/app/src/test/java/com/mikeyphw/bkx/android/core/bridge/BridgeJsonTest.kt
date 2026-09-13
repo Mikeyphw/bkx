@@ -47,6 +47,22 @@ class BridgeJsonTest {
         BridgeJson.parseFinalResult("{\"protocol_version\":1,\"request_id\":\"abc\",\"status\":\"success\"")
     }
 
+    @Test(expected = BridgeProtocolException::class)
+    fun rejectsFinalResultForWrongRequestId() {
+        BridgeJson.parseFinalResult(
+            """{"protocol_version":1,"request_id":"other","status":"success","summary":"done"}""",
+            expectedRequestId = "expected",
+        )
+    }
+
+    @Test(expected = BridgeProtocolException::class)
+    fun rejectsProgressForWrongRequestId() {
+        BridgeJson.parseProgress(
+            """{"protocol_version":1,"request_id":"other","seq":1,"phase":"running","message":"wrong"}""",
+            expectedRequestId = "expected",
+        )
+    }
+
     @Test
     fun encodesVersionedRequestAndCancelDocuments() {
         val request = BridgeRequestEnvelope(requestId = "req-1", operation = "backend.capabilities")

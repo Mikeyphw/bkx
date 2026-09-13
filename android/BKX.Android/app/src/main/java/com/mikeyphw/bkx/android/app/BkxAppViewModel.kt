@@ -563,7 +563,7 @@ class BkxAppViewModel(
                 screenStatuses = current.screenStatuses + (BkxDestination.Archives to ScreenStatus.Loading),
             )
         }
-        executeRequest(request, recordInHistory = false) { result ->
+        executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
             if (result.status == BridgeResultStatus.Success) {
                 val archives = result.artifacts
                     .filter { it.label == "archive" && (it.path.startsWith("/") || it.path.startsWith("rclone://", ignoreCase = true)) }
@@ -615,7 +615,7 @@ class BkxAppViewModel(
             )
         }
         val request = archiveRequestBuilder.buildInfoRequest(nextRequestId("archive-info"), archive)
-        executeRequest(request, recordInHistory = false) { result ->
+        executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
             if (result.status == BridgeResultStatus.Success) {
                 val match = Regex("Archive: (\\d+) entries, (\\d+) uncompressed bytes, format ([^.]+)").find(result.summary)
                 val info = ArchiveInfoSummary(
@@ -639,8 +639,13 @@ class BkxAppViewModel(
     private fun browseArchive(archive: ArchiveLocation, pageToken: String?) {
         val requestPage = ArchiveBrowsePageRequest(archive = archive, pageToken = pageToken)
         val request = archiveRequestBuilder.buildBrowseRequest(nextRequestId("archive-browse"), requestPage)
-        executeRequest(request, recordInHistory = false) { result ->
-            if (result.status != BridgeResultStatus.Success) return@executeRequest
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(archiveReadOnly = current.archiveReadOnly.copy(browsePage = null, infoState = ArchiveWorkflowUiState.Failed(emptyList(), failure.message))) }
+            },
+        ) { result ->
             val entries = result.artifacts.mapNotNull { artifact ->
                 when (artifact.label) {
                     "archive_entry" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.File, sizeBytes = artifact.sizeBytes)
@@ -665,7 +670,7 @@ class BkxAppViewModel(
 
     private fun verifyArchive(archive: ArchiveLocation) {
         val request = archiveRequestBuilder.buildVerifyRequest(nextRequestId("archive-verify"), archive)
-        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Archives) { result ->
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Archives, deliverFailureResults = true) { result ->
             _state.update { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(
@@ -693,10 +698,14 @@ class BkxAppViewModel(
         val draft = _state.value.restore.draft
         if (draft.validationIssues().isNotEmpty()) return
         val request = restoreRequestBuilder.buildPreviewRequest(nextRequestId("restore-preview"), draft)
-        executeRequest(request, recordInHistory = false) { result ->
-            if (result.status == BridgeResultStatus.Success) {
-                _state.update { current -> current.copy(restore = current.restore.copy(preview = result.toRestorePreviewSummary(draft), confirmation = null)) }
-            }
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(restore = current.restore.copy(message = failure.message, preview = null, confirmation = null)) }
+            },
+        ) { result ->
+            _state.update { current -> current.copy(restore = current.restore.copy(preview = result.toRestorePreviewSummary(draft), confirmation = null)) }
         }
     }
 
@@ -716,9 +725,14 @@ class BkxAppViewModel(
         val draft = _state.value.transfer.draft
         if (draft.validationIssues().isNotEmpty()) return
         val request = transferRequestBuilder.buildPreviewRequest(nextRequestId("transfer-plan"), draft)
-        executeRequest(request, recordInHistory = false) { result ->
-            if (result.status == BridgeResultStatus.Success) {
-                val topology = buildString {
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { failure ->
+                _state.update { current -> current.copy(transfer = current.transfer.copy(message = failure.message, preview = null)) }
+            },
+        ) { result ->
+            val topology = buildString {
                     append(draft.mode.protocolValue.replaceFirstChar { it.uppercase() })
                     append(" · ")
                     append(draft.sources.size)
@@ -746,7 +760,6 @@ class BkxAppViewModel(
                     }.map { it.message },
                 )
                 _state.update { current -> current.copy(transfer = current.transfer.copy(preview = preview)) }
-            }
         }
     }
 
@@ -754,7 +767,7 @@ class BkxAppViewModel(
         val transfer = _state.value.transfer
         if (!transfer.canRun) return
         val request = transferRequestBuilder.buildRunRequest(nextRequestId("transfer-run"), transfer.draft, transfer.preview)
-        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.More) { result ->
+        executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.More, deliverFailureResults = true) { result ->
             _state.update { current -> current.copy(transfer = current.transfer.copy(result = result.toTransferResultUiState())) }
         }
     }
@@ -763,13 +776,14 @@ class BkxAppViewModel(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         feedbackDestination: BkxDestination? = null,
+        deliverFailureResults: Boolean = false,
         onFailure: (OperationFailureUiState) -> Unit = {},
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
         if (requestUsesManagedGoogleDrive(request) && googleDriveAuthorizationManager != null) {
             authorizeGoogleDriveForOperation { authorized ->
                 if (authorized) {
-                    executePreparedRequest(request, recordInHistory, feedbackDestination, onFailure, onResult)
+                    executePreparedRequest(request, recordInHistory, feedbackDestination, deliverFailureResults, onFailure, onResult)
                 } else {
                     onFailure(
                         OperationFailureUiState(
@@ -783,13 +797,14 @@ class BkxAppViewModel(
             }
             return
         }
-        executePreparedRequest(request, recordInHistory, feedbackDestination, onFailure, onResult)
+        executePreparedRequest(request, recordInHistory, feedbackDestination, deliverFailureResults, onFailure, onResult)
     }
 
     private fun executePreparedRequest(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         feedbackDestination: BkxDestination? = null,
+        deliverFailureResults: Boolean = false,
         onFailure: (OperationFailureUiState) -> Unit = {},
         onResult: (BridgeResultEnvelope) -> Unit = {},
     ) {
@@ -816,7 +831,11 @@ class BkxAppViewModel(
                     if (feedbackDestination != null) {
                         updateOperationFeedback(feedbackDestination, request, startedAt, uiResult)
                     }
-                    onResult(result)
+                    if (result.status == BridgeResultStatus.Success || deliverFailureResults) {
+                        onResult(result)
+                    } else {
+                        onFailure(OperationFailureMapper.fromFinalResult(result))
+                    }
                     refreshOperations()
                     if (recordInHistory) refreshRuns()
                 }
@@ -924,7 +943,7 @@ class BkxAppViewModel(
                 put("limit", 500)
             },
         )
-        executeRequest(request, recordInHistory = false) { result ->
+        executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
             if (result.status == BridgeResultStatus.Success) {
                 val entries = result.artifacts.map { artifact ->
                     FilesystemBrowserEntry(

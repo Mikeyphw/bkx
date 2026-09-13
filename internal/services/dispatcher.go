@@ -1035,6 +1035,10 @@ func (d *Dispatcher) filesystemList(ctx OperationContext, p map[string]any) (Res
 	if rcloneops.IsLocation(location) {
 		return d.rcloneFilesystemList(ctx, location, hidden, limit, offset)
 	}
+	location, err = validation.RequireSafeLocalReadPath(location)
+	if err != nil {
+		return Result{}, err
+	}
 	r, err := fsutil.List(location, hidden, limit, offset)
 	if err != nil {
 		return Result{}, err
@@ -1140,6 +1144,10 @@ func (d *Dispatcher) filesystemStat(ctx OperationContext, p map[string]any) (Res
 		}
 		return success(fmt.Sprintf("Remote %s: %s, %d bytes.", entry.Name, kind, entry.Size), nil, []Artifact{{Label: kind, Path: canonical, SizeBytes: &size, ModifiedAtEpochMillis: modified}}), nil
 	}
+	location, err = validation.RequireSafeLocalReadPath(location)
+	if err != nil {
+		return Result{}, err
+	}
 	e, err := fsutil.Stat(location)
 	if err != nil {
 		return Result{}, err
@@ -1152,7 +1160,9 @@ func (d *Dispatcher) storage(_ map[string]any) (Result, error) {
 	arts := []Artifact{}
 	for _, c := range d.StorageLocations {
 		if info, err := os.Stat(c.Path); err == nil && info != nil {
-			arts = append(arts, artifact(c.Label, c.Path, ""))
+			item := artifact(c.Label, c.Path, "")
+			item.Metadata = storageMetadata(c.Path)
+			arts = append(arts, item)
 		}
 	}
 	priv := "app"
@@ -1397,7 +1407,11 @@ func restorePlan(spec models.RestoreSpec) map[string]any {
 
 func materializeArchive(ctx OperationContext, source string) (remotearchive.Materialized, error) {
 	if !rcloneops.IsLocation(source) {
-		return remotearchive.Acquire(context.Background(), source, remotearchive.Options{})
+		clean, err := validation.RequireSafeLocalReadPath(source)
+		if err != nil {
+			return remotearchive.Materialized{}, err
+		}
+		return remotearchive.Acquire(context.Background(), clean, remotearchive.Options{})
 	}
 	emit(ctx, "downloading", "Downloading remote archive for local verification.", floatPtr(.1))
 	return remotearchive.Acquire(context.Background(), source, remotearchive.Options{
@@ -1422,6 +1436,24 @@ func success(summary string, issues []Issue, arts []Artifact) Result {
 	}
 	return Result{Status: StatusSuccess, Summary: summary, Errors: issues, Artifacts: arts}
 }
+func storageMetadata(path string) map[string]string {
+	metadata := map[string]string{}
+	policy, err := validation.InspectLocalPathPolicy(path)
+	if err != nil {
+		metadata["usable_for_direct_file_access"] = "false"
+		metadata["unavailable_reason"] = err.Error()
+		return metadata
+	}
+	metadata["canonical_path"] = policy.CleanPath
+	metadata["root_sensitive"] = strconv.FormatBool(policy.RootSensitive)
+	metadata["usable_for_direct_file_access"] = strconv.FormatBool(policy.RestrictedReason == "")
+	if policy.RestrictedReason != "" {
+		metadata["unavailable_reason"] = policy.RestrictedReason
+	}
+	metadata["effective_uid"] = strconv.Itoa(os.Geteuid())
+	return metadata
+}
+
 func artifact(label, path, digest string) Artifact {
 	a := Artifact{Label: label, Path: path}
 	if digest != "" {

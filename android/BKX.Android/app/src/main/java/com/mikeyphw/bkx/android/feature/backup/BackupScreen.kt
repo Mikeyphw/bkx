@@ -35,6 +35,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.BkxProductAction
+import com.mikeyphw.bkx.android.app.actionGate
 import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
@@ -548,6 +550,8 @@ private fun BackupReviewSection(
 ) {
     val planning = state.backupPlanning
     val draft = planning.draft
+    val reviewGate = state.actionGate(BkxProductAction.ReviewBackup)
+    val startGate = state.actionGate(BkxProductAction.StartBackup)
     BkxSectionHeader("Review")
     BkxSurfaceCard {
         BkxKeyValue("Source", draft.source?.label ?: "Not selected")
@@ -585,14 +589,17 @@ private fun BackupReviewSection(
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedButton(
                 onClick = { onEvent(BkxHomeEvent.RequestBackupPlan) },
-                enabled = planning.canRequestPlan && selectedCapabilitiesSupported,
+                enabled = planning.canRequestPlan && selectedCapabilitiesSupported && reviewGate.allowed,
                 modifier = Modifier.weight(1f),
             ) { Text(if (planning.preview == null) "Review" else "Refresh") }
             Button(
                 onClick = { onEvent(BkxHomeEvent.CreateBackup) },
-                enabled = planning.canCreateBackup && selectedCapabilitiesSupported && !activeBackup,
+                enabled = planning.canCreateBackup && selectedCapabilitiesSupported && !activeBackup && startGate.allowed,
                 modifier = Modifier.weight(1f),
             ) { Text("Start backup") }
+        }
+        listOfNotNull(reviewGate.message, startGate.message).distinct().firstOrNull()?.let { gateMessage ->
+            Text(gateMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         if (planning.preview == null && planning.canRequestPlan) {
             Text("Review scans the source and checks the backup plan before anything is written.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

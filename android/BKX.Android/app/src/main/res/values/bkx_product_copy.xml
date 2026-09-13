@@ -1,0 +1,10 @@
+<resources>
+    <string name="bkx_truth_engine_checking">BKX has not finished proving engine readiness yet.</string>
+    <string name="bkx_truth_engine_verified">Engine verified</string>
+    <string name="bkx_truth_engine_root_verified">Engine verified with root</string>
+    <string name="bkx_truth_drive_verified">Google Drive verified</string>
+    <string name="bkx_gate_backend_unverified">BKX engine readiness has not been verified yet.</string>
+    <string name="bkx_gate_operation_busy">Another BKX operation is active. Wait for it to finish or cancel it before starting this action.</string>
+    <string name="bkx_a11y_status_changed">Status changed</string>
+    <string name="bkx_a11y_progress_updated">Progress updated</string>
+</resources>

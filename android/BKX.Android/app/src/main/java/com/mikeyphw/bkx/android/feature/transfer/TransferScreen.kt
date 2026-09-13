@@ -29,6 +29,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.BkxProductAction
+import com.mikeyphw.bkx.android.app.actionGate
 import com.mikeyphw.bkx.android.app.ui.components.BkxDivider
 import com.mikeyphw.bkx.android.app.ui.components.BkxOutlinedSurface
 import com.mikeyphw.bkx.android.app.ui.components.BkxPageHeader
@@ -303,6 +305,8 @@ private fun RemoteChoices(profiles: List<RcloneRemoteProfile>, enabled: Boolean,
 private fun TransferOptionsAndReview(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit) {
     val transfer = state.transfer
     val draft = transfer.draft
+    val previewGate = state.actionGate(BkxProductAction.PreviewTransfer)
+    val runGate = state.actionGate(BkxProductAction.RunTransfer)
     BkxSurfaceCard {
         Text("Transfer mode", style = MaterialTheme.typography.titleLarge)
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -346,12 +350,15 @@ private fun TransferOptionsAndReview(state: BkxHomeUiState, onEvent: (BkxHomeEve
             preview.collisionSummary.overlaps.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = { onEvent(BkxHomeEvent.RequestTransferPreview) }, enabled = transfer.canPreview, modifier = Modifier.weight(1f)) {
+            OutlinedButton(onClick = { onEvent(BkxHomeEvent.RequestTransferPreview) }, enabled = transfer.canPreview && previewGate.allowed, modifier = Modifier.weight(1f)) {
                 Text("Review")
             }
-            Button(onClick = { onEvent(BkxHomeEvent.RunTransfer) }, enabled = transfer.canRun, modifier = Modifier.weight(1f)) {
+            Button(onClick = { onEvent(BkxHomeEvent.RunTransfer) }, enabled = transfer.canRun && runGate.allowed, modifier = Modifier.weight(1f)) {
                 Text(if (draft.mode == TransferMode.Sync) "Sync" else "Transfer")
             }
+        }
+        listOfNotNull(previewGate.message, runGate.message).distinct().firstOrNull()?.let { gateMessage ->
+            Text(gateMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }
         when (val result = transfer.result) {
             TransferResultUiState.NotStarted -> Unit

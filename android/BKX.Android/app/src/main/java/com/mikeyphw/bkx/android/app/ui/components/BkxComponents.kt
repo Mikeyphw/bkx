@@ -30,7 +30,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
@@ -42,7 +50,7 @@ fun BkxPageHeader(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.headlineLarge)
+        Text(title, modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.headlineLarge)
         Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -58,7 +66,7 @@ fun BkxSectionHeader(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(title, style = MaterialTheme.typography.titleLarge)
+        Text(title, modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
         if (action != null && onAction != null) {
             TextButton(onClick = onAction) {
                 Text(text = action, style = MaterialTheme.typography.labelLarge)
@@ -131,7 +139,14 @@ fun BkxOutlinedSurface(
 
 @Composable
 fun BkxStatusPill(text: String, accent: Color = MaterialTheme.colorScheme.primary) {
-    Surface(shape = RoundedCornerShape(999.dp), color = accent.copy(alpha = 0.12f)) {
+    Surface(
+        modifier = Modifier.semantics {
+            contentDescription = text
+            stateDescription = text
+        },
+        shape = RoundedCornerShape(999.dp),
+        color = accent.copy(alpha = 0.12f),
+    ) {
         Row(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -206,7 +221,17 @@ fun BkxOperationProgress(
     bytesDone: Long? = null,
     bytesTotal: Long? = null,
 ) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val percentLabel = progress?.let { "${(it * 100).toInt().coerceIn(0, 100)}%" } ?: "In progress"
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = percentLabel
+                progress?.let { progressBarRangeInfo = ProgressBarRangeInfo(it.toFloat().coerceIn(0f, 1f), 0f..1f) }
+            },
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(phase, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (progress != null) {
@@ -246,7 +271,12 @@ fun BkxEmptyState(
     title: String,
     body: String,
 ) {
-    BkxOutlinedSurface {
+    BkxOutlinedSurface(
+        modifier = Modifier.semantics {
+            liveRegion = LiveRegionMode.Polite
+            contentDescription = "$title. $body"
+        },
+    ) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Text(body, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

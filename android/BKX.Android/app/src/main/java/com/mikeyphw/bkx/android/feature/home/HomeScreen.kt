@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.uiTruthSurface
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.ui.components.BkxEmptyState
 import com.mikeyphw.bkx.android.app.ui.components.BkxHeroCard
@@ -45,6 +46,7 @@ fun HomeScreen(
         .filter { it.status == ActiveOperationStatus.Queued || it.status == ActiveOperationStatus.Running || it.status == ActiveOperationStatus.Cancelling }
         .maxByOrNull { it.lastSeenEpochMillis }
     val lastBackup = state.recentRuns.firstOrNull { it.operation == "backup.create" && it.status == RunStatus.Success }
+    val truth = state.uiTruthSurface()
     val setupNeedsAttention = state.readiness !is BackendReadiness.Ready || !storageAccess.hasAllFilesAccess()
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -78,14 +80,14 @@ fun HomeScreen(
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("Ready to protect your files", style = MaterialTheme.typography.titleMedium)
+                        Text(truth.engine.label, style = MaterialTheme.typography.titleMedium)
                         Text(
-                            if (state.rootAvailable) "Shared storage and root locations are available." else "Shared storage is available. Root locations appear when root is granted.",
+                            truth.engine.detail,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    BkxStatusPill(if (state.rootAvailable) "ROOT READY" else "READY")
+                    BkxStatusPill(truth.engine.badge)
                 }
             }
 

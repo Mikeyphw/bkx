@@ -2055,3 +2055,58 @@ tasks.register("verifyBkxAndroidNavigationStaleStateBindingSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxAndroidNavigationStaleStateBindingSeal")
 }
+
+
+tasks.register("verifyBkxUiTruthfulnessAccessibilityProductCopySeal") {
+    group = "verification"
+    description = "Verifies BR30 UI truthfulness, busy gating, accessibility semantics and localized product copy contracts."
+    dependsOn("testDebugUnitTest")
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
+        val truth = appRoot.resolve("app/BkxUiTruthPolicy.kt").readText()
+        val components = appRoot.resolve("app/ui/components/BkxComponents.kt").readText()
+        val home = appRoot.resolve("feature/home/HomeScreen.kt").readText()
+        val backup = appRoot.resolve("feature/backup/BackupScreen.kt").readText()
+        val transfer = appRoot.resolve("feature/transfer/TransferScreen.kt").readText()
+        val drive = appRoot.resolve("feature/more/GoogleDriveScreen.kt").readText()
+        val resources = androidRootDir.resolve("app/src/main/res/values/bkx_product_copy.xml").readText()
+        val doc = repositoryRoot.resolve("BR30_UI_TRUTHFULNESS_ACCESSIBILITY_PRODUCT_COPY_SEAL.md")
+        check(truth.contains("fun BkxHomeUiState.uiTruthSurface") && truth.contains("fun BkxHomeUiState.actionGate")) {
+            "BR30 requires a shared UI truth surface and action gate policy."
+        }
+        check(truth.contains("googleDrive.connected") && truth.contains("remoteReadiness.userMessage()") && truth.contains("operationRuntime.hasActiveWork")) {
+            "READY/CONNECTED/BUSY copy must derive from proven backend, managed Drive remote and active-operation truth."
+        }
+        check(home.contains("truth.engine.label") && home.contains("truth.engine.badge")) {
+            "Home must not claim readiness from unverified setup copy."
+        }
+        check(backup.contains("BkxProductAction.ReviewBackup") && backup.contains("BkxProductAction.StartBackup") && backup.contains("startGate.allowed")) {
+            "Backup review/start buttons must use the BR30 action gate."
+        }
+        check(transfer.contains("BkxProductAction.PreviewTransfer") && transfer.contains("BkxProductAction.RunTransfer") && transfer.contains("runGate.allowed")) {
+            "Transfer preview/run buttons must use the BR30 action gate."
+        }
+        check(drive.contains("truth.badge") && drive.contains("connectGate.allowed")) {
+            "Google Drive UI must distinguish authorized from verified managed-remote readiness."
+        }
+        listOf("heading()", "LiveRegionMode.Polite", "progressBarRangeInfo", "stateDescription", "contentDescription").forEach { token ->
+            check(token in components) { "Shared component accessibility contract missing: $token" }
+        }
+        listOf("bkx_truth_engine_verified", "bkx_truth_drive_verified", "bkx_gate_backend_unverified", "bkx_gate_operation_busy", "bkx_a11y_progress_updated").forEach { token ->
+            check(token in resources) { "Localized product copy resource missing: $token" }
+        }
+        check(testRoot.resolve("contracts/UiTruthfulnessAccessibilityContractTest.kt").isFile) {
+            "BR30 UI truth/accessibility contract test is missing."
+        }
+        check(doc.isFile && doc.readText().contains("Overlay 10 of 16")) {
+            "BR30 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxUiTruthfulnessAccessibilityProductCopySeal")
+}

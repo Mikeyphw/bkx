@@ -17,6 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mikeyphw.bkx.android.app.BkxHomeEvent
 import com.mikeyphw.bkx.android.app.BkxHomeUiState
+import com.mikeyphw.bkx.android.app.BkxProductAction
+import com.mikeyphw.bkx.android.app.actionGate
+import com.mikeyphw.bkx.android.app.uiTruthSurface
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.ui.components.BkxKeyValue
 import com.mikeyphw.bkx.android.app.ui.components.BkxPageHeader
@@ -35,6 +38,8 @@ fun GoogleDriveScreen(
     modifier: Modifier = Modifier,
 ) {
     val drive = state.googleDrive
+    val truth = state.uiTruthSurface().googleDrive
+    val connectGate = state.actionGate(BkxProductAction.ConnectGoogleDrive)
     Column(
         modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
@@ -47,36 +52,24 @@ fun GoogleDriveScreen(
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text("Connection", style = MaterialTheme.typography.titleLarge)
                     Text(
-                        drive.message ?: when (drive.status) {
-                            GoogleDriveConnectionStatus.Disconnected -> "Google Drive is not connected."
-                            GoogleDriveConnectionStatus.Connecting -> "Checking Google Drive authorization…"
-                            GoogleDriveConnectionStatus.NeedsConsent -> "Google Drive needs your approval."
-                            GoogleDriveConnectionStatus.Connected -> "Google Drive is ready for BKX."
-                            GoogleDriveConnectionStatus.Disconnecting -> "Revoking Google Drive access…"
-                            GoogleDriveConnectionStatus.Error -> "Google Drive authorization needs attention."
-                        },
+                        drive.message ?: truth.detail,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 BkxStatusPill(
-                    when (drive.status) {
-                        GoogleDriveConnectionStatus.Connected -> "CONNECTED"
-                        GoogleDriveConnectionStatus.Connecting, GoogleDriveConnectionStatus.Disconnecting -> "WORKING"
-                        GoogleDriveConnectionStatus.NeedsConsent -> "APPROVAL"
-                        GoogleDriveConnectionStatus.Error -> "ERROR"
-                        GoogleDriveConnectionStatus.Disconnected -> "OFF"
-                    },
-                    when (drive.status) {
-                        GoogleDriveConnectionStatus.Connected -> MaterialTheme.colorScheme.primary
-                        GoogleDriveConnectionStatus.Error -> MaterialTheme.colorScheme.error
+                    truth.badge,
+                    when {
+                        truth.verified -> MaterialTheme.colorScheme.primary
+                        drive.status == GoogleDriveConnectionStatus.Error -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.tertiary
                     },
                 )
             }
             if (!drive.connected) {
-                Button(onClick = { onEvent(BkxHomeEvent.ConnectGoogleDrive) }, enabled = !drive.busy, modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = { onEvent(BkxHomeEvent.ConnectGoogleDrive) }, enabled = connectGate.allowed, modifier = Modifier.fillMaxWidth()) {
                     Text(if (drive.status == GoogleDriveConnectionStatus.NeedsConsent) "Continue Google authorization" else "Connect Google Drive")
                 }
+                connectGate.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshGoogleDrive) }, enabled = !drive.busy, modifier = Modifier.weight(1f)) { Text("Refresh access") }

@@ -68,7 +68,11 @@ func (d *Dispatcher) snapshotsList(ctx OperationContext, p map[string]any) (Resu
 	if err != nil {
 		return Result{}, err
 	}
-	listed, err := resticops.ListSnapshots(access, resticops.SnapshotListOptions{Host: optionalString(p["host"]), Path: optionalString(p["path"]), Tags: tags}, resticops.Options{Cancelled: ctx.Cancelled})
+	limit, err := intValueDefault(p, "limit", resticops.DefaultSnapshotListLimit)
+	if err != nil {
+		return Result{}, err
+	}
+	listed, err := resticops.ListSnapshots(access, resticops.SnapshotListOptions{Host: optionalString(p["host"]), Path: optionalString(p["path"]), Tags: tags, Limit: limit}, resticops.Options{Cancelled: ctx.Cancelled})
 	if err != nil {
 		return Result{}, err
 	}
@@ -76,7 +80,11 @@ func (d *Dispatcher) snapshotsList(ctx OperationContext, p map[string]any) (Resu
 	for _, item := range listed.Snapshots {
 		arts = append(arts, snapshotArtifact(ref, listed.Repository, item))
 	}
-	return success(fmt.Sprintf("%d Restic snapshots.", listed.Total), nil, arts), nil
+	issues := []Issue{}
+	if listed.Truncated {
+		issues = append(issues, warningIssue("snapshot_list_truncated", fmt.Sprintf("Showing %d of %d snapshots; narrow filters or request a smaller page.", len(arts), listed.Total)))
+	}
+	return success(fmt.Sprintf("%d Restic snapshots.", listed.Total), issues, arts), nil
 }
 
 func (d *Dispatcher) snapshotsBrowse(ctx OperationContext, p map[string]any) (Result, error) {
@@ -157,7 +165,11 @@ func (d *Dispatcher) snapshotsDiff(ctx OperationContext, p map[string]any) (Resu
 		return Result{}, err
 	}
 	metadata, _ := p["metadata"].(bool)
-	diff, err := resticops.DiffSnapshots(access, source, target, metadata, resticops.Options{Cancelled: ctx.Cancelled})
+	maxEntries, err := intValueDefault(p, "max_entries", resticops.DefaultSnapshotDiffLimit)
+	if err != nil {
+		return Result{}, err
+	}
+	diff, err := resticops.DiffSnapshotsWithOptions(access, source, target, resticops.SnapshotDiffOptions{Metadata: metadata, MaxChanges: maxEntries}, resticops.Options{Cancelled: ctx.Cancelled})
 	if err != nil {
 		return Result{}, err
 	}
@@ -166,8 +178,13 @@ func (d *Dispatcher) snapshotsDiff(ctx OperationContext, p map[string]any) (Resu
 		arts = append(arts, Artifact{Label: "snapshot_diff_entry", Path: change.Path, Metadata: map[string]string{"modifier": change.Modifier}})
 	}
 	stats, _ := json.Marshal(diff.Statistics)
-	arts = append(arts, Artifact{Label: "snapshot_diff_statistics", Path: "embedded://snapshot-diff/" + requestID(ctx), Metadata: map[string]string{"json": string(stats)}})
-	return success(fmt.Sprintf("Snapshot diff: %d changed files, %d entries.", diff.Statistics.ChangedFiles, len(diff.Changes)), nil, arts), nil
+	statsMeta := map[string]string{"json": string(stats), "entries_returned": strconv.Itoa(len(diff.Changes)), "limit": strconv.Itoa(diff.Limit), "truncated": strconv.FormatBool(diff.Truncated)}
+	arts = append(arts, Artifact{Label: "snapshot_diff_statistics", Path: "embedded://snapshot-diff/" + requestID(ctx), Metadata: statsMeta})
+	issues := []Issue{}
+	if diff.Truncated {
+		issues = append(issues, warningIssue("snapshot_diff_truncated", fmt.Sprintf("Showing first %d diff entries; use CLI filters or metadata summary for the full change count.", diff.Limit)))
+	}
+	return success(fmt.Sprintf("Snapshot diff: %d changed files, %d entries.", diff.Statistics.ChangedFiles, len(diff.Changes)), issues, arts), nil
 }
 
 func (d *Dispatcher) snapshotsRestore(ctx OperationContext, p map[string]any) (Result, error) {

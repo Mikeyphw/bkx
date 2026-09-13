@@ -56,6 +56,8 @@ data class SnapshotDiffSummary(
     val changedFiles: Long = 0L,
     val bytesAdded: ULong? = null,
     val bytesRemoved: ULong? = null,
+    val truncated: Boolean = false,
+    val limit: Int? = null,
 )
 
 data class SnapshotRestoreResult(

@@ -111,6 +111,7 @@ preflight = [
     ":app:verifyBkxAndroidGoBridgeResultContractSeal",
     ":app:verifyBkxStorageFilesystemRootSafetySeal",
     ":app:verifyBkxBackupArchiveRestoreCorrectnessSeal",
+    ":app:verifyBkxRepositoryResticSnapshotControlPlaneSeal",
 ]
 
 compile = [

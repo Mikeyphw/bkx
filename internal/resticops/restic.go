@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -260,6 +259,38 @@ func setEnvironmentValue(env []string, key, value string) []string {
 	return append(out, key+"="+value)
 }
 
+func lookupEnvironmentValue(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for i := len(env) - 1; i >= 0; i-- {
+		if strings.HasPrefix(env[i], prefix) {
+			value := strings.TrimPrefix(env[i], prefix)
+			return value, strings.TrimSpace(value) != ""
+		}
+	}
+	return "", false
+}
+
+func removeEnvironmentKeys(env []string, keys ...string) []string {
+	blocked := map[string]bool{}
+	for _, key := range keys {
+		blocked[key+"="] = true
+	}
+	out := make([]string, 0, len(env))
+	for _, item := range env {
+		remove := false
+		for prefix := range blocked {
+			if strings.HasPrefix(item, prefix) {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 // repositoryInvocation translates BKX's non-secret repository URI into the
 // restic process form and injects only runtime/config paths for rclone. The
 // rclone config contents (OAuth tokens, provider secrets) are never copied into
@@ -295,32 +326,36 @@ func credentialEnvironment(base []string, ref *string) ([]string, error) {
 	if len(env) == 0 {
 		env = os.Environ()
 	}
-	lookup := func(key string) (string, bool) {
-		prefix := key + "="
-		for i := len(env) - 1; i >= 0; i-- {
-			if strings.HasPrefix(env[i], prefix) {
-				return strings.TrimPrefix(env[i], prefix), true
-			}
-		}
-		return "", false
-	}
 	if ref != nil {
-		id := strings.TrimSpace(*ref)
-		normalized := regexp.MustCompile(`[^A-Za-z0-9]+`).ReplaceAllString(strings.ToUpper(id), "_")
-		if secret, ok := lookup("BKX_CREDENTIAL_" + normalized); ok && secret != "" {
-			env = append(env, "RESTIC_PASSWORD="+secret)
-			return env, nil
+		id := *ref
+		secretKey, err := models.CredentialEnvironmentKey(id)
+		if err != nil {
+			return nil, berror.Validation("Invalid Restic credential reference", map[string]any{"credential_ref": id, "reason": err.Error()})
 		}
-		if file, ok := lookup("BKX_CREDENTIAL_FILE_" + normalized); ok && strings.TrimSpace(file) != "" {
-			env = append(env, "RESTIC_PASSWORD_FILE="+file)
-			return env, nil
+		fileKey, err := models.CredentialFileEnvironmentKey(id)
+		if err != nil {
+			return nil, berror.Validation("Invalid Restic credential reference", map[string]any{"credential_ref": id, "reason": err.Error()})
 		}
-		return nil, berror.Validation("Restic credential reference is unresolved", map[string]any{"credential_ref": id, "expected_env": "BKX_CREDENTIAL_" + normalized})
+		secret, hasSecret := lookupEnvironmentValue(env, secretKey)
+		file, hasFile := lookupEnvironmentValue(env, fileKey)
+		if hasSecret && hasFile {
+			return nil, berror.Validation("Restic credential reference resolves to competing password channels", map[string]any{"credential_ref": id, "password_env": secretKey, "password_file_env": fileKey})
+		}
+		env = removeEnvironmentKeys(env, "RESTIC_PASSWORD", "RESTIC_PASSWORD_FILE")
+		if hasSecret {
+			return append(env, "RESTIC_PASSWORD="+secret), nil
+		}
+		if hasFile {
+			return append(env, "RESTIC_PASSWORD_FILE="+strings.TrimSpace(file)), nil
+		}
+		return nil, berror.Validation("Restic credential reference is unresolved", map[string]any{"credential_ref": id, "expected_env": secretKey})
 	}
-	if value, ok := lookup("RESTIC_PASSWORD"); ok && value != "" {
-		return env, nil
+	_, hasPassword := lookupEnvironmentValue(env, "RESTIC_PASSWORD")
+	_, hasPasswordFile := lookupEnvironmentValue(env, "RESTIC_PASSWORD_FILE")
+	if hasPassword && hasPasswordFile {
+		return nil, berror.Validation("Restic password must use exactly one direct channel", map[string]any{"password_env": "RESTIC_PASSWORD", "password_file_env": "RESTIC_PASSWORD_FILE"})
 	}
-	if value, ok := lookup("RESTIC_PASSWORD_FILE"); ok && strings.TrimSpace(value) != "" {
+	if hasPassword || hasPasswordFile {
 		return env, nil
 	}
 	return nil, berror.Validation("Restic requires a password supplied outside the operation spec", map[string]any{"action": "Set RESTIC_PASSWORD/RESTIC_PASSWORD_FILE or use --credential-ref with BKX_CREDENTIAL_<ID>."})

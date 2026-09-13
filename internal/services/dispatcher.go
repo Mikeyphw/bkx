@@ -594,6 +594,10 @@ func (d *Dispatcher) repositoriesRemove(p map[string]any) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	confirm, _ := p["confirm"].(bool)
+	if blockers := d.repositoryRemovalBlockers(id); len(blockers) > 0 && !confirm {
+		return Result{}, berror.Validation("repository removal would leave saved jobs or schedules dangling", map[string]any{"repository_id": id, "blockers": blockers, "action": "Update or delete the dependent jobs/schedules, or rerun with confirm=true."})
+	}
 	deleted, err := d.Repositories.Delete(id)
 	if err != nil {
 		return Result{}, err
@@ -602,6 +606,34 @@ func (d *Dispatcher) repositoriesRemove(p map[string]any) (Result, error) {
 		return Result{}, berror.NotFound("Repository not found: "+id, map[string]any{"repository_id": id})
 	}
 	return success("Repository "+id+" removed.", nil, nil), nil
+}
+
+func (d *Dispatcher) repositoryRemovalBlockers(repositoryID string) []string {
+	blockers := []string{}
+	jobsByID := map[string]bool{}
+	if d.Jobs != nil {
+		jobs, err := d.Jobs.List()
+		if err == nil {
+			for _, job := range jobs {
+				if job.Operation.RepositoryRef != nil && strings.TrimSpace(*job.Operation.RepositoryRef) == repositoryID {
+					blockers = append(blockers, "job:"+job.JobID)
+					jobsByID[job.JobID] = true
+				}
+			}
+		}
+	}
+	if d.Schedules != nil {
+		schedules, err := d.Schedules.List()
+		if err == nil {
+			for _, schedule := range schedules {
+				if jobsByID[schedule.JobID] {
+					blockers = append(blockers, "schedule:"+schedule.ScheduleID)
+				}
+			}
+		}
+	}
+	sort.Strings(blockers)
+	return blockers
 }
 
 func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result, error) {

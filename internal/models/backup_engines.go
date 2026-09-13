@@ -43,8 +43,10 @@ func ValidateSnapshotBackupSpec(spec SnapshotBackupSpec) error {
 			return fmt.Errorf("snapshot backup sources must not contain empty values")
 		}
 	}
-	if spec.CredentialRef != nil && strings.TrimSpace(*spec.CredentialRef) == "" {
-		return fmt.Errorf("credential_ref must be non-empty when provided")
+	if spec.CredentialRef != nil {
+		if err := ValidateCredentialRef(*spec.CredentialRef); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -62,8 +64,10 @@ func ValidateRepositoryInitSpec(spec RepositoryInitSpec) error {
 	if strings.TrimSpace(spec.Repository) == "" {
 		return fmt.Errorf("repository must not be empty")
 	}
-	if spec.CredentialRef != nil && strings.TrimSpace(*spec.CredentialRef) == "" {
-		return fmt.Errorf("credential_ref must be non-empty when provided")
+	if spec.CredentialRef != nil {
+		if err := ValidateCredentialRef(*spec.CredentialRef); err != nil {
+			return err
+		}
 	}
 	return nil
 }

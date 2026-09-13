@@ -42,7 +42,14 @@ object RepositoryRequestBuilder {
 
     fun list(requestId: String): BridgeRequestEnvelope = BridgeRequestEnvelope(requestId = requestId, operation = OPERATION_LIST)
     fun show(requestId: String, repositoryId: String): BridgeRequestEnvelope = repositoryIdRequest(requestId, OPERATION_SHOW, repositoryId)
-    fun remove(requestId: String, repositoryId: String): BridgeRequestEnvelope = repositoryIdRequest(requestId, OPERATION_REMOVE, repositoryId)
+    fun remove(requestId: String, repositoryId: String, confirmDanglingDependents: Boolean = false): BridgeRequestEnvelope = BridgeRequestEnvelope(
+        requestId = requestId,
+        operation = OPERATION_REMOVE,
+        payload = buildJsonObject {
+            put("repository_id", requireRepositoryIdValue(repositoryId))
+            put("confirm", confirmDanglingDependents)
+        },
+    )
 
     fun initialize(requestId: String, repository: RepositoryDefinition): BridgeRequestEnvelope = repositoryRefRequest(requestId, OPERATION_INIT, repository)
     fun check(requestId: String, repository: RepositoryDefinition, readData: Boolean = false, readDataSubset: String? = null): BridgeRequestEnvelope = BridgeRequestEnvelope(
@@ -73,13 +80,17 @@ object RepositoryRequestBuilder {
         })
     }
 
-    fun snapshots(requestId: String, repository: RepositoryDefinition, host: String? = null, path: String? = null, tags: List<String> = emptyList()): BridgeRequestEnvelope = BridgeRequestEnvelope(
-        requestId = requestId, operation = OPERATION_SNAPSHOTS_LIST, payload = repositoryPayload(repository) {
-            host?.takeIf { it.isNotBlank() }?.let { put("host", it) }
-            path?.takeIf { it.isNotBlank() }?.let { put("path", it) }
-            if (tags.isNotEmpty()) put("tags", strings(tags))
-        },
-    )
+    fun snapshots(requestId: String, repository: RepositoryDefinition, host: String? = null, path: String? = null, tags: List<String> = emptyList(), limit: Int = 250): BridgeRequestEnvelope {
+        require(limit in 1..5000) { "snapshot list limit must be between 1 and 5000" }
+        return BridgeRequestEnvelope(
+            requestId = requestId, operation = OPERATION_SNAPSHOTS_LIST, payload = repositoryPayload(repository) {
+                host?.takeIf { it.isNotBlank() }?.let { put("host", it) }
+                path?.takeIf { it.isNotBlank() }?.let { put("path", it) }
+                if (tags.isNotEmpty()) put("tags", strings(tags))
+                put("limit", limit)
+            },
+        )
+    }
 
     fun snapshotBrowse(requestId: String, repository: RepositoryDefinition, snapshot: String, path: String = "/", recursive: Boolean = false): BridgeRequestEnvelope {
         val normalizedPath = path.trim().ifBlank { "/" }
@@ -95,11 +106,14 @@ object RepositoryRequestBuilder {
         requestId = requestId, operation = OPERATION_SNAPSHOTS_SHOW, payload = repositoryPayload(repository) { put("snapshot", requireSnapshot(snapshot)) },
     )
 
-    fun snapshotDiff(requestId: String, repository: RepositoryDefinition, source: String, target: String, metadata: Boolean = false): BridgeRequestEnvelope = BridgeRequestEnvelope(
-        requestId = requestId, operation = OPERATION_SNAPSHOTS_DIFF, payload = repositoryPayload(repository) {
-            put("source_snapshot", requireSnapshot(source)); put("target_snapshot", requireSnapshot(target)); put("metadata", metadata)
-        },
-    )
+    fun snapshotDiff(requestId: String, repository: RepositoryDefinition, source: String, target: String, metadata: Boolean = false, maxEntries: Int = 1000): BridgeRequestEnvelope {
+        require(maxEntries in 1..5000) { "snapshot diff max_entries must be between 1 and 5000" }
+        return BridgeRequestEnvelope(
+            requestId = requestId, operation = OPERATION_SNAPSHOTS_DIFF, payload = repositoryPayload(repository) {
+                put("source_snapshot", requireSnapshot(source)); put("target_snapshot", requireSnapshot(target)); put("metadata", metadata); put("max_entries", maxEntries)
+            },
+        )
+    }
 
     fun snapshotRestore(requestId: String, repository: RepositoryDefinition, snapshot: String, target: String, includes: List<String> = emptyList(), excludes: List<String> = emptyList(), overwrite: SnapshotOverwriteMode = SnapshotOverwriteMode.Never, dryRun: Boolean = false): BridgeRequestEnvelope {
         require(target.isNotBlank()) { "restore target must not be blank" }

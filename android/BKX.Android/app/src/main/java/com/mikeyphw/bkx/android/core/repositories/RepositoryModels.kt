@@ -60,8 +60,8 @@ data class RepositoryCreateSpec(
         require(engine == BackupEngineKind.Restic.wireValue) { "named repository engine must be restic" }
         require(RepositoryBackendKind.entries.any { it.wireValue == backend }) { "unsupported repository backend" }
         require(location.isNotBlank()) { "repository location must not be blank" }
-        require(credentialRef == null || credentialRef.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"))) {
-            "credential_ref must be a stable reference id"
+        require(credentialRef == null || CREDENTIAL_REF_REGEX.matches(credentialRef)) {
+            "credential_ref must use lowercase letters, numbers, or dash only"
         }
     }
 }
@@ -88,8 +88,8 @@ data class RepositoryDefinition(
         require(RepositoryBackendKind.entries.any { it.wireValue == backend }) { "unsupported repository backend" }
         require(location.isNotBlank()) { "repository location must not be blank" }
         require(createdAt.isNotBlank() && updatedAt.isNotBlank()) { "repository timestamps must not be blank" }
-        require(credentialRef == null || credentialRef.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"))) {
-            "credential_ref must be a stable reference id"
+        require(credentialRef == null || CREDENTIAL_REF_REGEX.matches(credentialRef)) {
+            "credential_ref must use lowercase letters, numbers, or dash only"
         }
         if (backend == RepositoryBackendKind.ManagedGoogleDrive.wireValue) {
             require(managedByBkx) { "managed Google Drive repository must be marked managed_by_bkx" }
@@ -147,6 +147,8 @@ object RepositorySpecs {
         )
     }
 }
+
+private val CREDENTIAL_REF_REGEX = Regex("^[a-z0-9][a-z0-9-]{0,127}$")
 
 private fun requireRepositoryId(value: String) {
     require(value.matches(Regex("^[a-z0-9][a-z0-9._-]{0,127}$"))) {

@@ -16,6 +16,41 @@ const (
 )
 
 var repositoryIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+var credentialRefPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,127}$`)
+
+// ValidateCredentialRef keeps Restic secret references collision-free for the
+// environment-key resolver. Older broad reference IDs allowed dots, underscores
+// and mixed case; all of those can collapse onto the same BKX_CREDENTIAL_* key.
+// Repository credentials therefore use a narrower, product-level stable ID
+// grammar: lower-case letters, numbers and dash only.
+func ValidateCredentialRef(ref string) error {
+	value := strings.TrimSpace(ref)
+	if value == "" || value != ref {
+		return fmt.Errorf("credential_ref must be trimmed and non-empty")
+	}
+	if !credentialRefPattern.MatchString(value) {
+		return fmt.Errorf("credential_ref must use lowercase letters, numbers, or dash only")
+	}
+	return nil
+}
+
+// CredentialEnvironmentKey maps a credential reference to the one allowed
+// password variable name. Because ValidateCredentialRef forbids underscores,
+// dots and case variants, replacing dash with underscore is injective.
+func CredentialEnvironmentKey(ref string) (string, error) {
+	if err := ValidateCredentialRef(ref); err != nil {
+		return "", err
+	}
+	return "BKX_CREDENTIAL_" + strings.ToUpper(strings.ReplaceAll(ref, "-", "_")), nil
+}
+
+func CredentialFileEnvironmentKey(ref string) (string, error) {
+	key, err := CredentialEnvironmentKey(ref)
+	if err != nil {
+		return "", err
+	}
+	return strings.Replace(key, "BKX_CREDENTIAL_", "BKX_CREDENTIAL_FILE_", 1), nil
+}
 
 // RepositoryDefinition is a non-secret, named Restic repository descriptor.
 // Location identifies storage; CredentialRef identifies the Restic repository
@@ -57,8 +92,8 @@ func ValidateRepositoryDefinition(def RepositoryDefinition) error {
 		return fmt.Errorf("repository location must be trimmed and non-empty")
 	}
 	if def.CredentialRef != nil {
-		if !referenceIDPattern.MatchString(*def.CredentialRef) {
-			return fmt.Errorf("credential_ref must be a non-secret stable reference id")
+		if err := ValidateCredentialRef(*def.CredentialRef); err != nil {
+			return err
 		}
 	}
 	if def.Backend == RepositoryBackendManagedGoogleDrive && !def.ManagedByBKX {

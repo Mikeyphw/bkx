@@ -314,3 +314,21 @@ func (r *streamingBackupRunner) RunStreaming(args []string, env []string, cancel
 	onStdoutLine([]byte(`{"message_type":"summary","snapshot_id":"streamed","total_files_processed":2,"total_bytes_processed":20,"data_added":5}`))
 	return nil, nil
 }
+
+func TestCredentialEnvironmentRejectsCompetingChannelsAndScrubsDirectPassword(t *testing.T) {
+	ref := "phone-repo"
+	if _, err := credentialEnvironment([]string{"BKX_CREDENTIAL_PHONE_REPO=pw", "BKX_CREDENTIAL_FILE_PHONE_REPO=/tmp/pw"}, &ref); err == nil {
+		t.Fatal("expected competing referenced password channels to fail")
+	}
+	env, err := credentialEnvironment([]string{"RESTIC_PASSWORD=wrong", "BKX_CREDENTIAL_PHONE_REPO=right"}, &ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(env, "\n")
+	if strings.Contains(joined, "RESTIC_PASSWORD=wrong") || !strings.Contains(joined, "RESTIC_PASSWORD=right") {
+		t.Fatalf("referenced credential did not scrub direct password: %s", joined)
+	}
+	if _, err := credentialEnvironment([]string{"RESTIC_PASSWORD=pw", "RESTIC_PASSWORD_FILE=/tmp/pw"}, nil); err == nil {
+		t.Fatal("expected direct competing password channels to fail")
+	}
+}

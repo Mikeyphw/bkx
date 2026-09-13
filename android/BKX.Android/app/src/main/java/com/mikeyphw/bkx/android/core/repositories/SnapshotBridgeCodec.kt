@@ -49,8 +49,11 @@ object SnapshotBridgeCodec {
         val entries = artifacts.filter { it.label == "snapshot_diff_entry" }.map { artifact ->
             SnapshotDiffEntry(path = artifact.path, modifier = artifact.metadata["modifier"].orEmpty())
         }
-        val stats = artifacts.firstOrNull { it.label == "snapshot_diff_statistics" }?.metadata?.get("json")
-        if (stats.isNullOrBlank()) return SnapshotDiffSummary(entries = entries, changedFiles = entries.size.toLong())
+        val statsArtifact = artifacts.firstOrNull { it.label == "snapshot_diff_statistics" }
+        val stats = statsArtifact?.metadata?.get("json")
+        val truncated = statsArtifact?.metadata?.get("truncated")?.toBooleanStrictOrNull() ?: false
+        val limit = statsArtifact?.metadata?.get("limit")?.toIntOrNull()
+        if (stats.isNullOrBlank()) return SnapshotDiffSummary(entries = entries, changedFiles = entries.size.toLong(), truncated = truncated, limit = limit)
         return runCatching {
             val root = Json.parseToJsonElement(stats).jsonObject
             val added = root["added"]?.jsonObject
@@ -60,8 +63,10 @@ object SnapshotBridgeCodec {
                 changedFiles = root["changed_files"]?.jsonPrimitive?.content?.toLongOrNull() ?: entries.size.toLong(),
                 bytesAdded = added?.get("bytes")?.jsonPrimitive?.content?.toULongOrNull(),
                 bytesRemoved = removed?.get("bytes")?.jsonPrimitive?.content?.toULongOrNull(),
+                truncated = truncated,
+                limit = limit,
             )
-        }.getOrElse { SnapshotDiffSummary(entries = entries, changedFiles = entries.size.toLong()) }
+        }.getOrElse { SnapshotDiffSummary(entries = entries, changedFiles = entries.size.toLong(), truncated = truncated, limit = limit) }
     }
 
     fun decodeRestoreResult(artifacts: List<BridgeArtifact>): SnapshotRestoreResult? {

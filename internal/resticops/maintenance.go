@@ -15,10 +15,18 @@ import (
 	"bkx/internal/models"
 )
 
+const (
+	DefaultSnapshotListLimit = 1000
+	MaxSnapshotListLimit     = 5000
+	DefaultSnapshotDiffLimit = 1000
+	MaxSnapshotDiffLimit     = 5000
+)
+
 type SnapshotListOptions struct {
-	Host string
-	Path string
-	Tags []string
+	Host  string
+	Path  string
+	Tags  []string
+	Limit int
 }
 
 type SnapshotListResult struct {
@@ -26,6 +34,8 @@ type SnapshotListResult struct {
 	Repository string                      `json:"repository"`
 	Snapshots  []models.SnapshotDescriptor `json:"snapshots"`
 	Total      int                         `json:"total"`
+	Limit      int                         `json:"limit,omitempty"`
+	Truncated  bool                        `json:"truncated,omitempty"`
 }
 
 type SnapshotBrowseResult struct {
@@ -65,6 +75,8 @@ type SnapshotDiffResult struct {
 	Target     string         `json:"target_snapshot"`
 	Changes    []DiffChange   `json:"changes"`
 	Statistics DiffStatistics `json:"statistics"`
+	Limit      int            `json:"limit,omitempty"`
+	Truncated  bool           `json:"truncated,omitempty"`
 }
 
 type RestoreOptions struct {
@@ -140,6 +152,7 @@ func ListSnapshots(spec models.RepositoryAccessSpec, filters SnapshotListOptions
 	if err != nil {
 		return SnapshotListResult{}, err
 	}
+	limit := normalizeLimit(filters.Limit, DefaultSnapshotListLimit, MaxSnapshotListLimit)
 	args := append([]string{"--json"}, base...)
 	args = append(args, "snapshots")
 	if strings.TrimSpace(filters.Host) != "" {
@@ -165,21 +178,58 @@ func ListSnapshots(spec models.RepositoryAccessSpec, filters SnapshotListOptions
 		Username string   `json:"username"`
 		Paths    []string `json:"paths"`
 		Tags     []string `json:"tags"`
-		Size     *uint64  `json:"size"`
+		Size     *uint64  `json:"summary,omitempty"`
 	}
 	if err := json.Unmarshal(stdout, &raw); err != nil {
 		return SnapshotListResult{}, berror.External("Restic snapshots returned invalid JSON", map[string]any{"tool": "restic", "reason": err.Error()})
 	}
 	snapshots := make([]models.SnapshotDescriptor, 0, len(raw))
-	for _, item := range raw {
+	for index, item := range raw {
+		if strings.TrimSpace(item.ID) == "" {
+			return SnapshotListResult{}, berror.External("Restic snapshots returned a record without an id", map[string]any{"tool": "restic", "index": index})
+		}
+		if _, err := parseSnapshotTime(item.Time); err != nil {
+			return SnapshotListResult{}, berror.External("Restic snapshots returned an invalid timestamp", map[string]any{"tool": "restic", "snapshot_id": item.ID, "time": item.Time, "reason": err.Error()})
+		}
 		short := item.ShortID
 		if short == "" && len(item.ID) >= 8 {
 			short = item.ID[:8]
 		}
 		snapshots = append(snapshots, models.SnapshotDescriptor{ID: item.ID, ShortID: short, Time: item.Time, Hostname: item.Hostname, Username: item.Username, Paths: append([]string(nil), item.Paths...), Tags: append([]string(nil), item.Tags...), Size: item.Size})
 	}
-	sort.SliceStable(snapshots, func(i, j int) bool { return snapshots[i].Time > snapshots[j].Time })
-	return SnapshotListResult{Success: true, Repository: repository, Snapshots: snapshots, Total: len(snapshots)}, nil
+	sort.SliceStable(snapshots, func(i, j int) bool {
+		ti, _ := parseSnapshotTime(snapshots[i].Time)
+		tj, _ := parseSnapshotTime(snapshots[j].Time)
+		if !ti.Equal(tj) {
+			return ti.After(tj)
+		}
+		return snapshots[i].ID > snapshots[j].ID
+	})
+	total := len(snapshots)
+	truncated := false
+	if total > limit {
+		snapshots = snapshots[:limit]
+		truncated = true
+	}
+	return SnapshotListResult{Success: true, Repository: repository, Snapshots: snapshots, Total: total, Limit: limit, Truncated: truncated}, nil
+}
+
+func normalizeLimit(value, def, max int) int {
+	if value <= 0 {
+		value = def
+	}
+	if value > max {
+		value = max
+	}
+	return value
+}
+
+func parseSnapshotTime(value string) (time.Time, error) {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err == nil {
+		return parsed, nil
+	}
+	return time.Parse(time.RFC3339, strings.TrimSpace(value))
 }
 
 func ResolveSnapshot(spec models.RepositoryAccessSpec, selector string, options Options) (models.SnapshotDescriptor, error) {
@@ -257,7 +307,7 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 		return SnapshotBrowseResult{}, external("browsing Restic snapshot", repository, stderr, runErr)
 	}
 	entries := []models.SnapshotNode{}
-	for _, line := range bytes.Split(stdout, []byte{'\n'}) {
+	for lineNumber, line := range bytes.Split(stdout, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue
@@ -266,7 +316,10 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 			MessageType string `json:"message_type"`
 			StructType  string `json:"struct_type"`
 		}
-		if json.Unmarshal(line, &head) != nil || (head.MessageType != "node" && head.StructType != "node") {
+		if err := json.Unmarshal(line, &head); err != nil {
+			return SnapshotBrowseResult{}, berror.External("Restic snapshot browse returned invalid JSON", map[string]any{"tool": "restic", "line": lineNumber + 1, "reason": err.Error()})
+		}
+		if head.MessageType != "node" && head.StructType != "node" {
 			continue
 		}
 		var node struct {
@@ -277,12 +330,18 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 			Permissions string `json:"permissions"`
 			MTime       string `json:"mtime"`
 		}
-		if json.Unmarshal(line, &node) != nil || strings.TrimSpace(node.Path) == "" {
-			continue
+		if err := json.Unmarshal(line, &node); err != nil {
+			return SnapshotBrowseResult{}, berror.External("Restic snapshot browse returned a malformed node", map[string]any{"tool": "restic", "line": lineNumber + 1, "reason": err.Error()})
+		}
+		if strings.TrimSpace(node.Path) == "" || strings.TrimSpace(node.Type) == "" {
+			return SnapshotBrowseResult{}, berror.External("Restic snapshot browse returned an incomplete node", map[string]any{"tool": "restic", "line": lineNumber + 1})
 		}
 		cleanPath := filepath.Clean(strings.ReplaceAll(node.Path, "\\", "/"))
 		if cleanPath == "." {
 			cleanPath = "/"
+		}
+		if !strings.HasPrefix(cleanPath, "/") {
+			return SnapshotBrowseResult{}, berror.External("Restic snapshot browse returned a non-absolute node path", map[string]any{"tool": "restic", "path": node.Path})
 		}
 		// restic includes the selected directory itself. The browser renders
 		// children only, so omit that exact node while retaining root children.
@@ -290,7 +349,7 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 			continue
 		}
 		entries = append(entries, models.SnapshotNode{
-			Name: node.Name, Type: node.Type, Path: cleanPath, Size: node.Size,
+			Name: strings.TrimSpace(node.Name), Type: strings.TrimSpace(node.Type), Path: cleanPath, Size: node.Size,
 			Permissions: node.Permissions, ModTime: node.MTime,
 		})
 	}
@@ -304,7 +363,16 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 	return SnapshotBrowseResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Path: browsePath, Entries: entries}, nil
 }
 
+type SnapshotDiffOptions struct {
+	Metadata   bool
+	MaxChanges int
+}
+
 func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, metadata bool, options Options) (SnapshotDiffResult, error) {
+	return DiffSnapshotsWithOptions(spec, source, target, SnapshotDiffOptions{Metadata: metadata}, options)
+}
+
+func DiffSnapshotsWithOptions(spec models.RepositoryAccessSpec, source, target string, diffOptions SnapshotDiffOptions, options Options) (SnapshotDiffResult, error) {
 	runner, repository, base, env, err := prepareAccess(spec, options)
 	if err != nil {
 		return SnapshotDiffResult{}, err
@@ -317,9 +385,10 @@ func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, meta
 	if err != nil {
 		return SnapshotDiffResult{}, err
 	}
+	limit := normalizeLimit(diffOptions.MaxChanges, DefaultSnapshotDiffLimit, MaxSnapshotDiffLimit)
 	args := append([]string{"--json"}, base...)
 	args = append(args, "diff")
-	if metadata {
+	if diffOptions.Metadata {
 		args = append(args, "--metadata")
 	}
 	args = append(args, src.ID, dst.ID)
@@ -327,8 +396,8 @@ func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, meta
 	if runErr != nil {
 		return SnapshotDiffResult{}, external("comparing Restic snapshots", repository, stderr, runErr)
 	}
-	out := SnapshotDiffResult{Success: true, Repository: repository, Source: src.ID, Target: dst.ID, Changes: []DiffChange{}}
-	for _, line := range bytes.Split(stdout, []byte{'\n'}) {
+	out := SnapshotDiffResult{Success: true, Repository: repository, Source: src.ID, Target: dst.ID, Changes: []DiffChange{}, Limit: limit}
+	for lineNumber, line := range bytes.Split(stdout, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
 			continue
@@ -336,8 +405,8 @@ func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, meta
 		var head struct {
 			MessageType string `json:"message_type"`
 		}
-		if json.Unmarshal(line, &head) != nil {
-			continue
+		if err := json.Unmarshal(line, &head); err != nil {
+			return SnapshotDiffResult{}, berror.External("Restic diff returned invalid JSON", map[string]any{"tool": "restic", "line": lineNumber + 1, "reason": err.Error()})
 		}
 		switch head.MessageType {
 		case "change":
@@ -345,8 +414,16 @@ func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, meta
 				Path     string `json:"path"`
 				Modifier string `json:"modifier"`
 			}
-			if json.Unmarshal(line, &item) == nil {
+			if err := json.Unmarshal(line, &item); err != nil {
+				return SnapshotDiffResult{}, berror.External("Restic diff returned a malformed change", map[string]any{"tool": "restic", "line": lineNumber + 1, "reason": err.Error()})
+			}
+			if strings.TrimSpace(item.Path) == "" || strings.TrimSpace(item.Modifier) == "" {
+				return SnapshotDiffResult{}, berror.External("Restic diff returned an incomplete change", map[string]any{"tool": "restic", "line": lineNumber + 1})
+			}
+			if len(out.Changes) < limit {
 				out.Changes = append(out.Changes, DiffChange{Path: item.Path, Modifier: item.Modifier})
+			} else {
+				out.Truncated = true
 			}
 		case "statistics":
 			var stats struct {
@@ -356,10 +433,14 @@ func DiffSnapshots(spec models.RepositoryAccessSpec, source, target string, meta
 				Added          DiffStat `json:"added"`
 				Removed        DiffStat `json:"removed"`
 			}
-			if json.Unmarshal(line, &stats) == nil {
-				out.Statistics = DiffStatistics{SourceSnapshot: stats.SourceSnapshot, TargetSnapshot: stats.TargetSnapshot, ChangedFiles: stats.ChangedFiles, Added: stats.Added, Removed: stats.Removed}
+			if err := json.Unmarshal(line, &stats); err != nil {
+				return SnapshotDiffResult{}, berror.External("Restic diff returned malformed statistics", map[string]any{"tool": "restic", "line": lineNumber + 1, "reason": err.Error()})
 			}
+			out.Statistics = DiffStatistics{SourceSnapshot: stats.SourceSnapshot, TargetSnapshot: stats.TargetSnapshot, ChangedFiles: stats.ChangedFiles, Added: stats.Added, Removed: stats.Removed}
 		}
+	}
+	if out.Statistics.ChangedFiles == 0 && len(out.Changes) > 0 {
+		out.Statistics.ChangedFiles = int64(len(out.Changes))
 	}
 	return out, nil
 }

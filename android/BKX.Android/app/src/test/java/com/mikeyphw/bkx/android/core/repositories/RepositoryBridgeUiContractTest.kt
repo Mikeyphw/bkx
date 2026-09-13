@@ -58,3 +58,46 @@ class RepositoryBridgeUiContractTest {
         assertFalse(apply.payload.toString().contains("restic-password"))
     }
 }
+
+
+class RepositoryBridgeBr25ContractTest {
+    private val repository = RepositoryDefinition(
+        schemaVersion = 1,
+        repositoryId = "phone",
+        name = "Phone",
+        engine = "restic",
+        backend = "local",
+        location = "/tmp/restic",
+        managedByBkx = false,
+        createdAt = "2026-09-10T10:00:00Z",
+        updatedAt = "2026-09-10T10:00:00Z",
+    )
+
+    @Test
+    fun repositoryRemoveCarriesExplicitDanglingConfirmation() {
+        val request = RepositoryRequestBuilder.remove("remove-1", "phone", confirmDanglingDependents = true)
+        assertEquals("repositories.remove", request.operation)
+        assertTrue(request.payload.toString().contains("\"confirm\":true"))
+    }
+
+    @Test
+    fun snapshotRequestsCarryBoundedResultLimits() {
+        val list = RepositoryRequestBuilder.snapshots("list-1", repository, limit = 100)
+        val diff = RepositoryRequestBuilder.snapshotDiff("diff-1", repository, "latest~1", "latest", maxEntries = 500)
+        assertTrue(list.payload.toString().contains("\"limit\":100"))
+        assertTrue(diff.payload.toString().contains("\"max_entries\":500"))
+    }
+
+    @Test
+    fun credentialRefsRejectCollisionProneShapes() {
+        listOf("Phone-Repo", "phone_repo", "phone.repo").forEach { bad ->
+            var failed = false
+            try {
+                RepositorySpecs.local(repositoryId = "repo-${bad.lowercase().replace("_", "-").replace(".", "-")}", name = "Bad", location = "/tmp/repo", credentialRef = bad)
+            } catch (_: IllegalArgumentException) {
+                failed = true
+            }
+            assertTrue("expected $bad to fail", failed)
+        }
+    }
+}

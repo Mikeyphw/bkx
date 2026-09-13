@@ -118,3 +118,22 @@ func TestRepositoryRetentionRoundTripIsDeepCopied(t *testing.T) {
 		t.Fatalf("loaded=%+v", loaded.Retention)
 	}
 }
+
+func TestCreateAndUpdateRejectPhysicalRepositoryCollisions(t *testing.T) {
+	s := fixedStore(t)
+	shared := filepath.Join(t.TempDir(), "repo")
+	if _, err := s.Create(models.RepositoryDefinition{RepositoryID: "primary", Name: "Primary", Engine: models.BackupEngineRestic, Backend: models.RepositoryBackendLocal, Location: shared}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(models.RepositoryDefinition{RepositoryID: "alias", Name: "Alias", Engine: models.BackupEngineRestic, Backend: models.RepositoryBackendLocal, Location: shared}); err == nil {
+		t.Fatal("expected duplicate physical repository location rejection")
+	}
+	other, err := s.Create(models.RepositoryDefinition{RepositoryID: "other", Name: "Other", Engine: models.BackupEngineRestic, Backend: models.RepositoryBackendLocal, Location: filepath.Join(t.TempDir(), "other")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.Location = shared
+	if _, err := s.Update("other", other); err == nil {
+		t.Fatal("expected update collision rejection")
+	}
+}

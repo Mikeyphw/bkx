@@ -83,3 +83,27 @@ class SnapshotBridgeUiContractTest {
         assertEquals("never", result.overwrite)
     }
 }
+
+
+class SnapshotBridgeBr25ContractTest {
+    @Test
+    fun diffCodecExposesTruncatedBound() {
+        val summary = SnapshotBridgeCodec.decodeDiff(
+            listOf(
+                BridgeArtifact(label = "snapshot_diff_entry", path = "/a", metadata = mapOf("modifier" to "M")),
+                BridgeArtifact(
+                    label = "snapshot_diff_statistics",
+                    path = "embedded://snapshot-diff/request",
+                    metadata = mapOf(
+                        "json" to "{\"changed_files\":25,\"added\":{\"bytes\":100},\"removed\":{\"bytes\":10}}",
+                        "truncated" to "true",
+                        "limit" to "1",
+                    ),
+                ),
+            ),
+        )
+        assertTrue(summary.truncated)
+        assertEquals(1, summary.limit)
+        assertEquals(25L, summary.changedFiles)
+    }
+}

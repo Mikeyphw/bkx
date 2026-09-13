@@ -1722,3 +1722,48 @@ tasks.register("verifyBkxBackupArchiveRestoreCorrectnessSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxBackupArchiveRestoreCorrectnessSeal")
 }
+
+
+tasks.register("verifyBkxRepositoryResticSnapshotControlPlaneSeal") {
+    group = "verification"
+    description = "Verify BR25 repository, Restic credential, snapshot listing/diff, and repository-removal guard contracts."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val models = repositoryRoot.resolve("internal/models/repositories.go")
+    val backupModels = repositoryRoot.resolve("internal/models/backup_engines.go")
+    val store = repositoryRoot.resolve("internal/repositorystore/store.go")
+    val restic = repositoryRoot.resolve("internal/resticops/restic.go")
+    val maintenance = repositoryRoot.resolve("internal/resticops/maintenance.go")
+    val services = repositoryRoot.resolve("internal/services/dispatcher.go")
+    val snapshotServices = repositoryRoot.resolve("internal/services/snapshot_maintenance.go")
+    val androidRepositoryModels = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/repositories/RepositoryModels.kt").asFile
+    val androidRepositoryBuilder = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/repositories/RepositoryRequestBuilder.kt").asFile
+    val androidSnapshotModels = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/repositories/SnapshotModels.kt").asFile
+    val androidSnapshotCodec = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/repositories/SnapshotBridgeCodec.kt").asFile
+
+    inputs.files(models, backupModels, store, restic, maintenance, services, snapshotServices, androidRepositoryModels, androidRepositoryBuilder, androidSnapshotModels, androidSnapshotCodec)
+
+    doLast {
+        check("func ValidateCredentialRef" in models.readText() && "CredentialEnvironmentKey" in models.readText()) {
+            "BR25 credential references must have a collision-free environment-key policy."
+        }
+        check("duplicate repository physical location" in store.readText() && "rejectPhysicalCollision" in store.readText()) {
+            "BR25 repository store must reject aliases for the same physical Restic repository."
+        }
+        check("removeEnvironmentKeys" in restic.readText() && "competing password channels" in restic.readText()) {
+            "BR25 Restic credential resolution must scrub direct passwords and reject competing channels."
+        }
+        check("parseSnapshotTime" in maintenance.readText() && "DefaultSnapshotListLimit" in maintenance.readText() && "DiffSnapshotsWithOptions" in maintenance.readText()) {
+            "BR25 snapshot maintenance must sort by parsed time and bound list/diff results."
+        }
+        check("repositoryRemovalBlockers" in services.readText() && "would leave saved jobs or schedules dangling" in services.readText()) {
+            "BR25 repository removal must guard saved jobs and schedules."
+        }
+        check("limit: Int = 250" in androidRepositoryBuilder.readText() && "maxEntries: Int = 1000" in androidRepositoryBuilder.readText()) {
+            "BR25 Android snapshot requests must carry explicit bounded result contracts."
+        }
+        check("truncated: Boolean" in androidSnapshotModels.readText() && "metadata?.get(\"truncated\")" in androidSnapshotCodec.readText()) {
+            "BR25 Android snapshot diff codec must expose truncation metadata."
+        }
+    }
+}

@@ -108,6 +108,7 @@ func validateDocument(doc document) error {
 		return berror.Validation("repository document schema_version mismatch", map[string]any{"schema_version": doc.SchemaVersion})
 	}
 	seen := map[string]bool{}
+	physical := map[string]string{}
 	for _, repository := range doc.Repositories {
 		if err := models.ValidateRepositoryDefinition(repository); err != nil {
 			return berror.Validation("invalid repository definition", map[string]any{"repository_id": repository.RepositoryID, "reason": err.Error()})
@@ -116,6 +117,42 @@ func validateDocument(doc document) error {
 			return berror.Validation("duplicate repository id", map[string]any{"repository_id": repository.RepositoryID})
 		}
 		seen[repository.RepositoryID] = true
+		key, err := physicalRepositoryKey(repository)
+		if err != nil {
+			return berror.Validation("invalid repository physical location", map[string]any{"repository_id": repository.RepositoryID, "reason": err.Error()})
+		}
+		if existing, ok := physical[key]; ok {
+			return berror.Validation("duplicate repository physical location", map[string]any{"repository_id": repository.RepositoryID, "conflicts_with": existing})
+		}
+		physical[key] = repository.RepositoryID
+	}
+	return nil
+}
+
+func physicalRepositoryKey(def models.RepositoryDefinition) (string, error) {
+	normalized, err := NormalizeDefinition(def)
+	if err != nil {
+		return "", err
+	}
+	return normalized.Backend + "|" + normalized.Location, nil
+}
+
+func rejectPhysicalCollision(items []models.RepositoryDefinition, candidate models.RepositoryDefinition, exceptRepositoryID string) error {
+	key, err := physicalRepositoryKey(candidate)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.RepositoryID == exceptRepositoryID {
+			continue
+		}
+		other, err := physicalRepositoryKey(item)
+		if err != nil {
+			return err
+		}
+		if other == key {
+			return berror.Validation("repository location is already registered under another id", map[string]any{"repository_id": candidate.RepositoryID, "conflicts_with": item.RepositoryID})
+		}
 	}
 	return nil
 }
@@ -316,6 +353,9 @@ func (s *Store) Create(def models.RepositoryDefinition) (models.RepositoryDefini
 		if err != nil {
 			return err
 		}
+		if err := rejectPhysicalCollision(doc.Repositories, normalized, normalized.RepositoryID); err != nil {
+			return err
+		}
 		now := s.nowISO()
 		normalized.SchemaVersion = models.RepositoryDefinitionSchemaVersion
 		normalized.CreatedAt = now
@@ -358,6 +398,9 @@ func (s *Store) Update(repositoryID string, replacement models.RepositoryDefinit
 		replacement.CreatedAt = current.CreatedAt
 		normalized, err := NormalizeDefinition(replacement)
 		if err != nil {
+			return err
+		}
+		if err := rejectPhysicalCollision(doc.Repositories, normalized, current.RepositoryID); err != nil {
 			return err
 		}
 		normalized.SchemaVersion = models.RepositoryDefinitionSchemaVersion

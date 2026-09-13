@@ -209,3 +209,50 @@ func TestRestoreTargetIsCanonical(t *testing.T) {
 		t.Fatalf("target=%q", got.Target)
 	}
 }
+
+func TestListSnapshotsSortsByParsedTimestampAndBoundsResult(t *testing.T) {
+	access, env := localAccess(t)
+	out := []byte(`[
+		{"id":"old-old-old","time":"2026-01-02T03:04:05Z","paths":["/old"]},
+		{"id":"new-new-new","time":"2026-01-02T03:04:05.900Z","paths":["/new"]}
+	]`)
+	runner := &fakeRunner{stdout: out}
+	got, err := ListSnapshots(access, SnapshotListOptions{Limit: 1}, Options{Runner: runner, Environ: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Truncated || got.Total != 2 || len(got.Snapshots) != 1 || got.Snapshots[0].ID != "new-new-new" {
+		t.Fatalf("got=%+v", got)
+	}
+}
+
+func TestSnapshotBrowseRejectsMalformedNodeRecords(t *testing.T) {
+	access, env := localAccess(t)
+	seq := &sequenceRunner{responses: []response{{stdout: snapshotJSON()}, {stdout: []byte("{\"message_type\":\"node\",\"type\":\"file\"}\n")}}}
+	if _, err := BrowseSnapshot(access, "aaaaaaaa", "/", false, Options{Runner: seq, Environ: env}); err == nil {
+		t.Fatal("expected malformed browse node rejection")
+	}
+}
+
+func TestDiffRejectsMalformedChangeRecords(t *testing.T) {
+	access, env := localAccess(t)
+	diff := &sequenceRunner{responses: []response{{stdout: snapshotJSON()}, {stdout: snapshotJSON()}, {stdout: []byte("{\"message_type\":\"change\",\"path\":\"\"}\n")}}}
+	if _, err := DiffSnapshotsWithOptions(access, "aaaaaaaa", "bbbbbbbb", SnapshotDiffOptions{MaxChanges: 10}, Options{Runner: diff, Environ: env}); err == nil {
+		t.Fatal("expected malformed diff change rejection")
+	}
+}
+
+func TestDiffTruncatesReturnedEntriesButKeepsStatistics(t *testing.T) {
+	access, env := localAccess(t)
+	out := []byte("{\"message_type\":\"change\",\"path\":\"/a\",\"modifier\":\"M\"}\n" +
+		"{\"message_type\":\"change\",\"path\":\"/b\",\"modifier\":\"A\"}\n" +
+		"{\"message_type\":\"statistics\",\"changed_files\":2}\n")
+	seq := &sequenceRunner{responses: []response{{stdout: snapshotJSON()}, {stdout: snapshotJSON()}, {stdout: out}}}
+	got, err := DiffSnapshotsWithOptions(access, "aaaaaaaa", "bbbbbbbb", SnapshotDiffOptions{MaxChanges: 1}, Options{Runner: seq, Environ: env})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Truncated || len(got.Changes) != 1 || got.Statistics.ChangedFiles != 2 {
+		t.Fatalf("got=%+v", got)
+	}
+}

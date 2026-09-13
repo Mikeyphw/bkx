@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func ptr[T any](v T) *T { return &v }
@@ -314,5 +315,52 @@ func TestLegacyReplayStillWorksWithoutBR20OriginMetadata(t *testing.T) {
 	}
 	if op.Operation != "transfer.run" {
 		t.Fatalf("operation=%s", op.Operation)
+	}
+}
+
+func TestBR27RunHistoryPageTokensUTCAndUnknownFields(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	fixture := `{"archive_path":null,"bytes_processed":null,"completed_at":null,"destination_path":null,"error_message":null,"files_count":null,"operation":"backup","run_id":"future","source_paths":[],"spec_snapshot":null,"started_at":"2026-09-01T00:00:00Z","status":"started","future_field":"kept_by_newer_clients"}` + "\n"
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := New(path, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Load(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".corrupt"); !os.IsNotExist(err) {
+		t.Fatalf("unknown fields must not be quarantined, stat err=%v", err)
+	}
+	for _, id := range []string{"a", "b", "c"} {
+		if _, err := store.RecordStart(id, "backup", nil, nil, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := store.ListPage(2, "", "")
+	if err != nil || len(page.Records) != 2 || page.NextPageToken == "" {
+		t.Fatalf("page=%+v err=%v", page, err)
+	}
+	second, err := store.ListPage(2, "", page.NextPageToken)
+	if err != nil || len(second.Records) == 0 {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, second.Records[0].StartedAt); err != nil {
+		t.Fatalf("started_at is not RFC3339: %s", second.Records[0].StartedAt)
+	}
+}
+
+func TestBR27ReplayRequiresTerminalCompletedRun(t *testing.T) {
+	started := models.RunRecord{RunID: "active", Operation: "transfer", Status: "started", Phase: "running", StartedAt: "2026-09-01T00:00:00Z", SpecSnapshot: map[string]any{"sources": []any{"/a"}, "destination": "/b", "direction": "push", "dry_run": false, "overwrite": false, "verify": true}}
+	if IsReplayable(started) {
+		t.Fatal("active run must not be replayable")
+	}
+	completedAt := "2026-09-01T00:01:00Z"
+	started.Status = "success"
+	started.CompletedAt = &completedAt
+	if !IsReplayable(started) {
+		t.Fatal("terminal completed transfer should be replayable")
 	}
 }

@@ -105,7 +105,7 @@ private fun BackupHistoryScreen(
             BkxSurfaceCard { Text("No completed backup work yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
         } else {
             state.recentRuns.forEach { run ->
-                val replayable = run.operation in setOf("jobs.run", "backup", "backup.create", "backup.snapshot", "transfer", "transfer.run")
+                val replayable = run.replayable
                 BkxSurfaceCard {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {

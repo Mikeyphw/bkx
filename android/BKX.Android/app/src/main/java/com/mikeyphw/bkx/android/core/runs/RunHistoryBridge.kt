@@ -16,12 +16,15 @@ object RunHistoryRequestBuilder {
     const val OPERATION_LIST = "runs.list"
     const val OPERATION_SHOW = "runs.show"
 
-    fun list(requestId: String, limit: Int = 50): BridgeRequestEnvelope {
-        require(limit > 0) { "run history limit must be positive" }
+    fun list(requestId: String, limit: Int = 50, pageToken: String = ""): BridgeRequestEnvelope {
+        require(limit in 1..500) { "run history limit must be 1..500" }
         return BridgeRequestEnvelope(
             requestId = requestId,
             operation = OPERATION_LIST,
-            payload = buildJsonObject { put("limit", limit) },
+            payload = buildJsonObject {
+                put("limit", limit)
+                if (pageToken.isNotBlank()) put("page_token", pageToken)
+            },
         )
     }
 
@@ -77,6 +80,7 @@ object RunHistoryBridgeCodec {
             jobId = record.jobId.ifBlank { null },
             jobRevision = record.jobRevision.takeIf { it > 0L },
             phase = record.phase.ifBlank { null },
+            replayable = artifact.metadata["replayable"] == "true",
         )
     }
 

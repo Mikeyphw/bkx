@@ -24,7 +24,7 @@ data class SavedJobScheduleDefinition(
     init {
         require(scheduleId.matches(Regex("^[a-z0-9][a-z0-9._-]{0,127}$"))) { "invalid schedule id" }
         require(jobId.matches(Regex("^[a-z0-9][a-z0-9._-]{0,127}$"))) { "invalid job id" }
-        require(intervalMinutes >= 15L) { "schedule interval must be at least 15 minutes" }
+        require(intervalMinutes in 15L..525_600L) { "schedule interval must be 15..525600 minutes" }
         require(network == "none" || network == "any" || network == "unmetered") { "network must be none, any, or unmetered" }
     }
 }

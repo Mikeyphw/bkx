@@ -1847,3 +1847,115 @@ tasks.register("verifyBkxTransferRcloneGoogleDriveRemoteSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxTransferRcloneGoogleDriveRemoteSeal")
 }
+
+tasks.register("verifyBkxSavedJobsSchedulerTaskerRunHistorySeal") {
+    group = "verification"
+    description = "Verify BR27 saved-job, scheduler, Tasker automation, and run-history control-plane contracts."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val savedJobsGo = repositoryRoot.resolve("internal/services/saved_jobs.go")
+    val schedulesGo = repositoryRoot.resolve("internal/services/schedules.go")
+    val scheduleStoreGo = repositoryRoot.resolve("internal/schedulestore/store.go")
+    val runStoreGo = repositoryRoot.resolve("internal/runstore/store.go")
+    val jobStoreGo = repositoryRoot.resolve("internal/jobstore/store.go")
+    val execControlGo = repositoryRoot.resolve("internal/executioncontrol/store.go")
+    val dispatcherGo = repositoryRoot.resolve("internal/services/dispatcher.go")
+    val automationContract = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/AutomationContract.kt")
+    val automationIntentCodec = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/AutomationIntentCodec.kt")
+    val automationDispatch = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/AutomationDispatch.kt")
+    val automationService = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/BkxAutomationService.kt")
+    val automationStores = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/AutomationStores.kt")
+    val scheduler = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/BkxSavedJobScheduler.kt")
+    val taskerBuilder = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/TaskerV2RequestBuilder.kt")
+    val runSummary = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/runs/RunSummary.kt")
+    val runBridge = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/runs/RunHistoryBridge.kt")
+    val scheduleModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/jobs/SavedJobScheduleModels.kt")
+    val manifest = androidRootDir.resolve("app/src/main/AndroidManifest.xml")
+    val androidAutomationTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/automation/TaskerV2ActionContractTest.kt")
+    val androidSchedulerTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/automation/BkxSavedJobSchedulerContractTest.kt")
+    val goScheduleTest = repositoryRoot.resolve("internal/schedulestore/store_test.go")
+    val goRunTest = repositoryRoot.resolve("internal/runstore/store_test.go")
+    val doc = repositoryRoot.resolve("BR27_SAVED_JOBS_SCHEDULER_TASKER_RUN_HISTORY_SEAL.md")
+
+    inputs.files(
+        savedJobsGo, schedulesGo, scheduleStoreGo, runStoreGo, jobStoreGo, execControlGo, dispatcherGo,
+        automationContract, automationIntentCodec, automationDispatch, automationService, automationStores,
+        scheduler, taskerBuilder, runSummary, runBridge, scheduleModels, manifest,
+        androidAutomationTest, androidSchedulerTest, goScheduleTest, goRunTest, doc,
+    )
+
+    doLast {
+        check("savedJobFromPayloadWithDefault" in savedJobsGo.readText() && "current.Enabled" in savedJobsGo.readText()) {
+            "BR27 jobs.update must preserve enabled when clients omit it."
+        }
+        check("SetEnabledForJob(updated.JobID, false)" in savedJobsGo.readText() && "DeleteForJob(jobID)" in savedJobsGo.readText()) {
+            "BR27 saved-job disable/delete must clean dependent schedules."
+        }
+        check("expected_revision" in savedJobsGo.readText() && "saved job revision changed before scheduled execution" in savedJobsGo.readText()) {
+            "BR27 jobs.run must support expected_revision revision fencing."
+        }
+        check("MaxIntervalMinutes" in scheduleStoreGo.readText() && "validateDocument(doc)" in scheduleStoreGo.readText() && "doc.Schedules = []Schedule{}" in scheduleStoreGo.readText()) {
+            "BR27 schedule store must validate loaded documents, cap intervals, and preserve empty arrays."
+        }
+        check("current revision must be newer than history" in jobStoreGo.readText()) {
+            "BR27 saved-job document validation must reject impossible current/history revision ordering."
+        }
+        check("ListPageResult" in runStoreGo.readText() && "parsePageOffset" in runStoreGo.readText() && "time.Now().UTC().Format(time.RFC3339Nano)" in runStoreGo.readText()) {
+            "BR27 run history must be paginated with UTC RFC3339 timestamps."
+        }
+        check("IsReplayable" in runStoreGo.readText() && "runs.replay requires a terminal replayable run" in savedJobsGo.readText()) {
+            "BR27 run replay must be terminal-only."
+        }
+        check("redactedRunRecord" in dispatcherGo.readText() && "privacy" in dispatcherGo.readText() && "redacted_paths" in dispatcherGo.readText()) {
+            "BR27 run artifacts must redact private paths before Android consumes run_json."
+        }
+        check("run_history_page" in dispatcherGo.readText() && "next_page_token" in dispatcherGo.readText()) {
+            "BR27 runs.list must expose page metadata."
+        }
+        check("ScheduleJobIdStore" in scheduler.readText() && "EXTRA_JOB_REVISION" in scheduler.readText() && "return true" in scheduler.readText()) {
+            "BR27 Android scheduler must avoid ID collisions, bind job revisions, and hold JobService lifetime."
+        }
+        check("currentSchedule == null" in scheduler.readText() && "scheduleSignature(currentSchedule, currentJob.revision)" in scheduler.readText()) {
+            "BR27 scheduled dispatch must reconcile stale/deleted/disabled schedules before execution."
+        }
+        check("expectedJobRevision" in automationContract.readText() && "EXTRA_EXPECTED_JOB_REVISION" in automationIntentCodec.readText() && "expectedRevision" in taskerBuilder.readText()) {
+            "BR27 automation saved-job requests must carry expected_revision end-to-end."
+        }
+        val automationContractText = automationContract.readText()
+        check("status == \"success\"" in automationContractText && !automationContractText.contains(".flatMap { it.split(',')")) {
+            "BR27 Tasker variables must not mark queued/running as success and list parsing must preserve commas."
+        }
+        check("markDeliveryStarted" in automationDispatch.readText() && "cancelFallback" in automationService.readText()) {
+            "BR27 automation dispatch must avoid duplicate callback delivery and cleanup fallback jobs."
+        }
+        check("clearActiveRequests" in automationStores.readText() && "AutomationDispatchStore(appContext).clear()" in automationStores.readText()) {
+            "BR27 disabling automation must revoke queued and active accepted dispatches."
+        }
+        check("FALLBACK_JOB_ID_PREFIX = 0x40000000" in automationDispatch.readText()) {
+            "BR27 automation fallback JobScheduler IDs must not collide with periodic saved-job IDs."
+        }
+        check("replayable: Boolean" in runSummary.readText() && "metadata[\"replayable\"]" in runBridge.readText()) {
+            "BR27 Android activity/history must display replay only for backend-confirmed replayable runs."
+        }
+        check("525_600L" in scheduleModels.readText()) {
+            "BR27 Android schedule model must cap intervals before bridge dispatch."
+        }
+        check("android:exported=\"false\"" in manifest.readText() && "BkxAutomationRecoveryReceiver" in manifest.readText()) {
+            "BR27 recovery receiver must not expose custom reconciliation to external apps."
+        }
+        check("acceptedOrRunningTaskerResultsAreNotReportedAsSuccessfulTerminalWork" in androidAutomationTest.readText()) {
+            "BR27 Android automation regression tests are missing."
+        }
+        check("TestBR27RunHistoryPageTokensUTCAndUnknownFields" in goRunTest.readText() && "TestBR27ScheduleStoreBulkDisableAndDeleteForJob" in goScheduleTest.readText()) {
+            "BR27 Go store regression tests are missing."
+        }
+        check("Overlay 7 of 16" in doc.readText()) {
+            "BR27 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxSavedJobsSchedulerTaskerRunHistorySeal")
+}

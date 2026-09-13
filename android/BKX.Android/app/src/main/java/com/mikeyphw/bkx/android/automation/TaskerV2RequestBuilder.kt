@@ -12,12 +12,14 @@ internal object TaskerV2RequestBuilder {
         jobId: String,
         repositoryId: String = "",
         overrides: List<String> = emptyList(),
+        expectedRevision: Long = 0L,
     ): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId,
         operation = "jobs.run",
         payload = buildJsonObject {
             put("job_id", jobId)
             if (repositoryId.isNotBlank()) put("repository_ref", repositoryId)
+            if (expectedRevision > 0L) put("expected_revision", expectedRevision)
             if (overrides.isNotEmpty()) put("overrides", buildJsonArray { overrides.forEach { add(JsonPrimitive(it)) } })
         },
     )

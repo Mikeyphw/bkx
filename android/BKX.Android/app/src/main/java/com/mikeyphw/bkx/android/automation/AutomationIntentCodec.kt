@@ -41,6 +41,9 @@ object AutomationIntentCodec {
         pageSize = bundle.intCompat(BkxAutomationContract.EXTRA_PAGE_SIZE) ?: 100,
         jobId = bundle.getString(BkxAutomationContract.EXTRA_JOB_ID).orEmpty().trim(),
         jobOverrides = splitAutomationList(bundle.getString(BkxAutomationContract.EXTRA_JOB_OVERRIDES)),
+        scheduleId = bundle.getString(BkxAutomationContract.EXTRA_SCHEDULE_ID).orEmpty().trim(),
+        scheduleSignature = bundle.getString(BkxAutomationContract.EXTRA_SCHEDULE_SIGNATURE).orEmpty().trim(),
+        expectedJobRevision = bundle.longCompat(BkxAutomationContract.EXTRA_EXPECTED_JOB_REVISION) ?: 0L,
         repositoryId = bundle.getString(BkxAutomationContract.EXTRA_REPOSITORY_ID).orEmpty().trim(),
         snapshotId = bundle.getString(BkxAutomationContract.EXTRA_SNAPSHOT_ID).orEmpty().trim(),
         dryRun = bundle.booleanCompat(BkxAutomationContract.EXTRA_DRY_RUN, true),
@@ -81,6 +84,9 @@ object AutomationIntentCodec {
         putInt(BkxAutomationContract.EXTRA_PAGE_SIZE, request.pageSize)
         putString(BkxAutomationContract.EXTRA_JOB_ID, request.jobId)
         putString(BkxAutomationContract.EXTRA_JOB_OVERRIDES, request.jobOverrides.joinToString("\n"))
+        putString(BkxAutomationContract.EXTRA_SCHEDULE_ID, request.scheduleId)
+        putString(BkxAutomationContract.EXTRA_SCHEDULE_SIGNATURE, request.scheduleSignature)
+        if (request.expectedJobRevision > 0L) putLong(BkxAutomationContract.EXTRA_EXPECTED_JOB_REVISION, request.expectedJobRevision)
         putString(BkxAutomationContract.EXTRA_REPOSITORY_ID, request.repositoryId)
         putString(BkxAutomationContract.EXTRA_SNAPSHOT_ID, request.snapshotId)
         putBoolean(BkxAutomationContract.EXTRA_DRY_RUN, request.dryRun)
@@ -108,6 +114,8 @@ object AutomationIntentCodec {
                 BkxAutomationContract.EXTRA_PAGE_TOKEN,
                 BkxAutomationContract.EXTRA_JOB_ID,
                 BkxAutomationContract.EXTRA_JOB_OVERRIDES,
+                BkxAutomationContract.EXTRA_SCHEDULE_ID,
+                BkxAutomationContract.EXTRA_SCHEDULE_SIGNATURE,
                 BkxAutomationContract.EXTRA_REPOSITORY_ID,
                 BkxAutomationContract.EXTRA_SNAPSHOT_ID,
                 BkxAutomationContract.EXTRA_SNAPSHOT_OVERWRITE,

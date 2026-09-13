@@ -46,12 +46,34 @@ class AutomationDispatchStore(context: Context) {
     fun pendingIds(): List<String> = preferences.getString(KEY_INDEX, "").orEmpty().lineSequence().filter(String::isNotBlank).distinct().toList()
 
     @SuppressLint("ApplySharedPref")
+    fun markDeliveryStarted(dispatchId: String): Boolean {
+        val key = "delivery_started:$dispatchId"
+        if (preferences.getBoolean(key, false)) return false
+        preferences.edit(commit = true) { putBoolean(key, true) }
+        return true
+    }
+
+    @SuppressLint("ApplySharedPref")
     fun remove(dispatchId: String) {
         val ids = pendingIds().filterNot { it == dispatchId }
         preferences.edit(commit = true) {
             remove(dispatchId)
+            remove("delivery_started:$dispatchId")
             putString(KEY_INDEX, ids.joinToString("\n"))
         }
+    }
+
+    @SuppressLint("ApplySharedPref")
+    fun clear(): Int {
+        val ids = pendingIds()
+        preferences.edit(commit = true) {
+            ids.forEach { id ->
+                remove(id)
+                remove("delivery_started:$id")
+            }
+            putString(KEY_INDEX, "")
+        }
+        return ids.size
     }
 
     private companion object {
@@ -61,6 +83,9 @@ class AutomationDispatchStore(context: Context) {
 }
 
 object AutomationDispatcher {
+    private const val FALLBACK_JOB_ID_PREFIX = 0x40000000
+    private const val FALLBACK_JOB_ID_MASK = 0x0fffffff
+
     fun enqueue(context: Context, dispatch: AutomationDispatch): Boolean {
         val appContext = context.applicationContext ?: context
         AutomationDispatchStore(appContext).put(dispatch)
@@ -75,6 +100,9 @@ object AutomationDispatcher {
     fun recoverPending(context: Context): Int {
         val appContext = context.applicationContext ?: context
         val store = AutomationDispatchStore(appContext)
+        if (!AutomationAccessStore(appContext).snapshot().enabled) {
+            return store.clear()
+        }
         val ids = store.pendingIds()
         val state = SharedPreferencesAutomationStateStore(appContext)
         ids.forEach { id ->
@@ -100,11 +128,17 @@ object AutomationDispatcher {
     private fun scheduleFallback(context: Context, dispatchId: String): Boolean {
         val scheduler = context.getSystemService(JobScheduler::class.java) ?: return false
         val extras = PersistableBundle().apply { putString(BkxAutomationContract.EXTRA_DISPATCH_ID, dispatchId) }
-        val info = JobInfo.Builder(dispatchId.hashCode() and 0x7fffffff, ComponentName(context, BkxAutomationJobService::class.java))
+        val info = JobInfo.Builder(fallbackJobId(dispatchId), ComponentName(context, BkxAutomationJobService::class.java))
             .setExtras(extras)
             .setOverrideDeadline(0L)
             .build()
         return scheduler.schedule(info) == JobScheduler.RESULT_SUCCESS
+    }
+
+    internal fun fallbackJobId(dispatchId: String): Int = FALLBACK_JOB_ID_PREFIX or (dispatchId.hashCode() and FALLBACK_JOB_ID_MASK)
+
+    fun cancelFallback(context: Context, dispatchId: String) {
+        context.getSystemService(JobScheduler::class.java)?.cancel(fallbackJobId(dispatchId))
     }
 }
 

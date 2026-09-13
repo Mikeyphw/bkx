@@ -81,7 +81,14 @@ func (d *Dispatcher) jobsUpdate(p map[string]any) (Result, error) {
 	if err != nil || expected < 1 {
 		return Result{}, berror.Validation("expected_revision must be a positive integer", map[string]any{"job_id": jobID})
 	}
-	job, err := savedJobFromPayload(p)
+	current, err := d.Jobs.Get(jobID)
+	if err != nil {
+		return Result{}, err
+	}
+	if current == nil {
+		return Result{}, berror.NotFound("Saved job not found: "+jobID, map[string]any{"job_id": jobID})
+	}
+	job, err := savedJobFromPayloadWithDefault(p, current.Enabled)
 	if err != nil {
 		return Result{}, err
 	}
@@ -89,6 +96,11 @@ func (d *Dispatcher) jobsUpdate(p map[string]any) (Result, error) {
 	updated, err := d.Jobs.Update(jobID, expected, job)
 	if err != nil {
 		return Result{}, err
+	}
+	if d.Schedules != nil && !updated.Enabled {
+		if _, scheduleErr := d.Schedules.SetEnabledForJob(updated.JobID, false); scheduleErr != nil {
+			return Result{}, scheduleErr
+		}
 	}
 	return success("Saved job "+updated.JobID+" updated.", nil, []Artifact{savedJobArtifact(updated)}), nil
 }
@@ -136,6 +148,19 @@ func (d *Dispatcher) jobsDelete(p map[string]any) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	if existing, getErr := d.Jobs.Get(jobID); getErr != nil {
+		return Result{}, getErr
+	} else if existing == nil {
+		return Result{}, berror.NotFound("Saved job not found: "+jobID, map[string]any{"job_id": jobID})
+	}
+	schedulesDeleted := 0
+	if d.Schedules != nil {
+		var scheduleErr error
+		schedulesDeleted, scheduleErr = d.Schedules.DeleteForJob(jobID)
+		if scheduleErr != nil {
+			return Result{}, scheduleErr
+		}
+	}
 	deleted, err := d.Jobs.Delete(jobID)
 	if err != nil {
 		return Result{}, err
@@ -143,20 +168,7 @@ func (d *Dispatcher) jobsDelete(p map[string]any) (Result, error) {
 	if !deleted {
 		return Result{}, berror.NotFound("Saved job not found: "+jobID, map[string]any{"job_id": jobID})
 	}
-	if d.Schedules != nil {
-		schedules, scheduleErr := d.Schedules.List()
-		if scheduleErr != nil {
-			return Result{}, scheduleErr
-		}
-		for _, schedule := range schedules {
-			if schedule.JobID == jobID {
-				if _, scheduleErr := d.Schedules.Delete(schedule.ScheduleID); scheduleErr != nil {
-					return Result{}, scheduleErr
-				}
-			}
-		}
-	}
-	return success("Saved job "+jobID+" deleted.", nil, []Artifact{{Label: "saved_job_deleted", Path: jobID}}), nil
+	return success("Saved job "+jobID+" deleted.", nil, []Artifact{{Label: "saved_job_deleted", Path: jobID, Metadata: map[string]string{"schedules_deleted": fmt.Sprintf("%d", schedulesDeleted)}}}), nil
 }
 
 func (d *Dispatcher) resolveSavedJob(p map[string]any) (*models.SavedJob, error) {
@@ -178,6 +190,10 @@ func (d *Dispatcher) resolveSavedJob(p map[string]any) (*models.SavedJob, error)
 }
 
 func savedJobFromPayload(p map[string]any) (models.SavedJob, error) {
+	return savedJobFromPayloadWithDefault(p, true)
+}
+
+func savedJobFromPayloadWithDefault(p map[string]any, defaultEnabled bool) (models.SavedJob, error) {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return models.SavedJob{}, berror.Validation("saved job payload is not JSON serializable", nil)
@@ -193,7 +209,7 @@ func savedJobFromPayload(p map[string]any) (models.SavedJob, error) {
 	if err := json.Unmarshal(raw, &input); err != nil {
 		return models.SavedJob{}, berror.Validation("invalid saved job payload", map[string]any{"reason": err.Error()})
 	}
-	enabled := true
+	enabled := defaultEnabled
 	if input.Enabled != nil {
 		enabled = *input.Enabled
 	}
@@ -230,10 +246,18 @@ func (d *Dispatcher) jobsExecute(ctx OperationContext, p map[string]any, plan bo
 	if err != nil {
 		return Result{}, err
 	}
+	expectedRevision, err := optionalPositiveInt64(p, "expected_revision")
+	if err != nil {
+		return Result{}, err
+	}
+	if expectedRevision > 0 && job.Revision != expectedRevision {
+		return Result{}, berror.Validation("saved job revision changed before scheduled execution", map[string]any{"job_id": job.JobID, "expected_revision": expectedRevision, "current_revision": job.Revision})
+	}
 	if !plan && !job.Enabled {
 		return Result{}, berror.Validation("Saved job is disabled", map[string]any{"job_id": job.JobID})
 	}
 	ctx.JobID = job.JobID
+	overrideSeen := hasExecutionOverrides(p)
 	operation, err := applyOperationExecutionOverrides(job.Operation, p["overrides"], optionalString(p["repository_ref"]))
 	if err != nil {
 		return Result{}, berror.Validation("invalid saved-job execution override", map[string]any{"reason": err.Error()})
@@ -241,7 +265,7 @@ func (d *Dispatcher) jobsExecute(ctx OperationContext, p map[string]any, plan bo
 	emit(ctx, "preparing", "Preparing saved job "+job.Name+".", floatPtr(.02))
 	var origin *runstore.SavedJobOrigin
 	if !plan {
-		origin = &runstore.SavedJobOrigin{JobID: job.JobID, Revision: job.Revision, Operation: operation}
+		origin = &runstore.SavedJobOrigin{JobID: job.JobID, Revision: job.Revision, Operation: operation, Override: overrideSeen}
 	}
 	return d.executeSavedOperation(ctx, operation, plan, origin)
 }
@@ -262,10 +286,14 @@ func (d *Dispatcher) runsReplay(ctx OperationContext, p map[string]any) (Result,
 		return Result{}, berror.NotFound("Run not found: "+runID, map[string]any{"run_id": runID})
 	}
 	ctx.JobID = source.JobID
+	if !runstore.IsReplayable(*source) {
+		return Result{}, berror.Validation("runs.replay requires a terminal replayable run", map[string]any{"run_id": runID, "status": source.Status, "phase": source.Phase})
+	}
 	operation, err := runstore.ReplayOperation(*source)
 	if err != nil {
 		return Result{}, err
 	}
+	overrideSeen := hasExecutionOverrides(p)
 	operation, err = applyOperationExecutionOverrides(operation, p["overrides"], optionalString(p["repository_ref"]))
 	if err != nil {
 		return Result{}, berror.Validation("invalid historical replay override", map[string]any{"reason": err.Error()})
@@ -277,7 +305,7 @@ func (d *Dispatcher) runsReplay(ctx OperationContext, p map[string]any) (Result,
 	emit(ctx, "preparing", "Preparing historical run replay.", floatPtr(.02))
 	var origin *runstore.SavedJobOrigin
 	if !plan && source.JobID != "" && source.JobRevision > 0 {
-		origin = &runstore.SavedJobOrigin{JobID: source.JobID, Revision: source.JobRevision, Operation: operation}
+		origin = &runstore.SavedJobOrigin{JobID: source.JobID, Revision: source.JobRevision, Operation: operation, Override: overrideSeen}
 	}
 	return d.executeSavedOperation(ctx, operation, plan, origin)
 }
@@ -556,6 +584,28 @@ func applyOperationExecutionOverrides(operation models.OperationSpecV2, rawOverr
 		return operation, err
 	}
 	return operation, nil
+}
+
+func optionalPositiveInt64(p map[string]any, key string) (int64, error) {
+	if p[key] == nil {
+		return 0, nil
+	}
+	value, err := int64Value(p[key])
+	if err != nil {
+		return 0, err
+	}
+	if value < 1 {
+		return 0, berror.Validation(key+" must be a positive integer", map[string]any{key: value})
+	}
+	return value, nil
+}
+
+func hasExecutionOverrides(p map[string]any) bool {
+	if strings.TrimSpace(optionalString(p["repository_ref"])) != "" {
+		return true
+	}
+	items, err := executionOverrideStrings(p["overrides"])
+	return err == nil && len(items) > 0
 }
 
 func applyExecutionOverrides(params map[string]any, values []string) error {

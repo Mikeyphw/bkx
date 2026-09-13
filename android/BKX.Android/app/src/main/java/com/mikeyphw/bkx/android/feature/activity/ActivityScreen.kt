@@ -127,7 +127,8 @@ fun ActivityScreen(
                         }
                         val accent = when (run.status.name) {
                             "Failure" -> MaterialTheme.colorScheme.error
-                            "Cancelled" -> MaterialTheme.colorScheme.tertiary
+                            "Cancelled", "Interrupted" -> MaterialTheme.colorScheme.tertiary
+                            "Queued", "Running" -> MaterialTheme.colorScheme.secondary
                             else -> MaterialTheme.colorScheme.primary
                         }
                         BkxStatusPill(run.status.name.uppercase(), accent)
@@ -139,7 +140,7 @@ fun ActivityScreen(
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
-                    if (run.operation in setOf("jobs.run", "backup", "backup.create", "backup.snapshot", "transfer", "transfer.run")) {
+                    if (run.replayable) {
                         OutlinedButton(onClick = { onEvent(BkxHomeEvent.ReplayRun(run.requestId, run.jobId)) }) { Text("Run again") }
                     }
                 }

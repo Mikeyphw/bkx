@@ -46,6 +46,7 @@ data class RunSummary(
     val summary: String = "",
     val jobRevision: Long? = null,
     val phase: String? = null,
+    val replayable: Boolean = false,
 ) {
     init {
         require(requestId.isNotBlank()) { "request id must not be blank" }

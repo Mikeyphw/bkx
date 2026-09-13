@@ -10,7 +10,8 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class AutomationAccessStore(context: Context) {
-    private val preferences = (context.applicationContext ?: context).getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext ?: context
+    private val preferences = appContext.getSharedPreferences(PREFERENCES_NAME, Context.MODE_PRIVATE)
 
     data class Snapshot(val enabled: Boolean, val token: String, val taskerToken: String)
 
@@ -41,6 +42,10 @@ class AutomationAccessStore(context: Context) {
             putBoolean(KEY_ENABLED, enabled)
             putString(KEY_TOKEN, token)
             putString(KEY_TASKER_TOKEN, taskerToken)
+        }
+        if (!enabled) {
+            AutomationDispatchStore(appContext).clear()
+            SharedPreferencesAutomationStateStore(appContext).clearActiveRequests()
         }
         return Snapshot(enabled, token, taskerToken)
     }
@@ -106,6 +111,12 @@ class SharedPreferencesAutomationStateStore(context: Context) : AutomationStateP
 
     override fun clearActive(requestId: String) {
         preferences.edit(commit = true) { remove("active:$requestId") }
+    }
+
+    fun clearActiveRequests(): Int {
+        val activeKeys = preferences.all.keys.filter { it.startsWith("active:") }
+        preferences.edit(commit = true) { activeKeys.forEach { remove(it) } }
+        return activeKeys.size
     }
 
     override fun complete(result: AutomationResult) {

@@ -15,7 +15,10 @@ import (
 	"bkx/internal/statepaths"
 )
 
-const SchemaVersion = 1
+const (
+	SchemaVersion      = 1
+	MaxIntervalMinutes = 525600
+)
 
 type Schedule struct {
 	SchemaVersion   int    `json:"schema_version"`
@@ -51,6 +54,9 @@ func Validate(v Schedule) error {
 	}
 	if v.IntervalMinutes < 15 {
 		return fmt.Errorf("interval_minutes must be at least 15")
+	}
+	if v.IntervalMinutes > MaxIntervalMinutes {
+		return fmt.Errorf("interval_minutes must be at most %d", MaxIntervalMinutes)
 	}
 	if v.Network != "none" && v.Network != "any" && v.Network != "unmetered" {
 		return fmt.Errorf("network must be none, any, or unmetered")
@@ -144,9 +150,48 @@ func (s *Store) Delete(id string) (bool, error) {
 			out = append(out, v)
 		}
 		doc.Schedules = out
+		if doc.Schedules == nil {
+			doc.Schedules = []Schedule{}
+		}
 		return nil
 	})
 	return deleted, err
+}
+
+func (s *Store) DeleteForJob(jobID string) (int, error) {
+	deleted := 0
+	err := s.withDocument(func(doc *document) error {
+		out := doc.Schedules[:0]
+		for _, v := range doc.Schedules {
+			if v.JobID == jobID {
+				deleted++
+				continue
+			}
+			out = append(out, v)
+		}
+		doc.Schedules = out
+		if doc.Schedules == nil {
+			doc.Schedules = []Schedule{}
+		}
+		return nil
+	})
+	return deleted, err
+}
+
+func (s *Store) SetEnabledForJob(jobID string, enabled bool) (int, error) {
+	changed := 0
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	err := s.withDocument(func(doc *document) error {
+		for i := range doc.Schedules {
+			if doc.Schedules[i].JobID == jobID && doc.Schedules[i].Enabled != enabled {
+				doc.Schedules[i].Enabled = enabled
+				doc.Schedules[i].UpdatedAt = now
+				changed++
+			}
+		}
+		return nil
+	})
+	return changed, err
 }
 
 func (s *Store) withDocument(fn func(*document) error) error {
@@ -167,13 +212,22 @@ func (s *Store) withDocument(fn func(*document) error) error {
 		if err := json.Unmarshal(data, &doc); err != nil {
 			return fmt.Errorf("invalid schedule store: %w", err)
 		}
-		if doc.SchemaVersion != SchemaVersion {
-			return fmt.Errorf("unsupported schedule schema %d", doc.SchemaVersion)
+		if err := validateDocument(doc); err != nil {
+			return err
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if doc.Schedules == nil {
+		doc.Schedules = []Schedule{}
+	}
 	if err := fn(&doc); err != nil {
+		return err
+	}
+	if doc.Schedules == nil {
+		doc.Schedules = []Schedule{}
+	}
+	if err := validateDocument(doc); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(doc, "", "  ")
@@ -202,8 +256,36 @@ func (s *Store) withDocument(fn func(*document) error) error {
 	if err := f.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.Path)
+	if err := os.Rename(tmp, s.Path); err != nil {
+		return err
+	}
+	if d, err := os.Open(filepath.Dir(s.Path)); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
+	}
+	return nil
 }
+
+func validateDocument(doc document) error {
+	if doc.SchemaVersion != SchemaVersion {
+		return fmt.Errorf("unsupported schedule schema %d", doc.SchemaVersion)
+	}
+	seen := map[string]bool{}
+	if doc.Schedules == nil {
+		doc.Schedules = []Schedule{}
+	}
+	for _, schedule := range doc.Schedules {
+		if seen[schedule.ScheduleID] {
+			return fmt.Errorf("duplicate schedule_id: %s", schedule.ScheduleID)
+		}
+		seen[schedule.ScheduleID] = true
+		if err := Validate(schedule); err != nil {
+			return fmt.Errorf("invalid schedule %s: %w", schedule.ScheduleID, err)
+		}
+	}
+	return nil
+}
+
 func stableID(v string) bool {
 	v = strings.TrimSpace(v)
 	if v == "" || len(v) > 128 {

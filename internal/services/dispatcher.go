@@ -1254,19 +1254,22 @@ func (d *Dispatcher) runsList(p map[string]any) (Result, error) {
 		return Result{}, berror.Validation("Run list limit must be greater than zero", map[string]any{"limit": limit})
 	}
 	op := optionalString(p["operation"])
-	records, err := d.RunStore.List(limit, op)
-	if err != nil {
-		return Result{}, err
-	}
-	total, err := d.RunStore.Count(op)
+	pageToken := optionalString(p["page_token"])
+	page, err := d.RunStore.ListPage(limit, op, pageToken)
 	if err != nil {
 		return Result{}, err
 	}
 	arts := []Artifact{}
-	for _, r := range records {
+	for _, r := range page.Records {
 		arts = append(arts, runRecordArtifact(r))
 	}
-	return success(fmt.Sprintf("%d BKX runs available.", total), nil, arts), nil
+	arts = append(arts, Artifact{Label: "run_history_page", Path: "embedded://runs/page", Metadata: map[string]string{
+		"next_page_token": page.NextPageToken,
+		"total":           fmt.Sprintf("%d", page.Total),
+		"limit":           fmt.Sprintf("%d", limit),
+		"operation":       op,
+	}})
+	return success(fmt.Sprintf("%d BKX runs available.", page.Total), nil, arts), nil
 }
 func (d *Dispatcher) runsShow(p map[string]any) (Result, error) {
 	if d.RunStore == nil {
@@ -1290,7 +1293,8 @@ func (d *Dispatcher) runsShow(p map[string]any) (Result, error) {
 }
 
 func runRecordArtifact(record models.RunRecord) Artifact {
-	raw, _ := json.Marshal(record)
+	safe := redactedRunRecord(record)
+	raw, _ := json.Marshal(safe)
 	metadata := map[string]string{
 		"run_id":       record.RunID,
 		"operation":    record.Operation,
@@ -1299,12 +1303,94 @@ func runRecordArtifact(record models.RunRecord) Artifact {
 		"job_id":       record.JobID,
 		"job_revision": fmt.Sprintf("%d", record.JobRevision),
 		"started_at":   record.StartedAt,
+		"privacy":      "redacted_paths",
+		"replayable":   fmt.Sprintf("%t", runstore.IsReplayable(record)),
 		"run_json":     string(raw),
 	}
 	if record.CompletedAt != nil {
 		metadata["completed_at"] = *record.CompletedAt
 	}
+	if marker, ok := record.SpecSnapshot["_saved_job_execution_override"].(bool); ok && marker {
+		metadata["execution_override"] = "true"
+	}
 	return Artifact{Label: "run", Path: "embedded://runs/" + record.RunID, Metadata: metadata}
+}
+
+func redactedRunRecord(record models.RunRecord) models.RunRecord {
+	copy := record
+	copy.SourcePaths = redactStringSlice(record.SourcePaths)
+	copy.DestinationPath = redactStringPtr(record.DestinationPath)
+	copy.ArchivePath = redactStringPtr(record.ArchivePath)
+	copy.SpecSnapshot = redactMap(record.SpecSnapshot)
+	if record.OperationSpecSnapshot != nil {
+		spec := *record.OperationSpecSnapshot
+		spec.Parameters = redactMap(spec.Parameters)
+		copy.OperationSpecSnapshot = &spec
+	}
+	return copy
+}
+
+func redactStringPtr(value *string) *string {
+	if value == nil {
+		return nil
+	}
+	redacted := redactPathLike(*value)
+	return &redacted
+}
+
+func redactStringSlice(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, redactPathLike(value))
+	}
+	return out
+}
+
+func redactMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	out := map[string]any{}
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			out[key] = redactPathLike(typed)
+		case []string:
+			out[key] = redactStringSlice(typed)
+		case []any:
+			items := make([]any, 0, len(typed))
+			for _, item := range typed {
+				if text, ok := item.(string); ok {
+					items = append(items, redactPathLike(text))
+				} else if nested, ok := item.(map[string]any); ok {
+					items = append(items, redactMap(nested))
+				} else {
+					items = append(items, item)
+				}
+			}
+			out[key] = items
+		case map[string]any:
+			out[key] = redactMap(typed)
+		default:
+			out[key] = value
+		}
+	}
+	return out
+}
+
+func redactPathLike(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if strings.HasPrefix(trimmed, "/") {
+		base := filepath.Base(filepath.Clean(trimmed))
+		if base == "." || base == string(filepath.Separator) || base == "" {
+			return "/…"
+		}
+		return "/…/" + base
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "rclone://") {
+		return "rclone://…"
+	}
+	return value
 }
 func backupSpecFromBridge(p map[string]any, dry bool) (models.BackupSpec, error) {
 	source, err := mapping(p, "source", nil)

@@ -301,7 +301,7 @@ class BkxAutomationEngine(
         if (repositoryId.isNotBlank()) refreshNamedRepository(request, repositoryId)?.let { return it }
         progress.onStage("Running saved job")
         val stage = stageId(request.requestId, "job-run")
-        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId, request.jobOverrides), true)
+        val result = runStage(request, stage, TaskerV2RequestBuilder.runSavedJob(stage, request.jobId, repositoryId, request.jobOverrides, request.expectedJobRevision), true)
             ?: return stateStore.terminal(request.requestId)!!
         return terminalFromBridge(request.copy(repositoryId = repositoryId), result)
     }
@@ -494,16 +494,15 @@ class BkxAutomationEngine(
         snapshotId = request.snapshotId,
     ).also(stateStore::complete)
 
-
-private fun savedJobRepositoryOverride(overrides: List<String>): String? = overrides.asSequence()
-    .mapNotNull { raw ->
-        val separator = raw.indexOf('=')
-        if (separator <= 0) return@mapNotNull null
-        val key = raw.substring(0, separator).trim()
-        if (key !in setOf("repository", "repository_ref")) return@mapNotNull null
-        raw.substring(separator + 1).trim().removeSurrounding("\"").takeIf(String::isNotBlank)
-    }
-    .lastOrNull()
+    private fun savedJobRepositoryOverride(overrides: List<String>): String? = overrides.asSequence()
+        .mapNotNull { raw ->
+            val separator = raw.indexOf('=')
+            if (separator <= 0) return@mapNotNull null
+            val key = raw.substring(0, separator).trim()
+            if (key !in setOf("repository", "repository_ref")) return@mapNotNull null
+            raw.substring(separator + 1).trim().removeSurrounding("\"").takeIf(String::isNotBlank)
+        }
+        .lastOrNull()
 
     private fun archiveLocation(location: String): ArchiveLocation = ArchiveLocation(
         archiveId = "automation-archive",

@@ -32,6 +32,7 @@ func (d *Dispatcher) schedulesPut(p map[string]any) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	var jobEnabled = true
 	if d.Jobs != nil {
 		job, err := d.Jobs.Get(jobID)
 		if err != nil {
@@ -40,6 +41,7 @@ func (d *Dispatcher) schedulesPut(p map[string]any) (Result, error) {
 		if job == nil {
 			return Result{}, berror.NotFound("Saved job not found: "+jobID, map[string]any{"job_id": jobID})
 		}
+		jobEnabled = job.Enabled
 	}
 	rawEvery, ok := p["interval_minutes"]
 	if !ok {
@@ -52,6 +54,9 @@ func (d *Dispatcher) schedulesPut(p map[string]any) (Result, error) {
 	enabled, err := boolDefault(p, "enabled", true)
 	if err != nil {
 		return Result{}, err
+	}
+	if enabled && !jobEnabled {
+		return Result{}, berror.Validation("cannot enable a schedule for a disabled saved job", map[string]any{"job_id": jobID})
 	}
 	charging, err := boolDefault(p, "require_charging", false)
 	if err != nil {
@@ -76,6 +81,28 @@ func (d *Dispatcher) schedulesSetEnabled(p map[string]any) (Result, error) {
 	enabled, err := boolDefault(p, "enabled", true)
 	if err != nil {
 		return Result{}, err
+	}
+	if enabled && !jobEnabled {
+		return Result{}, berror.Validation("cannot enable a schedule for a disabled saved job", map[string]any{"job_id": jobID})
+	}
+	if enabled && d.Jobs != nil {
+		current, err := d.scheduleStore().Get(id)
+		if err != nil {
+			return Result{}, err
+		}
+		if current == nil {
+			return Result{}, berror.NotFound("Schedule not found: "+id, map[string]any{"schedule_id": id})
+		}
+		job, err := d.Jobs.Get(current.JobID)
+		if err != nil {
+			return Result{}, err
+		}
+		if job == nil {
+			return Result{}, berror.NotFound("Saved job not found: "+current.JobID, map[string]any{"job_id": current.JobID})
+		}
+		if !job.Enabled {
+			return Result{}, berror.Validation("cannot enable a schedule for a disabled saved job", map[string]any{"job_id": current.JobID, "schedule_id": id})
+		}
 	}
 	value, err := d.scheduleStore().SetEnabled(id, enabled)
 	if err != nil {

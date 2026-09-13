@@ -59,6 +59,9 @@ object BkxAutomationContract {
     const val EXTRA_DRY_RUN = ACTION_PREFIX + "extra.DRY_RUN"
     const val EXTRA_CONFIRM_DESTRUCTIVE = ACTION_PREFIX + "extra.CONFIRM_DESTRUCTIVE"
     const val EXTRA_SNAPSHOT_OVERWRITE = ACTION_PREFIX + "extra.SNAPSHOT_OVERWRITE"
+    const val EXTRA_SCHEDULE_ID = ACTION_PREFIX + "extra.SCHEDULE_ID"
+    const val EXTRA_SCHEDULE_SIGNATURE = ACTION_PREFIX + "extra.SCHEDULE_SIGNATURE"
+    const val EXTRA_EXPECTED_JOB_REVISION = ACTION_PREFIX + "extra.EXPECTED_JOB_REVISION"
 
     val directActions = setOf(
         ACTION_BACKUP,
@@ -177,6 +180,9 @@ data class AutomationRequest(
     val pageSize: Int = 100,
     val jobId: String = "",
     val jobOverrides: List<String> = emptyList(),
+    val scheduleId: String = "",
+    val scheduleSignature: String = "",
+    val expectedJobRevision: Long = 0L,
     val repositoryId: String = "",
     val snapshotId: String = "",
     val dryRun: Boolean = true,
@@ -213,6 +219,8 @@ data class AutomationRequest(
             }
             AutomationAction.RunSavedJob -> {
                 if (!stableId(jobId)) add("Saved job id is required and must use BKX stable-id syntax.")
+                if (scheduleId.isNotBlank() && !stableId(scheduleId)) add("Schedule id must use BKX stable-id syntax.")
+                if (expectedJobRevision < 0L) add("Expected job revision must not be negative.")
                 if (repositoryId.isNotBlank() && !stableId(repositoryId)) add("Saved-job repository override must use BKX stable-id syntax.")
                 jobOverrides.forEach { value ->
                     if (!value.contains('=') || value.substringBefore('=').trim().isBlank()) add("Saved-job overrides must use KEY=VALUE.")
@@ -263,7 +271,7 @@ data class AutomationResult(
     val bytesReused: Long? = null,
     val durationMillis: Long? = null,
 ) {
-    val successful: Boolean get() = status == "success" || status == "accepted" || status == "running"
+    val successful: Boolean get() = status == "success"
 
     fun taskerVariableValues(): Map<String, String> = linkedMapOf(
         "%bkx_request_id" to requestId,
@@ -308,7 +316,6 @@ data class AutomationResult(
 
 internal fun splitAutomationList(value: String?): List<String> = value.orEmpty()
     .lineSequence()
-    .flatMap { it.split(',').asSequence() }
     .map(String::trim)
     .filter(String::isNotEmpty)
     .distinct()

@@ -1,7 +1,9 @@
 package schedulestore
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -52,5 +54,50 @@ func TestScheduleAcceptsAnyNetworkAndRejectsUnknownNetwork(t *testing.T) {
 	}
 	if _, err := s.Put(Schedule{ScheduleID: "bad", JobID: "phone", Enabled: true, IntervalMinutes: 30, Network: "wifi"}); err == nil {
 		t.Fatal("expected invalid network policy rejection")
+	}
+}
+
+func TestBR27ScheduleStoreRejectsOverflowAndKeepsEmptyArray(t *testing.T) {
+	s := &Store{Path: filepath.Join(t.TempDir(), "schedules.json")}
+	if _, err := s.Put(Schedule{ScheduleID: "yearly", JobID: "phone", Enabled: true, IntervalMinutes: MaxIntervalMinutes + 1, Network: "none"}); err == nil {
+		t.Fatal("expected maximum interval rejection")
+	}
+	if _, err := s.Put(Schedule{ScheduleID: "keep", JobID: "phone", Enabled: true, IntervalMinutes: 60, Network: "none"}); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := s.Delete("keep")
+	if err != nil || !deleted {
+		t.Fatalf("delete=%v err=%v", deleted, err)
+	}
+	data, err := os.ReadFile(s.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"schedules": []`) {
+		t.Fatalf("expected empty array, got %s", data)
+	}
+}
+
+func TestBR27ScheduleStoreBulkDisableAndDeleteForJob(t *testing.T) {
+	s := &Store{Path: filepath.Join(t.TempDir(), "schedules.json")}
+	for _, id := range []string{"a", "b"} {
+		if _, err := s.Put(Schedule{ScheduleID: id, JobID: "job", Enabled: true, IntervalMinutes: 60, Network: "none"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Put(Schedule{ScheduleID: "other", JobID: "other", Enabled: true, IntervalMinutes: 60, Network: "none"}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := s.SetEnabledForJob("job", false)
+	if err != nil || changed != 2 {
+		t.Fatalf("changed=%d err=%v", changed, err)
+	}
+	deleted, err := s.DeleteForJob("job")
+	if err != nil || deleted != 2 {
+		t.Fatalf("deleted=%d err=%v", deleted, err)
+	}
+	left, err := s.List()
+	if err != nil || len(left) != 1 || left[0].ScheduleID != "other" {
+		t.Fatalf("left=%+v err=%v", left, err)
 	}
 }

@@ -36,3 +36,12 @@ class BkxSavedJobSchedulerContractTest {
         assertEquals(15L, BkxSavedJobScheduler.MIN_INTERVAL_MINUTES)
     }
 }
+
+class BR27SavedJobSchedulerContractTest {
+    @Test
+    fun scheduleSignatureIncludesJobRevisionAndIntervalHasMaximum() {
+        val base = BkxSavedJobSchedule(scheduleId = "nightly", jobId = "phone-backup", intervalMinutes = 60, network = "none")
+        assertTrue(BkxSavedJobScheduler.scheduleSignature(base, 1L) != BkxSavedJobScheduler.scheduleSignature(base, 2L))
+        assertEquals(525_600L, BkxSavedJobScheduler.MAX_INTERVAL_MINUTES)
+    }
+}

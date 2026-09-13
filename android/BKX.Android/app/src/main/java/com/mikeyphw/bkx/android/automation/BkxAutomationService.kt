@@ -66,7 +66,10 @@ class BkxAutomationService : Service() {
                         dispatch.request,
                         AutomationProgressSink { stage -> updateNotification(stage) },
                     )
-                    AutomationResultDelivery.deliver(this@BkxAutomationService, dispatch, result)
+                    if (store.markDeliveryStarted(dispatch.dispatchId)) {
+                        AutomationResultDelivery.deliver(this@BkxAutomationService, dispatch, result)
+                    }
+                    AutomationDispatcher.cancelFallback(this@BkxAutomationService, dispatch.dispatchId)
                     store.remove(dispatch.dispatchId)
                 }
             } finally {

@@ -452,7 +452,7 @@ private fun SavedJobEditorDialog(
                     value = sources,
                     onValueChange = { sources = it },
                     label = { Text("Sources") },
-                    supportingText = { Text("One path per line or comma-separated.") },
+                    supportingText = { Text("One path per line; commas are treated as part of the path.") },
                     minLines = 2,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -461,7 +461,7 @@ private fun SavedJobEditorDialog(
                         value = excludes,
                         onValueChange = { excludes = it },
                         label = { Text("Exclusions") },
-                        supportingText = { Text("Optional patterns, one per line or comma-separated.") },
+                        supportingText = { Text("Optional patterns, one per line; commas are treated as part of the pattern.") },
                         minLines = 2,
                         modifier = Modifier.fillMaxWidth(),
                     )

@@ -104,3 +104,24 @@ class TaskerV2ActionContractTest {
         assertTrue(values.containsKey("%bkx_error_code"))
     }
 }
+
+class BR27AutomationContractTest {
+    @Test
+    fun acceptedOrRunningTaskerResultsAreNotReportedAsSuccessfulTerminalWork() {
+        assertEquals("false", AutomationResult("accepted", AutomationAction.Backup, "accepted").taskerVariableValues()["%bkx_success"])
+        assertEquals("false", AutomationResult("running", AutomationAction.Backup, "running").taskerVariableValues()["%bkx_success"])
+        assertEquals("true", AutomationResult("done", AutomationAction.Backup, "success").taskerVariableValues()["%bkx_success"])
+    }
+
+    @Test
+    fun listParsingPreservesCommasInsideSingleValues() {
+        assertEquals(listOf("/sdcard/DCIM, Camera"), splitAutomationList("/sdcard/DCIM, Camera"))
+        assertEquals(listOf("/a,b", "/c"), splitAutomationList("/a,b\n/c"))
+    }
+
+    @Test
+    fun savedJobRunBuilderCarriesExpectedRevisionForScheduledDispatch() {
+        val envelope = TaskerV2RequestBuilder.runSavedJob("run", "nightly", expectedRevision = 7L)
+        assertEquals("7", (envelope.payload["expected_revision"] as JsonPrimitive).content)
+    }
+}

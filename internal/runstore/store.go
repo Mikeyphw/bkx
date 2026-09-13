@@ -31,6 +31,7 @@ type SavedJobOrigin struct {
 	JobID     string
 	Revision  int64
 	Operation models.OperationSpecV2
+	Override  bool
 }
 
 type Store struct {
@@ -379,6 +380,12 @@ func (s *Store) RecordStartWithOrigin(runID, operation string, sources []string,
 		record.JobID = jobID
 		record.JobRevision = origin.Revision
 		record.OperationSpecSnapshot = &cloned
+		if origin.Override {
+			if record.SpecSnapshot == nil {
+				record.SpecSnapshot = map[string]any{}
+			}
+			record.SpecSnapshot["_saved_job_execution_override"] = true
+		}
 	}
 	if err := validateRecord(record); err != nil {
 		return models.RunRecord{}, err
@@ -591,13 +598,31 @@ func ReplayOperation(record models.RunRecord) (models.OperationSpecV2, error) {
 	return spec, nil
 }
 
+type ListPageResult struct {
+	Records       []models.RunRecord
+	NextPageToken string
+	Total         int
+}
+
 func (s *Store) List(limit int, operation string) ([]models.RunRecord, error) {
+	page, err := s.ListPage(limit, operation, "")
+	return page.Records, err
+}
+
+func (s *Store) ListPage(limit int, operation, pageToken string) (ListPageResult, error) {
 	if limit <= 0 {
-		return nil, berror.Validation("Run list limit must be greater than zero", map[string]any{"limit": limit})
+		return ListPageResult{}, berror.Validation("Run list limit must be greater than zero", map[string]any{"limit": limit})
+	}
+	if limit > 500 {
+		return ListPageResult{}, berror.Validation("Run list limit must be at most 500 per page", map[string]any{"limit": limit})
+	}
+	offset, err := parsePageOffset(pageToken)
+	if err != nil {
+		return ListPageResult{}, err
 	}
 	records, err := s.Load()
 	if err != nil {
-		return nil, err
+		return ListPageResult{}, err
 	}
 	out := records[:0]
 	for _, r := range records {
@@ -608,12 +633,23 @@ func (s *Store) List(limit int, operation string) ([]models.RunRecord, error) {
 	sort.Slice(out, func(i, j int) bool {
 		ti, _ := parseISO(out[i].StartedAt)
 		tj, _ := parseISO(out[j].StartedAt)
+		if ti.Equal(tj) {
+			return out[i].RunID < out[j].RunID
+		}
 		return ti.After(tj)
 	})
-	if len(out) > limit {
-		out = out[:limit]
+	if offset > len(out) {
+		offset = len(out)
 	}
-	return out, nil
+	end := offset + limit
+	if end > len(out) {
+		end = len(out)
+	}
+	result := ListPageResult{Records: append([]models.RunRecord(nil), out[offset:end]...), Total: len(out)}
+	if end < len(out) {
+		result.NextPageToken = fmt.Sprintf("offset:%d", end)
+	}
+	return result, nil
 }
 func (s *Store) Count(operation string) (int, error) {
 	records, err := s.Load()
@@ -665,7 +701,6 @@ func (s *Store) ClearAll() (int, error) {
 func decodeRecord(data []byte) (models.RunRecord, error) {
 	var record models.RunRecord
 	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
 	if err := dec.Decode(&record); err != nil {
 		return record, err
 	}
@@ -726,6 +761,32 @@ func validateRecord(r models.RunRecord) error {
 	}
 	return nil
 }
+func parsePageOffset(token string) (int, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return 0, nil
+	}
+	if !strings.HasPrefix(token, "offset:") {
+		return 0, berror.Validation("invalid run list page_token", map[string]any{"page_token": token})
+	}
+	var offset int
+	if _, err := fmt.Sscanf(token, "offset:%d", &offset); err != nil || offset < 0 {
+		return 0, berror.Validation("invalid run list page_token", map[string]any{"page_token": token})
+	}
+	return offset, nil
+}
+
+func IsReplayable(record models.RunRecord) bool {
+	if record.CompletedAt == nil {
+		return false
+	}
+	if record.Status != "success" && record.Status != "failed" && record.Status != "cancelled" && record.Status != "interrupted" {
+		return false
+	}
+	_, err := ReplayOperation(record)
+	return err == nil
+}
+
 func parseISO(value string) (time.Time, error) {
 	for _, layout := range []string{time.RFC3339Nano, "2006-01-02T15:04:05"} {
 		if t, err := time.Parse(layout, value); err == nil {
@@ -734,4 +795,4 @@ func parseISO(value string) (time.Time, error) {
 	}
 	return time.Time{}, fmt.Errorf("invalid ISO datetime: %s", value)
 }
-func nowISO() string { return time.Now().Format("2006-01-02T15:04:05.999999999") }
+func nowISO() string { return time.Now().UTC().Format(time.RFC3339Nano) }

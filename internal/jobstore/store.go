@@ -186,6 +186,7 @@ func validateDocument(doc document) error {
 		return berror.Validation("saved-job document schema_version mismatch", map[string]any{"schema_version": doc.SchemaVersion})
 	}
 	seen := map[string]bool{}
+	currentRevision := map[string]int64{}
 	for _, job := range doc.Jobs {
 		if err := models.ValidateSavedJob(job); err != nil {
 			return berror.Validation("invalid saved job", map[string]any{"job_id": job.JobID, "reason": err.Error()})
@@ -194,6 +195,7 @@ func validateDocument(doc document) error {
 			return berror.Validation("duplicate saved job id", map[string]any{"job_id": job.JobID})
 		}
 		seen[job.JobID] = true
+		currentRevision[job.JobID] = job.Revision
 	}
 	for jobID, revisions := range doc.Revisions {
 		last := int64(0)
@@ -208,6 +210,9 @@ func validateDocument(doc document) error {
 				return berror.Validation("saved-job revision history must be strictly increasing", map[string]any{"job_id": jobID})
 			}
 			last = revision.Revision
+		}
+		if current, ok := currentRevision[jobID]; ok && current <= last {
+			return berror.Validation("saved-job current revision must be newer than history", map[string]any{"job_id": jobID, "current_revision": current, "latest_history_revision": last})
 		}
 	}
 	return nil

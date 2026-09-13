@@ -75,7 +75,7 @@ func (r Runtime) CopyTo(ctx context.Context, source, destination string, options
 	if !options.Overwrite {
 		args = append(args, "--immutable")
 	}
-	last, err := r.runCommand(ctx, args, options.Cancelled, func(current statsDocument) {
+	last, warnings, err := r.runCommand(ctx, args, options.Cancelled, func(current statsDocument) {
 		emitTransferProgress(options, Progress{
 			FilesDone: current.Transfers, FilesTotal: size.Files,
 			BytesDone: current.Bytes, BytesTotal: size.Bytes,
@@ -84,12 +84,15 @@ func (r Runtime) CopyTo(ctx context.Context, source, destination string, options
 	if err != nil {
 		return TransferResult{}, err
 	}
+	allWarnings := append([]string(nil), warnings...)
 	if options.Verify {
 		verifyArgs := []string{"check", src, dst, "--download", "--one-way"}
 		verifyArgs = append(verifyArgs, r.baseArgs()...)
 		verifyArgs = append(verifyArgs, "--log-level", "ERROR")
-		if _, err := r.runCommand(ctx, verifyArgs, options.Cancelled, nil); err != nil {
+		if _, verifyWarnings, err := r.runCommand(ctx, verifyArgs, options.Cancelled, nil); err != nil {
 			return TransferResult{}, fmt.Errorf("rclone verification failed: %w", err)
+		} else {
+			allWarnings = append(allWarnings, verifyWarnings...)
 		}
 		destinationEntry, err := r.Stat(ctx, destination)
 		if err != nil {
@@ -102,7 +105,7 @@ func (r Runtime) CopyTo(ctx context.Context, source, destination string, options
 	files := max64(last.Transfers, size.Files)
 	bytes := max64(last.Bytes, size.Bytes)
 	emitTransferProgress(options, Progress{FilesDone: files, FilesTotal: size.Files, BytesDone: bytes, BytesTotal: size.Bytes})
-	return TransferResult{Files: files, Bytes: bytes}, nil
+	return TransferResult{Files: files, Bytes: bytes, Warnings: allWarnings}, nil
 }
 
 func (r Runtime) DeleteFile(ctx context.Context, value string) error {

@@ -1024,11 +1024,25 @@ func (d *Dispatcher) transferPlan(ctx OperationContext, p map[string]any) (Resul
 	for _, x := range plan.Warnings {
 		issues = append(issues, warningIssue("plan_warning", x))
 	}
-	return success(fmt.Sprintf("Transfer plan ready: %d files, %d steps.", plan.TotalFiles, len(plan.Steps)), issues, []Artifact{artifact("transfer_plan", "embedded://plan/"+requestID(ctx), tok)}), nil
+	return success(fmt.Sprintf("Transfer plan ready: %d files, %d steps.", plan.TotalFiles, len(plan.Steps)), issues, transferPlanArtifacts(plan, requestID(ctx), tok)), nil
 }
 func (d *Dispatcher) transferRun(ctx OperationContext, p map[string]any) (Result, error) {
 	spec, err := transferSpecFromBridge(p, false)
 	if err != nil {
+		return Result{}, err
+	}
+	planSpec := spec
+	planSpec.DryRun = true
+	plan, err := transferops.PlanTransfer(planSpec)
+	if err != nil {
+		return Result{}, err
+	}
+	plan.Command = "transfer.plan"
+	tok, err := planToken(plan)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := requirePlanEvidence(p, "transfer.run", "plan_request_id", "plan_token", tok); err != nil {
 		return Result{}, err
 	}
 	emit(ctx, "transferring", "Starting transfer.", floatPtr(.02))
@@ -1390,6 +1404,49 @@ func restoreSpecFromBridge(p map[string]any, dry bool) (models.RestoreSpec, erro
 	confirm, _ := boolDefault(p, "confirm_overwrite", false)
 	return models.RestoreSpec{Archive: archive, Destination: destPtr, Paths: paths, Overwrite: overwrite, Verify: verify, DryRun: dry, FreshDir: fresh, ConfirmOverwrite: confirm}, nil
 }
+
+func transferPlanArtifacts(plan transferops.Plan, requestID, token string) []Artifact {
+	planArtifact := artifact("transfer_plan", "embedded://plan/"+requestID, token)
+	planArtifact.Metadata = map[string]string{
+		"plan_request_id": requestID,
+		"plan_token":      token,
+		"mappings_count":  strconv.FormatInt(plan.TotalFiles, 10),
+		"mappings_more":   strconv.FormatBool(plan.MappingsMore),
+	}
+	artifacts := []Artifact{planArtifact}
+	for index, mapping := range plan.Mappings {
+		if index >= 250 {
+			break
+		}
+		label := "transfer_mapping"
+		if mapping.Directory {
+			label = "transfer_directory_mapping"
+		}
+		item := artifact(label, mapping.Destination, "")
+		size := mapping.SizeBytes
+		item.SizeBytes = &size
+		item.Metadata = map[string]string{
+			"source":            mapping.Source,
+			"destination":       mapping.Destination,
+			"relative_path":     mapping.RelativePath,
+			"action":            mapping.Action,
+			"source_label":      filepath.Base(mapping.Source),
+			"destination_label": filepath.Base(mapping.Destination),
+			"plan_request_id":   requestID,
+		}
+		if mapping.Directory {
+			item.Metadata["directory"] = "true"
+		}
+		artifacts = append(artifacts, item)
+	}
+	if plan.MappingsMore {
+		item := artifact("transfer_mapping_truncated", "embedded://plan/"+requestID+"/mappings", "")
+		item.Metadata = map[string]string{"plan_request_id": requestID, "mappings_more": "true"}
+		artifacts = append(artifacts, item)
+	}
+	return artifacts
+}
+
 func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, error) {
 	raw, ok := p["sources"].([]any)
 	if !ok || len(raw) == 0 {
@@ -1432,6 +1489,10 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 		direction = "push"
 	}
 	deleteExtraneous, _ := boolDefault(p, "delete_extraneous_on_sync", false)
+	syncDeleteLimit, err := intValueDefault(p, "sync_delete_limit", 0)
+	if err != nil {
+		return models.TransferSpec{}, err
+	}
 	verify, _ := boolDefault(p, "verify", true)
 	overwrite, _ := boolDefault(p, "overwrite", false)
 	checksum := optionalString(p["checksum"])
@@ -1439,7 +1500,17 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 	if checksum != "" {
 		checksumPtr = &checksum
 	}
-	return validation.ValidateTransferSpec(models.TransferSpec{Sources: sources, Destination: dest, Direction: direction, Verify: verify, Checksum: checksumPtr, DryRun: dry, Overwrite: overwrite, DeleteExtraneousOnSync: deleteExtraneous})
+	if policies, _ := mapping(p, "policies", nil); policies != nil {
+		symlink := optionalString(policies["symlink"])
+		special := optionalString(policies["special_file"])
+		if symlink != "" && symlink != "block" {
+			return models.TransferSpec{}, berror.Validation("transfer symlink policy must be block until safe preserve/skip semantics are implemented", map[string]any{"symlink": symlink})
+		}
+		if special != "" && special != "block" {
+			return models.TransferSpec{}, berror.Validation("transfer special file policy must be block until safe preserve/skip semantics are implemented", map[string]any{"special_file": special})
+		}
+	}
+	return validation.ValidateTransferSpec(models.TransferSpec{Sources: sources, Destination: dest, Direction: direction, Verify: verify, Checksum: checksumPtr, DryRun: dry, Overwrite: overwrite, DeleteExtraneousOnSync: deleteExtraneous, SyncDeleteLimit: syncDeleteLimit})
 }
 
 func archivePath(p map[string]any) (string, error) {

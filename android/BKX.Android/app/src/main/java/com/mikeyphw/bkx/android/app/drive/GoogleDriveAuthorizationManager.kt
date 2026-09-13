@@ -9,6 +9,7 @@ import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.auth.api.identity.RevokeAccessRequest
 import com.google.android.gms.common.Scopes
 import com.google.android.gms.common.api.Scope
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRemoteReadiness
 import com.mikeyphw.bkx.android.core.remotes.RcloneConfigManager
 import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
 
@@ -27,7 +28,9 @@ class GoogleDriveAuthorizationManager(
     private val client = Identity.getAuthorizationClient(appContext)
     private val driveScope = Scope(Scopes.DRIVE_FILE)
 
-    fun hasManagedConfiguration(): Boolean = configManager.hasManagedGoogleDrive()
+    fun managedRemoteReadiness(): GoogleDriveRemoteReadiness = configManager.managedGoogleDriveReadiness()
+
+    fun hasManagedConfiguration(): Boolean = managedRemoteReadiness() == GoogleDriveRemoteReadiness.Ready
 
     fun authorize(callback: (GoogleDriveAuthorizationOutcome) -> Unit) {
         taskerConditionPublisher?.driveConnecting()

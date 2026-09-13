@@ -31,9 +31,12 @@ import (
 var ErrCancelled = errors.New("transfer operation cancelled")
 
 type Mapping struct {
-	Source      string `json:"source"`
-	Destination string `json:"destination"`
-	SizeBytes   int64  `json:"size_bytes"`
+	Source       string `json:"source"`
+	Destination  string `json:"destination"`
+	SizeBytes    int64  `json:"size_bytes"`
+	RelativePath string `json:"relative_path,omitempty"`
+	Action       string `json:"action,omitempty"`
+	Directory    bool   `json:"directory,omitempty"`
 }
 
 type PlanStep struct {
@@ -51,6 +54,8 @@ type Plan struct {
 	Command        string     `json:"command"`
 	DryRun         bool       `json:"dry_run"`
 	Steps          []PlanStep `json:"steps"`
+	Mappings       []Mapping  `json:"mappings,omitempty"`
+	MappingsMore   bool       `json:"mappings_more,omitempty"`
 	TotalFiles     int64      `json:"total_files"`
 	TotalBytes     int64      `json:"total_bytes"`
 	TimingEstimate string     `json:"timing_estimate"`
@@ -126,14 +131,14 @@ func Normalize(spec models.TransferSpec) (models.TransferSpec, error) {
 	}
 	sources := make([]string, 0, len(valid.Sources))
 	for _, source := range valid.Sources {
-		canonical, err := validation.CanonicalLocalPath(source)
+		absolute, err := validation.AbsoluteLocalPath(source)
 		if err != nil {
 			return models.TransferSpec{}, err
 		}
-		if err := validateSource(canonical); err != nil {
+		if err := validateSource(absolute); err != nil {
 			return models.TransferSpec{}, err
 		}
-		sources = append(sources, canonical)
+		sources = append(sources, absolute)
 	}
 	if len(sources) > 1 {
 		st, err := os.Stat(destination)
@@ -177,14 +182,14 @@ func normalizeRcloneSpec(valid models.TransferSpec) (models.TransferSpec, error)
 			return trimmed, nil
 		}
 		if requireSource {
-			canonical, err := validation.CanonicalLocalPath(trimmed)
+			absolute, err := validation.AbsoluteLocalPath(trimmed)
 			if err != nil {
 				return "", err
 			}
-			if err := validateSource(canonical); err != nil {
+			if err := validateSource(absolute); err != nil {
 				return "", err
 			}
-			return canonical, nil
+			return absolute, nil
 		}
 		return validation.AbsoluteLocalPath(trimmed)
 	}
@@ -238,7 +243,8 @@ func PlanTransfer(spec models.TransferSpec) (Plan, error) {
 	if valid.Verify {
 		steps = append(steps, PlanStep{StepType: "verify", Description: "Verify transfer integrity", Source: nil, Destination: &dest, FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{}, Warnings: []string{}})
 	}
-	return Plan{Command: "transfer " + valid.Direction, DryRun: true, Steps: steps, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "unknown", Warnings: []string{}}, nil
+	bounded, more := boundedMappings(mappings)
+	return Plan{Command: "transfer " + valid.Direction, DryRun: true, Steps: steps, Mappings: bounded, MappingsMore: more, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "unknown", Warnings: []string{}}, nil
 }
 
 func planRcloneTransfer(valid models.TransferSpec) (Plan, error) {
@@ -275,12 +281,14 @@ func planRcloneTransfer(valid models.TransferSpec) (Plan, error) {
 	destination := valid.Destination
 	steps := []PlanStep{{
 		StepType: "transfer", Description: fmt.Sprintf("%s with rclone", valid.Direction), Source: source, Destination: &destination,
-		FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{"direction": valid.Direction, "source_count": len(valid.Sources), "transport": "rclone"}, Warnings: append([]string(nil), warnings...),
+		FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{"direction": valid.Direction, "source_count": len(valid.Sources), "transport": "rclone", "sync_delete_limit": valid.SyncDeleteLimit}, Warnings: append([]string(nil), warnings...),
 	}}
 	if valid.Verify {
 		steps = append(steps, PlanStep{StepType: "verify", Description: "Verify remote transfer with rclone check", Source: source, Destination: &destination, FilesAffected: int64ptr(files), BytesAffected: int64ptr(bytes), Details: map[string]any{"transport": "rclone"}, Warnings: []string{}})
 	}
-	return Plan{Command: "transfer " + valid.Direction + " --transport rclone", DryRun: true, Steps: steps, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "network-dependent", Warnings: warnings}, nil
+	mappings := previewRcloneMappings(valid, files)
+	bounded, more := boundedMappings(mappings)
+	return Plan{Command: "transfer " + valid.Direction + " --transport rclone", DryRun: true, Steps: steps, Mappings: bounded, MappingsMore: more, TotalFiles: files, TotalBytes: bytes, TimingEstimate: "network-dependent", Warnings: warnings}, nil
 }
 
 func PlanMappings(spec models.TransferSpec) ([]Mapping, error) {
@@ -298,10 +306,11 @@ func PlanMappings(spec models.TransferSpec) ([]Mapping, error) {
 		}
 		if st.Mode().IsRegular() {
 			target := destination
+			rel := filepath.Base(source)
 			if multi || isExistingDir(destination) {
-				target = filepath.Join(destination, filepath.Base(source))
+				target = filepath.Join(destination, rel)
 			}
-			mappings = append(mappings, Mapping{Source: source, Destination: target, SizeBytes: st.Size()})
+			mappings = append(mappings, Mapping{Source: source, Destination: target, SizeBytes: st.Size(), RelativePath: rel, Action: plannedAction(target, valid.Overwrite)})
 			continue
 		}
 		targetRoot := destination
@@ -318,18 +327,23 @@ func PlanMappings(spec models.TransferSpec) ([]Mapping, error) {
 				}
 				return err
 			}
+			rel, err := filepath.Rel(source, path)
+			if err != nil {
+				return err
+			}
 			if d.IsDir() {
+				if path != source {
+					target := filepath.Join(targetRoot, rel)
+					mappings = append(mappings, Mapping{Source: path, Destination: target, RelativePath: rel, Action: plannedAction(target, valid.Overwrite), Directory: true})
+				}
 				return nil
 			}
 			info, err := d.Info()
 			if err != nil {
 				return err
 			}
-			rel, err := filepath.Rel(source, path)
-			if err != nil {
-				return err
-			}
-			mappings = append(mappings, Mapping{Source: path, Destination: filepath.Join(targetRoot, rel), SizeBytes: info.Size()})
+			target := filepath.Join(targetRoot, rel)
+			mappings = append(mappings, Mapping{Source: path, Destination: target, SizeBytes: info.Size(), RelativePath: rel, Action: plannedAction(target, valid.Overwrite)})
 			return nil
 		})
 		if err != nil {
@@ -398,6 +412,17 @@ func Run(spec models.TransferSpec, options Options) (Result, error) {
 		if isCancelled(options) {
 			complete("cancelled", doneFiles, doneBytes, ErrCancelled)
 			return Result{}, ErrCancelled
+		}
+		if mapping.Directory {
+			if err := createDirectoryMapping(mapping, valid); err != nil {
+				complete("failed", doneFiles, doneBytes, err)
+				return Result{}, err
+			}
+			if options.Progress != nil {
+				current := mapping.Source
+				options.Progress(ProgressEvent{CurrentFile: &current, FilesTransferred: doneFiles, BytesTransferred: doneBytes, TotalFiles: totalFiles, TotalBytes: totalBytes})
+			}
+			continue
 		}
 		if err := copyOne(mapping, valid, func(copied int64) {
 			if options.Progress != nil {
@@ -470,9 +495,10 @@ func runRcloneTransfer(valid models.TransferSpec, options Options, started time.
 
 	ctx := context.Background()
 	result, err := runtime.Transfer(ctx, valid.Direction, valid.Sources, valid.Destination, rcloneops.TransferOptions{
-		Overwrite: valid.Overwrite,
-		Verify:    valid.Verify || valid.Checksum != nil,
-		Cancelled: options.Cancelled,
+		Overwrite:       valid.Overwrite,
+		Verify:          valid.Verify || valid.Checksum != nil,
+		SyncDeleteLimit: valid.SyncDeleteLimit,
+		Cancelled:       options.Cancelled,
 		Progress: func(progress rcloneops.Progress) {
 			if options.Progress != nil {
 				options.Progress(ProgressEvent{FilesTransferred: progress.FilesDone, BytesTransferred: progress.BytesDone, TotalFiles: progress.FilesTotal, TotalBytes: progress.BytesTotal})
@@ -499,8 +525,82 @@ func runRcloneTransfer(valid models.TransferSpec, options Options, started time.
 		FilesTransferred: result.Files, BytesTransferred: result.Bytes,
 		Source: &first, Destination: &destination,
 		VerificationPassed: verified, ChecksumVerified: checksum,
-		Warnings: []string{}, Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
+		Warnings: append([]string(nil), result.Warnings...), Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
 	}, nil
+}
+
+func boundedMappings(mappings []Mapping) ([]Mapping, bool) {
+	const limit = 250
+	if len(mappings) <= limit {
+		return append([]Mapping(nil), mappings...), false
+	}
+	return append([]Mapping(nil), mappings[:limit]...), true
+}
+
+func previewRcloneMappings(spec models.TransferSpec, totalFiles int64) []Mapping {
+	mappings := make([]Mapping, 0, len(spec.Sources))
+	for _, source := range spec.Sources {
+		rel := rcloneops.BaseName(source)
+		if rel == "" || rel == "." || rel == "/" {
+			rel = "remote-root"
+		}
+		target := spec.Destination
+		if spec.Direction != "sync" {
+			if child, err := destinationChild(spec.Destination, rel); err == nil {
+				target = child
+			}
+		}
+		action := "create"
+		if spec.Direction == "sync" {
+			action = "update"
+		}
+		mappings = append(mappings, Mapping{Source: source, Destination: target, RelativePath: rel, Action: action})
+	}
+	if totalFiles > int64(len(mappings)) {
+		mappings = append(mappings, Mapping{Source: "rclone://...", Destination: spec.Destination, RelativePath: "remote-preview-truncated", Action: "update"})
+	}
+	return mappings
+}
+
+func destinationChild(destination, child string) (string, error) {
+	if rcloneops.IsLocation(destination) {
+		return rcloneops.JoinURI(destination, child)
+	}
+	abs, err := filepath.Abs(destination)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(abs, child), nil
+}
+
+func plannedAction(destination string, overwrite bool) string {
+	if _, err := os.Lstat(destination); err == nil {
+		if overwrite {
+			return "update"
+		}
+		return "skip"
+	}
+	return "create"
+}
+
+func createDirectoryMapping(mapping Mapping, spec models.TransferSpec) error {
+	if err := ensureNoDestinationSymlink(mapping.Destination); err != nil {
+		return err
+	}
+	if !spec.Overwrite {
+		if st, err := os.Lstat(mapping.Destination); err == nil {
+			if st.IsDir() {
+				return nil
+			}
+			return berror.Validation("Transfer destination already exists and overwrite is disabled", map[string]any{"destination": mapping.Destination})
+		} else if err != nil && !os.IsNotExist(err) {
+			return berror.WrapExternal("checking transfer destination", mapping.Destination, "go-os", err)
+		}
+	}
+	if err := os.MkdirAll(mapping.Destination, 0o755); err != nil {
+		return berror.WrapExternal("creating transfer directory", mapping.Destination, "go-os", err)
+	}
+	return ensureNoDestinationSymlink(mapping.Destination)
 }
 
 func copyOne(mapping Mapping, spec models.TransferSpec, progress func(int64), options Options) error {
@@ -681,22 +781,24 @@ func validateSource(path string) error {
 
 func validateMappingSet(mappings []Mapping, overwrite bool) error {
 	seen := map[string]string{}
+	destinations := make([]string, 0, len(mappings))
+	sources := make([]string, 0, len(mappings))
 	for _, mapping := range mappings {
 		target, err := validation.AbsoluteLocalPath(mapping.Destination)
 		if err != nil {
 			return err
 		}
-		for _, other := range mappings {
-			if mapping.Source != other.Source && pathsOverlap(mapping.Source, other.Destination) {
-				return berror.Validation("Transfer source overlaps a destination", map[string]any{"source": mapping.Source, "destination": other.Destination})
-			}
-		}
 		if previous, ok := seen[target]; ok && previous != mapping.Source {
 			return berror.Validation("Multiple transfer sources map to the same destination", map[string]any{"destination": target, "first": previous, "second": mapping.Source})
 		}
 		seen[target] = mapping.Source
+		destinations = append(destinations, target)
+		sources = append(sources, filepath.Clean(mapping.Source))
 		if err := ensureNoDestinationSymlink(target); err != nil {
 			return err
+		}
+		if mapping.Directory {
+			continue
 		}
 		if _, err := os.Lstat(target); err == nil && !overwrite {
 			return berror.Validation("Transfer destination already exists and overwrite is disabled", map[string]any{"destination": target})
@@ -704,7 +806,32 @@ func validateMappingSet(mappings []Mapping, overwrite bool) error {
 			return berror.WrapExternal("checking transfer destination", target, "go-os", err)
 		}
 	}
+	sort.Strings(sources)
+	sort.Strings(destinations)
+	for _, destination := range destinations {
+		if sourceOverlapsDestination(sources, destination) {
+			return berror.Validation("Transfer source overlaps a destination", map[string]any{"destination": destination})
+		}
+	}
 	return nil
+}
+
+func sourceOverlapsDestination(sortedSources []string, destination string) bool {
+	destination = filepath.Clean(destination)
+	index := sort.SearchStrings(sortedSources, destination)
+	for _, candidateIndex := range []int{index, index - 1} {
+		if candidateIndex < 0 || candidateIndex >= len(sortedSources) {
+			continue
+		}
+		source := sortedSources[candidateIndex]
+		if source == destination {
+			return true
+		}
+		if rel, err := filepath.Rel(source, destination); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return true
+		}
+	}
+	return false
 }
 
 func ensureNoDestinationSymlink(path string) error {
@@ -871,5 +998,5 @@ func syncDir(path string) error {
 	return d.Sync()
 }
 func snapshotSpec(spec models.TransferSpec) map[string]any {
-	return map[string]any{"type": "TransferSpec", "values": map[string]any{"sources": append([]string(nil), spec.Sources...), "destination": spec.Destination, "direction": spec.Direction, "verify": spec.Verify, "checksum": spec.Checksum, "dry_run": spec.DryRun, "overwrite": spec.Overwrite, "delete_extraneous_on_sync": spec.DeleteExtraneousOnSync}}
+	return map[string]any{"type": "TransferSpec", "values": map[string]any{"sources": append([]string(nil), spec.Sources...), "destination": spec.Destination, "direction": spec.Direction, "verify": spec.Verify, "checksum": spec.Checksum, "dry_run": spec.DryRun, "overwrite": spec.Overwrite, "delete_extraneous_on_sync": spec.DeleteExtraneousOnSync, "sync_delete_limit": spec.SyncDeleteLimit}}
 }

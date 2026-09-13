@@ -45,6 +45,7 @@ data class TransferTopologyDraft(
     val checksum: String? = null,
     val overwriteExisting: Boolean = false,
     val deleteExtraneousOnSync: Boolean = false,
+    val syncDeleteLimit: Int = 1000,
     val symlinkPolicy: TransferFilePolicy = TransferFilePolicy.Block,
     val specialFilePolicy: TransferFilePolicy = TransferFilePolicy.Block,
 ) {
@@ -53,6 +54,8 @@ data class TransferTopologyDraft(
         if (destination == null) add(TransferValidationIssue.MissingDestination)
         if (mode == TransferMode.Sync && sources.size != 1) add(TransferValidationIssue.InvalidTopology("Sync requires exactly one source."))
         if (mode == TransferMode.Sync && !deleteExtraneousOnSync) add(TransferValidationIssue.InvalidTopology("Sync mirrors the source and requires explicit approval to delete destination-only files."))
+        if (mode == TransferMode.Sync && syncDeleteLimit !in 1..100_000) add(TransferValidationIssue.InvalidTopology("Sync delete ceiling must be between 1 and 100000."))
+        if (mode != TransferMode.Sync && syncDeleteLimit != 1000) add(TransferValidationIssue.InvalidTopology("Sync delete ceiling only applies to Mirror transfers."))
         if (mode == TransferMode.Push && sources.any { it.isRemote }) add(TransferValidationIssue.InvalidTopology("Push sources must be staged local paths."))
         if (mode == TransferMode.Pull && destination?.isRemote == true) add(TransferValidationIssue.InvalidTopology("Pull destination must be a staged local path."))
         if (checksum != null && checksum.isBlank()) add(TransferValidationIssue.InvalidTopology("Checksum must not be blank when provided."))
@@ -79,6 +82,7 @@ data class TransferTopologyDraft(
         checksum.orEmpty(),
         overwriteExisting.toString(),
         deleteExtraneousOnSync.toString(),
+        syncDeleteLimit.toString(),
         symlinkPolicy.protocolValue,
         specialFilePolicy.protocolValue,
     ).joinToString("\u001E").stableToken()
@@ -149,6 +153,7 @@ data class TransferVerificationPlan(
 
 data class TransferPreviewSummary(
     val requestId: String,
+    val planToken: String = "",
     val draftFingerprint: String,
     val topologyLabel: String,
     val mappings: List<TransferMappingSummary>,
@@ -158,12 +163,13 @@ data class TransferPreviewSummary(
 ) {
     init {
         require(requestId.isNotBlank()) { "Transfer preview request id must not be blank." }
+        require(planToken.isBlank() || planToken.length in 32..128) { "Transfer preview plan token must be a stable artifact digest." }
         require(draftFingerprint.isNotBlank()) { "Transfer preview draft fingerprint must not be blank." }
         require(topologyLabel.isNotBlank()) { "Transfer topology label must not be blank." }
         require(warnings.none { it.isBlank() }) { "Transfer preview warnings must not be blank." }
     }
 
-    val isExecutable: Boolean = !collisionSummary.hasBlockingCollisions
+    val isExecutable: Boolean = planToken.isNotBlank() && !collisionSummary.hasBlockingCollisions
 }
 
 sealed interface TransferResultUiState {
@@ -189,7 +195,54 @@ fun canRunTransfer(draft: TransferTopologyDraft, preview: TransferPreviewSummary
     if (draft.validationIssues().isNotEmpty()) return false
     if (preview == null) return false
     if (preview.draftFingerprint != draft.fingerprint()) return false
+    if (preview.planToken.isBlank()) return false
     return preview.isExecutable
+}
+
+fun BridgeResultEnvelope.toTransferPreviewSummary(draft: TransferTopologyDraft): TransferPreviewSummary {
+    val plan = artifacts.firstOrNull { it.label == "transfer_plan" }
+    val token = plan?.sha256?.ifBlank { null } ?: plan?.metadata?.get("plan_token").orEmpty()
+    val topology = plan?.metadata?.get("topology_label") ?: buildString {
+        append(draft.mode.displayName)
+        append(" · ")
+        append(draft.sources.size)
+        append(if (draft.sources.size == 1) " source" else " sources")
+        append(" → ")
+        append(draft.destination?.label ?: "destination")
+    }
+    val mappings = artifacts.asSequence()
+        .filter { it.label == "transfer_mapping" || it.label == "transfer_directory_mapping" }
+        .mapNotNull { artifact ->
+            val relativePath = artifact.metadata["relative_path"] ?: artifact.path.substringAfterLast('/').takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            TransferMappingSummary(
+                sourceLabel = artifact.metadata["source_label"] ?: artifact.metadata["source"]?.substringAfterLast('/') ?: "source",
+                destinationLabel = artifact.metadata["destination_label"] ?: artifact.metadata["destination"]?.substringAfterLast('/') ?: artifact.path.substringAfterLast('/'),
+                relativePath = relativePath,
+                action = when (artifact.metadata["action"]?.lowercase()) {
+                    "update" -> TransferMappingAction.Update
+                    "skip" -> TransferMappingAction.Skip
+                    "delete" -> TransferMappingAction.Delete
+                    else -> TransferMappingAction.Create
+                },
+            )
+        }.take(250).toList()
+    val blockingErrors = errors.filter { it.code.contains("collision", true) || it.code.contains("overlap", true) }
+    return TransferPreviewSummary(
+        requestId = requestId,
+        planToken = token,
+        draftFingerprint = draft.fingerprint(),
+        topologyLabel = topology,
+        mappings = mappings,
+        collisionSummary = TransferCollisionSummary(
+            collisions = blockingErrors.filter { it.code.contains("collision", true) }.map { it.message },
+            overlaps = blockingErrors.filter { it.code.contains("overlap", true) }.map { it.message },
+            symlinkPolicy = draft.symlinkPolicy,
+            specialFilePolicy = draft.specialFilePolicy,
+        ),
+        verificationPlan = TransferVerificationPlan(enabled = draft.verifyAfterTransfer, checksum = draft.checksum),
+        warnings = errors.filterNot { it in blockingErrors }.map { it.message } +
+            if (artifacts.any { it.label == "transfer_mapping_truncated" }) listOf("Transfer review contains more mappings than shown.") else emptyList(),
+    )
 }
 
 fun BridgeResultEnvelope.toTransferResultUiState(): TransferResultUiState = when (status) {

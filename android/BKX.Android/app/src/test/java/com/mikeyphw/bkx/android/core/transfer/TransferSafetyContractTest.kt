@@ -1,5 +1,6 @@
 package com.mikeyphw.bkx.android.core.transfer
 
+import com.mikeyphw.bkx.android.core.bridge.BridgeArtifact
 import com.mikeyphw.bkx.android.core.bridge.BridgeError
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
@@ -13,6 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TransferSafetyContractTest {
+    private val planToken = "a".repeat(64)
     private val source = TransferEndpoint("src-1", "Phone archive", "/shared/bkx/archives/photos.bakery")
     private val destination = TransferEndpoint("dst-1", "Remote laptop", "rclone://drive/backups", isRemote = true)
     private val draft = TransferTopologyDraft(
@@ -56,6 +58,9 @@ class TransferSafetyContractTest {
         assertEquals(true, request.payload["verify"]?.jsonPrimitive?.boolean)
         assertEquals("block", request.payload["policies"]?.jsonObject?.get("symlink")?.jsonPrimitive?.content)
         assertEquals("/shared/bkx/archives/photos.bakery", request.payload["sources"]?.jsonArray?.single()?.jsonObject?.get("location")?.jsonPrimitive?.content)
+        val sync = draft.copy(mode = TransferMode.Sync, deleteExtraneousOnSync = true, syncDeleteLimit = 25)
+        val syncRequest = TransferRequestBuilder().buildPreviewRequest("transfer-sync-preview", sync)
+        assertEquals(25, syncRequest.payload["sync_delete_limit"]?.jsonPrimitive?.content?.toInt())
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -96,6 +101,7 @@ class TransferSafetyContractTest {
     fun runRequestUsesMatchingPreviewAndKeepsDryRunFalse() {
         val preview = TransferPreviewSummary(
             requestId = "transfer-preview",
+            planToken = planToken,
             draftFingerprint = draft.fingerprint(),
             topologyLabel = "push one file",
             mappings = listOf(TransferMappingSummary("Phone archive", "Remote laptop", "photos.bakery", TransferMappingAction.Create)),
@@ -109,6 +115,29 @@ class TransferSafetyContractTest {
         assertEquals(false, request.payload["dry_run"]?.jsonPrimitive?.boolean)
         assertEquals("transfer-preview", request.payload["plan_request_id"]?.jsonPrimitive?.content)
         assertEquals("transfer-preview", request.payload["preview_request_id"]?.jsonPrimitive?.content)
+        assertEquals(planToken, request.payload["plan_token"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun previewEnvelopeExtractsPlanTokenMappingsAndTruncationWarning() {
+        val envelope = BridgeResultEnvelope(
+            protocolVersion = 1,
+            requestId = "transfer-preview",
+            status = BridgeResultStatus.Success,
+            artifacts = listOf(
+                BridgeArtifact("transfer_plan", "embedded://plan/transfer-preview", sha256 = planToken, metadata = mapOf("topology_label" to "Push · 1 source → Google Drive")),
+                BridgeArtifact("transfer_mapping", "rclone://drive/backups/photos.bakery", metadata = mapOf("source_label" to "Phone archive", "destination_label" to "Remote laptop", "relative_path" to "photos.bakery", "action" to "create")),
+                BridgeArtifact("transfer_mapping_truncated", "embedded://plan/transfer-preview/mappings"),
+            ),
+        )
+
+        val preview = envelope.toTransferPreviewSummary(draft)
+
+        assertEquals(planToken, preview.planToken)
+        assertTrue(preview.isExecutable)
+        assertEquals("Push · 1 source → Google Drive", preview.topologyLabel)
+        assertEquals(1, preview.mappings.size)
+        assertTrue(preview.warnings.any { it.contains("more mappings") })
     }
 
     @Test

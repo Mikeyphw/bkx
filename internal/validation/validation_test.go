@@ -122,3 +122,25 @@ func TestFrozenSpecShapeValidation(t *testing.T) {
 		t.Fatal("remote push source accepted")
 	}
 }
+
+func TestBR26TransferChecksumAndSyncDeleteLimitValidation(t *testing.T) {
+	valid := models.TransferSpec{Sources: []string{"/tmp/source"}, Destination: "/tmp/dest", Direction: "sync", DeleteExtraneousOnSync: true, SyncDeleteLimit: 10}
+	if _, err := ValidateTransferSpec(valid); err != nil {
+		t.Fatal(err)
+	}
+	invalidLimit := valid
+	invalidLimit.SyncDeleteLimit = 0
+	if normalized, err := ValidateTransferSpec(invalidLimit); err != nil || normalized.SyncDeleteLimit != 1000 {
+		t.Fatalf("expected default sync limit, normalized=%+v err=%v", normalized, err)
+	}
+	invalidLimit.SyncDeleteLimit = 100001
+	if _, err := ValidateTransferSpec(invalidLimit); err == nil {
+		t.Fatal("oversized sync_delete_limit accepted")
+	}
+	badChecksum := valid
+	bad := "deadbeef"
+	badChecksum.Checksum = &bad
+	if _, err := ValidateTransferSpec(badChecksum); err == nil {
+		t.Fatal("short checksum digest accepted")
+	}
+}

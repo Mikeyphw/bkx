@@ -3,6 +3,7 @@ package com.mikeyphw.bkx.android.core.remotes
 import android.content.Context
 import android.net.Uri
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRemoteReadiness
 import java.io.FileOutputStream
 
 internal const val MAX_RCLONE_CONFIG_BYTES = 2L * 1024L * 1024L
@@ -100,7 +101,17 @@ class RcloneConfigManager(context: Context) {
         return snapshot()
     }
 
-    fun hasManagedGoogleDrive(): Boolean = snapshot().profiles.any { it.managedByBkx && it.type.equals("drive", ignoreCase = true) }
+    fun managedGoogleDriveReadiness(): GoogleDriveRemoteReadiness {
+        if (!configFile.isFile || configFile.length() <= 0L) return GoogleDriveRemoteReadiness.MissingConfiguration
+        val text = configFile.readText(Charsets.UTF_8)
+        val parsed = RcloneConfigParser.parse(text)
+        val profile = parsed.profiles.firstOrNull { it.managedByBkx } ?: return GoogleDriveRemoteReadiness.MissingManagedRemote
+        if (!profile.type.equals("drive", ignoreCase = true)) return GoogleDriveRemoteReadiness.MissingManagedRemote
+        if (!GoogleDriveRcloneConfig.managedSectionHasAccessToken(text)) return GoogleDriveRemoteReadiness.MissingAccessToken
+        return GoogleDriveRemoteReadiness.Ready
+    }
+
+    fun hasManagedGoogleDrive(): Boolean = managedGoogleDriveReadiness() == GoogleDriveRemoteReadiness.Ready
 
     fun configPathForDiagnostics(): String = configFile.absolutePath
 

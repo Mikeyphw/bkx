@@ -10,8 +10,19 @@ object GoogleDriveRcloneConfig {
 
     fun containsManagedSection(text: String): Boolean = findSection(text, BKX_GOOGLE_DRIVE_REMOTE_NAME) != null
 
+    fun containsManagedRemoteReference(text: String): Boolean =
+        text.contains("rclone://$BKX_GOOGLE_DRIVE_REMOTE_NAME/", ignoreCase = true) ||
+            text.contains("\"repository_backend\":\"managed_google_drive\"", ignoreCase = true) ||
+            text.contains("managed_google_drive", ignoreCase = true)
+
+    fun managedSectionHasAccessToken(text: String): Boolean {
+        val section = findSection(text, BKX_GOOGLE_DRIVE_REMOTE_NAME)?.let { range -> text.substring(range.first, range.last + 1) } ?: return false
+        val tokenLine = section.lineSequence().firstOrNull { it.trimStart().startsWith("token", ignoreCase = true) } ?: return false
+        return tokenLine.contains("access_token", ignoreCase = true) && Regex("\"access_token\"\\s*:\\s*\"[^\"]+\"").containsMatchIn(tokenLine.substringAfter('=', ""))
+    }
+
     fun upsertAccessToken(existing: String, accessToken: String): String {
-        require(accessToken.isNotBlank()) { "Google Drive access token must not be blank." }
+        require(accessToken.isNotBlank() && !accessToken.contains('\u0000') && !accessToken.contains('\n') && !accessToken.contains('\r')) { "Google Drive access token must not be blank or multiline." }
         val tokenJson = buildJsonObject {
             put("access_token", accessToken)
             put("token_type", "Bearer")

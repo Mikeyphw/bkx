@@ -44,6 +44,8 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveConnectionStatus
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
+import com.mikeyphw.bkx.android.core.drive.GoogleDriveRemoteReadiness
+import com.mikeyphw.bkx.android.core.drive.userMessage
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveUiState
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserEntry
 import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
@@ -89,13 +91,12 @@ import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
-import com.mikeyphw.bkx.android.core.transfer.TransferCollisionSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferEndpoint
 import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferRequestBuilder
+import com.mikeyphw.bkx.android.core.transfer.toTransferPreviewSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
 import com.mikeyphw.bkx.android.core.transfer.TransferUiState
-import com.mikeyphw.bkx.android.core.transfer.TransferVerificationPlan
 import com.mikeyphw.bkx.android.core.transfer.toTransferResultUiState
 import com.mikeyphw.bkx.android.core.usecase.CheckBackendReadinessUseCase
 import java.io.File
@@ -732,34 +733,8 @@ class BkxAppViewModel(
                 _state.update { current -> current.copy(transfer = current.transfer.copy(message = failure.message, preview = null)) }
             },
         ) { result ->
-            val topology = buildString {
-                    append(draft.mode.protocolValue.replaceFirstChar { it.uppercase() })
-                    append(" · ")
-                    append(draft.sources.size)
-                    append(if (draft.sources.size == 1) " source" else " sources")
-                    append(" → ")
-                    append(draft.destination?.label ?: "destination")
-                }
-                val preview = TransferPreviewSummary(
-                    requestId = result.requestId,
-                    draftFingerprint = draft.fingerprint(),
-                    topologyLabel = topology,
-                    mappings = emptyList(),
-                    collisionSummary = TransferCollisionSummary(
-                        collisions = result.errors.filter { it.code.contains("collision", true) }.map { it.message },
-                        overlaps = result.errors.filter { it.code.contains("overlap", true) }.map { it.message },
-                        symlinkPolicy = draft.symlinkPolicy,
-                        specialFilePolicy = draft.specialFilePolicy,
-                    ),
-                    verificationPlan = TransferVerificationPlan(
-                        enabled = draft.verifyAfterTransfer,
-                        checksum = draft.checksum,
-                    ),
-                    warnings = result.errors.filterNot {
-                        it.code.contains("collision", true) || it.code.contains("overlap", true)
-                    }.map { it.message },
-                )
-                _state.update { current -> current.copy(transfer = current.transfer.copy(preview = preview)) }
+            val preview = result.toTransferPreviewSummary(draft)
+            _state.update { current -> current.copy(transfer = current.transfer.copy(preview = preview)) }
         }
     }
 
@@ -1050,9 +1025,9 @@ class BkxAppViewModel(
 
     private fun refreshGoogleDriveAuthorization(allowConsent: Boolean) {
         val manager = googleDriveAuthorizationManager ?: return
-        val configured = manager.hasManagedConfiguration()
-        if (!configured && !allowConsent) {
-            _state.update { it.copy(googleDrive = GoogleDriveUiState()) }
+        val readiness = manager.managedRemoteReadiness()
+        if (readiness != GoogleDriveRemoteReadiness.Ready && !allowConsent) {
+            _state.update { it.copy(googleDrive = GoogleDriveUiState(remoteReadiness = readiness, message = readiness.userMessage())) }
             return
         }
         _state.update { current ->
@@ -1085,7 +1060,7 @@ class BkxAppViewModel(
         when (outcome) {
             GoogleDriveAuthorizationOutcome.Connected -> {
                 _state.update { current ->
-                    current.copy(googleDrive = GoogleDriveUiState(status = GoogleDriveConnectionStatus.Connected, message = "Google Drive is ready for BKX backup and restore.", lastAuthorizedAtEpochMillis = System.currentTimeMillis()))
+                    current.copy(googleDrive = GoogleDriveUiState(status = GoogleDriveConnectionStatus.Connected, message = "Google Drive is ready for BKX backup and restore.", lastAuthorizedAtEpochMillis = System.currentTimeMillis(), remoteReadiness = GoogleDriveRemoteReadiness.Ready))
                 }
                 refreshBackend()
             }
@@ -1099,7 +1074,8 @@ class BkxAppViewModel(
                 }
             }
             is GoogleDriveAuthorizationOutcome.Failed -> _state.update { current ->
-                current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Error, pendingConsent = null, message = outcome.message))
+                val readiness = googleDriveAuthorizationManager?.managedRemoteReadiness() ?: current.googleDrive.remoteReadiness
+                current.copy(googleDrive = current.googleDrive.copy(status = GoogleDriveConnectionStatus.Error, pendingConsent = null, message = outcome.message, remoteReadiness = readiness))
             }
         }
     }
@@ -1128,9 +1104,7 @@ class BkxAppViewModel(
     }
 
     private fun requestUsesManagedGoogleDrive(request: BridgeRequestEnvelope): Boolean {
-        val payload = request.payload.toString()
-        return payload.contains("rclone://bkx-google-drive/", ignoreCase = true) ||
-            payload.contains("\"repository_backend\":\"managed_google_drive\"", ignoreCase = true)
+        return GoogleDriveRcloneConfig.containsManagedRemoteReference(request.payload.toString())
     }
 
     private fun refreshSavedJobs() {

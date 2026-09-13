@@ -36,13 +36,11 @@ import com.mikeyphw.bkx.android.core.restore.RestoreSubsetSelection
 import com.mikeyphw.bkx.android.core.restore.toRestorePreviewSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummary
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
-import com.mikeyphw.bkx.android.core.transfer.TransferCollisionSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferEndpoint
 import com.mikeyphw.bkx.android.core.transfer.TransferMode
-import com.mikeyphw.bkx.android.core.transfer.TransferPreviewSummary
 import com.mikeyphw.bkx.android.core.transfer.TransferRequestBuilder
 import com.mikeyphw.bkx.android.core.transfer.TransferTopologyDraft
-import com.mikeyphw.bkx.android.core.transfer.TransferVerificationPlan
+import com.mikeyphw.bkx.android.core.transfer.toTransferPreviewSummary
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
@@ -288,21 +286,8 @@ class BkxAutomationEngine(
         val planId = stageId(request.requestId, "transfer-plan")
         val plan = runStage(request, planId, transferBuilder.buildPreviewRequest(planId, draft), false) ?: return stateStore.terminal(request.requestId)!!
         if (plan.status != BridgeResultStatus.Success) return terminalFromBridge(request, plan)
-        val preview = TransferPreviewSummary(
-            requestId = plan.requestId,
-            draftFingerprint = draft.fingerprint(),
-            topologyLabel = "${draft.mode.displayName} · ${draft.sources.size} source(s) → ${draft.destination?.label ?: "destination"}",
-            mappings = emptyList(),
-            collisionSummary = TransferCollisionSummary(
-                collisions = plan.errors.filter { it.code.contains("collision", true) }.map { it.message },
-                overlaps = plan.errors.filter { it.code.contains("overlap", true) }.map { it.message },
-                symlinkPolicy = draft.symlinkPolicy,
-                specialFilePolicy = draft.specialFilePolicy,
-            ),
-            verificationPlan = TransferVerificationPlan(draft.verifyAfterTransfer, draft.checksum),
-            warnings = plan.errors.filterNot { it.code.contains("collision", true) || it.code.contains("overlap", true) }.map { it.message },
-        )
-        if (!preview.isExecutable) return terminalFailure(request, "transfer_preview_blocked", "Transfer preview found collisions or overlapping paths.")
+        val preview = plan.toTransferPreviewSummary(draft)
+        if (!preview.isExecutable) return terminalFailure(request, "transfer_preview_blocked", "Transfer preview is not executable. Refresh the preview and resolve collisions, overlapping paths, or missing plan proof.")
         progress.onStage("Running transfer")
         val runId = stageId(request.requestId, "transfer-run")
         val result = runStage(request, runId, transferBuilder.buildRunRequest(runId, draft, preview), true) ?: return stateStore.terminal(request.requestId)!!

@@ -377,3 +377,64 @@ esac
 		t.Fatal("unsupported non-rclone remote unexpectedly accepted")
 	}
 }
+
+func TestBR26TransferPlanCarriesBoundedExecutableMappings(t *testing.T) {
+	root := t.TempDir()
+	sourceDir := filepath.Join(root, "src")
+	writeFile(t, filepath.Join(sourceDir, "nested", "file.txt"), "payload")
+	destination := filepath.Join(root, "dest")
+
+	plan, err := PlanTransfer(spec([]string{sourceDir}, destination))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Mappings) == 0 || plan.MappingsMore {
+		t.Fatalf("expected bounded local mappings, plan=%+v", plan)
+	}
+	foundRelative := false
+	foundDirectory := false
+	for _, mapping := range plan.Mappings {
+		if mapping.RelativePath == "nested/file.txt" && mapping.Action == "create" {
+			foundRelative = true
+		}
+		if mapping.Directory {
+			foundDirectory = true
+		}
+	}
+	if !foundRelative || !foundDirectory {
+		t.Fatalf("BR26 plan must expose executable file and directory mappings: %+v", plan.Mappings)
+	}
+}
+
+func TestBR26SyncDeleteLimitIsFrozenIntoSpecSnapshot(t *testing.T) {
+	root := t.TempDir()
+	rclone := filepath.Join(root, "rclone")
+	script := `#!/bin/sh
+set -eu
+case "$1" in
+  lsjson) printf '{"Path":"source","Name":"source","Size":7,"ModTime":"2026-09-07T12:00:00Z","IsDir":true}\n' ;;
+  size) printf '{"count":3,"bytes":21}\n' ;;
+  *) echo "unexpected command: $1" >&2; exit 2 ;;
+esac
+`
+	if err := os.WriteFile(rclone, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("BKX_RCLONE_PATH", rclone)
+	t.Setenv("BKX_RCLONE_CONFIG", config)
+	s := models.TransferSpec{Sources: []string{"rclone://drive/source"}, Destination: filepath.Join(root, "dest"), Direction: "sync", Verify: false, DeleteExtraneousOnSync: true, SyncDeleteLimit: 42}
+	plan, err := PlanTransfer(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Steps[0].Details["sync_delete_limit"]; got != 42 {
+		t.Fatalf("sync_delete_limit not carried in plan details: %#v", got)
+	}
+	if len(plan.Mappings) == 0 || plan.Mappings[0].RelativePath == "" {
+		t.Fatalf("remote plan missing bounded preview mapping: %+v", plan.Mappings)
+	}
+}

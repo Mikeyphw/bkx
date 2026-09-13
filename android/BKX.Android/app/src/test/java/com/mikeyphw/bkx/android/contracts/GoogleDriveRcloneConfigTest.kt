@@ -51,4 +51,14 @@ class GoogleDriveRcloneConfigTest {
         assertFalse(removed.contains("[$BKX_GOOGLE_DRIVE_REMOTE_NAME]"))
         assertFalse(removed.contains("token"))
     }
+    @Test
+    fun managedReadinessRequiresAccessTokenInManagedSection() {
+        val managedWithoutToken = "[$BKX_GOOGLE_DRIVE_REMOTE_NAME]\ntype = drive\nscope = drive.file\n"
+        val managedWithToken = GoogleDriveRcloneConfig.upsertAccessToken("", "ya29.refresh-token")
+
+        assertFalse(GoogleDriveRcloneConfig.managedSectionHasAccessToken(managedWithoutToken))
+        assertTrue(GoogleDriveRcloneConfig.managedSectionHasAccessToken(managedWithToken))
+        assertTrue(GoogleDriveRcloneConfig.containsManagedRemoteReference("{\"destination\":\"rclone://$BKX_GOOGLE_DRIVE_REMOTE_NAME/BKX/archive.bakery\"}"))
+    }
+
 }

@@ -53,6 +53,7 @@ type TransferSpec struct {
 	Sources                []string `json:"sources"`
 	Verify                 bool     `json:"verify"`
 	DeleteExtraneousOnSync bool     `json:"delete_extraneous_on_sync,omitempty"`
+	SyncDeleteLimit        int      `json:"sync_delete_limit,omitempty"`
 }
 
 type RunRecord struct {

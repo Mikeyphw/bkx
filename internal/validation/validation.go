@@ -15,6 +15,7 @@ import (
 )
 
 var windowsDrive = regexp.MustCompile(`^[A-Za-z]:`)
+var transferHexDigest = regexp.MustCompile(`^[A-Fa-f0-9]{32}$|^[A-Fa-f0-9]{40}$|^[A-Fa-f0-9]{56}$|^[A-Fa-f0-9]{64}$|^[A-Fa-f0-9]{96}$|^[A-Fa-f0-9]{128}$`)
 
 var compressionLevels = map[string][2]int{
 	"zstd": {1, 22}, "gzip": {1, 9}, "lz4": {0, 16}, "xz": {0, 9}, "bzip2": {1, 9}, "none": {0, 22},
@@ -224,6 +225,19 @@ func NormalizeTransferLocation(value, fieldName string) (string, error) {
 	return AbsoluteLocalPath(raw)
 }
 
+func IsTransferChecksumToken(value string) bool {
+	checksum := strings.ToLower(strings.TrimSpace(value))
+	if checksum == "" {
+		return false
+	}
+	switch checksum {
+	case "md5", "sha1", "sha224", "sha256", "sha384", "sha512":
+		return true
+	default:
+		return transferHexDigest.MatchString(checksum)
+	}
+}
+
 func DeterministicName(prefix string, semanticParts ...string) string {
 	var b strings.Builder
 	for _, r := range prefix {
@@ -381,6 +395,17 @@ func ValidateTransferSpec(spec models.TransferSpec) (models.TransferSpec, error)
 	if spec.Direction == "sync" && !spec.DeleteExtraneousOnSync {
 		return models.TransferSpec{}, berror.Validation("Sync is a mirror operation and requires explicit approval to delete destination-only files", map[string]any{"delete_extraneous_on_sync": false})
 	}
+	if spec.Direction != "sync" && spec.SyncDeleteLimit != 0 {
+		return models.TransferSpec{}, berror.Validation("sync_delete_limit only applies to sync transfers", map[string]any{"sync_delete_limit": spec.SyncDeleteLimit})
+	}
+	if spec.Direction == "sync" {
+		if spec.SyncDeleteLimit == 0 {
+			spec.SyncDeleteLimit = 1000
+		}
+		if spec.SyncDeleteLimit < 1 || spec.SyncDeleteLimit > 100000 {
+			return models.TransferSpec{}, berror.Validation("sync_delete_limit must be between 1 and 100000", map[string]any{"sync_delete_limit": spec.SyncDeleteLimit})
+		}
+	}
 	for _, source := range spec.Sources {
 		trimmed := strings.TrimSpace(source)
 		if trimmed == "" {
@@ -413,9 +438,12 @@ func ValidateTransferSpec(spec models.TransferSpec) (models.TransferSpec, error)
 		}
 	}
 	if spec.Checksum != nil {
-		checksum := strings.TrimSpace(*spec.Checksum)
+		checksum := strings.ToLower(strings.TrimSpace(*spec.Checksum))
 		if checksum == "" {
 			return models.TransferSpec{}, berror.Validation("checksum must be a non-empty string when provided", nil)
+		}
+		if !IsTransferChecksumToken(checksum) {
+			return models.TransferSpec{}, berror.Validation("checksum must be a supported hash algorithm or a complete hex digest", map[string]any{"checksum": checksum})
 		}
 		spec.Checksum = &checksum
 	}

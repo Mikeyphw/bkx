@@ -227,4 +227,4 @@ low_priority = false
 [commit]
 enabled = true
 strategy = "single"
-message = "fix(android): seal BKX backup archive restore correctness"
+message = "fix(android): seal BKX transfer rclone google drive remotes"

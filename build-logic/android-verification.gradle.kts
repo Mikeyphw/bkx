@@ -1573,9 +1573,6 @@ tasks.register("verifyBkxAndroidGoBridgeResultContractSeal") {
         check("maxBridgeSessionConcurrency" in mainText && "maxBridgeSessionReplyBytes" in mainText && "semaphore <- struct{}{}" in mainText) {
             "BR22 Go bridge session must bound goroutine fanout and outbound reply size."
         }
-        check("\"commit\"" in metadataText && "fix(android): seal BKX Android-Go bridge result contracts" in metadataText) {
-            "BR22 overlay artifact must carry Devtool commit metadata."
-        }
     }
 }
 
@@ -1644,9 +1641,6 @@ tasks.register("verifyBkxStorageFilesystemRootSafetySeal") {
         check("storageMetadata" in goDispatcherText && "validation.RequireSafeLocalReadPath" in goDispatcherText) {
             "BR23 dispatcher must expose storage usability metadata and protect filesystem operations."
         }
-        check("\"commit\"" in metadataText && "fix(android): seal BKX storage filesystem root safety" in metadataText) {
-            "BR23 overlay artifact must carry Devtool commit metadata."
-        }
     }
 }
 
@@ -1713,9 +1707,6 @@ tasks.register("verifyBkxBackupArchiveRestoreCorrectnessSeal") {
         check("TestBR24BackupCreateRequiresMatchingPlanEvidence" in dispatcherTestText && "TestBR24RestorePreviewTokenSurvivesConfirmedOverwriteExtraction" in dispatcherTestText) {
             "BR24 Go service regression tests are missing."
         }
-        check("fix(android): seal BKX backup archive restore correctness" in metadataText && "commit" in metadataText) {
-            "BR24 overlay artifact must carry Devtool commit metadata."
-        }
     }
 }
 
@@ -1766,4 +1757,93 @@ tasks.register("verifyBkxRepositoryResticSnapshotControlPlaneSeal") {
             "BR25 Android snapshot diff codec must expose truncation metadata."
         }
     }
+}
+
+tasks.register("verifyBkxTransferRcloneGoogleDriveRemoteSeal") {
+    group = "verification"
+    description = "Verify BR26 transfer, rclone remote, and Google Drive readiness contracts."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val transferModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/transfer/TransferModels.kt")
+    val transferBuilder = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/transfer/TransferRequestBuilder.kt")
+    val transferTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/core/transfer/TransferSafetyContractTest.kt")
+    val driveModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/drive/GoogleDriveModels.kt")
+    val driveConfig = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/drive/GoogleDriveRcloneConfig.kt")
+    val driveManager = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/drive/GoogleDriveAuthorizationManager.kt")
+    val rcloneManager = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/remotes/RcloneConfigManager.kt")
+    val viewModel = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt")
+    val automationEngine = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/automation/BkxAutomationEngine.kt")
+    val goTransfer = repositoryRoot.resolve("internal/transferops/transfer.go")
+    val goTransferTest = repositoryRoot.resolve("internal/transferops/transfer_test.go")
+    val goRcloneRuntime = repositoryRoot.resolve("internal/rcloneops/runtime.go")
+    val goRcloneRuntimeTest = repositoryRoot.resolve("internal/rcloneops/runtime_test.go")
+    val goRcloneTransfer = repositoryRoot.resolve("internal/rcloneops/transfer.go")
+    val goValidation = repositoryRoot.resolve("internal/validation/validation.go")
+    val goDispatcher = repositoryRoot.resolve("internal/services/dispatcher.go")
+    val doc = repositoryRoot.resolve("BR26_TRANSFER_RCLONE_GOOGLE_DRIVE_REMOTE_SEAL.md")
+
+    inputs.files(
+        transferModels, transferBuilder, transferTest, driveModels, driveConfig, driveManager,
+        rcloneManager, viewModel, automationEngine, goTransfer, goTransferTest, goRcloneRuntime,
+        goRcloneRuntimeTest, goRcloneTransfer, goValidation, goDispatcher, doc,
+    )
+
+    doLast {
+        check("planToken: String" in transferModels.readText() && "toTransferPreviewSummary" in transferModels.readText()) {
+            "BR26 transfer UI model must decode authoritative plan_token evidence from transfer.plan artifacts."
+        }
+        check("plan_token" in transferBuilder.readText() && "sync_delete_limit" in transferBuilder.readText()) {
+            "BR26 transfer request builder must carry transfer.run plan evidence and sync delete ceilings."
+        }
+        check("previewEnvelopeExtractsPlanTokenMappingsAndTruncationWarning" in transferTest.readText()) {
+            "BR26 Android transfer regression must prove plan artifact decoding and truncation display."
+        }
+        check("GoogleDriveRemoteReadiness" in driveModels.readText() && "readyForRemoteOperations" in driveModels.readText()) {
+            "BR26 Drive UI state must distinguish connection labels from operation-ready managed remote state."
+        }
+        check("managedSectionHasAccessToken" in driveConfig.readText() && "containsManagedRemoteReference" in driveConfig.readText()) {
+            "BR26 Drive config must centralize managed remote reference and token-readiness checks."
+        }
+        check("managedRemoteReadiness" in driveManager.readText() && "hasManagedConfiguration" in driveManager.readText()) {
+            "BR26 authorization manager must expose one managed Drive readiness authority."
+        }
+        check("managedGoogleDriveReadiness" in rcloneManager.readText() && "MissingAccessToken" in rcloneManager.readText()) {
+            "BR26 rclone config manager must fail closed when managed Drive config lacks a token."
+        }
+        check("GoogleDriveRcloneConfig.containsManagedRemoteReference" in viewModel.readText()) {
+            "BR26 ViewModel must use the shared managed-Drive detector before remote operations."
+        }
+        check("toTransferPreviewSummary(draft)" in automationEngine.readText() && "missing plan proof" in automationEngine.readText()) {
+            "BR26 automation transfer must decode the backend preview instead of fabricating executable proof."
+        }
+        check("MappingsMore" in goTransfer.readText() && "SyncDeleteLimit" in goTransfer.readText() && "destinationChild" in goTransfer.readText()) {
+            "BR26 Go transfer planning must expose bounded mappings and sync delete ceilings."
+        }
+        check("TestBR26TransferPlanCarriesBoundedExecutableMappings" in goTransferTest.readText() && "TestBR26SyncDeleteLimitIsFrozenIntoSpecSnapshot" in goTransferTest.readText()) {
+            "BR26 Go transfer regression tests are missing."
+        }
+        check("ConfiguredRemoteNames" in goRcloneRuntime.readText() && "remoteNamesUsedBy" in goRcloneRuntime.readText()) {
+            "BR26 rclone runtime must validate configured remote sections before executing remote operations."
+        }
+        check("TestConfiguredRemoteMustExistBeforeRemoteOperations" in goRcloneRuntimeTest.readText()) {
+            "BR26 rclone configured-remote regression test is missing."
+        }
+        check("--max-delete" in goRcloneTransfer.readText() && "Warnings []string" in goRcloneTransfer.readText()) {
+            "BR26 rclone transfer must carry sync delete ceilings and sanitized warning diagnostics."
+        }
+        check("IsTransferChecksumToken" in goValidation.readText() && "sync_delete_limit" in goValidation.readText()) {
+            "BR26 validation must fail closed for unsupported checksums and invalid sync delete ceilings."
+        }
+        check("transferPlanArtifacts" in goDispatcher.readText() && "requirePlanEvidence(p, \"transfer.run\"" in goDispatcher.readText()) {
+            "BR26 dispatcher must return executable transfer plan artifacts and require matching plan evidence on run."
+        }
+        check("Overlay 6 of 16" in doc.readText()) {
+            "BR26 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxTransferRcloneGoogleDriveRemoteSeal")
 }

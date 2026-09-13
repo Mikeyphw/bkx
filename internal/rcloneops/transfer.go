@@ -25,15 +25,17 @@ type Progress struct {
 }
 
 type TransferOptions struct {
-	Overwrite bool
-	Verify    bool
-	Cancelled func() bool
-	Progress  func(Progress)
+	Overwrite       bool
+	Verify          bool
+	SyncDeleteLimit int
+	Cancelled       func() bool
+	Progress        func(Progress)
 }
 
 type TransferResult struct {
-	Files int64
-	Bytes int64
+	Files    int64
+	Bytes    int64
+	Warnings []string
 }
 
 type statsDocument struct {
@@ -161,7 +163,14 @@ func (r Runtime) Transfer(ctx context.Context, mode string, sources []string, de
 		if !options.Overwrite && mode != "sync" {
 			args = append(args, "--ignore-existing")
 		}
-		last, err := r.runCommand(ctx, args, options.Cancelled, func(current statsDocument) {
+		if mode == "sync" {
+			limit := options.SyncDeleteLimit
+			if limit <= 0 {
+				limit = 1000
+			}
+			args = append(args, "--max-delete", fmt.Sprintf("%d", limit))
+		}
+		last, warnings, err := r.runCommand(ctx, args, options.Cancelled, func(current statsDocument) {
 			emitTransferProgress(options, Progress{
 				FilesDone:  done.Files + current.Transfers,
 				FilesTotal: total.Files,
@@ -172,6 +181,7 @@ func (r Runtime) Transfer(ctx context.Context, mode string, sources []string, de
 		if err != nil {
 			return TransferResult{}, err
 		}
+		done.Warnings = append(done.Warnings, warnings...)
 		done.Files += max64(last.Transfers, last.TotalTransfers)
 		done.Bytes += max64(last.Bytes, last.TotalBytes)
 		if options.Verify {
@@ -181,16 +191,12 @@ func (r Runtime) Transfer(ctx context.Context, mode string, sources []string, de
 			}
 			verifyArgs = append(verifyArgs, r.baseArgs()...)
 			verifyArgs = append(verifyArgs, "--log-level", "ERROR")
-			if _, err := r.runCommand(ctx, verifyArgs, options.Cancelled, nil); err != nil {
+			if _, warnings, err := r.runCommand(ctx, verifyArgs, options.Cancelled, nil); err != nil {
 				return TransferResult{}, fmt.Errorf("rclone verification failed: %w", err)
+			} else {
+				done.Warnings = append(done.Warnings, warnings...)
 			}
 		}
-	}
-	if done.Files == 0 {
-		done.Files = total.Files
-	}
-	if done.Bytes == 0 {
-		done.Bytes = total.Bytes
 	}
 	emitTransferProgress(options, Progress{FilesDone: done.Files, FilesTotal: total.Files, BytesDone: done.Bytes, BytesTotal: total.Bytes})
 	return done, nil
@@ -209,20 +215,20 @@ func emitTransferProgress(options TransferOptions, progress Progress) {
 	}
 }
 
-func (r Runtime) runCommand(ctx context.Context, args []string, cancelProbe func() bool, progress func(statsDocument)) (statsDocument, error) {
+func (r Runtime) runCommand(ctx context.Context, args []string, cancelProbe func() bool, progress func(statsDocument)) (statsDocument, []string, error) {
 	commandCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cmd := execCommandContext(commandCtx, r.Executable, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		return statsDocument{}, err
+		return statsDocument{}, nil, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return statsDocument{}, err
+		return statsDocument{}, nil, err
 	}
 	if err := cmd.Start(); err != nil {
-		return statsDocument{}, commandError("start rclone", err)
+		return statsDocument{}, nil, commandError("start rclone", err)
 	}
 
 	var wg sync.WaitGroup
@@ -276,19 +282,19 @@ func (r Runtime) runCommand(ctx context.Context, args []string, cancelProbe func
 	cancel()
 	<-cancelDone
 	if errors.Is(commandCtx.Err(), context.Canceled) && cancelled(cancelProbe) {
-		return last, context.Canceled
+		return last, diagnostic, context.Canceled
 	}
 	if scannerErr := scanner.Err(); scannerErr != nil && waitErr == nil {
-		return last, fmt.Errorf("read rclone progress: %w", scannerErr)
+		return last, diagnostic, fmt.Errorf("read rclone progress: %w", scannerErr)
 	}
 	if waitErr != nil {
 		message := strings.Join(diagnostic, " | ")
 		if message == "" {
-			return last, commandError("rclone", waitErr)
+			return last, diagnostic, commandError("rclone", waitErr)
 		}
-		return last, fmt.Errorf("rclone failed: %s", message)
+		return last, diagnostic, fmt.Errorf("rclone failed: %s", message)
 	}
-	return last, nil
+	return last, diagnostic, nil
 }
 
 func cancelled(probe func() bool) bool { return probe != nil && probe() }

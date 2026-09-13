@@ -96,24 +96,64 @@ func (r Runtime) Probe(ctx context.Context) (RuntimeInfo, error) {
 }
 
 func (r Runtime) requireConfigForRemote(values ...string) error {
-	remote := false
-	for _, value := range values {
-		if IsLocation(value) {
-			remote = true
-			break
-		}
-	}
-	if !remote {
+	remotes := remoteNamesUsedBy(values...)
+	if len(remotes) == 0 {
 		return nil
 	}
 	if r.Config == "" {
 		return nil // normal CLI installs may rely on rclone's standard config path
 	}
-	info, err := os.Stat(r.Config)
-	if err != nil || info.IsDir() || info.Size() == 0 {
-		return fmt.Errorf("rclone config is unavailable; import rclone.conf in BKX before using a remote")
+	configured, err := r.ConfiguredRemoteNames()
+	if err != nil {
+		return err
+	}
+	for remote := range remotes {
+		if !configured[remote] {
+			return fmt.Errorf("rclone remote %q is not configured in BKX rclone config; import or refresh rclone.conf before using this remote", remote)
+		}
 	}
 	return nil
+}
+
+func (r Runtime) ConfiguredRemoteNames() (map[string]bool, error) {
+	if r.Config == "" {
+		return nil, nil
+	}
+	info, err := os.Stat(r.Config)
+	if err != nil || info.IsDir() || info.Size() == 0 {
+		return nil, fmt.Errorf("rclone config is unavailable; import rclone.conf in BKX before using a remote")
+	}
+	data, err := os.ReadFile(r.Config)
+	if err != nil {
+		return nil, fmt.Errorf("read BKX rclone config: %w", err)
+	}
+	return remoteNamesInConfig(string(data)), nil
+}
+
+func remoteNamesUsedBy(values ...string) map[string]bool {
+	remotes := map[string]bool{}
+	for _, value := range values {
+		parsed, err := parseLocation(value)
+		if err == nil {
+			remotes[parsed.remote] = true
+		}
+	}
+	return remotes
+}
+
+func remoteNamesInConfig(text string) map[string]bool {
+	result := map[string]bool{}
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if len(line) < 3 || !strings.HasPrefix(line, "[") || !strings.Contains(line, "]") {
+			continue
+		}
+		name := strings.TrimSpace(line[1:strings.Index(line, "]")])
+		if safeRemoteName.MatchString(name) {
+			result[name] = true
+		}
+	}
+	return result
 }
 
 func (r Runtime) baseArgs() []string {

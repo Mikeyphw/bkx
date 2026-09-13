@@ -49,3 +49,15 @@ func TestSyncRequiresDirectoryAndUsesTwoWayVerification(t *testing.T) {
 		}
 	}
 }
+
+func TestSyncUsesDeleteCeilingAndPropagatesSanitizedWarnings(t *testing.T) {
+	runtime, logPath := fakeRuntime(t)
+	_, err := runtime.Transfer(context.Background(), "sync", []string{"rclone://drive/source"}, t.TempDir(), TransferOptions{SyncDeleteLimit: 37})
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(logPath)
+	if log := string(data); !strings.Contains(log, "--max-delete 37") {
+		t.Fatalf("sync delete ceiling not passed to rclone:\n%s", log)
+	}
+}

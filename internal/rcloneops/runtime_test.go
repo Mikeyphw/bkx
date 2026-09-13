@@ -107,3 +107,33 @@ func TestDiagnosticSanitizationRedactsCommonSecretShapesAndConfigPath(t *testing
 		t.Fatalf("sanitization evidence missing: %s", got)
 	}
 }
+
+func TestConfiguredRemoteMustExistBeforeRemoteOperations(t *testing.T) {
+	runtime, _ := fakeRuntime(t)
+	missingConfig := filepath.Join(t.TempDir(), "rclone.conf")
+	if err := os.WriteFile(missingConfig, []byte("[box]\ntype = box\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime.Config = missingConfig
+
+	_, err := runtime.List(context.Background(), "rclone://drive/root")
+	if err == nil || !strings.Contains(err.Error(), "remote \"drive\" is not configured") {
+		t.Fatalf("expected configured-remote failure, got %v", err)
+	}
+}
+
+func TestConfiguredRemoteNamesIgnoreUnsafeSections(t *testing.T) {
+	root := t.TempDir()
+	config := filepath.Join(root, "rclone.conf")
+	if err := os.WriteFile(config, []byte("[drive]\ntype = drive\n[bad/remote]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime := Runtime{Executable: filepath.Join(root, "rclone"), Config: config}
+	names, err := runtime.ConfiguredRemoteNames()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !names["drive"] || names["bad/remote"] {
+		t.Fatalf("names=%v", names)
+	}
+}

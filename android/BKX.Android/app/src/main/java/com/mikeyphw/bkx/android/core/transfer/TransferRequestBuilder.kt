@@ -29,7 +29,8 @@ class TransferRequestBuilder {
         require(preview.draftFingerprint == draft.fingerprint()) {
             "transfer.run preview does not match the current topology, mapping, policy, or verification plan."
         }
-        require(preview.isExecutable) { "transfer.run is blocked by collision or overlap preview fields." }
+        require(preview.isExecutable) { "transfer.run is blocked by collision, overlap, or missing authoritative plan token." }
+        require(preview.planToken.isNotBlank()) { "transfer.run requires the plan_token from the matching transfer.plan artifact." }
         return BridgeRequestEnvelope(
             requestId = requestId,
             operation = OPERATION_TRANSFER_RUN,
@@ -38,6 +39,7 @@ class TransferRequestBuilder {
                 extra = buildJsonObject {
                     put("plan_request_id", preview.requestId)
                     put("preview_request_id", preview.requestId)
+                    put("plan_token", preview.planToken)
                     put("topology_label", preview.topologyLabel)
                 },
             ),
@@ -84,6 +86,9 @@ fun TransferTopologyDraft.toTransferPayload(
         put("dry_run", dryRun)
         put("overwrite", overwriteExisting)
         put("delete_extraneous_on_sync", deleteExtraneousOnSync)
+        if (mode == TransferMode.Sync) {
+            put("sync_delete_limit", syncDeleteLimit)
+        }
         putJsonObject("policies") {
             put("symlink", symlinkPolicy.protocolValue)
             put("special_file", specialFilePolicy.protocolValue)

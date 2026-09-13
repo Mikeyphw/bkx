@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bkx/internal/rcloneops"
+	"bkx/internal/validation"
 )
 
 func installBackupRemoteFake(t *testing.T) string {
@@ -223,7 +224,7 @@ func TestCreateRemoteRefusesExistingLogicalArchiveWithoutChangingIt(t *testing.T
 func TestCreateRemoteSplitPublishesSidecarsAndFailureRollsBackEarlierParts(t *testing.T) {
 	remoteRoot := installBackupRemoteFake(t)
 	source := fixture(t)
-	blob := make([]byte, 128*1024)
+	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
 	// A seeded PRNG keeps this fixture reproducible and incompressible enough
 	// to exercise multipart publication with the real zstd codec.
 	_, _ = rand.New(rand.NewSource(19)).Read(blob)
@@ -232,7 +233,7 @@ func TestCreateRemoteSplitPublishesSidecarsAndFailureRollsBackEarlierParts(t *te
 	}
 	name := "cloud"
 	destination := "rclone://drive/BKX"
-	split := int64(1024)
+	split := validation.MinSplitSizeBytes
 	spec := backupSpec(source, &destination)
 	spec.ArchiveName = &name
 	spec.SplitSize = &split
@@ -253,7 +254,7 @@ func TestCreateRemoteSplitPublishesSidecarsAndFailureRollsBackEarlierParts(t *te
 func TestCreateRemoteSplitPublishesBaseLastAndVerifiesLogicalArchive(t *testing.T) {
 	remoteRoot := installBackupRemoteFake(t)
 	source := fixture(t)
-	blob := make([]byte, 128*1024)
+	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
 	// A seeded PRNG keeps this fixture reproducible and incompressible enough
 	// to exercise multipart publication with the real zstd codec.
 	_, _ = rand.New(rand.NewSource(19)).Read(blob)
@@ -262,7 +263,7 @@ func TestCreateRemoteSplitPublishesBaseLastAndVerifiesLogicalArchive(t *testing.
 	}
 	name := "cloud"
 	destination := "rclone://drive/BKX"
-	split := int64(1024)
+	split := validation.MinSplitSizeBytes
 	spec := backupSpec(source, &destination)
 	spec.ArchiveName = &name
 	spec.SplitSize = &split

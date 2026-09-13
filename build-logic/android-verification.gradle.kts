@@ -2130,10 +2130,10 @@ tasks.register("verifyBkxCliParserConfigErrorContractSeal") {
         check(app.contains("renderHelpWithoutSideEffects") && app.contains("cliUsageError") && app.contains("wantsJSON")) {
             "BR31 requires one side-effect-free help and usage/error boundary."
         }
-        check(parse.contains("strings.Cut(token, "=")") && app.contains("--progress=")) {
+        check(parse.contains("strings.Cut(token, \"=\")") && app.contains("--progress=")) {
             "BR31 requires standard --option=value parsing including --progress=."
         }
-        check(render.contains("dec.UseNumber()") && !render.contains("payload["timing"] = []any{float64(0), duration}")) {
+        check(render.contains("dec.UseNumber()") && !render.contains("payload[\"timing\"] = []any{float64(0), duration}")) {
             "BR31 renderer must preserve 64-bit JSON numbers and avoid fabricated timing arrays."
         }
         check(render.contains("func (r renderer) domainError") && render.contains("tool_exit_code") && render.contains("error_type")) {
@@ -2158,4 +2158,63 @@ tasks.register("verifyBkxCliParserConfigErrorContractSeal") {
 
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxCliParserConfigErrorContractSeal")
+}
+
+tasks.register("verifyBkxCliBackupArchiveRestoreDomainSeal") {
+    group = "verification"
+    description = "Verifies BR32 CLI backup/archive/restore domain safety and parity contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val validation = repositoryRoot.resolve("internal/validation/validation.go").readText()
+        val backup = repositoryRoot.resolve("internal/backupops/backup.go").readText()
+        val archive = repositoryRoot.resolve("internal/archiveio/archiveio.go").readText()
+        val archiveLimits = repositoryRoot.resolve("internal/archiveio/br32_limits.go").readText()
+        val create = repositoryRoot.resolve("internal/archiveio/create.go").readText()
+        val multipart = repositoryRoot.resolve("internal/archiveio/multipart.go").readText()
+        val restore = repositoryRoot.resolve("internal/archiveio/restore.go").readText()
+        val commands = repositoryRoot.resolve("internal/publiccli/commands.go").readText()
+        val plans = repositoryRoot.resolve("internal/publiccli/plans.go").readText()
+        val parse = repositoryRoot.resolve("internal/publiccli/parse.go").readText()
+        val doc = repositoryRoot.resolve("BR32_CLI_BACKUP_ARCHIVE_RESTORE_DOMAIN_SEAL.md")
+        check(validation.contains("MinSplitSizeBytes") && validation.contains("split_size must be at least 1 MiB")) {
+            "BR32 split-size safety minimum is missing."
+        }
+        check(backup.contains("BuildSourceManifest(valid.Sources, valid.Includes, valid.Excludes") && backup.contains("backup destination is required")) {
+            "BR32 backup plan/create parity is missing manifest or destination enforcement."
+        }
+        check(parse.contains("func (a leafArgs) has") && commands.contains("rejectIncompatibleBackupOptions") && commands.contains("requireBackupDestination")) {
+            "BR32 CLI backup option compatibility guard is missing."
+        }
+        check(commands.contains("archiveCreateSnapshot") && commands.contains("RecordStart(lease.requestID, \"archive\"") && commands.contains("RecordCompletion(lease.requestID, \"success\"")) {
+            "BR32 archive-create run-history provenance is missing."
+        }
+        check(archiveLimits.contains("safePageWindow") && archiveLimits.contains("archiveBudget") && archiveLimits.contains("compressionExtensionWarnings")) {
+            "BR32 archive resource/compression limits are missing."
+        }
+        check(archive.contains("safePageWindow(page, pageSize") && archive.contains("duplicate normalized archive member destination") && archive.contains("ChecksumsValid: false")) {
+            "BR32 archive list/verify duplicate-member protections are missing."
+        }
+        check(create.contains("if validated.DryRun") && create.contains("compressionExtensionWarnings") && multipart.contains("publishArchivePartNoReplace")) {
+            "BR32 archive dry-run compression and no-replace multipart publication are missing."
+        }
+        check(restore.contains("EnsureCapacityForWriteDestination") && restore.contains("PathsOverlap(destination, archive)") && restore.contains("createRestoreJournal")) {
+            "BR32 restore capacity/source-overlap/journal contracts are missing."
+        }
+        check(restore.contains("RestoredPathsTruncated") && restore.contains("boundRestorePaths") && plans.contains("archiveio.PreviewRestore")) {
+            "BR32 restore preview/result-bounding contracts are missing."
+        }
+        listOf(
+            repositoryRoot.resolve("internal/validation/br32_split_test.go"),
+            repositoryRoot.resolve("internal/archiveio/br32_limits_test.go"),
+            repositoryRoot.resolve("internal/publiccli/br32_cli_domain_test.go")
+        ).forEach { file -> check(file.isFile) { "BR32 contract test missing: ${file.name}" } }
+        check(doc.isFile && doc.readText().contains("Overlay 12 of 16")) {
+            "BR32 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxCliBackupArchiveRestoreDomainSeal")
 }

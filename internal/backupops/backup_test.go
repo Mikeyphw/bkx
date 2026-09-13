@@ -256,12 +256,12 @@ func TestCreateSplitPublishesAllPartsAndLogicalArchiveVerifies(t *testing.T) {
 	}
 	dest := filepath.Join(t.TempDir(), "final")
 	name := "split-fixture"
-	split := int64(512)
+	split := validation.MinSplitSizeBytes
 	spec := backupSpec(src, &dest)
 	spec.ArchiveName = &name
 	spec.SplitSize = &split
 	// Incompressible-ish deterministic payload so a small split size definitely rolls.
-	blob := make([]byte, 128*1024)
+	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
 	for i := range blob {
 		blob[i] = byte((i*31 + i/7) & 0xff)
 	}

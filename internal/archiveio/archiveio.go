@@ -99,11 +99,11 @@ func List(path string, filter *string, page, pageSize int) (ListResult, error) {
 	if err != nil {
 		return ListResult{}, err
 	}
-	if page < 0 {
-		return ListResult{}, berror.Validation("page must be a non-negative integer", map[string]any{"page": page})
-	}
-	if pageSize < 1 || pageSize > 1000 {
-		return ListResult{}, berror.Validation("page_size must be between 1 and 1000", map[string]any{"page_size": pageSize})
+	start, end, err := safePageWindow(page, pageSize, 0)
+	_ = start
+	_ = end
+	if err != nil {
+		return ListResult{}, err
 	}
 	entries, _, err := readEntries(target, false)
 	if err != nil {
@@ -114,9 +114,13 @@ func List(path string, filter *string, page, pageSize int) (ListResult, error) {
 		if pattern == "" {
 			return ListResult{}, berror.Validation("filter_pattern must not be empty", nil)
 		}
+		matcher, err := compileFnmatch(pattern)
+		if err != nil {
+			return ListResult{}, berror.Validation("Invalid archive filter pattern", map[string]any{"filter_pattern": pattern, "reason": err.Error()})
+		}
 		kept := entries[:0]
 		for _, entry := range entries {
-			if pythonFnmatch(entry.Path, pattern) {
+			if matcher.MatchString(entry.Path) {
 				kept = append(kept, entry)
 			}
 		}
@@ -124,13 +128,9 @@ func List(path string, filter *string, page, pageSize int) (ListResult, error) {
 		filter = &pattern
 	}
 	total := len(entries)
-	start := page * pageSize
-	if start > total {
-		start = total
-	}
-	end := start + pageSize
-	if end > total {
-		end = total
+	start, end, err = safePageWindow(page, pageSize, total)
+	if err != nil {
+		return ListResult{}, err
 	}
 	pageEntries := append([]Entry(nil), entries[start:end]...)
 	return ListResult{Success: true, ArchivePath: target, Entries: pageEntries, TotalEntries: total, Page: page, PageSize: pageSize, FilterPattern: filter}, nil
@@ -149,6 +149,12 @@ func Info(path string) (InfoResult, error) {
 	if err != nil {
 		return InfoResult{}, mapPathError(target, err)
 	}
+	createdAt := st.ModTime().Unix()
+	for i, entry := range entries {
+		if i == 0 || entry.MtimeNS/1_000_000_000 < createdAt {
+			createdAt = entry.MtimeNS / 1_000_000_000
+		}
+	}
 	totalSize, err := LogicalSize(target)
 	if err != nil {
 		return InfoResult{}, err
@@ -163,7 +169,7 @@ func Info(path string) (InfoResult, error) {
 	if uncompressed > 0 {
 		ratio = float64(totalSize) / float64(uncompressed)
 	}
-	return InfoResult{Success: true, ArchivePath: target, Format: format, CreatedAt: st.ModTime().Unix(), TotalEntries: len(entries), TotalSize: totalSize, UncompressedSize: uncompressed, CompressionRatio: ratio}, nil
+	return InfoResult{Success: true, ArchivePath: target, Format: format, CreatedAt: createdAt, TotalEntries: len(entries), TotalSize: totalSize, UncompressedSize: uncompressed, CompressionRatio: ratio}, nil
 }
 
 func Browse(path string, opts BrowseOptions) (BrowseResult, error) {
@@ -303,9 +309,11 @@ func verifyZip(path string, checksums map[string]string) VerifyResult {
 	}
 	defer zr.Close()
 	failed := map[string]bool{}
+	seenMembers := map[string]string{}
 	for _, file := range zr.File {
 		result.EntriesChecked++
-		if _, err := normalizeMember(file.Name); err != nil {
+		normalized, err := normalizeMember(file.Name)
+		if err != nil {
 			result.ChecksumsValid = false
 			if !failed[file.Name] {
 				failed[file.Name] = true
@@ -314,6 +322,17 @@ func verifyZip(path string, checksums map[string]string) VerifyResult {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", file.Name, err))
 			continue
 		}
+		if previous, exists := seenMembers[normalized]; exists {
+			result.ChecksumsValid = false
+			result.StructureValid = false
+			if !failed[file.Name] {
+				failed[file.Name] = true
+				result.FailedEntries = append(result.FailedEntries, file.Name)
+			}
+			result.Errors = append(result.Errors, fmt.Sprintf("%s: duplicate normalized member destination also used by %s", file.Name, previous))
+			continue
+		}
+		seenMembers[normalized] = file.Name
 		if file.FileInfo().IsDir() {
 			continue
 		}
@@ -348,18 +367,33 @@ func verifyTar(path string, checksums map[string]string) VerifyResult {
 		result.Success = false
 		return result
 	}
-	defer rc.Close()
+	closed := false
+	closeStream := func() {
+		if closed {
+			return
+		}
+		closed = true
+		if err := rc.Close(); err != nil {
+			result.ChecksumsValid = false
+			result.StructureValid = false
+			result.Errors = append(result.Errors, err.Error())
+		}
+	}
+	defer closeStream()
+	seenMembers := map[string]string{}
 	tr := tar.NewReader(rc)
 	for {
 		hdr, nextErr := tr.Next()
 		if errors.Is(nextErr, io.EOF) {
-			// TAR ends before its enclosing compressed frame. Drain that frame
-			// to validate its footer/checksum and detect trailing truncation.
+			// TAR ends before its enclosing compressed frame. Drain and close that
+			// frame explicitly so codec footer/checksum errors cannot be hidden by
+			// an ignored deferred Close.
 			if _, err := io.Copy(io.Discard, rc); err != nil {
 				result.ChecksumsValid = false
 				result.StructureValid = false
 				result.Errors = append(result.Errors, err.Error())
 			}
+			closeStream()
 			break
 		}
 		if nextErr != nil {
@@ -369,8 +403,16 @@ func verifyTar(path string, checksums map[string]string) VerifyResult {
 		}
 		result.EntriesChecked++
 		entryErr := error(nil)
-		if _, err := normalizeMember(hdr.Name); err != nil {
+		normalized, err := normalizeMember(hdr.Name)
+		if err != nil {
 			entryErr = err
+		}
+		if entryErr == nil {
+			if previous, exists := seenMembers[normalized]; exists {
+				entryErr = berror.Validation("Duplicate normalized archive member destination", map[string]any{"member": hdr.Name, "previous": previous})
+			} else {
+				seenMembers[normalized] = hdr.Name
+			}
 		}
 		if entryErr == nil && (hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink) {
 			entryErr = berror.Validation("Archive link members are unsafe in this verification policy", map[string]any{"member": hdr.Name})
@@ -452,6 +494,8 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 		}
 		defer zr.Close()
 		entries := make([]Entry, 0, len(zr.File))
+		budget := archiveBudget{}
+		seenMembers := map[string]string{}
 		for _, file := range zr.File {
 			info := file.FileInfo()
 			entryType := "file"
@@ -462,7 +506,19 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 			} else if !info.Mode().IsRegular() {
 				entryType = "special"
 			}
-			entries = append(entries, Entry{Path: file.Name, IsDir: info.IsDir(), Size: int64(file.UncompressedSize64), MtimeNS: zipMtimeNS(file), EntryType: entryType})
+			normalized, err := normalizeMember(file.Name)
+			if err != nil {
+				return nil, "", err
+			}
+			if previous, exists := seenMembers[normalized]; exists {
+				return nil, "", berror.Validation("Duplicate normalized archive member destination", map[string]any{"member": file.Name, "previous": previous})
+			}
+			seenMembers[normalized] = file.Name
+			entry := Entry{Path: file.Name, IsDir: info.IsDir(), Size: int64(file.UncompressedSize64), MtimeNS: zipMtimeNS(file), EntryType: entryType}
+			if err := budget.add(entry); err != nil {
+				return nil, "", err
+			}
+			entries = append(entries, entry)
 			if payload && !info.IsDir() {
 				rc, err := openZipPayload(file)
 				if err != nil {
@@ -484,6 +540,8 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 	defer rc.Close()
 	tr := tar.NewReader(rc)
 	entries := []Entry{}
+	budget := archiveBudget{}
+	seenMembers := map[string]string{}
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
@@ -505,7 +563,19 @@ func readEntries(path string, payload bool) ([]Entry, string, error) {
 		case tar.TypeSymlink, tar.TypeLink:
 			entryType = "symlink"
 		}
-		entries = append(entries, Entry{Path: hdr.Name, IsDir: isDir, Size: hdr.Size, MtimeNS: hdr.ModTime.UnixNano(), EntryType: entryType})
+		normalized, err := normalizeMember(hdr.Name)
+		if err != nil {
+			return nil, "", err
+		}
+		if previous, exists := seenMembers[normalized]; exists {
+			return nil, "", berror.Validation("Duplicate normalized archive member destination", map[string]any{"member": hdr.Name, "previous": previous})
+		}
+		seenMembers[normalized] = hdr.Name
+		entry := Entry{Path: hdr.Name, IsDir: isDir, Size: hdr.Size, MtimeNS: hdr.ModTime.UnixNano(), EntryType: entryType}
+		if err := budget.add(entry); err != nil {
+			return nil, "", err
+		}
+		entries = append(entries, entry)
 		if payload && entryType == "file" {
 			if _, err := io.Copy(io.Discard, tr); err != nil {
 				return nil, "", err

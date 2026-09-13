@@ -89,6 +89,13 @@ func parseLeaf(args []string, specs map[string]optionSpec) (leafArgs, bool, erro
 	return out, false, nil
 }
 
+func (a leafArgs) has(key string) bool {
+	if _, ok := a.Values[key]; ok {
+		return true
+	}
+	return a.BoolSet[key]
+}
+
 func (a leafArgs) stringValue(key string) (string, bool) {
 	values := a.Values[key]
 	if len(values) == 0 {

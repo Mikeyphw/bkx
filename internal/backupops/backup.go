@@ -18,6 +18,7 @@ import (
 
 	"bkx/internal/archiveio"
 	"bkx/internal/berror"
+	"bkx/internal/fsutil"
 	"bkx/internal/hashing"
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
@@ -199,10 +200,18 @@ func PlanBackup(spec models.BackupSpec) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	files, bytes, err := measureSources(valid.Sources)
+	if destination == nil || archivePath == nil {
+		return Plan{}, berror.Validation("backup destination is required", map[string]any{"field": "destination"})
+	}
+	policy := fsutil.SymlinkReject
+	if valid.SkipSymlinks {
+		policy = fsutil.SymlinkSkip
+	}
+	manifest, err := fsutil.BuildSourceManifest(valid.Sources, valid.Includes, valid.Excludes, *archivePath, policy)
 	if err != nil {
 		return Plan{}, err
 	}
+	files, bytes := int64(len(manifest.Files())), manifest.TotalSize()
 	if archivePath != nil && !rcloneops.IsLocation(*archivePath) && bytes > 0 {
 		if err := validation.EnsureCapacityForWriteDestination(*archivePath, bytes); err != nil {
 			return Plan{}, err
@@ -244,6 +253,9 @@ func Create(spec models.BackupSpec, implicitDefault bool, options Options) (Resu
 	valid, destination, name, archivePath, err := Normalize(spec)
 	if err != nil {
 		return Result{}, err
+	}
+	if destination == nil || archivePath == nil {
+		return Result{}, berror.Validation("backup destination is required", map[string]any{"field": "destination"})
 	}
 	if valid.DryRun {
 		steps := map[string]bool{"archive": true, "transfer": destination != nil, "verify": valid.Verify}

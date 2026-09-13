@@ -36,17 +36,18 @@ type RestorePreviewResult struct {
 }
 
 type RestoreResult struct {
-	Success            bool     `json:"success"`
-	DryRun             bool     `json:"dry_run"`
-	FilesRestored      int      `json:"files_restored"`
-	BytesRestored      int64    `json:"bytes_restored"`
-	ArchivePath        string   `json:"archive_path"`
-	DestinationPath    string   `json:"destination_path"`
-	RestoredPaths      []string `json:"restored_paths"`
-	VerificationPassed *bool    `json:"verification_passed"`
-	Warnings           []string `json:"warnings"`
-	Errors             []string `json:"errors"`
-	DurationMS         int64    `json:"duration_ms"`
+	Success                bool     `json:"success"`
+	DryRun                 bool     `json:"dry_run"`
+	FilesRestored          int      `json:"files_restored"`
+	BytesRestored          int64    `json:"bytes_restored"`
+	ArchivePath            string   `json:"archive_path"`
+	DestinationPath        string   `json:"destination_path"`
+	RestoredPaths          []string `json:"restored_paths"`
+	RestoredPathsTruncated bool     `json:"restored_paths_truncated"`
+	VerificationPassed     *bool    `json:"verification_passed"`
+	Warnings               []string `json:"warnings"`
+	Errors                 []string `json:"errors"`
+	DurationMS             int64    `json:"duration_ms"`
 }
 
 var restoreRename = os.Rename
@@ -100,6 +101,12 @@ func PreviewRestore(spec models.RestoreSpec) (RestorePreviewResult, error) {
 	var totalSize int64
 	existing := 0
 	for _, member := range members {
+		if len(files) > maxArchiveEntries {
+			return RestorePreviewResult{}, berror.Validation("Restore selection has too many entries", map[string]any{"max_entries": maxArchiveEntries})
+		}
+		if !member.IsDir && totalSize > maxArchiveUncompressedBytes-member.Size {
+			return RestorePreviewResult{}, berror.Validation("Restore selection exceeds safe extraction budget", map[string]any{"max_bytes": maxArchiveUncompressedBytes})
+		}
 		if member.IsDir {
 			continue
 		}
@@ -146,6 +153,14 @@ func ExtractRestore(spec models.RestoreSpec, progress func(string, int, int64)) 
 
 	preview, err := PreviewRestore(normalized)
 	if err != nil {
+		return RestoreResult{}, err
+	}
+	if err := validation.EnsureCapacityForWriteDestination(destination, preview.TotalSize); err != nil {
+		return RestoreResult{}, err
+	}
+	if overlap, err := validation.PathsOverlap(destination, archive); err == nil && overlap {
+		return RestoreResult{}, berror.Validation("Restore destination must not contain or overwrite the source archive", map[string]any{"archive": archive, "destination": destination})
+	} else if err != nil {
 		return RestoreResult{}, err
 	}
 	if normalized.DryRun {
@@ -207,14 +222,16 @@ func ExtractRestore(spec models.RestoreSpec, progress func(string, int, int64)) 
 	if err != nil {
 		return RestoreResult{}, err
 	}
-	finalPaths, err := publishStagedRestore(stage, destination, restoredRel, normalized.Overwrite)
+	finalPaths, publishWarnings, err := publishStagedRestore(stage, destination, restoredRel, normalized.Overwrite)
 	if err != nil {
 		return RestoreResult{}, err
 	}
+	warnings = append(warnings, publishWarnings...)
 	published = true
+	boundedPaths, truncated := boundRestorePaths(finalPaths)
 	return RestoreResult{
 		Success: true, DryRun: false, FilesRestored: len(restoredRel), BytesRestored: bytesDone,
-		ArchivePath: archive, DestinationPath: destination, RestoredPaths: finalPaths,
+		ArchivePath: archive, DestinationPath: destination, RestoredPaths: boundedPaths, RestoredPathsTruncated: truncated,
 		VerificationPassed: verificationPassed, Warnings: warnings, Errors: []string{},
 		DurationMS: time.Since(started).Milliseconds(),
 	}, nil
@@ -231,13 +248,18 @@ func normalizeRestoreSpec(spec models.RestoreSpec) (models.RestoreSpec, string, 
 	}
 	var destination string
 	if spec.Destination != nil {
-		destination, err = validation.AbsoluteLocalPath(*spec.Destination)
+		base, err := validation.AbsoluteLocalPath(*spec.Destination)
 		if err != nil {
 			return models.RestoreSpec{}, "", "", err
 		}
+		if spec.FreshDir {
+			destination = filepath.Join(base, freshRestoreLeaf(archive))
+		} else {
+			destination = base
+		}
 	} else if spec.FreshDir {
-		stem := archiveStem(archive)
-		destination, err = validation.AbsoluteLocalPath(fmt.Sprintf("restored_%s_%d", stem, time.Now().Unix()))
+		leaf := freshRestoreLeaf(archive)
+		destination, err = validation.AbsoluteLocalPath(leaf)
 		if err != nil {
 			return models.RestoreSpec{}, "", "", err
 		}
@@ -260,6 +282,15 @@ func archiveStem(path string) string {
 		base = strings.TrimSuffix(base, ext)
 	}
 	return base
+}
+
+func freshRestoreLeaf(archive string) string {
+	stem := archiveStem(archive)
+	stem = strings.Trim(stem, " .")
+	if stem == "" {
+		stem = "archive"
+	}
+	return fmt.Sprintf("restored_%s_%d", stem, time.Now().UnixNano())
 }
 
 func previewRestoreMembers(archive string, selectors []string) ([]restoreMember, error) {
@@ -423,7 +454,12 @@ func extractMembersToStage(archive, stage string, members []restoreMember, progr
 			return err
 		}
 		if member.IsDir {
-			return os.MkdirAll(target, 0o755)
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return err
+			}
+			_ = os.Chtimes(target, time.Unix(0, member.MtimeNS), time.Unix(0, member.MtimeNS))
+			restored = append(restored, strings.TrimSuffix(member.Name, "/")+"/")
+			return nil
 		}
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 			return berror.WrapExternal("creating staged restore directory", filepath.Dir(target), "go-os", err)
@@ -444,6 +480,7 @@ func extractMembersToStage(archive, stage string, members []restoreMember, progr
 		if closeErr != nil {
 			return berror.WrapExternal("closing staged restore file", target, "go-os", closeErr)
 		}
+		_ = os.Chtimes(target, time.Unix(0, member.MtimeNS), time.Unix(0, member.MtimeNS))
 		restored = append(restored, member.Name)
 		filesDone++
 		bytesDone += member.Size
@@ -514,64 +551,68 @@ func extractMembersToStage(archive, stage string, members []restoreMember, progr
 	return restored, bytesDone, nil
 }
 
-func publishStagedRestore(stage, destination string, restored []string, overwrite bool) ([]string, error) {
+func publishStagedRestore(stage, destination string, restored []string, overwrite bool) ([]string, []string, error) {
 	if err := ensureNoSymlinkDestinationRoot(destination); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if !pathExists(destination) {
 		if err := restoreRename(stage, destination); err != nil {
-			return nil, berror.WrapExternal("publishing staged restore", destination, "go-os", err)
+			return nil, nil, berror.WrapExternal("publishing staged restore", destination, "go-os", err)
 		}
 		if err := syncDir(filepath.Dir(destination)); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		out := make([]string, 0, len(restored))
 		for _, rel := range restored {
 			target, err := restoreTarget(destination, rel)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			out = append(out, target)
 		}
-		return out, nil
+		return out, nil, nil
 	}
 	st, err := os.Lstat(destination)
 	if err != nil {
-		return nil, berror.WrapExternal("checking restore destination", destination, "go-os", err)
+		return nil, nil, berror.WrapExternal("checking restore destination", destination, "go-os", err)
 	}
 	if st.Mode()&os.ModeSymlink != 0 || !st.IsDir() {
-		return nil, berror.Validation("Restore destination must be a real directory when it already exists", map[string]any{"destination": destination})
+		return nil, nil, berror.Validation("Restore destination must be a real directory when it already exists", map[string]any{"destination": destination})
 	}
 
 	dirs, files, err := stagedTree(stage)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Preflight every target before mutation. This prevents a late collision or
 	// symlink from producing a partially published restore.
 	for _, rel := range append(append([]string{}, dirs...), files...) {
 		target, err := restoreTarget(destination, rel)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if err := ensureNoExistingSymlinkPath(destination, target); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 	if !overwrite {
 		for _, rel := range files {
 			target, _ := restoreTarget(destination, rel)
 			if pathExists(target) {
-				return nil, berror.Validation("Restore target already exists and overwrite is disabled", map[string]any{"path": target})
+				return nil, nil, berror.Validation("Restore target already exists and overwrite is disabled", map[string]any{"path": target})
 			}
 		}
 	}
 
 	rollback, err := os.MkdirTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".bkx-rollback.")
 	if err != nil {
-		return nil, berror.WrapExternal("creating restore rollback directory", filepath.Dir(destination), "go-os", err)
+		return nil, nil, berror.WrapExternal("creating restore rollback directory", filepath.Dir(destination), "go-os", err)
 	}
-	defer os.RemoveAll(rollback)
+	journal, err := createRestoreJournal(destination, stage, rollback, restored)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer os.Remove(journal)
 
 	createdFiles := []string{}
 	replaced := map[string]string{}
@@ -581,6 +622,7 @@ func publishStagedRestore(stage, destination string, restored []string, overwrit
 		if !rollbackNeeded {
 			return
 		}
+		defer os.RemoveAll(rollback)
 		for i := len(createdFiles) - 1; i >= 0; i-- {
 			_ = os.Remove(createdFiles[i])
 		}
@@ -605,7 +647,7 @@ func publishStagedRestore(stage, destination string, restored []string, overwrit
 		target, _ := restoreTarget(destination, rel)
 		if !pathExists(target) {
 			if err := os.Mkdir(target, 0o755); err != nil && !os.IsExist(err) {
-				return nil, berror.WrapExternal("creating restore directory", target, "go-os", err)
+				return nil, nil, berror.WrapExternal("creating restore directory", target, "go-os", err)
 			}
 			createdDirs = append(createdDirs, target)
 		}
@@ -616,21 +658,24 @@ func publishStagedRestore(stage, destination string, restored []string, overwrit
 		source, _ := restoreTarget(stage, rel)
 		target, _ := restoreTarget(destination, rel)
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return nil, berror.WrapExternal("creating restore target parent", filepath.Dir(target), "go-os", err)
+			return nil, nil, berror.WrapExternal("creating restore target parent", filepath.Dir(target), "go-os", err)
 		}
 		existed := pathExists(target)
 		if existed {
 			backup, _ := restoreTarget(rollback, rel)
 			if err := os.MkdirAll(filepath.Dir(backup), 0o755); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if err := restoreRename(target, backup); err != nil {
-				return nil, berror.WrapExternal("backing up restore target", target, "go-os", err)
+				return nil, nil, berror.WrapExternal("backing up restore target", target, "go-os", err)
 			}
 			replaced[target] = backup
 		}
+		if err := ensureNoExistingSymlinkPath(destination, target); err != nil {
+			return nil, nil, err
+		}
 		if err := restoreRename(source, target); err != nil {
-			return nil, berror.WrapExternal("publishing restore target", target, "go-os", err)
+			return nil, nil, berror.WrapExternal("publishing restore target", target, "go-os", err)
 		}
 		if !existed {
 			createdFiles = append(createdFiles, target)
@@ -639,16 +684,20 @@ func publishStagedRestore(stage, destination string, restored []string, overwrit
 	for _, rel := range restored {
 		target, err := restoreTarget(destination, rel)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		finalPaths = append(finalPaths, target)
 	}
 	if err := syncDir(destination); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	cleanupWarnings := []string{}
+	if err := os.RemoveAll(rollback); err != nil {
+		cleanupWarnings = append(cleanupWarnings, "Restore rollback cleanup failed: "+err.Error())
 	}
 	rollbackNeeded = false
 	_ = os.RemoveAll(stage)
-	return finalPaths, nil
+	return finalPaths, cleanupWarnings, nil
 }
 
 func stagedTree(stage string) ([]string, []string, error) {
@@ -760,6 +809,52 @@ func ensureNoSymlinkDestinationRoot(destination string) error {
 		}
 	}
 	return nil
+}
+
+func boundRestorePaths(paths []string) ([]string, bool) {
+	if len(paths) <= maxRestoreResultPaths {
+		return paths, false
+	}
+	bounded := make([]string, maxRestoreResultPaths)
+	copy(bounded, paths[:maxRestoreResultPaths])
+	return bounded, true
+}
+
+func createRestoreJournal(destination, stage, rollback string, entries []string) (string, error) {
+	journalPath := filepath.Join(filepath.Dir(destination), "."+filepath.Base(destination)+".bkx-restore-journal.json")
+	payload := map[string]any{
+		"destination": destination,
+		"stage":       stage,
+		"rollback":    rollback,
+		"entries":     entries,
+		"created_at":  time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	file, err := os.OpenFile(journalPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", berror.WrapExternal("creating restore journal", journalPath, "go-os", err)
+	}
+	keep := false
+	defer func() {
+		_ = file.Close()
+		if !keep {
+			_ = os.Remove(journalPath)
+		}
+	}()
+	if _, err := file.Write(encoded); err != nil {
+		return "", berror.WrapExternal("writing restore journal", journalPath, "go-os", err)
+	}
+	if err := file.Sync(); err != nil {
+		return "", berror.WrapExternal("syncing restore journal", journalPath, "go-os", err)
+	}
+	if err := file.Close(); err != nil {
+		return "", berror.WrapExternal("closing restore journal", journalPath, "go-os", err)
+	}
+	keep = true
+	return journalPath, nil
 }
 
 func pathExists(path string) bool {

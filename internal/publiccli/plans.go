@@ -1,11 +1,13 @@
 package publiccli
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
+	"bkx/internal/archiveio"
 	"bkx/internal/backupops"
 	"bkx/internal/berror"
 	"bkx/internal/fsutil"
@@ -35,12 +37,16 @@ type executionPlan struct {
 	Warnings       []string   `json:"warnings"`
 }
 
-func archivePlan(spec models.ArchiveCreateSpec) (executionPlan, error) {
+func archivePlan(spec models.ArchiveCreateSpec, implicitDefault bool) (executionPlan, error) {
 	valid, err := validation.ValidateArchiveCreateSpec(spec)
 	if err != nil {
 		return executionPlan{}, err
 	}
 	output, err := validation.CanonicalLocalPath(valid.OutputPath)
+	if err != nil {
+		return executionPlan{}, err
+	}
+	profile, warnings, err := archiveio.ResolveCreateProfileForPlan(output, valid.Compression, implicitDefault)
 	if err != nil {
 		return executionPlan{}, err
 	}
@@ -67,13 +73,13 @@ func archivePlan(spec models.ArchiveCreateSpec) (executionPlan, error) {
 	steps := []planStep{{
 		StepType: "archive", Description: "Create archive " + filepath.Base(output), Source: source, Destination: &destination,
 		FilesAffected: &files, BytesAffected: &bytes,
-		Details: map[string]any{"compression": valid.Compression.Algorithm, "split_size": split}, Warnings: []string{},
+		Details: map[string]any{"compression": profile.Algorithm, "split_size": split}, Warnings: warnings,
 	}}
 	if valid.Verify {
 		one := int64(1)
 		steps = append(steps, planStep{StepType: "verify", Description: "Verify archive integrity", Source: &destination, FilesAffected: &one, Details: map[string]any{}, Warnings: []string{}})
 	}
-	return executionPlan{Command: "archive create", DryRun: true, Steps: steps, TotalFiles: &files, TotalBytes: &bytes, TimingEstimate: "unknown", Warnings: []string{}}, nil
+	return executionPlan{Command: "archive create", DryRun: true, Steps: steps, TotalFiles: &files, TotalBytes: &bytes, TimingEstimate: "unknown", Warnings: warnings}, nil
 }
 
 func restorePlan(spec models.RestoreSpec) (executionPlan, error) {
@@ -91,51 +97,74 @@ func restorePlan(spec models.RestoreSpec) (executionPlan, error) {
 		}
 		return executionPlan{}, err
 	}
+	planSpec := valid
+	planSpec.Archive = archive
 	var destination *string
 	if valid.Destination != nil {
-		value, err := canonicalOptionalPath(*valid.Destination)
+		base, err := canonicalOptionalPath(*valid.Destination)
 		if err != nil {
 			return executionPlan{}, err
 		}
-		destination = &value
-	} else if valid.FreshDir {
-		stem := filepath.Base(archive)
-		for _, suffix := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar", ".zip", ".bakery"} {
-			if len(stem) > len(suffix) && stem[len(stem)-len(suffix):] == suffix {
-				stem = stem[:len(stem)-len(suffix)]
-				break
-			}
+		planSpec.Destination = &base
+		if valid.FreshDir {
+			value := filepath.Join(base, freshPlanRestoreLeaf(archive))
+			destination = &value
+		} else {
+			destination = &base
 		}
-		value, err := filepath.Abs(fmt.Sprintf("restored_%s_%d", stem, time.Now().Unix()))
+	} else if valid.FreshDir {
+		value, err := filepath.Abs(freshPlanRestoreLeaf(archive))
 		if err != nil {
 			return executionPlan{}, err
 		}
 		destination = &value
 	}
-	var selected *int64
-	if len(valid.Paths) > 0 {
-		count := int64(len(valid.Paths))
-		selected = &count
+	preview, err := archiveio.PreviewRestore(planSpec)
+	if err != nil {
+		return executionPlan{}, err
+	}
+	selectedFiles := int64(preview.TotalFiles)
+	selectedBytes := preview.TotalSize
+	if destination == nil && len(preview.Files) > 0 {
+		common := filepath.Dir(preview.Files[0].DiskPath)
+		destination = &common
 	}
 	steps := []planStep{}
 	if valid.Verify {
 		one := int64(1)
 		steps = append(steps, planStep{StepType: "verify", Description: "Verify archive before restore", Source: &archive, FilesAffected: &one, Details: map[string]any{}, Warnings: []string{}})
 	}
-	requiresConfirmation := false
-	if destination != nil {
-		_, err := os.Stat(*destination)
-		requiresConfirmation = err == nil
-	}
+	requiresConfirmation := preview.ExistingFiles > 0 || (destination != nil && pathExistsPublicCLI(*destination))
 	steps = append(steps, planStep{
 		StepType: "restore", Description: "Extract from " + filepath.Base(archive), Source: &archive, Destination: destination,
-		FilesAffected: selected, BytesAffected: nil,
+		FilesAffected: &selectedFiles, BytesAffected: &selectedBytes,
 		Details: map[string]any{
 			"full_restore": len(valid.Paths) == 0, "selected_paths": valid.Paths, "overwrite": valid.Overwrite,
 			"fresh_dir": valid.FreshDir, "confirm_overwrite": valid.ConfirmOverwrite, "requires_confirmation": requiresConfirmation,
-		}, Warnings: []string{},
+			"existing_files": preview.ExistingFiles,
+		}, Warnings: preview.Warnings,
 	})
-	return executionPlan{Command: "restore extract", DryRun: true, Steps: steps, TotalFiles: selected, TotalBytes: nil, TimingEstimate: "unknown", Warnings: []string{}}, nil
+	return executionPlan{Command: "restore extract", DryRun: true, Steps: steps, TotalFiles: &selectedFiles, TotalBytes: &selectedBytes, TimingEstimate: "unknown", Warnings: preview.Warnings}, nil
+}
+
+func freshPlanRestoreLeaf(archive string) string {
+	stem := filepath.Base(archive)
+	for _, suffix := range []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar", ".zip", ".bakery"} {
+		if strings.HasSuffix(stem, suffix) && len(stem) > len(suffix) {
+			stem = strings.TrimSuffix(stem, suffix)
+			break
+		}
+	}
+	stem = strings.Trim(stem, " .")
+	if stem == "" {
+		stem = "archive"
+	}
+	return "restored_" + stem + "_" + strconv.FormatInt(time.Now().UnixNano(), 10)
+}
+
+func pathExistsPublicCLI(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
 }
 
 func backupPlan(spec models.BackupSpec, command string) (backupops.Plan, error) {

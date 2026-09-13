@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"bkx/internal/models"
+	"bkx/internal/validation"
 )
 
 func createSpec(src, out, algorithm string, level int) models.ArchiveCreateSpec {
@@ -64,7 +65,7 @@ func TestCreateTarAndZipTransactionalVerified(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if listed.TotalEntries != 5 {
+			if listed.TotalEntries != 6 {
 				t.Fatalf("entries=%d want 5: %+v", listed.TotalEntries, listed.Entries)
 			}
 		})
@@ -128,6 +129,13 @@ func TestCreateUnsupportedFailsClosed(t *testing.T) {
 
 func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
 	src := fixtureTree(t)
+	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
+	for i := range blob {
+		blob[i] = byte((i*37 + i/11) & 0xff)
+	}
+	if err := os.WriteFile(filepath.Join(src, "blob.bin"), blob, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tc := range []struct {
 		name string
 		alg  string
@@ -136,7 +144,7 @@ func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
 		{name: "split.zip", alg: "zstd"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			split := int64(64)
+			split := validation.MinSplitSizeBytes
 			out := filepath.Join(t.TempDir(), tc.name)
 			spec := createSpec(src, out, tc.alg, 3)
 			spec.SplitSize = &split
@@ -161,7 +169,7 @@ func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
 				t.Fatalf("verify=%+v err=%v", verified, err)
 			}
 			listed, err := List(out, nil, 0, 100)
-			if err != nil || listed.TotalEntries != 5 {
+			if err != nil || listed.TotalEntries != 6 {
 				t.Fatalf("list=%+v err=%v", listed, err)
 			}
 
@@ -169,7 +177,7 @@ func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
 			result, err := ExtractRestore(models.RestoreSpec{
 				Archive: out, Destination: &restoreDir, Paths: []string{}, Verify: true, FreshDir: true,
 			}, nil)
-			if err != nil || !result.Success || result.FilesRestored != 2 {
+			if err != nil || !result.Success || result.FilesRestored != 6 {
 				t.Fatalf("restore=%+v err=%v", result, err)
 			}
 		})

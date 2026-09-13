@@ -188,12 +188,14 @@ func PathsOverlap(first, second string) (bool, error) {
 	return err == nil && (br == "." || (br != ".." && !strings.HasPrefix(br, ".."+string(os.PathSeparator)))), nil
 }
 
+const MinSplitSizeBytes int64 = 1024 * 1024
+
 func ValidateSplitSize(value *int64) (*int64, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if *value <= 0 {
-		return nil, berror.Validation("split_size must be a positive integer", map[string]any{"split_size": *value})
+	if *value < MinSplitSizeBytes {
+		return nil, berror.Validation("split_size must be at least 1 MiB", map[string]any{"split_size": *value, "minimum_bytes": MinSplitSizeBytes})
 	}
 	v := *value
 	return &v, nil

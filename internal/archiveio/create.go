@@ -69,17 +69,20 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 		return CreateResult{}, err
 	}
 
-	if validated.DryRun {
-		return CreateResult{
-			Success: true, DryRun: true, ArchivePath: output, SplitParts: []string{},
-			Warnings: []string{"Dry run - archive not created"}, Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
-		}, nil
-	}
-
 	format := detectCreateFormat(output)
 	profile, warnings, err := resolveCreateCompression(validated.Compression, implicitDefault, output, format)
 	if err != nil {
 		return CreateResult{}, err
+	}
+	if !implicitDefault {
+		warnings = append(warnings, compressionExtensionWarnings(output, format, profile.Algorithm)...)
+	}
+
+	if validated.DryRun {
+		return CreateResult{
+			Success: true, DryRun: true, ArchivePath: output, SplitParts: []string{},
+			Warnings: append([]string{"Dry run - archive not created"}, warnings...), Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
+		}, nil
 	}
 
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {

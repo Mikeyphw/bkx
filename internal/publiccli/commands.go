@@ -169,6 +169,60 @@ func backupOptions() map[string]optionSpec {
 	}
 }
 
+func rejectIncompatibleBackupOptions(command string, engine string, args leafArgs) error {
+	engine = strings.ToLower(strings.TrimSpace(engine))
+	if engine == models.BackupEngineRestic {
+		for key, label := range map[string]string{
+			"destination":       "--destination",
+			"name":              "--name",
+			"compression":       "--compression",
+			"compression_level": "--compression-level",
+			"split_size":        "--split-size",
+		} {
+			if args.has(key) {
+				return berror.Validation("Backup option is not supported by the restic engine", map[string]any{"command": command, "engine": engine, "option": label})
+			}
+		}
+	}
+	if engine == models.BackupEngineBakery {
+		for key, label := range map[string]string{
+			"repository":     "--repository",
+			"repository_ref": "--repository-ref",
+			"credential_ref": "--credential-ref",
+			"tag":            "--tag",
+		} {
+			if args.has(key) {
+				return berror.Validation("Backup option is only supported by the restic engine", map[string]any{"command": command, "engine": engine, "option": label})
+			}
+		}
+	}
+	return nil
+}
+
+func requireBackupDestination(spec models.BackupSpec) error {
+	if spec.Destination == nil || strings.TrimSpace(*spec.Destination) == "" {
+		return berror.Validation("backup destination is required", map[string]any{"field": "destination"})
+	}
+	return nil
+}
+
+func archiveCreateSnapshot(spec models.ArchiveCreateSpec) map[string]any {
+	return map[string]any{
+		"type": "ArchiveCreateSpec",
+		"values": map[string]any{
+			"sources":       spec.Sources,
+			"output_path":   spec.OutputPath,
+			"excludes":      spec.Excludes,
+			"includes":      spec.Includes,
+			"split_size":    spec.SplitSize,
+			"compression":   map[string]any{"algorithm": spec.Compression.Algorithm, "level": spec.Compression.Level},
+			"verify":        spec.Verify,
+			"dry_run":       spec.DryRun,
+			"skip_symlinks": spec.SkipSymlinks,
+		},
+	}
+}
+
 func backupCreate(c *appContext, args []string) int {
 	a, ok := parseFor(c, "backup create", args, backupOptions())
 	if !ok {
@@ -237,6 +291,9 @@ func backupCreate(c *appContext, args []string) int {
 			engine = models.BackupEngineBakery
 		}
 	}
+	if err := rejectIncompatibleBackupOptions("backup create", engine, a); err != nil {
+		return commandErr(c, err)
+	}
 	if engine == models.BackupEngineRestic {
 		if !hasRepository || strings.TrimSpace(repository) == "" {
 			return commandErr(c, berror.Validation("--repository or --repository-ref is required with --engine restic", nil))
@@ -267,6 +324,9 @@ func backupCreate(c *appContext, args []string) int {
 		return commandErr(c, berror.Validation("--repository and --repository-ref are only valid with the restic backup engine", nil))
 	}
 	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, ArchiveName: name, Excludes: excludes, Includes: includes, SplitSize: split, Compression: profile, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun, SkipSymlinks: false}
+	if err := requireBackupDestination(spec); err != nil {
+		return commandErr(c, err)
+	}
 	if c.globals.DryRun {
 		plan, err := backupPlan(spec, "backup create")
 		if err != nil {
@@ -288,18 +348,32 @@ func backupCreate(c *appContext, args []string) int {
 }
 
 func backupPlanCommand(c *appContext, args []string) int {
-	specs := map[string]optionSpec{
-		"-d": {Key: "destination", Kind: optionValue}, "--destination": {Key: "destination", Kind: optionValue},
-		"--engine": {Key: "engine", Kind: optionValue}, "--repository": {Key: "repository", Kind: optionValue}, "--repository-ref": {Key: "repository_ref", Kind: optionValue},
-		"--credential-ref": {Key: "credential_ref", Kind: optionValue}, "--exclude": {Key: "exclude", Kind: optionMultiValue},
-		"--tag": {Key: "tag", Kind: optionMultiValue}, "--verify": {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
-	}
-	a, ok := parseFor(c, "backup plan", args, specs)
+	a, ok := parseFor(c, "backup plan", args, backupOptions())
 	if !ok {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, -1, "SOURCES..."); err != nil {
 		return cliUsageError(c, err)
+	}
+	excludes, err := readPatterns(a.multiValue("exclude_from"), a.multiValue("exclude"))
+	if err != nil {
+		return commandErr(c, err)
+	}
+	includes, err := readPatterns(a.multiValue("include_from"), a.multiValue("include"))
+	if err != nil {
+		return commandErr(c, err)
+	}
+	profile, _, err := compression(c, a)
+	if err != nil {
+		return commandErr(c, err)
+	}
+	split, err := a.int64Ptr("split_size")
+	if err != nil {
+		return commandErr(c, berror.Validation(err.Error(), nil))
+	}
+	var name *string
+	if raw, set := a.stringValue("name"); set {
+		name = &raw
 	}
 	var destination *string
 	if raw, set := a.stringValue("destination"); set {
@@ -341,11 +415,14 @@ func backupPlanCommand(c *appContext, args []string) int {
 			engine = models.BackupEngineBakery
 		}
 	}
+	if err := rejectIncompatibleBackupOptions("backup plan", engine, a); err != nil {
+		return commandErr(c, err)
+	}
 	if engine == models.BackupEngineRestic {
 		if !hasRepository || strings.TrimSpace(repository) == "" {
 			return commandErr(c, berror.Validation("--repository or --repository-ref is required with --engine restic", nil))
 		}
-		plan, err := backupengine.PlanBackup(backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: a.multiValue("exclude"), Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: true})
+		plan, err := backupengine.PlanBackup(backupengine.Request{Engine: engine, Sources: a.Positionals, Repository: &repository, CredentialRef: credentialRef, Excludes: excludes, Includes: includes, Tags: a.multiValue("tag"), Verify: resolveVerify(c, a), DryRun: true})
 		if err != nil {
 			return commandErr(c, err)
 		}
@@ -357,7 +434,10 @@ func backupPlanCommand(c *appContext, args []string) int {
 	if hasRepository {
 		return commandErr(c, berror.Validation("--repository and --repository-ref are only valid with the restic backup engine", nil))
 	}
-	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, Compression: models.CompressionProfile{Algorithm: c.config.CompressionAlgorithm, Level: c.config.CompressionLevel}, Verify: c.config.VerifyAfterOperation, DryRun: true, Excludes: []string{}, Includes: []string{}}
+	spec := models.BackupSpec{Sources: a.Positionals, Destination: destination, ArchiveName: name, Compression: profile, SplitSize: split, Verify: resolveVerify(c, a), DryRun: true, Excludes: excludes, Includes: includes}
+	if err := requireBackupDestination(spec); err != nil {
+		return commandErr(c, err)
+	}
 	plan, err := backupPlan(spec, "backup plan")
 	if err != nil {
 		return commandErr(c, err)
@@ -406,7 +486,7 @@ func archiveCreate(c *appContext, args []string) int {
 	}
 	spec := models.ArchiveCreateSpec{Sources: a.Positionals, OutputPath: output, Excludes: excludes, Includes: includes, SplitSize: split, Compression: profile, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun}
 	if c.globals.DryRun {
-		plan, err := archivePlan(spec)
+		plan, err := archivePlan(spec, !explicitAlgorithm)
 		if err != nil {
 			return commandErr(c, err)
 		}
@@ -418,9 +498,30 @@ func archiveCreate(c *appContext, args []string) int {
 	if c.globals.Verbose {
 		c.render.verbose("executing archive create")
 	}
-	result, err := archiveio.Create(spec, !explicitAlgorithm, nil)
+	lease, err := beginCLIExecution(c, "archive", "", "")
 	if err != nil {
 		return commandErr(c, err)
+	}
+	defer lease.Close()
+	if c.store != nil {
+		dst := output
+		if _, err := c.store.RecordStart(lease.requestID, "archive", spec.Sources, &dst, &dst, archiveCreateSnapshot(spec)); err != nil {
+			return commandErr(c, err)
+		}
+		_, _ = c.store.RecordPhase(lease.requestID, "running")
+	}
+	result, err := archiveio.Create(spec, !explicitAlgorithm, nil)
+	if err != nil {
+		if c.store != nil {
+			msg := err.Error()
+			_, _ = c.store.RecordCompletion(lease.requestID, "failed", nil, nil, &msg)
+		}
+		return commandErr(c, err)
+	}
+	if c.store != nil {
+		files := int64(result.FilesArchived)
+		bytes := result.BytesWritten
+		_, _ = c.store.RecordCompletion(lease.requestID, "success", &files, &bytes, nil)
 	}
 	return renderResult(c, result, "archive")
 }

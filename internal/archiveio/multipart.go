@@ -26,6 +26,9 @@ func multipartPartPaths(base string) ([]string, error) {
 	}
 	parts := []string{base}
 	for index := 2; ; index++ {
+		if index > maxArchiveEntries {
+			return nil, fmt.Errorf("too many archive split parts")
+		}
 		path := multipartPartName(base, index)
 		if err := validateMultipartPart(path); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
@@ -300,7 +303,7 @@ func publishMultipart(tempPaths, finalPaths []string) error {
 
 	published := make([]string, 0, len(order))
 	for _, i := range order {
-		if err := os.Rename(tempPaths[i], finalPaths[i]); err != nil {
+		if err := publishArchivePartNoReplace(tempPaths[i], finalPaths[i]); err != nil {
 			for _, path := range published {
 				_ = os.Remove(path)
 			}
@@ -351,4 +354,37 @@ func removeAll(paths []string) {
 	for _, path := range paths {
 		_ = os.Remove(path)
 	}
+}
+
+func publishArchivePartNoReplace(tempPath, finalPath string) error {
+	in, err := os.Open(tempPath)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(finalPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return fmt.Errorf("archive output already exists: %s", finalPath)
+		}
+		return err
+	}
+	keep := false
+	defer func() {
+		_ = out.Close()
+		if !keep {
+			_ = os.Remove(finalPath)
+		}
+	}()
+	if _, err := io.Copy(out, in); err != nil {
+		return err
+	}
+	if err := out.Sync(); err != nil {
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	keep = true
+	return os.Remove(tempPath)
 }

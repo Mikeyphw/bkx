@@ -177,6 +177,7 @@ class BkxAppViewModelTest {
         )
         val transferPreview = TransferPreviewSummary(
             requestId = "transfer-preview",
+            planToken = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
             draftFingerprint = transferDraft.fingerprint(),
             topologyLabel = "push archive",
             mappings = listOf(TransferMappingSummary("Source", "Remote", "backup.bkx", TransferMappingAction.Create)),

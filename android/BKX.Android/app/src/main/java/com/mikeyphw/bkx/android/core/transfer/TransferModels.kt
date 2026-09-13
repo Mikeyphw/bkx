@@ -185,6 +185,7 @@ data class TransferUiState(
     val draft: TransferTopologyDraft = TransferTopologyDraft(),
     val preview: TransferPreviewSummary? = null,
     val result: TransferResultUiState = TransferResultUiState.NotStarted,
+    val message: String? = null,
 ) {
     val validationIssues: List<TransferValidationIssue> = draft.validationIssues()
     val canPreview: Boolean = validationIssues.isEmpty()

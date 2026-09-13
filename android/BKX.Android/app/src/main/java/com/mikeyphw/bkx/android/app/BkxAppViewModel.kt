@@ -6,6 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.mikeyphw.bkx.android.app.navigation.BackendToolState
+import com.mikeyphw.bkx.android.app.navigation.BkxRouteKey
+import com.mikeyphw.bkx.android.app.navigation.BkxResponseBinding
+import com.mikeyphw.bkx.android.app.navigation.BkxDeepLinkCodec
+import com.mikeyphw.bkx.android.app.navigation.BkxBoundEntityKind
 import com.mikeyphw.bkx.android.app.navigation.ArchiveDetailSection
 import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
@@ -137,6 +141,7 @@ data class BkxHomeUiState(
     val snapshots: SnapshotsUiState = SnapshotsUiState(),
     val archiveDetailSection: ArchiveDetailSection = ArchiveDetailSection.Overview,
     val moreRoute: MoreRoute = MoreRoute.Overview,
+    val routeGeneration: Long = 0L,
     val recentRuns: List<RunSummary> = emptyList(),
     val backupPlanning: BackupPlanningUiState = BackupPlanningUiState(),
     val archiveReadOnly: ArchiveReadOnlyUiState = ArchiveReadOnlyUiState(),
@@ -164,6 +169,7 @@ data class BkxHomeUiState(
         capabilities = (readiness as? BackendReadiness.Ready)?.capabilities?.sorted().orEmpty(),
     )
 
+    val currentRouteKey: BkxRouteKey get() = BkxRouteKey.from(selectedDestination, backupRoute, archiveDetailSection, moreRoute)
     val rootAvailable: Boolean get() = (readiness as? BackendReadiness.Ready)?.isRoot == true
     val activeOperationCount: Int get() = operationRuntime.activeWork().size
 }
@@ -216,15 +222,15 @@ sealed interface BkxHomeEvent {
     data class ForgetSnapshot(val snapshotId: String) : BkxHomeEvent
 
     data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
-    data class ApplyBackupPlanPreview(val preview: BackupPlanPreview) : BkxHomeEvent
+    data class ApplyBackupPlanPreview(val preview: BackupPlanPreview, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RequestBackupPlan : BkxHomeEvent
     data object CreateBackup : BkxHomeEvent
 
     data class SelectArchive(val archive: ArchiveLocation) : BkxHomeEvent
     data class ApplyArchiveList(val archives: List<ArchiveListItem>) : BkxHomeEvent
-    data class ApplyArchiveInfo(val info: ArchiveInfoSummary) : BkxHomeEvent
-    data class ApplyArchiveBrowsePage(val page: ArchiveBrowsePage) : BkxHomeEvent
-    data class ApplyArchiveVerification(val result: BridgeResultEnvelope) : BkxHomeEvent
+    data class ApplyArchiveInfo(val info: ArchiveInfoSummary, val binding: BkxResponseBinding? = null) : BkxHomeEvent
+    data class ApplyArchiveBrowsePage(val page: ArchiveBrowsePage, val binding: BkxResponseBinding? = null) : BkxHomeEvent
+    data class ApplyArchiveVerification(val result: BridgeResultEnvelope, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RefreshArchives : BkxHomeEvent
     data class LoadArchiveDetails(val archive: ArchiveLocation) : BkxHomeEvent
     data class BrowseArchive(val archive: ArchiveLocation, val pageToken: String? = null) : BkxHomeEvent
@@ -232,14 +238,14 @@ sealed interface BkxHomeEvent {
     data class PrepareRestore(val archive: ArchiveLocation) : BkxHomeEvent
 
     data class UpdateRestoreDraft(val draft: RestoreDraft) : BkxHomeEvent
-    data class ApplyRestorePreview(val preview: RestorePreviewSummary) : BkxHomeEvent
+    data class ApplyRestorePreview(val preview: RestorePreviewSummary, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data class ConfirmRestoreExtraction(val confirmation: RestoreExtractionConfirmation) : BkxHomeEvent
     data object RequestRestorePreview : BkxHomeEvent
     data object ExecuteRestore : BkxHomeEvent
 
     data class UpdateTransferDraft(val draft: TransferTopologyDraft) : BkxHomeEvent
-    data class ApplyTransferPreview(val preview: TransferPreviewSummary) : BkxHomeEvent
-    data class ApplyTransferResult(val result: BridgeResultEnvelope) : BkxHomeEvent
+    data class ApplyTransferPreview(val preview: TransferPreviewSummary, val binding: BkxResponseBinding? = null) : BkxHomeEvent
+    data class ApplyTransferResult(val result: BridgeResultEnvelope, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RequestTransferPreview : BkxHomeEvent
     data object RunTransfer : BkxHomeEvent
 
@@ -278,6 +284,7 @@ sealed interface BkxHomeEvent {
     ) : BkxHomeEvent
     data class ReconnectOperations(val snapshot: OperationReconnectSnapshot) : BkxHomeEvent
     data class FocusActiveOperation(val requestId: String) : BkxHomeEvent
+    data class OpenDeepLink(val uri: String) : BkxHomeEvent
 }
 
 class BkxAppViewModel(
@@ -310,6 +317,8 @@ class BkxAppViewModel(
     private val requestSequence = AtomicLong(0L)
     private val readinessSequence = AtomicLong(0L)
     private val messageSequence = AtomicLong(0L)
+    private val routeSequence = AtomicLong(0L)
+    private val activeResponseBindings = mutableMapOf<String, BkxResponseBinding>()
     private val _state = MutableStateFlow(BkxHomeUiState())
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
 
@@ -337,7 +346,7 @@ class BkxAppViewModel(
             BkxHomeEvent.RevalidateCapabilities -> revalidateCapabilitiesAfterResume()
             BkxHomeEvent.RefreshRuns -> refreshRuns()
             is BkxHomeEvent.SelectDestination -> {
-                _state.update { current ->
+                navigate { current ->
                     current.copy(
                         selectedDestination = event.destination,
                         moreRoute = if (event.destination == BkxDestination.More) current.moreRoute else MoreRoute.Overview,
@@ -345,8 +354,8 @@ class BkxAppViewModel(
                 }
                 hydrateDestination(event.destination)
             }
-            is BkxHomeEvent.ShowArchiveSection -> _state.update { it.copy(archiveDetailSection = event.section) }
-            BkxHomeEvent.CloseArchiveDetails -> _state.update { current ->
+            is BkxHomeEvent.ShowArchiveSection -> navigate { it.copy(archiveDetailSection = event.section) }
+            BkxHomeEvent.CloseArchiveDetails -> navigate { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(
                         selectedArchive = null,
@@ -359,13 +368,13 @@ class BkxAppViewModel(
                 )
             }
             is BkxHomeEvent.OpenMoreRoute -> {
-                _state.update { it.copy(moreRoute = event.route) }
+                navigate { it.copy(selectedDestination = BkxDestination.More, moreRoute = event.route) }
                 hydrateMoreRoute(event.route)
             }
-            BkxHomeEvent.CloseMoreRoute -> _state.update { it.copy(moreRoute = MoreRoute.Overview) }
+            BkxHomeEvent.CloseMoreRoute -> navigate { it.copy(moreRoute = MoreRoute.Overview) }
 
             is BkxHomeEvent.OpenBackupRoute -> {
-                _state.update { it.copy(backupRoute = event.route) }
+                navigate { it.copy(selectedDestination = BkxDestination.Backup, backupRoute = event.route) }
                 hydrateBackupRoute(event.route)
             }
             BkxHomeEvent.RefreshSavedJobs -> refreshSavedJobs()
@@ -407,13 +416,13 @@ class BkxAppViewModel(
             is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
                 current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
             }
-            is BkxHomeEvent.ApplyBackupPlanPreview -> _state.update { current ->
-                current.copy(backupPlanning = BackupPlanningUiState.withPreview(current.backupPlanning.draft, event.preview))
+            is BkxHomeEvent.ApplyBackupPlanPreview -> applyIfBound(event.binding, event.preview.requestId, BkxBoundEntityKind.BackupDraft, currentBackupFingerprint(), currentBackupFingerprint()) {
+                it.copy(backupPlanning = BackupPlanningUiState.withPreview(it.backupPlanning.draft, event.preview))
             }
             BkxHomeEvent.RequestBackupPlan -> requestBackupPlan()
             BkxHomeEvent.CreateBackup -> createBackup()
 
-            is BkxHomeEvent.SelectArchive -> _state.update { current ->
+            is BkxHomeEvent.SelectArchive -> navigate { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(selectedArchive = event.archive),
                     archiveDetailSection = ArchiveDetailSection.Overview,
@@ -422,7 +431,7 @@ class BkxAppViewModel(
             is BkxHomeEvent.ApplyArchiveList -> _state.update { current ->
                 current.copy(archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Content(event.archives)))
             }
-            is BkxHomeEvent.ApplyArchiveInfo -> _state.update { current ->
+            is BkxHomeEvent.ApplyArchiveInfo -> applyIfBound(event.binding, event.binding?.requestId ?: "", BkxBoundEntityKind.Archive, currentArchiveId()) { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(
                         selectedArchive = event.info.archive,
@@ -430,16 +439,16 @@ class BkxAppViewModel(
                     ),
                 )
             }
-            is BkxHomeEvent.ApplyArchiveBrowsePage -> _state.update { current ->
+            is BkxHomeEvent.ApplyArchiveBrowsePage -> applyIfBound(event.binding, event.binding?.requestId ?: "", BkxBoundEntityKind.Archive, currentArchiveId()) { current ->
                 current.copy(archiveReadOnly = current.archiveReadOnly.copy(browsePage = event.page))
             }
-            is BkxHomeEvent.ApplyArchiveVerification -> _state.update { current ->
+            is BkxHomeEvent.ApplyArchiveVerification -> applyIfBound(event.binding, event.result.requestId, BkxBoundEntityKind.Archive, currentArchiveId()) { current ->
                 current.copy(archiveReadOnly = current.archiveReadOnly.copy(verification = event.result.toArchiveVerificationUiState()))
             }
             BkxHomeEvent.RefreshArchives -> refreshArchives()
             is BkxHomeEvent.LoadArchiveDetails -> loadArchiveDetails(event.archive)
             is BkxHomeEvent.BrowseArchive -> {
-                _state.update { it.copy(archiveDetailSection = ArchiveDetailSection.Contents) }
+                navigate { it.copy(selectedDestination = BkxDestination.Archives, archiveDetailSection = ArchiveDetailSection.Contents, archiveReadOnly = it.archiveReadOnly.copy(selectedArchive = event.archive)) }
                 browseArchive(event.archive, event.pageToken)
             }
             is BkxHomeEvent.VerifyArchive -> verifyArchive(event.archive)
@@ -448,7 +457,7 @@ class BkxAppViewModel(
             is BkxHomeEvent.UpdateRestoreDraft -> _state.update { current ->
                 current.copy(restore = RestoreUiState(draft = event.draft))
             }
-            is BkxHomeEvent.ApplyRestorePreview -> _state.update { current ->
+            is BkxHomeEvent.ApplyRestorePreview -> applyIfBound(event.binding, event.preview.requestId, BkxBoundEntityKind.RestoreDraft, currentRestoreFingerprint(), currentRestoreFingerprint()) { current ->
                 current.copy(restore = current.restore.copy(preview = event.preview, confirmation = null))
             }
             is BkxHomeEvent.ConfirmRestoreExtraction -> _state.update { current ->
@@ -460,10 +469,10 @@ class BkxAppViewModel(
             is BkxHomeEvent.UpdateTransferDraft -> _state.update { current ->
                 current.copy(transfer = TransferUiState(draft = event.draft))
             }
-            is BkxHomeEvent.ApplyTransferPreview -> _state.update { current ->
+            is BkxHomeEvent.ApplyTransferPreview -> applyIfBound(event.binding, event.preview.requestId, BkxBoundEntityKind.TransferDraft, currentTransferFingerprint(), currentTransferFingerprint()) { current ->
                 current.copy(transfer = current.transfer.copy(preview = event.preview))
             }
-            is BkxHomeEvent.ApplyTransferResult -> _state.update { current ->
+            is BkxHomeEvent.ApplyTransferResult -> applyIfBound(event.binding, event.result.requestId, BkxBoundEntityKind.TransferDraft, currentTransferFingerprint(), currentTransferFingerprint()) { current ->
                 current.copy(transfer = current.transfer.copy(result = event.result.toTransferResultUiState()))
             }
             BkxHomeEvent.RequestTransferPreview -> requestTransferPreview()
@@ -522,20 +531,164 @@ class BkxAppViewModel(
             is BkxHomeEvent.FocusActiveOperation -> updateOperationRuntimeAndSelectActivity { runtime ->
                 operationProgressTracker.focus(runtime, event.requestId)
             }
+            is BkxHomeEvent.OpenDeepLink -> openDeepLink(event.uri)
+        }
+    }
+
+
+    private fun navigate(transform: (BkxHomeUiState) -> BkxHomeUiState) {
+        val generation = routeSequence.incrementAndGet()
+        _state.update { current -> transform(current).copy(routeGeneration = generation) }
+    }
+
+    private fun openDeepLink(uri: String) {
+        val target = BkxDeepLinkCodec.parse(uri) ?: run {
+            _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), "BKX link is not recognized.")) }
+            return
+        }
+        navigate { current ->
+            current.copy(
+                selectedDestination = target.destination,
+                backupRoute = target.backupRoute ?: if (target.destination == BkxDestination.Backup) current.backupRoute else current.backupRoute,
+                moreRoute = target.moreRoute ?: if (target.destination == BkxDestination.More) current.moreRoute else MoreRoute.Overview,
+                archiveDetailSection = target.archiveSection ?: current.archiveDetailSection,
+            )
+        }
+        hydrateDestination(target.destination)
+        target.entityId?.let { entityId ->
+            if (target.destination == BkxDestination.Activity) {
+                onEvent(BkxHomeEvent.FocusActiveOperation(entityId))
+            }
+        }
+    }
+
+    private fun bindResponse(
+        request: BridgeRequestEnvelope,
+        kind: BkxBoundEntityKind,
+        entityId: String,
+        draftFingerprint: String? = null,
+    ): BkxResponseBinding {
+        val current = _state.value
+        val binding = BkxResponseBinding(
+            requestId = request.requestId,
+            routeKey = current.currentRouteKey,
+            routeGeneration = current.routeGeneration,
+            entityKind = kind,
+            entityId = entityId,
+            draftFingerprint = draftFingerprint,
+        )
+        activeResponseBindings[request.requestId] = binding
+        return binding
+    }
+
+    private fun applyIfBound(
+        binding: BkxResponseBinding?,
+        resultRequestId: String,
+        kind: BkxBoundEntityKind,
+        currentEntityId: String?,
+        currentDraftFingerprint: String? = null,
+        transform: (BkxHomeUiState) -> BkxHomeUiState,
+    ) {
+        if (binding == null) {
+            _state.update(transform)
+            return
+        }
+        if (binding.entityKind != kind) return
+        if (!binding.accepts(resultRequestId, _state.value.currentRouteKey, _state.value.routeGeneration, currentEntityId, currentDraftFingerprint)) return
+        activeResponseBindings.remove(binding.requestId)
+        _state.update(transform)
+    }
+
+    private fun acceptActiveBinding(
+        resultRequestId: String,
+        kind: BkxBoundEntityKind,
+        boundEntityId: String,
+        currentEntityId: String?,
+        currentDraftFingerprint: String? = null,
+    ): Boolean {
+        val binding = activeResponseBindings[resultRequestId] ?: return true
+        if (binding.entityKind != kind || binding.entityId != boundEntityId) return false
+        val accepted = binding.accepts(
+            resultRequestId = resultRequestId,
+            currentRouteKey = _state.value.currentRouteKey,
+            currentRouteGeneration = _state.value.routeGeneration,
+            currentEntityId = currentEntityId,
+            currentDraftFingerprint = currentDraftFingerprint,
+        )
+        if (accepted) activeResponseBindings.remove(resultRequestId)
+        return accepted
+    }
+
+    private fun currentArchiveId(): String? = _state.value.archiveReadOnly.selectedArchive?.archiveId
+
+    private fun currentBackupFingerprint(): String = _state.value.backupPlanning.draft.fingerprint()
+
+    private fun currentRestoreFingerprint(): String = _state.value.restore.draft.fingerprint()
+
+    private fun currentTransferFingerprint(): String = _state.value.transfer.draft.fingerprint()
+
+    private fun filesystemEntityId(path: String, showHidden: Boolean): String = "$path|hidden=$showHidden"
+
+    private fun currentFilesystemEntityId(): String? {
+        val browser = _state.value.filesystemBrowser
+        if (!browser.open || browser.currentPath.isBlank()) return null
+        return filesystemEntityId(browser.currentPath, browser.showHidden)
+    }
+
+    private fun currentSnapshotBrowseEntityId(): String? {
+        val snapshots = _state.value.snapshots
+        val repo = snapshots.repositoryId ?: return null
+        val snapshot = snapshots.selectedSnapshot?.id ?: return null
+        return "$repo:$snapshot:${snapshots.browsePath}"
+    }
+
+    private fun currentSnapshotDiffEntityId(): String? {
+        val snapshots = _state.value.snapshots
+        val repo = snapshots.repositoryId ?: return null
+        val snapshot = snapshots.selectedSnapshot?.id ?: return null
+        val previous = snapshots.compareTargetId ?: return null
+        return "$repo:$snapshot:$previous"
+    }
+
+    private fun currentSnapshotRestoreEntityId(dryRun: Boolean): String? {
+        val snapshots = _state.value.snapshots
+        val repo = snapshots.repositoryId ?: return null
+        val snapshot = snapshots.selectedSnapshot?.id ?: return null
+        return "$repo:$snapshot:${snapshots.restoreTarget.trim()}:${snapshots.restoreIncludes.joinToString("|")}:$dryRun"
+    }
+
+    private fun clearBackupPreviewIfCurrent(draftFingerprint: String, message: String) {
+        _state.update { current ->
+            if (current.backupPlanning.draft.fingerprint() == draftFingerprint) {
+                current.copy(
+                    backupPlanning = BackupPlanningUiState(draft = current.backupPlanning.draft),
+                    uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), message),
+                )
+            } else {
+                current
+            }
         }
     }
 
     private fun requestBackupPlan() {
         val draft = _state.value.backupPlanning.draft
         if (draft.validationIssues().isNotEmpty()) return
+        val draftFingerprint = draft.fingerprint()
         val request = backupRequestBuilder.buildPlanRequest(nextRequestId("backup-plan"), draft)
-        executeRequest(request, recordInHistory = false) { result ->
+        bindResponse(request, BkxBoundEntityKind.BackupDraft, draftFingerprint, draftFingerprint)
+        _state.update { current -> current.copy(backupPlanning = current.backupPlanning.copy(planRequestId = request.requestId, preview = null)) }
+        executeRequest(
+            request = request,
+            recordInHistory = false,
+            onFailure = { failure -> clearBackupPreviewIfCurrent(draftFingerprint, failure.message) },
+        ) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.BackupDraft, draftFingerprint, _state.value.backupPlanning.draft.fingerprint())) return@executeRequest
             if (result.status == BridgeResultStatus.Success) {
                 val token = result.artifacts.firstOrNull { it.label == "backup_plan" }?.sha256 ?: result.requestId
                 val preview = BackupPlanPreview(
                     requestId = result.requestId,
                     planToken = token,
-                    draftFingerprint = draft.fingerprint(),
+                    draftFingerprint = draftFingerprint,
                     filesTotal = result.metrics?.filesTotal,
                     bytesTotal = result.metrics?.bytesTotal,
                     warnings = result.errors.map {
@@ -547,7 +700,7 @@ class BkxAppViewModel(
                         emptyList()
                     },
                 )
-                _state.update { current -> current.copy(backupPlanning = BackupPlanningUiState.withPreview(draft, preview)) }
+                _state.update { current -> current.copy(backupPlanning = BackupPlanningUiState.withPreview(current.backupPlanning.draft, preview)) }
             }
         }
     }
@@ -567,6 +720,7 @@ class BkxAppViewModel(
             if (_state.value.googleDrive.connected) add(GoogleDriveRcloneConfig.rootUri)
         }
         val request = archiveRequestBuilder.buildListRequest(nextRequestId("archives-list"), roots = roots)
+        bindResponse(request, BkxBoundEntityKind.Archive, "archive-list:${roots.joinToString("|")}")
         _state.update { current ->
             current.copy(
                 archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Loading),
@@ -574,6 +728,7 @@ class BkxAppViewModel(
             )
         }
         executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Archive, "archive-list:${roots.joinToString("|")}", "archive-list:${roots.joinToString("|")}")) return@executeRequest
             if (result.status == BridgeResultStatus.Success) {
                 val archives = result.artifacts
                     .filter { it.label == "archive" && (it.path.startsWith("/") || it.path.startsWith("rclone://", ignoreCase = true)) }
@@ -587,8 +742,16 @@ class BkxAppViewModel(
                         )
                     }
                 _state.update { current ->
+                    val currentSelected = current.archiveReadOnly.selectedArchive
+                    val selectedStillPresent = currentSelected == null || archives.any { it.archive.archiveId == currentSelected.archiveId && it.archive.stagedPath == currentSelected.stagedPath }
                     current.copy(
-                        archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Content(archives)),
+                        archiveReadOnly = current.archiveReadOnly.copy(
+                            listState = ArchiveWorkflowUiState.Content(archives),
+                            selectedArchive = currentSelected.takeIf { selectedStillPresent },
+                            infoState = if (selectedStillPresent) current.archiveReadOnly.infoState else ArchiveWorkflowUiState.Idle,
+                            browsePage = current.archiveReadOnly.browsePage.takeIf { selectedStillPresent },
+                            verification = if (selectedStillPresent) current.archiveReadOnly.verification else com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState.NotStarted,
+                        ),
                         screenStatuses = current.screenStatuses + (
                             BkxDestination.Archives to if (archives.isEmpty()) {
                                 ScreenStatus.Empty("No BKX archives have been indexed yet.")
@@ -614,8 +777,9 @@ class BkxAppViewModel(
     }
 
     private fun loadArchiveDetails(archive: ArchiveLocation) {
-        _state.update { current ->
+        navigate { current ->
             current.copy(
+                selectedDestination = BkxDestination.Archives,
                 archiveReadOnly = current.archiveReadOnly.copy(
                     selectedArchive = archive,
                     infoState = ArchiveWorkflowUiState.Loading,
@@ -625,7 +789,9 @@ class BkxAppViewModel(
             )
         }
         val request = archiveRequestBuilder.buildInfoRequest(nextRequestId("archive-info"), archive)
+        bindResponse(request, BkxBoundEntityKind.Archive, archive.archiveId)
         executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Archive, archive.archiveId, currentArchiveId())) return@executeRequest
             if (result.status == BridgeResultStatus.Success) {
                 val match = Regex("Archive: (\\d+) entries, (\\d+) uncompressed bytes, format ([^.]+)").find(result.summary)
                 val info = ArchiveInfoSummary(
@@ -649,6 +815,7 @@ class BkxAppViewModel(
     private fun browseArchive(archive: ArchiveLocation, pageToken: String?) {
         val requestPage = ArchiveBrowsePageRequest(archive = archive, pageToken = pageToken)
         val request = archiveRequestBuilder.buildBrowseRequest(nextRequestId("archive-browse"), requestPage)
+        bindResponse(request, BkxBoundEntityKind.Archive, archive.archiveId)
         executeRequest(
             request = request,
             recordInHistory = false,
@@ -656,6 +823,7 @@ class BkxAppViewModel(
                 _state.update { current -> current.copy(archiveReadOnly = current.archiveReadOnly.copy(browsePage = null, infoState = ArchiveWorkflowUiState.Failed(emptyList(), failure.message))) }
             },
         ) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Archive, archive.archiveId, currentArchiveId())) return@executeRequest
             val entries = result.artifacts.mapNotNull { artifact ->
                 when (artifact.label) {
                     "archive_entry" -> ArchiveEntrySummary(artifact.path, ArchiveEntryType.File, sizeBytes = artifact.sizeBytes)
@@ -679,8 +847,11 @@ class BkxAppViewModel(
     }
 
     private fun verifyArchive(archive: ArchiveLocation) {
+        navigate { current -> current.copy(selectedDestination = BkxDestination.Archives, archiveReadOnly = current.archiveReadOnly.copy(selectedArchive = archive)) }
         val request = archiveRequestBuilder.buildVerifyRequest(nextRequestId("archive-verify"), archive)
+        bindResponse(request, BkxBoundEntityKind.Archive, archive.archiveId)
         executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Archives, deliverFailureResults = true) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Archive, archive.archiveId, currentArchiveId())) return@executeRequest
             _state.update { current ->
                 current.copy(
                     archiveReadOnly = current.archiveReadOnly.copy(
@@ -694,7 +865,7 @@ class BkxAppViewModel(
 
     private fun prepareRestore(archive: ArchiveLocation) {
         val current = _state.value.restore.draft
-        _state.update { state ->
+        navigate { state ->
             state.copy(
                 selectedDestination = BkxDestination.Archives,
                 archiveReadOnly = state.archiveReadOnly.copy(selectedArchive = archive),
@@ -707,15 +878,20 @@ class BkxAppViewModel(
     private fun requestRestorePreview() {
         val draft = _state.value.restore.draft
         if (draft.validationIssues().isNotEmpty()) return
+        val draftFingerprint = draft.fingerprint()
         val request = restoreRequestBuilder.buildPreviewRequest(nextRequestId("restore-preview"), draft)
+        bindResponse(request, BkxBoundEntityKind.RestoreDraft, draftFingerprint, draftFingerprint)
         executeRequest(
             request = request,
             recordInHistory = false,
             onFailure = { failure ->
-                _state.update { current -> current.copy(restore = current.restore.copy(message = failure.message, preview = null, confirmation = null)) }
+                _state.update { current ->
+                    if (current.restore.draft.fingerprint() == draftFingerprint) current.copy(restore = current.restore.copy(message = failure.message, preview = null, confirmation = null)) else current
+                }
             },
         ) { result ->
-            _state.update { current -> current.copy(restore = current.restore.copy(preview = result.toRestorePreviewSummary(draft), confirmation = null)) }
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.RestoreDraft, draftFingerprint, _state.value.restore.draft.fingerprint())) return@executeRequest
+            _state.update { current -> current.copy(restore = current.restore.copy(preview = result.toRestorePreviewSummary(current.restore.draft), confirmation = null)) }
         }
     }
 
@@ -734,15 +910,20 @@ class BkxAppViewModel(
     private fun requestTransferPreview() {
         val draft = _state.value.transfer.draft
         if (draft.validationIssues().isNotEmpty()) return
+        val draftFingerprint = draft.fingerprint()
         val request = transferRequestBuilder.buildPreviewRequest(nextRequestId("transfer-plan"), draft)
+        bindResponse(request, BkxBoundEntityKind.TransferDraft, draftFingerprint, draftFingerprint)
         executeRequest(
             request = request,
             recordInHistory = false,
             onFailure = { failure ->
-                _state.update { current -> current.copy(transfer = current.transfer.copy(message = failure.message, preview = null)) }
+                _state.update { current ->
+                    if (current.transfer.draft.fingerprint() == draftFingerprint) current.copy(transfer = current.transfer.copy(message = failure.message, preview = null)) else current
+                }
             },
         ) { result ->
-            val preview = result.toTransferPreviewSummary(draft)
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.TransferDraft, draftFingerprint, _state.value.transfer.draft.fingerprint())) return@executeRequest
+            val preview = result.toTransferPreviewSummary(_state.value.transfer.draft)
             _state.update { current -> current.copy(transfer = current.transfer.copy(preview = preview)) }
         }
     }
@@ -918,6 +1099,7 @@ class BkxAppViewModel(
         val remote = path.startsWith("rclone://", ignoreCase = true)
         if (!browser.open || (!path.startsWith("/") && !(remote && browser.target?.allowRemote == true))) return
         _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(currentPath = path, loading = true, error = null)) }
+        val requestEntityId = filesystemEntityId(path, _state.value.filesystemBrowser.showHidden)
         val request = BridgeRequestEnvelope(
             requestId = nextRequestId("filesystem-list"),
             operation = "filesystem.list",
@@ -927,7 +1109,9 @@ class BkxAppViewModel(
                 put("limit", 500)
             },
         )
+        bindResponse(request, BkxBoundEntityKind.FilesystemPath, requestEntityId)
         executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
+            if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.FilesystemPath, requestEntityId, currentFilesystemEntityId())) return@executeRequest
             if (result.status == BridgeResultStatus.Success) {
                 val entries = result.artifacts.map { artifact ->
                     FilesystemBrowserEntry(
@@ -1460,7 +1644,7 @@ class BkxAppViewModel(
 
     private fun selectSnapshotRepository(repositoryId: String) {
         if (_state.value.repositories.items.none { it.repositoryId == repositoryId }) return
-        _state.update { current -> current.copy(snapshots = SnapshotsUiState(repositoryId = repositoryId)) }
+        navigate { current -> current.copy(selectedDestination = BkxDestination.Backup, backupRoute = BackupRoute.Snapshots, snapshots = SnapshotsUiState(repositoryId = repositoryId)) }
         refreshSnapshots()
     }
 
@@ -1471,11 +1655,14 @@ class BkxAppViewModel(
         }
         withRepository(repositoryId) { repository ->
             _state.update { current -> current.copy(snapshots = current.snapshots.copy(status = ScreenStatus.Loading, actionInProgress = "list:$repositoryId", message = null)) }
+            val request = repositoryRequestBuilder.snapshots(nextRequestId("snapshots-list"), repository)
+            bindResponse(request, BkxBoundEntityKind.SnapshotRepository, repository.repositoryId)
             executeRequest(
-                request = repositoryRequestBuilder.snapshots(nextRequestId("snapshots-list"), repository),
+                request = request,
                 recordInHistory = false,
                 onFailure = { failure -> snapshotActionFailure(failure, listFailure = true) },
             ) { result ->
+                if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.SnapshotRepository, repository.repositoryId, _state.value.snapshots.repositoryId)) return@executeRequest
                 val snapshots = SnapshotBridgeCodec.decodeSnapshots(result.artifacts)
                 val selectedId = _state.value.snapshots.selectedSnapshot?.id
                 val selected = snapshots.firstOrNull { it.id == selectedId }
@@ -1496,8 +1683,10 @@ class BkxAppViewModel(
 
     private fun selectSnapshot(snapshot: SnapshotDescriptor) {
         val shortId = snapshot.shortId.ifBlank { snapshot.id.take(8) }
-        _state.update { current ->
+        navigate { current ->
             current.copy(
+                selectedDestination = BkxDestination.Backup,
+                backupRoute = BackupRoute.Snapshots,
                 snapshots = current.snapshots.copy(
                     selectedSnapshot = snapshot,
                     browseStatus = ScreenStatus.Loading,
@@ -1524,13 +1713,16 @@ class BkxAppViewModel(
         if (!normalized.startsWith("/")) return
         withRepository(repositoryId) { repository ->
             _state.update { current -> current.copy(snapshots = current.snapshots.copy(browseStatus = ScreenStatus.Loading, browsePath = normalized, entries = emptyList(), actionInProgress = "browse:${snapshot.id}")) }
+            val request = repositoryRequestBuilder.snapshotBrowse(nextRequestId("snapshot-browse"), repository, snapshot.id, normalized)
+            bindResponse(request, BkxBoundEntityKind.SnapshotBrowsePath, "$repositoryId:${snapshot.id}:$normalized")
             executeRequest(
-                request = repositoryRequestBuilder.snapshotBrowse(nextRequestId("snapshot-browse"), repository, snapshot.id, normalized),
+                request = request,
                 recordInHistory = false,
                 onFailure = { failure ->
                     _state.update { current -> current.copy(snapshots = current.snapshots.copy(browseStatus = ScreenStatus.Error(failure.title, failure.message), actionInProgress = null, message = failure.message)) }
                 },
             ) { result ->
+                if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.SnapshotBrowsePath, "$repositoryId:${snapshot.id}:$normalized", currentSnapshotBrowseEntityId())) return@executeRequest
                 val entries = SnapshotBridgeCodec.decodeNodes(result.artifacts)
                 _state.update { current ->
                     current.copy(
@@ -1582,11 +1774,14 @@ class BkxAppViewModel(
         }
         withRepository(repositoryId) { repository ->
             _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = "diff:${currentSnapshot.id}", diff = null, compareTargetId = previous.id)) }
+            val request = repositoryRequestBuilder.snapshotDiff(nextRequestId("snapshot-diff"), repository, previous.id, currentSnapshot.id, metadata = true)
+            bindResponse(request, BkxBoundEntityKind.Snapshot, "$repositoryId:${currentSnapshot.id}:${previous.id}")
             executeRequest(
-                request = repositoryRequestBuilder.snapshotDiff(nextRequestId("snapshot-diff"), repository, previous.id, currentSnapshot.id, metadata = true),
+                request = request,
                 recordInHistory = false,
                 onFailure = { failure -> snapshotActionFailure(failure) },
             ) { result ->
+                if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Snapshot, "$repositoryId:${currentSnapshot.id}:${previous.id}", currentSnapshotDiffEntityId())) return@executeRequest
                 _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = null, diff = SnapshotBridgeCodec.decodeDiff(result.artifacts), message = result.summary)) }
             }
         }
@@ -1615,6 +1810,8 @@ class BkxAppViewModel(
                 overwrite = snapshotState.overwriteMode,
                 dryRun = dryRun,
             )
+            val restoreEntityId = "$repositoryId:${snapshot.id}:$target:${snapshotState.restoreIncludes.joinToString("|")}:$dryRun"
+            bindResponse(request, BkxBoundEntityKind.Snapshot, restoreEntityId)
             _state.update { current -> current.copy(snapshots = current.snapshots.copy(actionInProgress = if (dryRun) "restore-preview:${snapshot.id}" else "restore:${snapshot.id}", message = null)) }
             executeRequest(
                 request = request,
@@ -1622,6 +1819,7 @@ class BkxAppViewModel(
                 feedbackDestination = if (dryRun) null else BkxDestination.Backup,
                 onFailure = { failure -> snapshotActionFailure(failure) },
             ) { result ->
+                if (!acceptActiveBinding(result.requestId, BkxBoundEntityKind.Snapshot, restoreEntityId, currentSnapshotRestoreEntityId(dryRun))) return@executeRequest
                 val decoded = SnapshotBridgeCodec.decodeRestoreResult(result.artifacts)
                 _state.update { current ->
                     current.copy(

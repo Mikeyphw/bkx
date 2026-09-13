@@ -235,6 +235,7 @@ data class RestoreUiState(
     val draft: RestoreDraft = RestoreDraft(),
     val preview: RestorePreviewSummary? = null,
     val confirmation: RestoreExtractionConfirmation? = null,
+    val message: String? = null,
 ) {
     val validationIssues: List<RestoreValidationIssue> = draft.validationIssues()
     val canPreview: Boolean = validationIssues.isEmpty()

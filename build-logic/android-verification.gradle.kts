@@ -1965,8 +1965,10 @@ tasks.register("verifyBkxStartupAppGraphReadinessSeal") {
     description = "Verifies BR28 startup/app graph readiness barrier and lazy hydration contracts."
     dependsOn("testDebugUnitTest")
     doLast {
-        val appRoot = project.layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
-        val testRoot = project.layout.projectDirectory.dir("src/test/java/com/mikeyphw/bkx/android").asFile
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
         val application = appRoot.resolve("app/BkxAndroidApplication.kt").readText()
         val runtime = appRoot.resolve("app/runtime/BkxApplicationRuntime.kt").readText()
         val graph = appRoot.resolve("app/di/DefaultBackendGraph.kt").readText()
@@ -2002,9 +2004,54 @@ tasks.register("verifyBkxStartupAppGraphReadinessSeal") {
         check(testRoot.resolve("contracts/StartupReadinessSealContractTest.kt").isFile) {
             "BR28 startup readiness contract test is missing."
         }
+        check(repositoryRoot.resolve("BR28_STARTUP_APP_GRAPH_READINESS_SEAL.md").readText().contains("Overlay 8 of 16")) {
+            "BR28 handoff doc must preserve overlay number and roadmap total."
+        }
     }
 }
 
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxStartupAppGraphReadinessSeal")
+}
+
+
+tasks.register("verifyBkxAndroidNavigationStaleStateBindingSeal") {
+    group = "verification"
+    description = "Verifies BR29 Android navigation, route-local state and stale response binding contracts."
+    dependsOn("testDebugUnitTest")
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
+        val navigation = appRoot.resolve("app/navigation/BkxNavigation.kt").readText()
+        val viewModel = appRoot.resolve("app/BkxAppViewModel.kt").readText()
+        val mainActivity = appRoot.resolve("app/MainActivity.kt").readText()
+        val doc = repositoryRoot.resolve("BR29_ANDROID_NAVIGATION_STALE_STATE_BINDING_SEAL.md")
+        check(navigation.contains("data class BkxRouteKey") && navigation.contains("data class BkxResponseBinding") && navigation.contains("object BkxDeepLinkCodec")) {
+            "BR29 must expose structured route keys, response bindings and deep-link parsing."
+        }
+        check(viewModel.contains("routeGeneration") && viewModel.contains("activeResponseBindings") && viewModel.contains("acceptActiveBinding")) {
+            "BR29 ViewModel must bind asynchronous results to route generations and active response bindings."
+        }
+        check(viewModel.contains("BackupDraft") && viewModel.contains("RestoreDraft") && viewModel.contains("TransferDraft") && viewModel.contains("SnapshotBrowsePath")) {
+            "BR29 must cover backup, restore, transfer and snapshot stale-state bindings."
+        }
+        check(viewModel.contains("selectedStillPresent") && viewModel.contains("infoState = if (selectedStillPresent)")) {
+            "BR29 archive refresh must reconcile stale archive selections."
+        }
+        check(mainActivity.contains("Intent.ACTION_VIEW") && mainActivity.contains("OpenDeepLink")) {
+            "BR29 MainActivity must route VIEW intents through typed deep-link events."
+        }
+        check(testRoot.resolve("contracts/NavigationStaleStateBindingSealContractTest.kt").isFile) {
+            "BR29 navigation/stale-state contract test is missing."
+        }
+        check(doc.isFile && doc.readText().contains("Overlay 9 of 16")) {
+            "BR29 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxAndroidNavigationStaleStateBindingSeal")
 }

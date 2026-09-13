@@ -32,6 +32,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         DefaultBackendGraph.applicationRuntime(this).startAfterAuthorizedIngress(BkxStartupIngress.InteractiveUi)
         handleReconnectIntent(intent)
+        handleDeepLinkIntent(intent)
         setContent {
             BkxAndroidApp(viewModel = viewModel)
         }
@@ -48,6 +49,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleReconnectIntent(intent)
+        handleDeepLinkIntent(intent)
+    }
+
+    private fun handleDeepLinkIntent(intent: Intent?) {
+        if (intent?.action == Intent.ACTION_VIEW) {
+            intent.dataString?.let { viewModel.onEvent(BkxHomeEvent.OpenDeepLink(it)) }
+        }
     }
 
     private fun handleReconnectIntent(intent: Intent?) {

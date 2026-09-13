@@ -25,7 +25,7 @@ class ArchiveReadOnlyContractTest {
         val info = builder.buildInfoRequest("req-info", archive)
         val browse = builder.buildBrowseRequest(
             requestId = "req-browse",
-            page = ArchiveBrowsePageRequest(archive = archive, pageToken = "page-2", pageSize = 25),
+            page = ArchiveBrowsePageRequest(archive = archive, pageToken = "25", pageSize = 25),
         )
         val verify = builder.buildVerifyRequest("req-verify", archive)
 
@@ -106,6 +106,11 @@ class ArchiveReadOnlyContractTest {
     @Test(expected = IllegalArgumentException::class)
     fun mutatingArchiveOperationsAreRejectedFromReadOnlyScreens() {
         ArchiveRequestBuilder().requireReadOnlyOperation("archive.delete")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun nonNumericArchiveBrowsePageTokensAreRejected() {
+        ArchiveBrowsePageRequest(archive = archive, pageToken = "page-2")
     }
 
     @Test(expected = IllegalArgumentException::class)

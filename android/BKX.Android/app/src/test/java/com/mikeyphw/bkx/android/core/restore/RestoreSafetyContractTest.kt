@@ -97,7 +97,8 @@ class RestoreSafetyContractTest {
         assertEquals("restore.extract", request.operation)
         assertEquals(false, request.payload["dry_run"]?.jsonPrimitive?.boolean)
         assertEquals(true, request.payload["overwrite"]?.jsonPrimitive?.boolean)
-        assertEquals(true, request.payload["confirm_overwrite"]?.jsonPrimitive?.boolean)
+        assertEquals(false, request.payload["confirm_overwrite"]?.jsonPrimitive?.boolean)
+        assertEquals(true, request.payload["destructive_confirmation_accepted"]?.jsonPrimitive?.boolean)
         val evidence = request.payload["confirmation_evidence"]?.jsonObject
         assertEquals(RestoreExtractionConfirmation.CONFIRMATION_PHRASE, evidence?.get("phrase")?.jsonPrimitive?.content)
         assertEquals("1", evidence?.get("acknowledged_overwrite_count")?.jsonPrimitive?.content)

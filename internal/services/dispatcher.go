@@ -338,6 +338,14 @@ func (d *Dispatcher) backupCreate(ctx OperationContext, p map[string]any) (Resul
 	if err != nil {
 		return Result{}, err
 	}
+	plan.Command = "backup.plan"
+	expectedPlanToken, err := planToken(plan)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := requirePlanEvidence(p, "backup.create", "plan_request_id", "plan_token", expectedPlanToken); err != nil {
+		return Result{}, err
+	}
 	total := plan.TotalFiles
 	emit(ctx, "archiving", "Creating backup archive.", floatPtr(.05))
 	r, err := backupops.Create(spec, false, backupops.Options{RunStore: d.RunStore, RunID: requestID(ctx), Cancelled: ctx.Cancelled, Progress: func(e backupops.ProgressEvent) {
@@ -597,11 +605,11 @@ func (d *Dispatcher) repositoriesRemove(p map[string]any) (Result, error) {
 }
 
 func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result, error) {
-	path, err := archivePath(p)
+	identity, err := archiveIdentity(p)
 	if err != nil {
 		return Result{}, err
 	}
-	materialized, err := materializeArchive(ctx, path)
+	materialized, err := materializeArchive(ctx, identity.Path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -610,14 +618,14 @@ func (d *Dispatcher) archiveInfo(ctx OperationContext, p map[string]any) (Result
 	if err != nil {
 		return Result{}, err
 	}
-	return success(fmt.Sprintf("Archive: %d entries, %d uncompressed bytes, format %s.", r.TotalEntries, r.UncompressedSize, r.Format), nil, []Artifact{artifact("archive", path, "")}), nil
+	return success(fmt.Sprintf("Archive: %d entries, %d uncompressed bytes, format %s.", r.TotalEntries, r.UncompressedSize, r.Format), nil, []Artifact{archiveBoundArtifact("archive", identity.Path, "", identity)}), nil
 }
 func (d *Dispatcher) archiveBrowse(ctx OperationContext, p map[string]any) (Result, error) {
-	path, err := archivePath(p)
+	identity, err := archiveIdentity(p)
 	if err != nil {
 		return Result{}, err
 	}
-	materialized, err := materializeArchive(ctx, path)
+	materialized, err := materializeArchive(ctx, identity.Path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -654,21 +662,24 @@ func (d *Dispatcher) archiveBrowse(ctx OperationContext, p map[string]any) (Resu
 		}
 		sz := e.Size
 		mt := max64(0, e.MtimeNS/1_000_000)
-		arts = append(arts, Artifact{Label: label, Path: e.Path, SizeBytes: &sz, ModifiedAtEpochMillis: &mt})
+		item := archiveBoundArtifact(label, e.Path, "", identity)
+		item.SizeBytes = &sz
+		item.ModifiedAtEpochMillis = &mt
+		arts = append(arts, item)
 	}
 	next := r.Offset + len(r.Entries)
 	if next < r.TotalMatches {
-		arts = append(arts, artifact("archive_next_page", fmt.Sprintf("embedded://archive/page/%d", next), ""))
+		arts = append(arts, archiveBoundArtifact("archive_next_page", fmt.Sprintf("embedded://archive/page/%d", next), "", identity))
 	}
 	return success(fmt.Sprintf("Archive page contains %d of %d matching entries (%d bytes).", len(r.Entries), r.TotalMatches, r.TotalSize), nil, arts), nil
 }
 func (d *Dispatcher) archiveVerify(ctx OperationContext, p map[string]any) (Result, error) {
-	path, err := archivePath(p)
+	identity, err := archiveIdentity(p)
 	if err != nil {
 		return Result{}, err
 	}
 	emit(ctx, "verifying", "Preparing archive verification.", floatPtr(.05))
-	materialized, err := materializeArchive(ctx, path)
+	materialized, err := materializeArchive(ctx, identity.Path)
 	if err != nil {
 		return Result{}, err
 	}
@@ -699,7 +710,7 @@ func (d *Dispatcher) archiveVerify(ctx OperationContext, p map[string]any) (Resu
 	if status == StatusSuccess {
 		word = "passed"
 	}
-	return Result{Status: status, Summary: fmt.Sprintf("Archive verification %s; checked %d entries.", word, r.EntriesChecked), Errors: issues, Artifacts: []Artifact{artifact("archive_verification", path, r.ArchiveChecksums["sha256"])}}, nil
+	return Result{Status: status, Summary: fmt.Sprintf("Archive verification %s; checked %d entries.", word, r.EntriesChecked), Errors: issues, Artifacts: []Artifact{archiveBoundArtifact("archive_verification", identity.Path, r.ArchiveChecksums["sha256"], identity)}}, nil
 }
 func (d *Dispatcher) archiveList(ctx OperationContext, p map[string]any) (Result, error) {
 	roots, err := stringSliceDefault(p, "roots", []string{})
@@ -850,7 +861,7 @@ func (d *Dispatcher) restorePreview(ctx OperationContext, p map[string]any) (Res
 	if err != nil {
 		return Result{}, err
 	}
-	tok, err := token(restorePlan(original))
+	tok, err := token(restorePlan(restorePreviewTokenSpec(original)))
 	if err != nil {
 		return Result{}, err
 	}
@@ -891,6 +902,20 @@ func (d *Dispatcher) restoreExtract(ctx OperationContext, p map[string]any) (Res
 	original, err := restoreSpecFromBridge(p, false)
 	if err != nil {
 		return Result{}, err
+	}
+	expectedPlanToken, err := token(restorePlan(restorePreviewTokenSpec(original)))
+	if err != nil {
+		return Result{}, err
+	}
+	if err := requirePlanEvidence(p, "restore.extract", "preview_request_id", "plan_token", expectedPlanToken); err != nil {
+		return Result{}, err
+	}
+	if original.ConfirmOverwrite {
+		return Result{}, berror.Validation("restore.extract confirm_overwrite=true means the destructive confirmation is still pending", map[string]any{"confirm_overwrite": true})
+	}
+	rootSensitive, _ := boolDefault(p, "root_sensitive_confirmation_required", false)
+	if (original.Overwrite || rootSensitive) && !hasConfirmationEvidence(p) {
+		return Result{}, berror.Validation("restore.extract destructive or root-sensitive destinations require confirmation_evidence from a matching preview", nil)
 	}
 	materialized, err := materializeArchive(ctx, original.Archive)
 	if err != nil {
@@ -1386,12 +1411,19 @@ func transferSpecFromBridge(p map[string]any, dry bool) (models.TransferSpec, er
 }
 
 func archivePath(p map[string]any) (string, error) {
-	m, err := mapping(p, "archive", nil)
+	identity, err := archiveIdentity(p)
 	if err != nil {
 		return "", err
 	}
-	return stringAlias(m, "path", "staged_path")
+	return identity.Path, nil
 }
+func restorePreviewTokenSpec(spec models.RestoreSpec) models.RestoreSpec {
+	spec.DryRun = true
+	spec.Overwrite = false
+	spec.ConfirmOverwrite = false
+	return spec
+}
+
 func restorePlan(spec models.RestoreSpec) map[string]any {
 	steps := []map[string]any{}
 	if spec.Verify {
@@ -1425,6 +1457,68 @@ func materializeArchive(ctx OperationContext, source string) (remotearchive.Mate
 			emitDetailed(ctx, "downloading", fmt.Sprintf("Downloading remote archive: %d of %d parts.", p.FilesDone, p.FilesTotal), fraction, int64Ptr(p.FilesDone), int64Ptr(p.FilesTotal), int64Ptr(p.BytesDone), int64Ptr(p.BytesTotal))
 		},
 	})
+}
+
+type archiveRequestIdentity struct {
+	ID    string
+	Label string
+	Path  string
+}
+
+func archiveIdentity(p map[string]any) (archiveRequestIdentity, error) {
+	m, err := mapping(p, "archive", nil)
+	if err != nil {
+		return archiveRequestIdentity{}, err
+	}
+	path, err := stringAlias(m, "path", "staged_path")
+	if err != nil {
+		return archiveRequestIdentity{}, err
+	}
+	id := optionalString(m["archive_id"])
+	if id == "" {
+		id = "archive:" + path
+	}
+	label := optionalString(m["display_name"])
+	return archiveRequestIdentity{ID: id, Label: label, Path: path}, nil
+}
+
+func archiveBoundArtifact(label, path, digest string, identity archiveRequestIdentity) Artifact {
+	item := artifact(label, path, digest)
+	item.Metadata = map[string]string{
+		"archive_id":   identity.ID,
+		"archive_path": identity.Path,
+	}
+	if identity.Label != "" {
+		item.Metadata["archive_label"] = identity.Label
+	}
+	return item
+}
+
+func requirePlanEvidence(p map[string]any, operation, requestField, tokenField, expected string) error {
+	if expected == "" {
+		return berror.Validation(operation+" could not derive a stable preview token", nil)
+	}
+	requestID := optionalString(p[requestField])
+	if requestID == "" {
+		return berror.Validation(operation+" requires "+requestField+" from the matching preview request", map[string]any{"field": requestField})
+	}
+	supplied := optionalString(p[tokenField])
+	if supplied == "" {
+		return berror.Validation(operation+" requires "+tokenField+" from the matching preview artifact", map[string]any{"field": tokenField})
+	}
+	if !strings.EqualFold(supplied, expected) {
+		return berror.Validation(operation+" preview token does not match the current request payload", map[string]any{"field": tokenField, "preview_request_id": requestID})
+	}
+	return nil
+}
+
+func hasConfirmationEvidence(p map[string]any) bool {
+	evidence, err := mapping(p, "confirmation_evidence", nil)
+	if err != nil || evidence == nil {
+		return false
+	}
+	accepted, _ := boolDefault(p, "destructive_confirmation_accepted", false)
+	return accepted && optionalString(evidence["phrase"]) != "" && optionalString(evidence["draft_fingerprint"]) != "" && optionalString(evidence["plan_token"]) != "" && strings.EqualFold(optionalString(evidence["plan_token"]), optionalString(p["plan_token"]))
 }
 
 func success(summary string, issues []Issue, arts []Artifact) Result {

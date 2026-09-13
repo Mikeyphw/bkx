@@ -1653,3 +1653,72 @@ tasks.register("verifyBkxStorageFilesystemRootSafetySeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxStorageFilesystemRootSafetySeal")
 }
+
+
+tasks.register("verifyBkxBackupArchiveRestoreCorrectnessSeal") {
+    group = "verification"
+    description = "BR24 seal: backup plans, archive browsing/verification, and restore extraction must stay request-bound and confirmation-safe."
+
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRootDir = androidRootDir.resolve("../..").canonicalFile
+    val backupBuilder = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/backup/BackupRequestBuilder.kt")
+    val backupModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/backup/BackupModels.kt")
+    val archiveBuilder = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/archives/ArchiveRequestBuilder.kt")
+    val archiveModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/archives/ArchiveModels.kt")
+    val restoreBuilder = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/restore/RestoreRequestBuilder.kt")
+    val restoreModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/restore/RestoreModels.kt")
+    val backupTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/core/backup/BackupPlanningContractTest.kt")
+    val archiveTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/core/archives/ArchiveReadOnlyContractTest.kt")
+    val restoreTest = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android/core/restore/RestoreSafetyContractTest.kt")
+    val dispatcher = repositoryRootDir.resolve("internal/services/dispatcher.go")
+    val dispatcherTest = repositoryRootDir.resolve("internal/services/dispatcher_br24_contract_test.go")
+    val backupOps = repositoryRootDir.resolve("internal/backupops/backup.go")
+    val archiveIo = repositoryRootDir.resolve("internal/archiveio/archiveio.go")
+    val restoreIo = repositoryRootDir.resolve("internal/archiveio/restore.go")
+    val metadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
+
+    inputs.files(
+        backupBuilder, backupModels, archiveBuilder, archiveModels, restoreBuilder, restoreModels,
+        backupTest, archiveTest, restoreTest, dispatcher, dispatcherTest, backupOps, archiveIo, restoreIo, metadata,
+    )
+
+    doLast {
+        val backupBuilderText = backupBuilder.readText()
+        val archiveModelsText = archiveModels.readText()
+        val restoreBuilderText = restoreBuilder.readText()
+        val restoreTestText = restoreTest.readText()
+        val archiveTestText = archiveTest.readText()
+        val dispatcherText = dispatcher.readText()
+        val dispatcherTestText = dispatcherTest.readText()
+        val metadataText = metadata.readText()
+
+        check("plan_request_id" in backupBuilderText && "plan_token" in backupBuilderText && "backup.create preview does not match" in backupBuilderText) {
+            "BR24 backup create must require request-bound plan evidence from the current draft."
+        }
+        check("Archive browse page token must be the numeric next-page offset" in archiveModelsText && "rclone://" in archiveModelsText) {
+            "BR24 archive browsing must keep page tokens parseable and archive locations explicit."
+        }
+        check("confirmOverwrite = false" in restoreBuilderText && "destructive_confirmation_accepted" in restoreBuilderText && "confirmation_evidence" in restoreBuilderText) {
+            "BR24 restore extract must send confirmation as accepted evidence, not as a pending confirm_overwrite flag."
+        }
+        check("assertEquals(false, request.payload[\"confirm_overwrite\"]" in restoreTestText && "destructive_confirmation_accepted" in restoreTestText) {
+            "BR24 restore Android regression test must prove confirmed extracts clear confirm_overwrite."
+        }
+        check("nonNumericArchiveBrowsePageTokensAreRejected" in archiveTestText) {
+            "BR24 archive regression test must reject opaque/non-numeric page tokens."
+        }
+        check("requirePlanEvidence" in dispatcherText && "restorePreviewTokenSpec" in dispatcherText && "archiveBoundArtifact" in dispatcherText) {
+            "BR24 dispatcher must enforce plan tokens and bind archive read-only results to the requested archive identity."
+        }
+        check("TestBR24BackupCreateRequiresMatchingPlanEvidence" in dispatcherTestText && "TestBR24RestorePreviewTokenSurvivesConfirmedOverwriteExtraction" in dispatcherTestText) {
+            "BR24 Go service regression tests are missing."
+        }
+        check("fix(android): seal BKX backup archive restore correctness" in metadataText && "commit" in metadataText) {
+            "BR24 overlay artifact must carry Devtool commit metadata."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxBackupArchiveRestoreCorrectnessSeal")
+}

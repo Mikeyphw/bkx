@@ -108,6 +108,9 @@ preflight = [
     ":app:verifyBkxAndroidReleaseDocs",
     ":app:verifyBkxBackupAutomationRoadmapFinalSeal",
     ":app:verifyBkxRuntimeLifetimeForegroundCancellationSeal",
+    ":app:verifyBkxAndroidGoBridgeResultContractSeal",
+    ":app:verifyBkxStorageFilesystemRootSafetySeal",
+    ":app:verifyBkxBackupArchiveRestoreCorrectnessSeal",
 ]
 
 compile = [
@@ -223,4 +226,4 @@ low_priority = false
 [commit]
 enabled = true
 strategy = "single"
-message = "fix(android): seal BKX storage filesystem root safety"
+message = "fix(android): seal BKX backup archive restore correctness"

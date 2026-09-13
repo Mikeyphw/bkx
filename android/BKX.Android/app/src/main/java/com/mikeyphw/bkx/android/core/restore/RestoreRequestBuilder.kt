@@ -44,11 +44,12 @@ class RestoreRequestBuilder {
             payload = draft.toRestorePayload(
                 dryRun = false,
                 overwrite = destructive,
-                confirmOverwrite = destructive,
+                confirmOverwrite = false,
                 extra = buildJsonObject {
                     put("preview_request_id", preview.requestId)
                     put("plan_token", preview.planToken)
                     put("destructive_confirmation_required", destructive)
+                    put("destructive_confirmation_accepted", confirmationRequired)
                     put("root_sensitive_confirmation_required", privilegedDestination)
                     if (confirmationRequired) {
                         val matchingConfirmation = requireNotNull(confirmation)

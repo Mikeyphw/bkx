@@ -18,6 +18,9 @@ data class ArchiveLocation(
         require(displayName.isNotBlank()) { "Archive display name must not be blank." }
         require(stagedPath.isNotBlank()) { "Archive staged path must not be blank." }
         ContentUriPathPolicy.requireNotContentUriPath(stagedPath)
+        require(stagedPath.startsWith("/") || stagedPath.startsWith("rclone://", ignoreCase = true)) {
+            "Archive staged path must be an absolute filesystem path or a credential-free rclone:// location."
+        }
     }
 }
 
@@ -36,6 +39,9 @@ data class ArchiveBrowsePageRequest(
     init {
         require(pageSize in 1..MAX_PAGE_SIZE) { "Archive browse page size must be between 1 and $MAX_PAGE_SIZE." }
         require(pageToken == null || pageToken.isNotBlank()) { "Archive browse page token must not be blank." }
+        require(pageToken == null || pageToken.all { it.isDigit() }) {
+            "Archive browse page token must be the numeric next-page offset returned by BKX."
+        }
     }
 }
 

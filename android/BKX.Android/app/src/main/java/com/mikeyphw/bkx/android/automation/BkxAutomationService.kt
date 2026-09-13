@@ -10,6 +10,7 @@ import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.mikeyphw.bkx.android.R
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
+import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +63,8 @@ class BkxAutomationService : Service() {
                     val (dispatchId, _) = pendingDispatches.poll() ?: break
                     val dispatch = store.read(dispatchId) ?: continue
                     updateNotification("Starting ${dispatch.request.action.label}…")
+                    DefaultBackendGraph.applicationRuntime(this@BkxAutomationService)
+                        .awaitReadyForExecution(BkxStartupIngress.AuthorizedAutomation)
                     val result = DefaultBackendGraph.automationEngine(this@BkxAutomationService).execute(
                         dispatch.request,
                         AutomationProgressSink { stage -> updateNotification(stage) },

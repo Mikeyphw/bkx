@@ -9,11 +9,11 @@ import android.content.Context
 import android.os.PersistableBundle
 import androidx.core.content.edit
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
+import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.core.jobs.SavedJobStoreDocument
-import com.mikeyphw.bkx.android.core.state.BkxSharedStateContract
-import java.io.File
+import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -88,17 +88,23 @@ object BkxSavedJobScheduler {
     }
 
     fun readSchedules(context: Context): List<BkxSavedJobSchedule> {
-        val shared = File(BkxSharedStateContract.ROOT, "schedules/schedules.json")
-        val privateFallback = context.filesDir.resolve("bkx/go-local/home/.local/share/bkx/schedules/schedules.json")
-        val source = listOf(shared, privateFallback).firstOrNull { it.isFile && it.canRead() } ?: return emptyList()
-        return runCatching { json.decodeFromString<BkxScheduleDocument>(source.readText()).schedules }.getOrDefault(emptyList())
+        val source = BkxControlPlaneRootResolver.resolveDocument(context, "schedules/schedules.json") ?: return emptyList()
+        val encoded = BkxControlPlaneRootResolver.readBoundedDocument(source) ?: return emptyList()
+        return runCatching {
+            val document = json.decodeFromString<BkxScheduleDocument>(encoded)
+            require(document.schemaVersion == 1) { "Unsupported BKX schedule schema." }
+            document.schedules.take(BkxControlPlaneRootResolver.MAX_CONTROL_PLANE_ITEMS)
+        }.getOrDefault(emptyList())
     }
 
     fun readJobs(context: Context): List<SavedJob> {
-        val shared = File(BkxSharedStateContract.ROOT, "jobs/jobs.json")
-        val privateFallback = context.filesDir.resolve("bkx/go-local/home/.local/share/bkx/jobs/jobs.json")
-        val source = listOf(shared, privateFallback).firstOrNull { it.isFile && it.canRead() } ?: return emptyList()
-        return runCatching { json.decodeFromString<SavedJobStoreDocument>(source.readText()).jobs }.getOrDefault(emptyList())
+        val source = BkxControlPlaneRootResolver.resolveDocument(context, "jobs/jobs.json") ?: return emptyList()
+        val encoded = BkxControlPlaneRootResolver.readBoundedDocument(source) ?: return emptyList()
+        return runCatching {
+            val document = json.decodeFromString<SavedJobStoreDocument>(encoded)
+            require(document.schemaVersion == 1) { "Unsupported BKX jobs schema." }
+            document.jobs.take(BkxControlPlaneRootResolver.MAX_CONTROL_PLANE_ITEMS)
+        }.getOrDefault(emptyList())
     }
 
     @Deprecated("Use ScheduleJobIdStore.assignIds so valid schedule ids cannot collide inside JobScheduler.")
@@ -175,25 +181,27 @@ class BkxSavedJobScheduleService : JobService() {
             jobFinished(params, false)
             return false
         }
-        val currentSchedule = BkxSavedJobScheduler.readSchedules(this).firstOrNull { it.scheduleId == scheduleId && it.jobId == jobId }
-        val currentJob = BkxSavedJobScheduler.readJobs(this).firstOrNull { it.jobId == jobId }
-        if (currentSchedule == null || currentJob == null || !currentSchedule.enabled || !currentJob.enabled ||
-            BkxSavedJobScheduler.scheduleSignature(currentSchedule, currentJob.revision) != signature
-        ) {
-            BkxSavedJobScheduler.reconcile(this)
-            jobFinished(params, false)
-            return false
-        }
-        val request = AutomationRequest(
-            action = AutomationAction.RunSavedJob,
-            requestId = "schedule-$scheduleId-${UUID.randomUUID()}",
-            jobId = jobId,
-            scheduleId = scheduleId,
-            scheduleSignature = signature,
-            expectedJobRevision = jobRevision,
-        )
         scope.launch {
             try {
+                DefaultBackendGraph.applicationRuntime(this@BkxSavedJobScheduleService)
+                    .awaitReadyForExecution(BkxStartupIngress.ScheduledJob)
+                val currentSchedule = BkxSavedJobScheduler.readSchedules(this@BkxSavedJobScheduleService)
+                    .firstOrNull { it.scheduleId == scheduleId && it.jobId == jobId }
+                val currentJob = BkxSavedJobScheduler.readJobs(this@BkxSavedJobScheduleService).firstOrNull { it.jobId == jobId }
+                if (currentSchedule == null || currentJob == null || !currentSchedule.enabled || !currentJob.enabled ||
+                    BkxSavedJobScheduler.scheduleSignature(currentSchedule, currentJob.revision) != signature
+                ) {
+                    BkxSavedJobScheduler.reconcile(this@BkxSavedJobScheduleService)
+                    return@launch
+                }
+                val request = AutomationRequest(
+                    action = AutomationAction.RunSavedJob,
+                    requestId = "schedule-$scheduleId-${UUID.randomUUID()}",
+                    jobId = jobId,
+                    scheduleId = scheduleId,
+                    scheduleSignature = signature,
+                    expectedJobRevision = jobRevision,
+                )
                 DefaultBackendGraph.automationEngine(this@BkxSavedJobScheduleService).execute(
                     request,
                     AutomationProgressSink.None,

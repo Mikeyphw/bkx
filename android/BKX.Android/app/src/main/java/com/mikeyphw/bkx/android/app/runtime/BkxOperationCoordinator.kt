@@ -72,12 +72,6 @@ class BkxOperationCoordinator(
     private val _runtimeState = MutableStateFlow(OperationRuntimeState())
     val runtimeState: StateFlow<OperationRuntimeState> = _runtimeState.asStateFlow()
 
-    init {
-        scope.launch {
-            runCatching { operationStateStore.read().bounded() }
-                .onSuccess { _runtimeState.value = it }
-        }
-    }
 
     suspend fun snapshot(): OperationRuntimeState = stateMutex.withLock {
         operationStateStore.read().bounded().also { _runtimeState.value = it }
@@ -158,29 +152,32 @@ class BkxOperationCoordinator(
     }
 
     fun recoverInterruptedOperations() {
-        scope.launch {
-            val now = System.currentTimeMillis()
-            val before = snapshot()
-            val interrupted = before.activeOperations.values
-                .filter { operation -> operation.status in ACTIVE_STATUSES && !executions.containsKey(operation.requestId) }
-            if (interrupted.isEmpty()) return@launch
-            val failure = OperationFailureMapper.interrupted(
-                "BKX was interrupted before a final result was committed. Partial temporary artifacts were not promoted as successful output.",
-            )
-            mutateState { state ->
-                var next = state
-                interrupted.forEach { operation ->
-                    next = progressTracker.interrupt(
-                        state = next,
-                        requestId = operation.requestId,
-                        failure = failure,
-                        nowEpochMillis = now,
-                    )
-                }
-                next
+        scope.launch { initializeAndRecoverInterruptedOperations() }
+    }
+
+    suspend fun initializeAndRecoverInterruptedOperations(): OperationRuntimeState {
+        val now = System.currentTimeMillis()
+        val before = snapshot()
+        val interrupted = before.activeOperations.values
+            .filter { operation -> operation.status in ACTIVE_STATUSES && !executions.containsKey(operation.requestId) }
+        if (interrupted.isEmpty()) return before
+        val failure = OperationFailureMapper.interrupted(
+            "BKX was interrupted before a final result was committed. Partial temporary artifacts were not promoted as successful output.",
+        )
+        val recovered = mutateState { state ->
+            var next = state
+            interrupted.forEach { operation ->
+                next = progressTracker.interrupt(
+                    state = next,
+                    requestId = operation.requestId,
+                    failure = failure,
+                    nowEpochMillis = now,
+                )
             }
-            interrupted.forEach { operation -> taskerConditionPublisher?.operationInterrupted(operation, failure) }
+            next
         }
+        interrupted.forEach { operation -> taskerConditionPublisher?.operationInterrupted(operation, failure) }
+        return recovered
     }
 
     private suspend fun executeOwned(

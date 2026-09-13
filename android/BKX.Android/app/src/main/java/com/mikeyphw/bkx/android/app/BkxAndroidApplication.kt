@@ -1,23 +1,14 @@
 package com.mikeyphw.bkx.android.app
 
 import android.app.Application
-import android.os.Process
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
-import com.mikeyphw.bkx.android.automation.AutomationDispatcher
-import com.mikeyphw.bkx.android.automation.BkxSavedJobScheduler
 
 class BkxAndroidApplication : Application() {
     override fun onCreate() {
         super.onCreate()
-        // GO14 Android is Go-only; there is no embedded Python runtime to initialize.
-        if (Process.myUid() != ROOT_UID) {
-            DefaultBackendGraph.operationCoordinator(this).recoverInterruptedOperations()
-            AutomationDispatcher.recoverPending(this)
-            BkxSavedJobScheduler.reconcile(this)
-        }
-    }
-
-    private companion object {
-        const val ROOT_UID = 0
+        // Side-effect-light startup: install the process runtime owner only.
+        // Recovery, pending automation and schedule reconciliation run after an
+        // authorized ingress surface asks the runtime barrier to initialize.
+        DefaultBackendGraph.applicationRuntime(this).markApplicationCreated()
     }
 }

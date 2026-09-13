@@ -2,7 +2,8 @@ package com.mikeyphw.bkx.android.embedded
 
 import android.content.Context
 import android.os.Build
-import android.os.Environment
+import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRoot
+import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
 import com.mikeyphw.bkx.android.core.state.BkxSharedStateContract
 import java.io.BufferedWriter
 import java.io.File
@@ -229,26 +230,13 @@ class GoNativeGateway(
     }
 
 
-    private fun desiredStateRoot(): File {
-        val sharedAllowed = stateNamespace == ROOT_STATE_NAMESPACE ||
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.R ||
-            Environment.isExternalStorageManager()
-        if (!sharedAllowed) {
-            return appContext.filesDir.resolve("bkx/$stateNamespace/home/.local/share/bkx").apply { mkdirs() }
-        }
-        return File(BkxSharedStateContract.ROOT).apply {
-            mkdirs()
-            val marker = resolve(BkxSharedStateContract.MARKER)
-            if (!marker.exists()) {
-                runCatching {
-                    marker.writeText(
-                        """{"schema_version":1,"kind":"${BkxSharedStateContract.MARKER_KIND}","creator":"android"}""" + "\n",
-                        Charsets.UTF_8,
-                    )
-                }
+    private fun desiredStateRoot(): File = BkxControlPlaneRootResolver.resolve(appContext, stateNamespace)
+        .also { root ->
+            if (root.source == BkxControlPlaneRoot.Source.Shared) {
+                root.directory.mkdirs()
             }
         }
-    }
+        .directory
 
     private fun runtimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RUNTIME_LIBRARY)
     private fun rcloneRuntimeFile(): File = File(appContext.applicationInfo.nativeLibraryDir, RCLONE_RUNTIME_LIBRARY)

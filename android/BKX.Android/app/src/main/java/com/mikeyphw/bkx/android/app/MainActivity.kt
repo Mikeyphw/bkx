@@ -7,6 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
+import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService
 import com.mikeyphw.bkx.android.feature.home.BkxAndroidApp
 
@@ -22,16 +23,25 @@ class MainActivity : ComponentActivity() {
             googleDriveAuthorizationManager = DefaultBackendGraph.googleDriveAuthorizationManager(this),
             archiveRootsProvider = { rooted -> DefaultBackendGraph.archiveSearchRoots(this, rooted) },
             requestBaseDirectoryPath = filesDir.resolve("bkx/requests").absolutePath,
+            applicationRuntime = DefaultBackendGraph.applicationRuntime(this),
         )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        DefaultBackendGraph.applicationRuntime(this).startAfterAuthorizedIngress(BkxStartupIngress.InteractiveUi)
         handleReconnectIntent(intent)
         setContent {
             BkxAndroidApp(viewModel = viewModel)
         }
+    }
+
+
+    override fun onResume() {
+        super.onResume()
+        DefaultBackendGraph.applicationRuntime(this).startAfterAuthorizedIngress(BkxStartupIngress.InteractiveResume)
+        viewModel.onEvent(BkxHomeEvent.RevalidateCapabilities)
     }
 
     override fun onNewIntent(intent: Intent) {

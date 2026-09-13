@@ -11,6 +11,8 @@ import com.mikeyphw.bkx.android.app.navigation.BackupRoute
 import com.mikeyphw.bkx.android.app.navigation.BkxDestination
 import com.mikeyphw.bkx.android.app.navigation.MoreRoute
 import com.mikeyphw.bkx.android.app.navigation.ScreenStatus
+import com.mikeyphw.bkx.android.app.runtime.BkxApplicationRuntime
+import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationManager
 import com.mikeyphw.bkx.android.app.drive.GoogleDriveAuthorizationOutcome
@@ -168,6 +170,7 @@ data class BkxHomeUiState(
 
 sealed interface BkxHomeEvent {
     data object RefreshBackend : BkxHomeEvent
+    data object RevalidateCapabilities : BkxHomeEvent
     data object RefreshRuns : BkxHomeEvent
     data class SelectDestination(val destination: BkxDestination) : BkxHomeEvent
     data class ShowArchiveSection(val section: ArchiveDetailSection) : BkxHomeEvent
@@ -286,6 +289,7 @@ class BkxAppViewModel(
     private val googleDriveAuthorizationManager: GoogleDriveAuthorizationManager? = null,
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
+    private val applicationRuntime: BkxApplicationRuntime? = null,
     private val operationCoordinator: BkxOperationCoordinator = BkxOperationCoordinator(
         context = null,
         backendPort = backendPort,
@@ -304,6 +308,7 @@ class BkxAppViewModel(
     private val savedJobScheduleRequestBuilder = SavedJobScheduleRequestBuilder
     private val repositoryRequestBuilder = RepositoryRequestBuilder
     private val requestSequence = AtomicLong(0L)
+    private val readinessSequence = AtomicLong(0L)
     private val messageSequence = AtomicLong(0L)
     private val _state = MutableStateFlow(BkxHomeUiState())
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
@@ -317,26 +322,28 @@ class BkxAppViewModel(
                 }
             }
         }
-        refreshGoogleDriveAuthorization(allowConsent = false)
+        viewModelScope.launch { applicationRuntime?.awaitReadyForExecution(BkxStartupIngress.InteractiveUi) }
         refreshBackend()
-        // Startup is cache-first. Canonical Go history sync is triggered by explicit/history/post-operation refreshes.
+        // Startup is cache-first and lazy: only Home-critical state is hydrated here.
+        // Feature catalogs are loaded when their destinations/routes are opened.
         publishCachedRuns()
         refreshOperations()
         refreshSettings()
-        refreshSavedJobs()
-        refreshSavedJobSchedules()
-        refreshRepositories()
     }
 
     fun onEvent(event: BkxHomeEvent) {
         when (event) {
             BkxHomeEvent.RefreshBackend -> refreshBackend()
+            BkxHomeEvent.RevalidateCapabilities -> revalidateCapabilitiesAfterResume()
             BkxHomeEvent.RefreshRuns -> refreshRuns()
-            is BkxHomeEvent.SelectDestination -> _state.update { current ->
-                current.copy(
-                    selectedDestination = event.destination,
-                    moreRoute = if (event.destination == BkxDestination.More) current.moreRoute else MoreRoute.Overview,
-                )
+            is BkxHomeEvent.SelectDestination -> {
+                _state.update { current ->
+                    current.copy(
+                        selectedDestination = event.destination,
+                        moreRoute = if (event.destination == BkxDestination.More) current.moreRoute else MoreRoute.Overview,
+                    )
+                }
+                hydrateDestination(event.destination)
             }
             is BkxHomeEvent.ShowArchiveSection -> _state.update { it.copy(archiveDetailSection = event.section) }
             BkxHomeEvent.CloseArchiveDetails -> _state.update { current ->
@@ -351,13 +358,15 @@ class BkxAppViewModel(
                     archiveDetailSection = ArchiveDetailSection.Overview,
                 )
             }
-            is BkxHomeEvent.OpenMoreRoute -> _state.update { it.copy(moreRoute = event.route) }
+            is BkxHomeEvent.OpenMoreRoute -> {
+                _state.update { it.copy(moreRoute = event.route) }
+                hydrateMoreRoute(event.route)
+            }
             BkxHomeEvent.CloseMoreRoute -> _state.update { it.copy(moreRoute = MoreRoute.Overview) }
 
             is BkxHomeEvent.OpenBackupRoute -> {
                 _state.update { it.copy(backupRoute = event.route) }
-                if (event.route == BackupRoute.Snapshots) ensureSnapshotRepositoryAndRefresh()
-                if (event.route == BackupRoute.History) refreshRuns()
+                hydrateBackupRoute(event.route)
             }
             BkxHomeEvent.RefreshSavedJobs -> refreshSavedJobs()
             BkxHomeEvent.RefreshRepositories -> refreshRepositories()
@@ -1669,10 +1678,51 @@ class BkxAppViewModel(
         }
     }
 
+
+    private fun hydrateDestination(destination: BkxDestination) {
+        when (destination) {
+            BkxDestination.Home -> Unit
+            BkxDestination.Backup -> hydrateBackupRoute(_state.value.backupRoute)
+            BkxDestination.Archives -> refreshArchives()
+            BkxDestination.Activity -> refreshRuns()
+            BkxDestination.More -> hydrateMoreRoute(_state.value.moreRoute)
+        }
+    }
+
+    private fun hydrateBackupRoute(route: BackupRoute) {
+        when (route) {
+            BackupRoute.Overview -> Unit
+            BackupRoute.Jobs -> {
+                refreshSavedJobs()
+                refreshSavedJobSchedules()
+            }
+            BackupRoute.Snapshots -> ensureSnapshotRepositoryAndRefresh()
+            BackupRoute.Repositories -> refreshRepositories()
+            BackupRoute.History -> refreshRuns()
+        }
+    }
+
+    private fun hydrateMoreRoute(route: MoreRoute) {
+        when (route) {
+            MoreRoute.GoogleDrive -> refreshGoogleDriveAuthorization(allowConsent = false)
+            MoreRoute.Remotes -> refreshRepositories()
+            MoreRoute.Transfer -> refreshRepositories()
+            MoreRoute.Automation -> refreshSavedJobs()
+            MoreRoute.Overview, MoreRoute.Diagnostics -> Unit
+        }
+    }
+
+    private fun revalidateCapabilitiesAfterResume() {
+        refreshSettings()
+        refreshBackend()
+    }
+
     private fun refreshBackend() {
+        val generation = readinessSequence.incrementAndGet()
         viewModelScope.launch {
             _state.update { it.copy(isRefreshing = true, readiness = BackendReadiness.Checking) }
             val readiness = checkBackendReadiness()
+            if (generation != readinessSequence.get()) return@launch
             _state.update { current ->
                 current.copy(
                     isRefreshing = false,
@@ -1798,6 +1848,7 @@ class BkxAppViewModelFactory(
     private val googleDriveAuthorizationManager: GoogleDriveAuthorizationManager? = null,
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
+    private val applicationRuntime: BkxApplicationRuntime? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1811,6 +1862,7 @@ class BkxAppViewModelFactory(
                 googleDriveAuthorizationManager = googleDriveAuthorizationManager,
                 archiveRootsProvider = archiveRootsProvider,
                 requestBaseDirectoryPath = requestBaseDirectoryPath,
+                applicationRuntime = applicationRuntime,
                 operationCoordinator = operationCoordinator,
             ) as T
         }

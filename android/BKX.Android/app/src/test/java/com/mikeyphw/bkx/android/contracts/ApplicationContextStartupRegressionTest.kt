@@ -54,6 +54,14 @@ class ApplicationContextStartupRegressionTest {
     }
 
     @Test
+    fun androidApplicationStartupIsSideEffectLight() {
+        assertTrue(applicationSource.contains("applicationRuntime(this).markApplicationCreated()"))
+        assertFalse(applicationSource.contains("recoverInterruptedOperations()"))
+        assertFalse(applicationSource.contains("AutomationDispatcher.recoverPending(this)"))
+        assertFalse(applicationSource.contains("BkxSavedJobScheduler.reconcile(this)"))
+    }
+
+    @Test
     fun sharedPreferencesStoresDoNotDereferenceApplicationContext() {
         assertFalse(storesSource.contains("applicationContext.getSharedPreferences"))
         assertEquals(3, Regex("context\\.getSharedPreferences\\(").findAll(storesSource).count())

@@ -1,6 +1,7 @@
 package com.mikeyphw.bkx.android.app.di
 
 import android.content.Context
+import com.mikeyphw.bkx.android.app.runtime.BkxApplicationRuntime
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.automation.BkxAutomationEngine
 import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
@@ -20,6 +21,8 @@ import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.jobs.SavedJobStore
 import com.mikeyphw.bkx.android.core.runs.RunSummaryStore
 import com.mikeyphw.bkx.android.core.settings.SettingsStore
+import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRoot
+import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
 import com.mikeyphw.bkx.android.embedded.EmbeddedBkxBackend
 import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.mikeyphw.bkx.android.embedded.RootAwareGateway
@@ -42,6 +45,18 @@ object DefaultBackendGraph {
     @Volatile private var automationEngineInstance: BkxAutomationEngine? = null
     @Volatile private var taskerConditionStoreInstance: BkxTaskerConditionStore? = null
     @Volatile private var taskerConditionPublisherInstance: BkxTaskerConditionPublisher? = null
+    @Volatile private var applicationRuntimeInstance: BkxApplicationRuntime? = null
+
+
+    fun applicationRuntime(context: Context): BkxApplicationRuntime = applicationRuntimeInstance ?: synchronized(this) {
+        applicationRuntimeInstance ?: BkxApplicationRuntime(
+            context = context.stableApplicationContext(),
+            coordinatorProvider = { operationCoordinator(context.stableApplicationContext()) },
+        ).also { applicationRuntimeInstance = it }
+    }
+
+    fun controlPlaneRoot(context: Context): BkxControlPlaneRoot =
+        BkxControlPlaneRootResolver.resolve(context.stableApplicationContext())
 
     fun backendPort(context: Context): BackendPort = backendInstance ?: synchronized(this) {
         backendInstance ?: run {
@@ -117,6 +132,23 @@ object DefaultBackendGraph {
             stateStore = SharedPreferencesAutomationStateStore(context.stableApplicationContext()),
             driveRefreshPort = GoogleManagedDriveRefreshPort(googleDriveAuthorizationManager(context)),
         ).also { automationEngineInstance = it }
+    }
+
+
+    fun resetForTests() = synchronized(this) {
+        applicationRuntimeInstance?.shutdownForTests()
+        applicationRuntimeInstance = null
+        coordinatorInstance = null
+        backendInstance = null
+        runStoreInstance = null
+        operationStoreInstance = null
+        settingsStoreInstance = null
+        savedJobStoreInstance = null
+        providerStagingInstance = null
+        googleDriveManagerInstance = null
+        automationEngineInstance = null
+        taskerConditionStoreInstance = null
+        taskerConditionPublisherInstance = null
     }
 
     private fun sharedSettingsStore(context: Context): SharedPreferencesSettingsStore = settingsStoreInstance ?: synchronized(this) {

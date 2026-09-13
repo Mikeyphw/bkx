@@ -1959,3 +1959,52 @@ tasks.register("verifyBkxSavedJobsSchedulerTaskerRunHistorySeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxSavedJobsSchedulerTaskerRunHistorySeal")
 }
+
+tasks.register("verifyBkxStartupAppGraphReadinessSeal") {
+    group = "verification"
+    description = "Verifies BR28 startup/app graph readiness barrier and lazy hydration contracts."
+    dependsOn("testDebugUnitTest")
+    doLast {
+        val appRoot = project.layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
+        val testRoot = project.layout.projectDirectory.dir("src/test/java/com/mikeyphw/bkx/android").asFile
+        val application = appRoot.resolve("app/BkxAndroidApplication.kt").readText()
+        val runtime = appRoot.resolve("app/runtime/BkxApplicationRuntime.kt").readText()
+        val graph = appRoot.resolve("app/di/DefaultBackendGraph.kt").readText()
+        val viewModel = appRoot.resolve("app/BkxAppViewModel.kt").readText()
+        val scheduler = appRoot.resolve("automation/BkxSavedJobScheduler.kt").readText()
+        val receiver = appRoot.resolve("automation/BkxAutomationRecoveryReceiver.kt").readText()
+        val resolver = appRoot.resolve("core/state/BkxControlPlaneRootResolver.kt").readText()
+        check(application.contains("applicationRuntime(this).markApplicationCreated()")) {
+            "Application startup must only install the runtime owner."
+        }
+        check(!application.contains("recoverInterruptedOperations()") && !application.contains("recoverPending(this)") && !application.contains("reconcile(this)")) {
+            "Application.onCreate must not perform recovery, pending-dispatch scheduling or scheduler reconciliation."
+        }
+        check(runtime.contains("awaitReadyForExecution") && runtime.contains("Mutex()") && runtime.contains("BkxApplicationRuntimePhase.Ready")) {
+            "BR28 requires a suspendable startup readiness barrier with explicit phases."
+        }
+        check(graph.contains("applicationRuntimeInstance") && graph.contains("resetForTests")) {
+            "DefaultBackendGraph must expose a runtime owner and test reset seam."
+        }
+        check(receiver.contains("goAsync()") && scheduler.contains("awaitReadyForExecution(BkxStartupIngress.ScheduledJob)")) {
+            "Background ingress must pass through the startup barrier off the main receiver/service thread."
+        }
+        check(resolver.contains("MAX_CONTROL_PLANE_DOCUMENT_BYTES") && resolver.contains("markerIsValid") && scheduler.contains("readBoundedDocument")) {
+            "Control-plane consumers must share bounded marker-validated document reads."
+        }
+        val initSection = viewModel.substringAfter("init {").substringBefore("fun onEvent")
+        check(!initSection.contains("refreshSavedJobs()") && !initSection.contains("refreshSavedJobSchedules()") && !initSection.contains("refreshRepositories()")) {
+            "ViewModel startup must not eagerly hydrate feature catalogs."
+        }
+        check(viewModel.contains("readinessSequence") && viewModel.contains("hydrateDestination")) {
+            "Readiness refresh must be generation-bound and feature catalogs hydrated lazily."
+        }
+        check(testRoot.resolve("contracts/StartupReadinessSealContractTest.kt").isFile) {
+            "BR28 startup readiness contract test is missing."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxStartupAppGraphReadinessSeal")
+}

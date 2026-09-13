@@ -15,6 +15,7 @@ import android.os.IBinder
 import androidx.annotation.RequiresApi
 import com.mikeyphw.bkx.android.R
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
+import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import com.mikeyphw.bkx.android.app.notifications.AndroidNotificationPermissionChecker
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
 import com.mikeyphw.bkx.android.core.notifications.BkxNotificationIds
@@ -57,6 +58,8 @@ class BkxOperationForegroundService : Service() {
         if (intent?.action == ACTION_CANCEL_OPERATION) {
             serviceScope.launch {
                 runCatching {
+                    DefaultBackendGraph.applicationRuntime(this@BkxOperationForegroundService)
+                        .awaitReadyForExecution(BkxStartupIngress.ForegroundOperation)
                     DefaultBackendGraph.operationCoordinator(this@BkxOperationForegroundService).cancel(
                         requestId = requestId,
                         cancelRequestId = "notification-cancel-${System.currentTimeMillis()}",
@@ -129,6 +132,8 @@ class BkxOperationForegroundService : Service() {
         }
         serviceScope.launch {
             runCatching {
+                DefaultBackendGraph.applicationRuntime(this@BkxOperationForegroundService)
+                    .awaitReadyForExecution(BkxStartupIngress.ForegroundOperation)
                 DefaultBackendGraph.operationCoordinator(this@BkxOperationForegroundService).cancel(
                     requestId = requestId,
                     cancelRequestId = "fgs-timeout-${System.currentTimeMillis()}",

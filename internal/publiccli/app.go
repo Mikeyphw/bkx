@@ -1,6 +1,7 @@
 package publiccli
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,26 +30,28 @@ type globalOptions struct {
 }
 
 type appContext struct {
-	globals      globalOptions
-	config       config.Config
-	stdout       io.Writer
-	stderr       io.Writer
-	render       renderer
-	store        *runstore.Store
-	jobs         *jobstore.Store
-	repositories *repositorystore.Store
-	control      *executioncontrol.Store
-	schedules    *schedulestore.Store
+	globals          globalOptions
+	config           config.Config
+	stdout           io.Writer
+	stderr           io.Writer
+	render           renderer
+	store            *runstore.Store
+	jobs             *jobstore.Store
+	repositories     *repositorystore.Store
+	control          *executioncontrol.Store
+	schedules        *schedulestore.Store
+	parseFailureExit int
 }
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	globals, rest, help, err := parseGlobals(args)
 	if err != nil {
-		usageError(stderr, err)
-		return berror.ExitUsage
+		return renderUsageError(renderer{json: wantsJSON(args), stdout: stdout, stderr: stderr}, err)
 	}
 	if help {
-		fmt.Fprint(stdout, RootHelp)
+		if _, err := fmt.Fprint(stdout, RootHelp); err != nil {
+			return berror.ExitExternal
+		}
 		return berror.ExitOK
 	}
 	globals.DryRun = globals.DryRun || globals.Plan
@@ -56,12 +59,19 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	// --version must win over the no-command help path.
 	if globals.Version {
 		r := renderer{json: globals.JSON, stdout: stdout, stderr: stderr}
-		_ = r.message("bkx " + version.Version)
+		if err := r.message("bkx " + version.Version); err != nil {
+			return berror.ExitExternal
+		}
 		return berror.ExitOK
 	}
 	if len(rest) == 0 {
-		fmt.Fprint(stdout, RootHelp)
+		if _, err := fmt.Fprint(stdout, RootHelp); err != nil {
+			return berror.ExitExternal
+		}
 		return berror.ExitOK
+	}
+	if handled, code := renderHelpWithoutSideEffects(rest, stdout, stderr); handled {
+		return code
 	}
 
 	cwd, err := os.Getwd()
@@ -108,7 +118,11 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		}
 		ctx.store = store
 	}
-	return ctx.dispatch(rest)
+	code := ctx.dispatch(rest)
+	if ctx.parseFailureExit != 0 && code == berror.ExitOK {
+		return ctx.parseFailureExit
+	}
+	return code
 }
 
 func IsInternalInvocation(args []string) bool {
@@ -154,17 +168,31 @@ func parseGlobals(args []string) (globalOptions, []string, bool, error) {
 		case "--version":
 			out.Version = true
 		case "--progress":
-			if i+1 >= len(args) {
-				return out, nil, false, fmt.Errorf("option --progress requires a value")
+			var raw string
+			if inline, ok := strings.CutPrefix(token, "--progress="); ok {
+				raw = inline
+			} else {
+				if i+1 >= len(args) {
+					return out, nil, false, fmt.Errorf("option --progress requires a value")
+				}
+				i++
+				raw = args[i]
 			}
-			i++
-			value := strings.ToLower(strings.TrimSpace(args[i]))
+			value := strings.ToLower(strings.TrimSpace(raw))
 			if value != "auto" && value != "plain" && value != "off" {
 				return out, nil, false, fmt.Errorf("progress must be one of: auto, plain, off")
 			}
 			out.Progress = value
 		default:
-			return out, nil, false, fmt.Errorf("no such option: %s", token)
+			if strings.HasPrefix(token, "--progress=") {
+				value := strings.ToLower(strings.TrimSpace(strings.TrimPrefix(token, "--progress=")))
+				if value != "auto" && value != "plain" && value != "off" {
+					return out, nil, false, fmt.Errorf("progress must be one of: auto, plain, off")
+				}
+				out.Progress = value
+			} else {
+				return out, nil, false, fmt.Errorf("no such option: %s", token)
+			}
 		}
 		i++
 	}
@@ -173,20 +201,28 @@ func parseGlobals(args []string) (globalOptions, []string, bool, error) {
 
 func (c *appContext) dispatch(args []string) int {
 	noun := args[0]
-	if len(args) == 1 || (len(args) == 2 && (args[1] == "--help" || args[1] == "-h")) {
+	if len(args) == 1 || (len(args) == 2 && isHelpToken(args[1])) {
 		if help, ok := GroupHelp[noun]; ok {
-			fmt.Fprint(c.stdout, help)
+			if _, err := fmt.Fprint(c.stdout, help); err != nil {
+				return berror.ExitExternal
+			}
 			return berror.ExitOK
 		}
-		usageError(c.stderr, fmt.Errorf("no such command: %s", noun))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("no such command: %s", noun))
 	}
 	verb := args[1]
 	key := noun + " " + verb
 	handler, ok := commandHandlers[key]
 	if !ok {
-		usageError(c.stderr, fmt.Errorf("no such command: %s", key))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("no such command: %s", key))
+	}
+	if len(args) == 3 && isHelpToken(args[2]) {
+		if help, ok := LeafHelp[key]; ok {
+			if _, err := fmt.Fprint(c.stdout, help); err != nil {
+				return berror.ExitExternal
+			}
+			return berror.ExitOK
+		}
 	}
 	return handler(c, args[2:])
 }
@@ -195,16 +231,68 @@ func usageError(w io.Writer, err error) {
 	fmt.Fprintf(w, "Error: %s\nTry 'bkx --help' for help.\n", err)
 }
 
+func wantsJSON(args []string) bool {
+	for _, arg := range args {
+		if arg == "--json" {
+			return true
+		}
+	}
+	return false
+}
+
+func isHelpToken(arg string) bool { return arg == "--help" || arg == "-h" }
+
+func renderHelpWithoutSideEffects(args []string, stdout, stderr io.Writer) (bool, int) {
+	if len(args) == 2 && isHelpToken(args[1]) {
+		if help, ok := GroupHelp[args[0]]; ok {
+			if _, err := fmt.Fprint(stdout, help); err != nil {
+				return true, berror.ExitExternal
+			}
+			return true, berror.ExitOK
+		}
+	}
+	if len(args) >= 3 && isHelpToken(args[2]) {
+		key := args[0] + " " + args[1]
+		if help, ok := LeafHelp[key]; ok {
+			if _, err := fmt.Fprint(stdout, help); err != nil {
+				return true, berror.ExitExternal
+			}
+			return true, berror.ExitOK
+		}
+	}
+	return false, 0
+}
+
+func renderUsageError(r renderer, err error) int {
+	if r.json {
+		if renderErr := r.domainError(berror.Validation(err.Error(), map[string]any{"category": "usage"})); renderErr != nil {
+			return berror.ExitExternal
+		}
+		return berror.ExitUsage
+	}
+	usageError(r.stderr, err)
+	return berror.ExitUsage
+}
+
+func cliUsageError(c *appContext, err error) int {
+	return renderUsageError(c.render, err)
+}
+
 func renderDomainError(r renderer, trace *bool, err error) int {
 	if trace != nil && *trace {
 		fmt.Fprintf(r.stderr, "%T: %v\n", err, err)
 		debug.PrintStack()
 	}
-	if typed, ok := err.(*berror.Error); ok {
-		_ = r.typedError(typed.Message, typed.Details)
+	var typed *berror.Error
+	if errors.As(err, &typed) {
+		if renderErr := r.domainError(typed); renderErr != nil {
+			return berror.ExitExternal
+		}
 		return berror.ExitCode(typed)
 	}
-	_ = r.typedError(err.Error(), nil)
+	if renderErr := r.typedError(err.Error(), nil); renderErr != nil {
+		return berror.ExitExternal
+	}
 	return berror.ExitGeneric
 }
 

@@ -2110,3 +2110,52 @@ tasks.register("verifyBkxUiTruthfulnessAccessibilityProductCopySeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxUiTruthfulnessAccessibilityProductCopySeal")
 }
+
+
+tasks.register("verifyBkxCliParserConfigErrorContractSeal") {
+    group = "verification"
+    description = "Verifies BR31 CLI parser, config loading, JSON/error and exit-code contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val publicCliRoot = repositoryRoot.resolve("internal/publiccli")
+        val configRoot = repositoryRoot.resolve("internal/config")
+        val berrorRoot = repositoryRoot.resolve("internal/berror")
+        val app = publicCliRoot.resolve("app.go").readText()
+        val parse = publicCliRoot.resolve("parse.go").readText()
+        val render = publicCliRoot.resolve("render.go").readText()
+        val cfg = configRoot.resolve("config.go").readText()
+        val errors = berrorRoot.resolve("errors.go").readText()
+        val doc = repositoryRoot.resolve("BR31_CLI_PARSER_CONFIG_ERROR_CONTRACT_SEAL.md")
+        check(app.contains("renderHelpWithoutSideEffects") && app.contains("cliUsageError") && app.contains("wantsJSON")) {
+            "BR31 requires one side-effect-free help and usage/error boundary."
+        }
+        check(parse.contains("strings.Cut(token, "=")") && app.contains("--progress=")) {
+            "BR31 requires standard --option=value parsing including --progress=."
+        }
+        check(render.contains("dec.UseNumber()") && !render.contains("payload["timing"] = []any{float64(0), duration}")) {
+            "BR31 renderer must preserve 64-bit JSON numbers and avoid fabricated timing arrays."
+        }
+        check(render.contains("func (r renderer) domainError") && render.contains("tool_exit_code") && render.contains("error_type")) {
+            "BR31 typed JSON error metadata contract is missing."
+        }
+        check(errors.contains("errors.As(err, &bkx)") && errors.contains("cloneValue")) {
+            "BR31 wrapped-error classification and deep-detail copy are missing."
+        }
+        check(cfg.contains("parseYAMLScalar") && cfg.contains("stripYAMLComment") && cfg.contains("Permission denied reading BKX configuration")) {
+            "BR31 YAML/config permission contracts are missing."
+        }
+        listOf(
+            publicCliRoot.resolve("br31_contract_test.go"),
+            configRoot.resolve("br31_yaml_config_test.go"),
+            berrorRoot.resolve("br31_errors_test.go")
+        ).forEach { file -> check(file.isFile) { "BR31 contract test missing: ${file.name}" } }
+        check(doc.isFile && doc.readText().contains("Overlay 11 of 16")) {
+            "BR31 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxCliParserConfigErrorContractSeal")
+}

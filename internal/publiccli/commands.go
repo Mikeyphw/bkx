@@ -80,11 +80,13 @@ var commandHandlers = map[string]commandHandler{
 func parseFor(c *appContext, command string, args []string, specs map[string]optionSpec) (leafArgs, bool) {
 	parsed, help, err := parseLeaf(args, specs)
 	if help {
-		fmt.Fprint(c.stdout, LeafHelp[command])
+		if _, writeErr := fmt.Fprint(c.stdout, LeafHelp[command]); writeErr != nil {
+			c.parseFailureExit = berror.ExitExternal
+		}
 		return leafArgs{}, false
 	}
 	if err != nil {
-		usageError(c.stderr, err)
+		c.parseFailureExit = cliUsageError(c, err)
 		return leafArgs{}, false
 	}
 	return parsed, true
@@ -173,8 +175,7 @@ func backupCreate(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, -1, "SOURCES..."); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	excludes, err := readPatterns(a.multiValue("exclude_from"), a.multiValue("exclude"))
 	if err != nil {
@@ -298,8 +299,7 @@ func backupPlanCommand(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, -1, "SOURCES..."); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	var destination *string
 	if raw, set := a.stringValue("destination"); set {
@@ -382,13 +382,11 @@ func archiveCreate(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, -1, "SOURCES..."); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	output, hasOutput := a.stringValue("output")
 	if !hasOutput {
-		usageError(c.stderr, fmt.Errorf("missing option: --output"))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("missing option: --output"))
 	}
 	excludes, err := readPatterns(a.multiValue("exclude_from"), a.multiValue("exclude"))
 	if err != nil {
@@ -434,8 +432,7 @@ func archiveList(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "ARCHIVE"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	page, err := a.intValue("page", 0)
 	if err != nil {
@@ -462,8 +459,7 @@ func archiveInfo(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "ARCHIVE"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	result, err := archiveio.Info(a.Positionals[0])
 	if err != nil {
@@ -483,8 +479,7 @@ func archiveBrowse(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "ARCHIVE"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	minSize, err := a.int64Ptr("min_size")
 	if err != nil {
@@ -533,8 +528,7 @@ func archiveVerify(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "ARCHIVE"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	result, err := archiveio.Verify(a.Positionals[0], []string{"sha256"})
 	if err != nil {
@@ -553,8 +547,7 @@ func transferCommand(c *appContext, args []string, direction string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 2, 2, "SOURCE DESTINATION"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	spec := models.TransferSpec{Sources: []string{a.Positionals[0]}, Destination: a.Positionals[1], Direction: direction, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun, Overwrite: a.Bools["overwrite"]}
 	if c.globals.DryRun {
@@ -599,12 +592,10 @@ func restoreCommand(c *appContext, args []string, pick bool) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, min, -1, label); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	if !pick && len(a.Positionals) != 1 {
-		usageError(c.stderr, fmt.Errorf("too many arguments for ARCHIVE"))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("too many arguments for ARCHIVE"))
 	}
 	fresh := c.config.FreshRestoreDir
 	if value, set := a.triBool("fresh_dir"); set {
@@ -738,8 +729,7 @@ func runList(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if len(a.Positionals) != 0 {
-		usageError(c.stderr, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
 	}
 	limit, err := a.intValue("limit", 20)
 	if err != nil {
@@ -773,8 +763,7 @@ func runShow(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "RUN_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	if c.store == nil {
 		return commandErr(c, berror.Validation("Run history is disabled", nil))
@@ -811,8 +800,7 @@ func uiStart(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if len(a.Positionals) != 0 {
-		usageError(c.stderr, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
 	}
 	mode, set := a.stringValue("mode")
 	if !set {

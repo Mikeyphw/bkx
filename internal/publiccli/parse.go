@@ -40,23 +40,42 @@ func parseLeaf(args []string, specs map[string]optionSpec) (leafArgs, bool, erro
 			continue
 		}
 		if !positionalOnly && strings.HasPrefix(token, "-") {
-			spec, ok := specs[token]
+			lookup := token
+			inlineValue := ""
+			hasInlineValue := false
+			if strings.HasPrefix(token, "--") {
+				if head, tail, ok := strings.Cut(token, "="); ok {
+					lookup = head
+					inlineValue = tail
+					hasInlineValue = true
+				}
+			}
+			spec, ok := specs[lookup]
 			if !ok {
 				return out, false, fmt.Errorf("no such option: %s", token)
 			}
 			switch spec.Kind {
 			case optionBoolTrue:
+				if hasInlineValue {
+					return out, false, fmt.Errorf("option %s does not take a value", lookup)
+				}
 				out.Bools[spec.Key] = true
 				out.BoolSet[spec.Key] = true
 			case optionBoolFalse:
+				if hasInlineValue {
+					return out, false, fmt.Errorf("option %s does not take a value", lookup)
+				}
 				out.Bools[spec.Key] = false
 				out.BoolSet[spec.Key] = true
 			case optionValue, optionMultiValue:
-				if i+1 >= len(args) {
-					return out, false, fmt.Errorf("option %s requires a value", token)
+				value := inlineValue
+				if !hasInlineValue {
+					if i+1 >= len(args) {
+						return out, false, fmt.Errorf("option %s requires a value", lookup)
+					}
+					i++
+					value = args[i]
 				}
-				i++
-				value := args[i]
 				if spec.Kind == optionValue {
 					out.Values[spec.Key] = []string{value}
 				} else {

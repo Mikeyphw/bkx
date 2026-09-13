@@ -1,11 +1,14 @@
 package publiccli
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
 	"sort"
+
+	"bkx/internal/berror"
 )
 
 type renderer struct {
@@ -30,8 +33,10 @@ func toJSONValue(value any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
 	var out any
-	if err := json.Unmarshal(data, &out); err != nil {
+	if err := dec.Decode(&out); err != nil {
 		return nil, err
 	}
 	return out, nil
@@ -45,10 +50,6 @@ func resultPayload(value any, kind string) (map[string]any, error) {
 	payload, ok := raw.(map[string]any)
 	if !ok {
 		payload = map[string]any{"value": raw}
-	}
-	if duration, ok := payload["duration_ms"]; ok {
-		delete(payload, "duration_ms")
-		payload["timing"] = []any{float64(0), duration}
 	}
 	switch kind {
 	case "archive_list", "archive_info":
@@ -74,12 +75,18 @@ func (r renderer) result(value any, kind string) error {
 	title := kind
 	if success, ok := payload["success"].(bool); ok {
 		if success {
-			fmt.Fprintf(r.stdout, "OK %s\n", title)
+			if _, err := fmt.Fprintf(r.stdout, "OK %s\n", title); err != nil {
+				return err
+			}
 		} else {
-			fmt.Fprintf(r.stdout, "FAILED %s\n", title)
+			if _, err := fmt.Fprintf(r.stdout, "FAILED %s\n", title); err != nil {
+				return err
+			}
 		}
 	} else {
-		fmt.Fprintln(r.stdout, title)
+		if _, err := fmt.Fprintln(r.stdout, title); err != nil {
+			return err
+		}
 	}
 	keys := make([]string, 0, len(payload))
 	for key := range payload {
@@ -93,7 +100,9 @@ func (r renderer) result(value any, kind string) error {
 		if isEmptyRenderValue(value) {
 			continue
 		}
-		fmt.Fprintf(r.stdout, "  %s: %s\n", key, formatTextValue(value))
+		if _, err := fmt.Fprintf(r.stdout, "  %s: %s\n", key, formatTextValue(value)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -124,15 +133,17 @@ func (r renderer) message(message string) error {
 	if r.json {
 		return r.writeJSON(map[string]any{"type": "message", "level": "info", "message": message})
 	}
-	fmt.Fprintf(r.stdout, "INFO: %s\n", message)
-	return nil
+	_, err := fmt.Fprintf(r.stdout, "INFO: %s\n", message)
+	return err
 }
 
 func (r renderer) plan(specType string, spec any) error {
 	if r.json {
 		return r.writeJSON(map[string]any{"type": "plan", "success": true, "spec_type": specType, "spec": spec})
 	}
-	fmt.Fprintf(r.stdout, "Plan for %s:\n", specType)
+	if _, err := fmt.Fprintf(r.stdout, "Plan for %s:\n", specType); err != nil {
+		return err
+	}
 	raw, _ := toJSONValue(spec)
 	if m, ok := raw.(map[string]any); ok {
 		keys := make([]string, 0, len(m))
@@ -141,21 +152,57 @@ func (r renderer) plan(specType string, spec any) error {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			fmt.Fprintf(r.stdout, "  %s: %s\n", key, formatTextValue(m[key]))
+			if _, err := fmt.Fprintf(r.stdout, "  %s: %s\n", key, formatTextValue(m[key])); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
 func (r renderer) typedError(message string, details map[string]any) error {
+	return r.errorPayload(map[string]any{"type": "error", "success": false, "message": message, "details": cloneJSONMap(details)}, message, details)
+}
+
+func (r renderer) domainError(err *berror.Error) error {
+	payload := map[string]any{
+		"type":       "error",
+		"success":    false,
+		"message":    err.Message,
+		"error_type": string(err.Kind),
+		"exit_code":  berror.ExitCode(err),
+	}
+	if len(err.Details) > 0 {
+		payload["details"] = cloneJSONMap(err.Details)
+	}
+	if err.ToolName != nil {
+		payload["tool_name"] = *err.ToolName
+	}
+	if err.ExitStatus != nil {
+		payload["tool_exit_code"] = *err.ExitStatus
+	}
+	if err.Stderr != nil {
+		payload["tool_stderr"] = *err.Stderr
+	}
+	if err.Feature != nil {
+		payload["feature"] = *err.Feature
+	}
+	if err.Extra != nil {
+		payload["extra"] = *err.Extra
+	}
+	if err.Dependency != nil {
+		payload["dependency"] = *err.Dependency
+	}
+	return r.errorPayload(payload, err.Message, err.Details)
+}
+
+func (r renderer) errorPayload(payload map[string]any, message string, details map[string]any) error {
 	if r.json {
-		payload := map[string]any{"type": "error", "success": false, "message": message}
-		if len(details) > 0 {
-			payload["details"] = details
-		}
 		return r.writeJSON(payload)
 	}
-	fmt.Fprintf(r.stdout, "ERROR: %s\n", message)
+	if _, err := fmt.Fprintf(r.stderr, "ERROR: %s\n", message); err != nil {
+		return err
+	}
 	if len(details) > 0 {
 		keys := make([]string, 0, len(details))
 		for key := range details {
@@ -163,10 +210,44 @@ func (r renderer) typedError(message string, details map[string]any) error {
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
-			fmt.Fprintf(r.stdout, "  %s: %s\n", key, formatTextValue(details[key]))
+			if _, err := fmt.Fprintf(r.stderr, "  %s: %s\n", key, formatTextValue(details[key])); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
+}
+
+func cloneJSONMap(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for key, value := range src {
+		out[key] = cloneJSONValue(value)
+	}
+	return out
+}
+
+func cloneJSONValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneJSONMap(v)
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = cloneJSONValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), v...)
+	case []int:
+		return append([]int(nil), v...)
+	case []int64:
+		return append([]int64(nil), v...)
+	default:
+		return value
+	}
 }
 
 func (r renderer) verbose(message string) {

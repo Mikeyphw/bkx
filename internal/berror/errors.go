@@ -1,6 +1,9 @@
 package berror
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 const (
 	ExitOK         = 0
@@ -68,8 +71,8 @@ func ExitCode(err error) int {
 	if err == nil {
 		return ExitOK
 	}
-	bkx, ok := err.(*Error)
-	if !ok {
+	var bkx *Error
+	if !errors.As(err, &bkx) {
 		return ExitGeneric
 	}
 	switch bkx.Kind {
@@ -103,7 +106,34 @@ func WrapExternal(operation string, resource string, backend string, err error) 
 func cloneMap(src map[string]any) map[string]any {
 	out := make(map[string]any, len(src))
 	for key, value := range src {
-		out[key] = value
+		out[key] = cloneValue(value)
 	}
 	return out
+}
+
+func cloneValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneMap(v)
+	case map[string]string:
+		out := make(map[string]string, len(v))
+		for key, item := range v {
+			out[key] = item
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = cloneValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), v...)
+	case []int:
+		return append([]int(nil), v...)
+	case []int64:
+		return append([]int64(nil), v...)
+	default:
+		return value
+	}
 }

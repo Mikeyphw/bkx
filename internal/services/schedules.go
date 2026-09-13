@@ -82,9 +82,6 @@ func (d *Dispatcher) schedulesSetEnabled(p map[string]any) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if enabled && !jobEnabled {
-		return Result{}, berror.Validation("cannot enable a schedule for a disabled saved job", map[string]any{"job_id": jobID})
-	}
 	if enabled && d.Jobs != nil {
 		current, err := d.scheduleStore().Get(id)
 		if err != nil {

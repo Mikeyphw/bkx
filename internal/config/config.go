@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"bkx/internal/berror"
 )
@@ -121,6 +123,9 @@ func Load(cwd, home string, environ map[string]string) (Config, error) {
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
+			}
+			if os.IsPermission(err) {
+				return Config{}, berror.Permission("Permission denied reading BKX configuration: "+path, map[string]any{"path": path, "reason": err.Error()})
 			}
 			return Config{}, berror.External("System error reading BKX configuration: "+path, map[string]any{"path": path, "reason": err.Error()})
 		}
@@ -334,45 +339,111 @@ func parseFlatYAML(path string) (map[string]any, error) {
 	out := map[string]any{}
 	s := bufio.NewScanner(f)
 	for lineNo := 1; s.Scan(); lineNo++ {
-		line := strings.TrimSpace(s.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		rawLine := strings.TrimRightFunc(s.Text(), unicode.IsSpace)
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") || line == "---" || line == "..." {
 			continue
+		}
+		if strings.HasPrefix(rawLine, " ") || strings.HasPrefix(rawLine, "\t") {
+			return nil, fmt.Errorf("line %d uses nested YAML; BKX config accepts a top-level scalar mapping", lineNo)
 		}
 		parts := strings.SplitN(line, ":", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("line %d is not a flat key/value mapping", lineNo)
+			return nil, fmt.Errorf("line %d is not a key/value mapping", lineNo)
 		}
 		key := strings.TrimSpace(parts[0])
-		raw := strings.TrimSpace(parts[1])
+		raw := stripYAMLComment(strings.TrimSpace(parts[1]))
 		if key == "" {
 			return nil, fmt.Errorf("line %d has empty key", lineNo)
 		}
-		if strings.Contains(raw, " #") {
-			raw = strings.TrimSpace(strings.SplitN(raw, " #", 2)[0])
+		if strings.HasPrefix(key, "-") || strings.ContainsAny(key, "[]{}") {
+			return nil, fmt.Errorf("line %d has unsupported YAML key syntax", lineNo)
 		}
-		if raw == "" || raw == "null" || raw == "~" {
-			out[key] = nil
-			continue
+		value, err := parseYAMLScalar(raw)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: %w", lineNo, err)
 		}
-		if len(raw) >= 2 && ((raw[0] == '"' && raw[len(raw)-1] == '"') || (raw[0] == '\'' && raw[len(raw)-1] == '\'')) {
-			out[key] = raw[1 : len(raw)-1]
-			continue
-		}
-		lower := strings.ToLower(raw)
-		if lower == "true" || lower == "false" {
-			out[key] = lower == "true"
-			continue
-		}
-		if v, err := strconv.Atoi(raw); err == nil {
-			out[key] = v
-			continue
-		}
-		out[key] = raw
+		out[key] = value
 	}
 	if err := s.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func stripYAMLComment(raw string) string {
+	inSingle := false
+	inDouble := false
+	escaped := false
+	for i, r := range raw {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inDouble && r == '\\' {
+			escaped = true
+			continue
+		}
+		switch r {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '#':
+			if !inSingle && !inDouble && (i == 0 || previousRuneIsSpace(raw[:i])) {
+				return strings.TrimSpace(raw[:i])
+			}
+		}
+	}
+	return strings.TrimSpace(raw)
+}
+
+func previousRuneIsSpace(prefix string) bool {
+	for i := len(prefix); i > 0; {
+		r, size := rune(prefix[i-1]), 1
+		if r >= 0x80 {
+			r, size = utf8.DecodeLastRuneInString(prefix[:i])
+		}
+		_ = size
+		return unicode.IsSpace(r)
+	}
+	return true
+}
+
+func parseYAMLScalar(raw string) (any, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	lower := strings.ToLower(raw)
+	switch lower {
+	case "null", "~":
+		return nil, nil
+	case "true", "yes", "on":
+		return true, nil
+	case "false", "no", "off":
+		return false, nil
+	}
+	if len(raw) >= 2 && raw[0] == '"' && raw[len(raw)-1] == '"' {
+		value, err := strconv.Unquote(raw)
+		if err != nil {
+			return nil, err
+		}
+		return value, nil
+	}
+	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+		return strings.ReplaceAll(raw[1:len(raw)-1], "''", "'"), nil
+	}
+	if strings.HasPrefix(raw, "[") || strings.HasPrefix(raw, "{") {
+		return nil, fmt.Errorf("BKX config fields require scalar values")
+	}
+	if v, err := strconv.Atoi(raw); err == nil {
+		return v, nil
+	}
+	return raw, nil
 }
 
 func typeError(field, expected string, value any) error {

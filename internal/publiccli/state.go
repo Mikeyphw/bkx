@@ -8,9 +8,12 @@ import (
 )
 
 func stateStatus(c *appContext, args []string) int {
-	if len(args) != 0 {
-		usageError(c.stderr, os.ErrInvalid)
-		return berror.ExitUsage
+	a, ok := parseFor(c, "state status", args, map[string]optionSpec{})
+	if !ok {
+		return berror.ExitOK
+	}
+	if len(a.Positionals) != 0 {
+		return cliUsageError(c, os.ErrInvalid)
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {

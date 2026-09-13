@@ -57,6 +57,7 @@ import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleBridgeCodec
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleRequestBuilder
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
+import com.mikeyphw.bkx.android.core.operations.OperationClassifier
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
 import com.mikeyphw.bkx.android.core.operations.OperationFailureKind
 import com.mikeyphw.bkx.android.core.operations.OperationFailureUiState
@@ -161,7 +162,7 @@ data class BkxHomeUiState(
     )
 
     val rootAvailable: Boolean get() = (readiness as? BackendReadiness.Ready)?.isRoot == true
-    val activeOperationCount: Int get() = operationRuntime.activeOperations.values.count { it.status == com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus.Queued || it.status == com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus.Running || it.status == com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus.Cancelling }
+    val activeOperationCount: Int get() = operationRuntime.activeWork().size
 }
 
 sealed interface BkxHomeEvent {
@@ -1194,10 +1195,11 @@ class BkxAppViewModel(
         val backendHint = job.operation.repositoryRef?.let { repositoryId ->
             _state.value.repositories.items.firstOrNull { it.repositoryId == repositoryId }?.backend
         }
+        val effectiveOperation = OperationClassifier.effectiveOperation(job.operation.operation)
         val request = if (plan) {
             savedJobRequestBuilder.plan(nextRequestId("job-plan"), jobId, backendHint)
         } else {
-            savedJobRequestBuilder.run(nextRequestId("job-run"), jobId, backendHint)
+            savedJobRequestBuilder.run(nextRequestId("job-run"), jobId, backendHint, effectiveOperation)
         }
         executeRequest(
             request = request,
@@ -1211,7 +1213,9 @@ class BkxAppViewModel(
     }
 
     private fun replayRun(runId: String, jobId: String?) {
-        val request = savedJobRequestBuilder.replay(nextRequestId("run-replay"), runId, jobId)
+        val effectiveOperation = _state.value.recentRuns.firstOrNull { it.requestId == runId }?.operation
+            ?.let { OperationClassifier.effectiveOperation(it) }
+        val request = savedJobRequestBuilder.replay(nextRequestId("run-replay"), runId, jobId, effectiveOperation)
         executeRequest(
             request = request,
             recordInHistory = true,

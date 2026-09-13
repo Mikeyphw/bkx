@@ -1,6 +1,7 @@
 package com.mikeyphw.bkx.android.core.operations
 
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
+import com.mikeyphw.bkx.android.core.bridge.BridgeRequestIdPolicy
 import com.mikeyphw.bkx.android.core.bridge.BridgeError
 import com.mikeyphw.bkx.android.core.bridge.BridgeProgressEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
@@ -27,6 +28,7 @@ enum class ActiveOperationStatus {
 data class ActiveOperation(
     @SerialName("request_id") val requestId: String,
     val operation: String,
+    @SerialName("effective_operation") val effectiveOperation: String = operation,
     val status: ActiveOperationStatus = ActiveOperationStatus.Queued,
     @SerialName("started_at_epoch_millis") val startedAtEpochMillis: Long,
     @SerialName("last_seen_epoch_millis") val lastSeenEpochMillis: Long = startedAtEpochMillis,
@@ -40,10 +42,12 @@ data class ActiveOperation(
     @SerialName("last_seq") val lastSeq: Long = 0,
     @SerialName("cancel_file_path") val cancelFilePath: String? = null,
     @SerialName("reconnect_token") val reconnectToken: String = requestId,
+    @SerialName("request_fingerprint") val requestFingerprint: String? = null,
 ) {
     init {
-        require(requestId.isNotBlank()) { "active operation request id must not be blank" }
+        BridgeRequestIdPolicy.requireValid(requestId)
         require(operation.isNotBlank()) { "active operation operation must not be blank" }
+        require(effectiveOperation.isNotBlank()) { "active operation effective operation must not be blank" }
         require(progress == null || progress in 0.0..1.0) { "progress must be between 0.0 and 1.0" }
         require(cancelFilePath == null || cancelFilePath.isNotBlank()) { "cancel file path must not be blank when present" }
     }
@@ -51,8 +55,9 @@ data class ActiveOperation(
     fun withProgress(event: OperationProgressEvent): ActiveOperation {
         require(event.requestId == requestId) { "progress event request id must match active operation" }
         require(event.seq > lastSeq) { "progress events must be consumed in increasing sequence order per request id" }
+        if (OperationClassifier.isTerminal(status)) return this
         return copy(
-            status = ActiveOperationStatus.Running,
+            status = if (status == ActiveOperationStatus.Cancelling) ActiveOperationStatus.Cancelling else ActiveOperationStatus.Running,
             lastSeenEpochMillis = event.observedAtEpochMillis,
             lastPhase = event.phase,
             lastMessage = event.message,
@@ -66,7 +71,7 @@ data class ActiveOperation(
     }
 
     fun asCancelling(cancelRequestId: String, nowEpochMillis: Long): ActiveOperation {
-        require(cancelRequestId.isNotBlank()) { "cancel request id must not be blank" }
+        BridgeRequestIdPolicy.requireValid(cancelRequestId)
         return copy(
             status = ActiveOperationStatus.Cancelling,
             lastSeenEpochMillis = nowEpochMillis,
@@ -100,7 +105,7 @@ data class OperationProgressEvent(
     @SerialName("observed_at_epoch_millis") val observedAtEpochMillis: Long,
 ) {
     init {
-        require(requestId.isNotBlank()) { "progress request id must not be blank" }
+        BridgeRequestIdPolicy.requireValid(requestId)
         require(seq >= 0) { "progress seq must be non-negative" }
         require(phase.isNotBlank()) { "progress phase must not be blank" }
         require(message.isNotBlank()) { "progress message must not be blank" }
@@ -141,11 +146,11 @@ data class OperationRuntimeState(
 
     fun activeFor(requestId: String): ActiveOperation? = activeOperations[requestId]
 
+    fun activeWork(): List<ActiveOperation> = activeOperations.values.filter { OperationClassifier.isActive(it.status) }
+
     val focusedOperation: ActiveOperation? = focusedRequestId?.let { activeOperations[it] }
 
-    val hasActiveWork: Boolean = activeOperations.values.any {
-        it.status == ActiveOperationStatus.Queued || it.status == ActiveOperationStatus.Running || it.status == ActiveOperationStatus.Cancelling
-    }
+    val hasActiveWork: Boolean = activeWork().isNotEmpty()
 }
 
 @Serializable
@@ -394,7 +399,7 @@ fun OperationRuntimeState.bounded(
     require(maxOperations > 0) { "maxOperations must be positive" }
     require(maxEventsPerRequest > 0) { "maxEventsPerRequest must be positive" }
     val keep = activeOperations.values
-        .sortedWith(compareByDescending<ActiveOperation> { it.status == ActiveOperationStatus.Queued || it.status == ActiveOperationStatus.Running || it.status == ActiveOperationStatus.Cancelling }
+        .sortedWith(compareByDescending<ActiveOperation> { if (OperationClassifier.isActive(it.status)) 1 else 0 }
             .thenByDescending { it.lastSeenEpochMillis })
         .take(maxOperations)
         .map { it.requestId }

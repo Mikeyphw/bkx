@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	ProtocolVersion = 1
-	AndroidRuntime  = "go-native-android"
-	maxRuntimeDocs  = 128
+	ProtocolVersion    = 1
+	AndroidRuntime     = "go-native-android"
+	maxRuntimeDocs     = 128
+	maxRequestIDLength = 120
 )
 
 var frozenSupportedOperations = []string{
@@ -348,7 +349,11 @@ func (r *RuntimeAdapter) handleCancelOperation(request Request) Result {
 			return failure(request.RequestID, berror.Validation("Expected string or null", nil))
 		}
 		if strings.TrimSpace(text) != "" {
-			target = strings.TrimSpace(text)
+			validated, err := requireRequestID(text)
+			if err != nil {
+				return failure(request.RequestID, err)
+			}
+			target = validated
 		}
 	}
 	r.mu.Lock()
@@ -489,6 +494,12 @@ func requireRequestID(value any) (string, error) {
 		return "", berror.Validation("request_id must be a non-empty string", nil)
 	}
 	id := strings.TrimSpace(text)
+	if len(id) > maxRequestIDLength {
+		return "", berror.Validation("request_id must be at most 120 characters", nil)
+	}
+	if id == "." || id == ".." {
+		return "", berror.Validation("request_id must not be a relative path segment", nil)
+	}
 	for _, ch := range id {
 		if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '-') {
 			return "", berror.Validation("request_id must be file-name safe", nil)

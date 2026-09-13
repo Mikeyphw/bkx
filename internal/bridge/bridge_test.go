@@ -121,6 +121,8 @@ func TestMalformedRequestsFailClosedWithProtocolEnvelope(t *testing.T) {
 		{"bad-json", "{bad", "validation_error"},
 		{"wrong-protocol", `{"protocol_version":2,"request_id":"x","operation":"filesystem.stat","payload":{}}`, "validation_error"},
 		{"unsafe-id", `{"protocol_version":1,"request_id":"bad id","operation":"filesystem.stat","payload":{}}`, "validation_error"},
+		{"parent-segment-id", `{"protocol_version":1,"request_id":"..","operation":"filesystem.stat","payload":{}}`, "validation_error"},
+		{"overlong-id", `{"protocol_version":1,"request_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","operation":"filesystem.stat","payload":{}}`, "validation_error"},
 		{"bad-payload", `{"protocol_version":1,"request_id":"x","operation":"filesystem.stat","payload":[]}`, "validation_error"},
 		{"trailing", `{"protocol_version":1,"request_id":"x","operation":"filesystem.stat","payload":{}} {}`, "validation_error"},
 	}
@@ -165,6 +167,10 @@ func TestUnknownOperationAndTypedNotFoundMapping(t *testing.T) {
 
 func TestCancelEndpointAndQueuedCancellationParity(t *testing.T) {
 	rt := NewAndroid(nil)
+	unsafe := rt.Cancel("..")
+	if unsafe.Status != "failure" || unsafe.RequestID != "unknown" {
+		t.Fatalf("unsafe cancellation target must fail closed: %#v", unsafe)
+	}
 	ack := rt.Cancel("queued-request")
 	if ack.Status != "success" || ack.RequestID != "queued-request" || ack.Metrics != nil || len(ack.Errors) != 0 || len(ack.Artifacts) != 0 {
 		t.Fatalf("unexpected cancel acknowledgement: %#v", ack)
@@ -184,6 +190,10 @@ func TestCancelEndpointAndQueuedCancellationParity(t *testing.T) {
 
 func TestRunCancelHandlerCancelsAnotherRequestWithoutAdvertisingIt(t *testing.T) {
 	rt := NewAndroid(nil)
+	unsafe := rt.Execute(requestJSON(t, "cancel-unsafe", "run.cancel", map[string]any{"target_request_id": ".."}))
+	if unsafe.Status != "failure" || unsafe.RequestID != "cancel-unsafe" {
+		t.Fatalf("run.cancel must reject unsafe target ids: %#v", unsafe)
+	}
 	result := rt.Execute(requestJSON(t, "cancel-command", "run.cancel", map[string]any{"target_request_id": "target-request"}))
 	if result.Status != "success" || result.Summary != "Cancellation recorded for target-request." {
 		t.Fatalf("unexpected run.cancel result: %#v", result)

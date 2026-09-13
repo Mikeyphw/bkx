@@ -16,16 +16,27 @@ class OperationProgressTracker(
         operation: String,
         startedAtEpochMillis: Long,
         cancelFilePath: String? = null,
+        effectiveOperation: String = operation,
+        requestFingerprint: String? = null,
     ): OperationRuntimeState {
+        state.activeOperations[requestId]?.let { existing ->
+            require(existing.operation == operation) { "request_id is already bound to a different operation" }
+            require(existing.requestFingerprint == null || requestFingerprint == null || existing.requestFingerprint == requestFingerprint) {
+                "request_id is already bound to a different payload"
+            }
+            return state
+        }
         val active = ActiveOperation(
             requestId = requestId,
             operation = operation,
+            effectiveOperation = effectiveOperation,
             status = ActiveOperationStatus.Running,
             startedAtEpochMillis = startedAtEpochMillis,
             lastSeenEpochMillis = startedAtEpochMillis,
             lastPhase = "started",
             lastMessage = "BKX accepted the request.",
             cancelFilePath = cancelFilePath,
+            requestFingerprint = requestFingerprint,
         )
         return state.copy(activeOperations = state.activeOperations + (requestId to active))
     }
@@ -45,6 +56,7 @@ class OperationProgressTracker(
     ): OperationRuntimeState {
         val active = state.activeOperations[event.requestId]
             ?: throw IllegalArgumentException("No active operation exists for progress request id ${event.requestId}.")
+        if (OperationClassifier.isTerminal(active.status)) return state
         val nextActive = active.withProgress(event)
         val timeline = (state.progressEvents[event.requestId].orEmpty() + event).takeLast(maxEventsPerRequest)
         return state.copy(
@@ -61,6 +73,7 @@ class OperationProgressTracker(
     ): OperationRuntimeState {
         val active = state.activeOperations[requestId]
             ?: throw IllegalArgumentException("No active operation exists for cancel request id $requestId.")
+        if (!OperationClassifier.isActive(active.status)) return state
         return state.copy(activeOperations = state.activeOperations + (requestId to active.asCancelling(cancelRequestId, nowEpochMillis)))
     }
 
@@ -71,6 +84,7 @@ class OperationProgressTracker(
     ): OperationRuntimeState {
         val active = state.activeOperations[result.requestId]
             ?: throw IllegalArgumentException("No active operation exists for result request id ${result.requestId}.")
+        if (OperationClassifier.isTerminal(active.status)) return state
         val resultState = result.toOperationResultUiState()
         val nextStatus = when (resultState) {
             is OperationResultUiState.Success -> ActiveOperationStatus.Success
@@ -98,6 +112,7 @@ class OperationProgressTracker(
     ): OperationRuntimeState {
         val active = state.activeOperations[requestId]
             ?: throw IllegalArgumentException("No persisted operation exists for interrupted request id $requestId.")
+        if (OperationClassifier.isTerminal(active.status)) return state
         return state.copy(
             activeOperations = state.activeOperations + (
                 requestId to active.finished(ActiveOperationStatus.Interrupted, failure.message, nowEpochMillis)
@@ -119,6 +134,7 @@ class OperationProgressTracker(
                 status = ActiveOperationStatus.Unknown,
                 startedAtEpochMillis = nowEpochMillis,
             )
+        if (OperationClassifier.isTerminal(active.status)) return state
         return state.copy(
             activeOperations = state.activeOperations + (
                 requestId to active.finished(ActiveOperationStatus.Failure, failure.message, nowEpochMillis)

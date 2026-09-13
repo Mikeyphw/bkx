@@ -7,11 +7,13 @@ import com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService
 import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.bridge.BridgeFileLayout
+import com.mikeyphw.bkx.android.core.bridge.BridgeJson
 import com.mikeyphw.bkx.android.core.bridge.BridgeRequestEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultStatus
 import com.mikeyphw.bkx.android.core.operations.ActiveOperation
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.operations.OperationClassifier
 import com.mikeyphw.bkx.android.core.operations.OperationFailureMapper
 import com.mikeyphw.bkx.android.core.operations.OperationFailureUiState
 import com.mikeyphw.bkx.android.core.operations.OperationProgressTracker
@@ -41,6 +43,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
@@ -65,7 +68,7 @@ class BkxOperationCoordinator(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val stateMutex = Mutex()
     private val progressTracker = OperationProgressTracker()
-    private val executions = ConcurrentHashMap<String, CompletableDeferred<OperationOutcome>>()
+    private val executions = ConcurrentHashMap<String, ExecutionSlot>()
     private val _runtimeState = MutableStateFlow(OperationRuntimeState())
     val runtimeState: StateFlow<OperationRuntimeState> = _runtimeState.asStateFlow()
 
@@ -86,12 +89,20 @@ class BkxOperationCoordinator(
         manageForeground: Boolean = true,
     ): OperationOutcome {
         val candidate = CompletableDeferred<OperationOutcome>()
-        val existing = executions.putIfAbsent(request.requestId, candidate)
-        if (existing != null) return existing.await()
+        val fingerprint = requestFingerprint(request)
+        val slot = ExecutionSlot(fingerprint, candidate)
+        val existing = executions.putIfAbsent(request.requestId, slot)
+        if (existing != null) {
+            return if (existing.requestFingerprint == fingerprint) {
+                existing.outcome.await()
+            } else {
+                OperationOutcome.Failed(duplicateRequestFailure(request.requestId))
+            }
+        }
 
         scope.launch {
             val outcome = try {
-                executeOwned(request, recordInHistory, manageForeground)
+                executeOwned(request, recordInHistory, manageForeground, fingerprint)
             } catch (error: Throwable) {
                 val failure = OperationFailureMapper.fromProtocolException(
                     "BKX runtime failed before execution could establish a final result: ${error.message ?: error::class.java.simpleName}",
@@ -113,7 +124,7 @@ class BkxOperationCoordinator(
                 taskerConditionPublisher?.operationFailed(request, failedState?.activeFor(request.requestId), failure)
                 OperationOutcome.Failed(failure)
             } finally {
-                executions.remove(request.requestId, candidate)
+                executions.remove(request.requestId, slot)
             }
             candidate.complete(outcome)
         }
@@ -125,22 +136,23 @@ class BkxOperationCoordinator(
         cancelRequestId: String,
         manageForeground: Boolean = true,
     ): OperationOutcome {
-        val files = BridgeFileLayout.forRequest(requestBaseDirectoryPath, requestId)
+        val files = runCatching { BridgeFileLayout.forRequest(requestBaseDirectoryPath, requestId) }
+            .getOrElse { return OperationOutcome.Failed(invalidCancelTargetFailure(requestId, it)) }
+        val before = snapshot()
+        val activeBefore = before.activeFor(requestId)
+        if (activeBefore == null || !OperationClassifier.isActive(activeBefore.status)) {
+            return OperationOutcome.Failed(notCancellableFailure(requestId))
+        }
         val state = mutateState { current ->
             val active = current.activeFor(requestId) ?: return@mutateState current
-            if (active.status !in ACTIVE_STATUSES) return@mutateState current
+            if (!OperationClassifier.isActive(active.status)) return@mutateState current
             progressTracker.markCancelling(current, requestId, cancelRequestId, System.currentTimeMillis())
         }
-        if (manageForeground) state.activeFor(requestId)?.let(::updateForeground)
+        if (manageForeground) state.activeFor(requestId)?.let { updateForeground(it) }
 
         val submission = backendPort.cancel(requestId, files.cancelFilePath)
         if (!submission.accepted) {
-            val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
-            val failed = mutateState { current ->
-                progressTracker.fail(current, requestId, failure, System.currentTimeMillis())
-            }
-            if (manageForeground) failed.activeFor(requestId)?.let(::updateForeground)
-            return OperationOutcome.Failed(failure)
+            return OperationOutcome.Failed(OperationFailureMapper.fromBackendReadiness(submission.readiness))
         }
         return OperationOutcome.CancellationAccepted(requestId)
     }
@@ -175,12 +187,14 @@ class BkxOperationCoordinator(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         manageForeground: Boolean,
-    ): OperationOutcome = executeOwnedConcurrent(request, recordInHistory, manageForeground)
+        requestFingerprint: String,
+    ): OperationOutcome = executeOwnedConcurrent(request, recordInHistory, manageForeground, requestFingerprint)
 
     private suspend fun executeOwnedConcurrent(
         request: BridgeRequestEnvelope,
         recordInHistory: Boolean,
         manageForeground: Boolean,
+        requestFingerprint: String,
     ): OperationOutcome {
         val files = BridgeFileLayout.forRequest(requestBaseDirectoryPath, request.requestId)
         val startedAt = System.currentTimeMillis()
@@ -189,15 +203,22 @@ class BkxOperationCoordinator(
                 state = state,
                 requestId = request.requestId,
                 operation = request.operation,
+                effectiveOperation = OperationClassifier.effectiveOperation(request.operation, request.payload),
                 startedAtEpochMillis = startedAt,
                 cancelFilePath = files.cancelFilePath,
+                requestFingerprint = requestFingerprint,
             )
         }
         startedState.activeFor(request.requestId)?.let { operation ->
             taskerConditionPublisher?.operationStarted(request, operation)
-            if (manageForeground && request.operation in FOREGROUND_OPERATIONS) updateForeground(operation)
+            if (manageForeground && OperationClassifier.requiresForeground(operation) && !updateForeground(operation)) {
+                val failure = foregroundStartFailure(operation)
+                val failedState = mutateState { state -> progressTracker.fail(state, request.requestId, failure, System.currentTimeMillis()) }
+                taskerConditionPublisher?.operationFailed(request, failedState.activeFor(request.requestId), failure)
+                return OperationOutcome.Failed(failure)
+            }
         }
-        val progressPoller = startProgressPoller(request)
+        val progressPoller = startProgressPoller(request, manageForeground)
         var terminalNotification: Pair<ActiveOperation, OperationResultUiState>? = null
 
         return try {
@@ -235,7 +256,7 @@ class BkxOperationCoordinator(
             OperationOutcome.Failed(failure)
         } finally {
             progressPoller.cancel()
-            if (manageForeground && request.operation in FOREGROUND_OPERATIONS) {
+            if (manageForeground && OperationClassifier.requiresForeground(OperationClassifier.effectiveOperation(request.operation, request.payload))) {
                 val context = appContext
                 terminalNotification?.let { (operation, result) ->
                     if (context != null) runCatching { BkxOperationForegroundService.publishTerminal(context, operation, result) }
@@ -245,7 +266,7 @@ class BkxOperationCoordinator(
         }
     }
 
-    private fun startProgressPoller(request: BridgeRequestEnvelope): Job = scope.launch {
+    private fun startProgressPoller(request: BridgeRequestEnvelope, manageForeground: Boolean): Job = scope.launch {
         val requestId = request.requestId
         while (isActive && executions.containsKey(requestId)) {
             val progress = runCatching { backendPort.progress(requestId) }.getOrNull()
@@ -257,7 +278,7 @@ class BkxOperationCoordinator(
                 }
                 state.activeFor(requestId)?.let { operation ->
                     taskerConditionPublisher?.operationProgress(request, operation)
-                    updateForeground(operation)
+                    if (manageForeground) updateForeground(operation)
                 }
             }
             delay(progressPollIntervalMillis())
@@ -313,23 +334,24 @@ class BkxOperationCoordinator(
         )
     }
 
-    private fun updateForeground(operation: ActiveOperation) {
-        if (operation.operation !in FOREGROUND_OPERATIONS || operation.status !in ACTIVE_STATUSES) return
-        val context = appContext ?: return
-        runCatching {
+    private fun updateForeground(operation: ActiveOperation): Boolean {
+        if (!OperationClassifier.requiresForeground(operation) || !OperationClassifier.isActive(operation.status)) return true
+        val context = appContext ?: return true
+        return runCatching {
             ContextCompat.startForegroundService(
                 context,
                 BkxOperationForegroundService.intentFor(context, operation),
             )
-        }
+            true
+        }.getOrDefault(false)
     }
 
     private suspend fun stopForegroundShellIfIdle(completedRequestId: String) {
         val state = snapshot()
         val anotherForegroundOperationIsActive = state.activeOperations.values.any { operation ->
             operation.requestId != completedRequestId &&
-                operation.operation in FOREGROUND_OPERATIONS &&
-                operation.status in ACTIVE_STATUSES
+                OperationClassifier.requiresForeground(operation) &&
+                OperationClassifier.isActive(operation.status)
         }
         if (anotherForegroundOperationIsActive) return
         val context = appContext ?: return
@@ -343,6 +365,50 @@ class BkxOperationCoordinator(
         .replace(Regex("/storage/[^ ]+"), "storage path")
         .take(MAX_SUMMARY_CHARS)
 
+
+    private fun requestFingerprint(request: BridgeRequestEnvelope): String = BridgeJson.json.encodeToString(request)
+
+    private fun duplicateRequestFailure(requestId: String): OperationFailureUiState = OperationFailureUiState(
+        kind = com.mikeyphw.bkx.android.core.operations.OperationFailureKind.MalformedResult,
+        code = "BKX_DUPLICATE_REQUEST_MISMATCH",
+        title = "Request already running",
+        message = "Request ID $requestId is already bound to a different operation payload. Start a new request instead of reusing an active ID.",
+        actions = listOf("Start a new request", "Open activity"),
+        retryAllowed = false,
+    )
+
+    private fun invalidCancelTargetFailure(requestId: String, error: Throwable): OperationFailureUiState = OperationFailureUiState(
+        kind = com.mikeyphw.bkx.android.core.operations.OperationFailureKind.MalformedResult,
+        code = "BKX_INVALID_CANCEL_TARGET",
+        title = "Invalid cancel target",
+        message = "BKX cannot cancel request ID $requestId: ${error.message ?: error::class.java.simpleName}",
+        actions = listOf("Open activity", "Start a new request"),
+        retryAllowed = false,
+    )
+
+    private fun notCancellableFailure(requestId: String): OperationFailureUiState = OperationFailureUiState(
+        kind = com.mikeyphw.bkx.android.core.operations.OperationFailureKind.Unknown,
+        code = "BKX_REQUEST_NOT_CANCELLABLE",
+        title = "Operation is not active",
+        message = "No active BKX operation is available to cancel for request ID $requestId.",
+        actions = listOf("Refresh activity", "Open engine diagnostics"),
+        retryAllowed = true,
+    )
+
+    private fun foregroundStartFailure(operation: ActiveOperation): OperationFailureUiState = OperationFailureUiState(
+        kind = com.mikeyphw.bkx.android.core.operations.OperationFailureKind.QuotaExceeded,
+        code = "BKX_FOREGROUND_START_FAILED",
+        title = "Could not start protected work",
+        message = "Android blocked the foreground service required for ${operation.effectiveOperation}. The operation was not submitted to BKX.",
+        actions = listOf("Open BKX and retry", "Check notification permission", "Open engine diagnostics"),
+        retryAllowed = true,
+    )
+
+    private data class ExecutionSlot(
+        val requestFingerprint: String,
+        val outcome: CompletableDeferred<OperationOutcome>,
+    )
+
     sealed interface OperationOutcome {
         data class Completed(val result: BridgeResultEnvelope) : OperationOutcome
         data class Failed(val failure: OperationFailureUiState) : OperationOutcome
@@ -351,7 +417,6 @@ class BkxOperationCoordinator(
 
     private companion object {
         val ACTIVE_STATUSES = setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling)
-        val FOREGROUND_OPERATIONS = setOf("backup.create", "backup.snapshot", "archive.verify", "restore.extract", "transfer.run")
         const val MAX_SUMMARY_CHARS = 500
     }
 }

@@ -112,7 +112,7 @@ object BkxOperationNotificationPlanner {
         return BkxOperationNotificationDecision.Show(
             BkxOperationNotificationPlan(
                 requestId = operation.requestId,
-                title = "BKX ${displayOperation(operation.operation)}",
+                title = "BKX ${displayOperation(operation.effectiveOperation)}",
                 text = text,
                 ongoing = ongoing,
                 allowCancelAction = operation.cancelFilePath != null && ongoing,

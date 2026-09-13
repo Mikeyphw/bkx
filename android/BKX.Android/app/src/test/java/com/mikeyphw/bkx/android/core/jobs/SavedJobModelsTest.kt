@@ -55,4 +55,27 @@ class SavedJobModelsTest {
         )
         assertEquals("drive-main", spec.credentialRefs.single().id)
     }
+
+
+    @Test
+    fun savedJobRunAndReplayCarryEffectiveOperationHintsForAndroidForegroundPolicy() {
+        val run = SavedJobRequestBuilder.run(
+            requestId = "job-run-1",
+            jobId = "phone-backup",
+            repositoryBackendHint = "restic",
+            effectiveOperation = "backup.snapshot",
+        )
+        val replay = SavedJobRequestBuilder.replay(
+            requestId = "run-replay-1",
+            runId = "original-run-1",
+            jobId = "phone-backup",
+            effectiveOperation = "transfer.run",
+        )
+
+        assertEquals("jobs.run", run.operation)
+        assertEquals(""backup.snapshot"", run.payload["effective_operation"].toString())
+        assertEquals("runs.replay", replay.operation)
+        assertEquals(""transfer.run"", replay.payload["effective_operation"].toString())
+    }
+
 }

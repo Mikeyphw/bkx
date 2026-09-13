@@ -67,10 +67,12 @@ class BkxOperationForegroundService : Service() {
         }
 
         val operation = intent?.getStringExtra(EXTRA_OPERATION).orEmpty().ifBlank { "operation" }
+        val effectiveOperation = intent?.getStringExtra(EXTRA_EFFECTIVE_OPERATION).orEmpty().ifBlank { operation }
         activeRequestId = requestId
         val activeOperation = ActiveOperation(
             requestId = requestId,
             operation = operation,
+            effectiveOperation = effectiveOperation,
             status = ActiveOperationStatus.Running,
             startedAtEpochMillis = intent?.getLongExtra(EXTRA_STARTED_AT_EPOCH_MILLIS, System.currentTimeMillis())
                 ?: System.currentTimeMillis(),
@@ -202,6 +204,7 @@ class BkxOperationForegroundService : Service() {
     companion object {
         const val EXTRA_REQUEST_ID = "com.mikeyphw.bkx.android.extra.REQUEST_ID"
         const val EXTRA_OPERATION = "com.mikeyphw.bkx.android.extra.OPERATION"
+        const val EXTRA_EFFECTIVE_OPERATION = "com.mikeyphw.bkx.android.extra.EFFECTIVE_OPERATION"
         const val EXTRA_STARTED_AT_EPOCH_MILLIS = "com.mikeyphw.bkx.android.extra.STARTED_AT_EPOCH_MILLIS"
         const val EXTRA_PHASE = "com.mikeyphw.bkx.android.extra.PHASE"
         const val EXTRA_MESSAGE = "com.mikeyphw.bkx.android.extra.MESSAGE"
@@ -218,6 +221,7 @@ class BkxOperationForegroundService : Service() {
         fun intentFor(context: Context, operation: ActiveOperation): Intent = Intent(context, BkxOperationForegroundService::class.java).apply {
             putExtra(EXTRA_REQUEST_ID, operation.requestId)
             putExtra(EXTRA_OPERATION, operation.operation)
+            putExtra(EXTRA_EFFECTIVE_OPERATION, operation.effectiveOperation)
             putExtra(EXTRA_STARTED_AT_EPOCH_MILLIS, operation.startedAtEpochMillis)
             putExtra(EXTRA_PHASE, operation.lastPhase)
             putExtra(EXTRA_MESSAGE, operation.lastMessage)
@@ -234,6 +238,7 @@ class BkxOperationForegroundService : Service() {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(EXTRA_REQUEST_ID, operation.requestId)
             putExtra(EXTRA_OPERATION, operation.operation)
+            putExtra(EXTRA_EFFECTIVE_OPERATION, operation.effectiveOperation)
             putExtra(EXTRA_PHASE, operation.lastPhase)
             operation.progress?.let { putExtra(EXTRA_PROGRESS, it) }
         }
@@ -251,9 +256,9 @@ class BkxOperationForegroundService : Service() {
             val manager = appContext.getSystemService(NotificationManager::class.java)
             val builder = notificationBuilder(appContext)
             val title = when (result) {
-                is OperationResultUiState.Success -> "${displayOperation(operation.operation)} complete"
-                is OperationResultUiState.Cancelled -> "${displayOperation(operation.operation)} cancelled"
-                is OperationResultUiState.Failed -> "${displayOperation(operation.operation)} failed"
+                is OperationResultUiState.Success -> "${displayOperation(operation.effectiveOperation)} complete"
+                is OperationResultUiState.Cancelled -> "${displayOperation(operation.effectiveOperation)} cancelled"
+                is OperationResultUiState.Failed -> "${displayOperation(operation.effectiveOperation)} failed"
                 OperationResultUiState.NotStarted -> return
             }
             val privacyMode = SharedPreferencesSettingsStore(appContext).readNow().logPrivacyMode == LogPrivacyMode.Private
@@ -290,6 +295,7 @@ class BkxOperationForegroundService : Service() {
                 action = ACTION_CANCEL_OPERATION
                 putExtra(EXTRA_REQUEST_ID, operation.requestId)
                 putExtra(EXTRA_OPERATION, operation.operation)
+                putExtra(EXTRA_EFFECTIVE_OPERATION, operation.effectiveOperation)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

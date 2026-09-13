@@ -6,10 +6,7 @@ object BridgeFileLayout {
         requestId: String,
     ): BridgeRequestFiles {
         val normalizedBase = baseDirectoryPath.trimEnd('/')
-        val safeRequestId = requestId.trim()
-        require(safeRequestId.matches(Regex("[A-Za-z0-9._-]+"))) {
-            "requestId must be file-name safe"
-        }
+        val safeRequestId = BridgeRequestIdPolicy.normalize(requestId)
         val requestDirectory = "$normalizedBase/$safeRequestId"
         return BridgeRequestFiles(
             requestId = safeRequestId,

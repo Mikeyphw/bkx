@@ -1413,3 +1413,102 @@ tasks.register("verifyBkxBackupAutomationRoadmapFinalSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxBackupAutomationRoadmapFinalSeal")
 }
+
+tasks.register("verifyBkxRuntimeLifetimeForegroundCancellationSeal") {
+    group = "verification"
+    description = "Verify BR21 runtime lifetime, foreground ownership, request ID, and cancellation contracts."
+
+    val repositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
+    val coordinator = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt").asFile
+    val tracker = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/operations/OperationProgressTracker.kt").asFile
+    val models = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/operations/OperationModels.kt").asFile
+    val classifier = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/operations/OperationClassifier.kt").asFile
+    val service = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/service/BkxOperationForegroundService.kt").asFile
+    val notificationModels = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/notifications/BkxNotificationModels.kt").asFile
+    val bridgeLayout = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeFileLayout.kt").asFile
+    val requestIdPolicy = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/bridge/BridgeRequestIdPolicy.kt").asFile
+    val savedJobBuilder = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/core/jobs/SavedJobRequestBuilder.kt").asFile
+    val viewModel = layout.projectDirectory.file("src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt").asFile
+    val goBridge = repositoryRoot.resolve("internal/bridge/bridge.go")
+    val runtimeTest = layout.projectDirectory.file("src/test/java/com/mikeyphw/bkx/android/core/operations/OperationRuntimeContractTest.kt").asFile
+    val classifierTest = layout.projectDirectory.file("src/test/java/com/mikeyphw/bkx/android/core/operations/OperationClassifierTest.kt").asFile
+    val bridgeLayoutTest = layout.projectDirectory.file("src/test/java/com/mikeyphw/bkx/android/core/bridge/BridgeFileLayoutTest.kt").asFile
+    val savedJobTest = layout.projectDirectory.file("src/test/java/com/mikeyphw/bkx/android/core/jobs/SavedJobModelsTest.kt").asFile
+
+    inputs.files(
+        coordinator, tracker, models, classifier, service, notificationModels, bridgeLayout,
+        requestIdPolicy, savedJobBuilder, viewModel, goBridge, runtimeTest, classifierTest,
+        bridgeLayoutTest, savedJobTest,
+    )
+
+    doLast {
+        val coordinatorText = coordinator.readText()
+        val trackerText = tracker.readText()
+        val modelsText = models.readText()
+        val classifierText = classifier.readText()
+        val serviceText = service.readText()
+        val notificationText = notificationModels.readText()
+        val bridgeLayoutText = bridgeLayout.readText()
+        val requestIdText = requestIdPolicy.readText()
+        val savedJobText = savedJobBuilder.readText()
+        val viewModelText = viewModel.readText()
+        val goBridgeText = goBridge.readText()
+        val runtimeTestText = runtimeTest.readText()
+        val classifierTestText = classifierTest.readText()
+        val bridgeLayoutTestText = bridgeLayoutTest.readText()
+        val savedJobTestText = savedJobTest.readText()
+
+        check("OperationClassifier.effectiveOperation(request.operation, request.payload)" in coordinatorText) {
+            "Coordinator must classify wrapper operations by effective operation before foreground decisions."
+        }
+        check("startProgressPoller(request, manageForeground)" in coordinatorText && "if (manageForeground) updateForeground(operation)" in coordinatorText) {
+            "Progress polling must not mutate foreground state when foreground management is disabled."
+        }
+        check("BKX_DUPLICATE_REQUEST_MISMATCH" in coordinatorText && "requestFingerprint(request)" in coordinatorText) {
+            "Coordinator must reject duplicate request IDs with different payloads."
+        }
+        check("BKX_REQUEST_NOT_CANCELLABLE" in coordinatorText && "BridgeFileLayout.forRequest(requestBaseDirectoryPath, requestId)" in coordinatorText) {
+            "Cancel paths must fail closed for invalid or inactive targets before backend cancellation."
+        }
+        check("requestFingerprint" in trackerText && "return state" in trackerText && "OperationClassifier.isTerminal(active.status)" in trackerText) {
+            "Progress tracker must preserve existing request bindings and ignore late terminal progress."
+        }
+        check("ActiveOperationStatus.Cancelling) ActiveOperationStatus.Cancelling" in modelsText && "fun activeWork()" in modelsText) {
+            "Operation model must keep cancelling sticky and expose a single active-work classifier."
+        }
+        check("wrapperOperations = setOf(\"jobs.run\", \"runs.replay\")" in classifierText && "foregroundOperations" in classifierText) {
+            "Operation classifier must explicitly protect saved-job/replay wrappers."
+        }
+        check("EXTRA_EFFECTIVE_OPERATION" in serviceText && "operation.effectiveOperation" in serviceText) {
+            "Foreground service and notification intents must preserve effective operations."
+        }
+        check("displayOperation(operation.effectiveOperation)" in notificationText) {
+            "Notification display models must render the protected effective operation."
+        }
+        check("BridgeRequestIdPolicy.normalize(requestId)" in bridgeLayoutText && "request_id must not be a relative path segment" in requestIdText) {
+            "Android bridge file layout must share one strict request-id policy."
+        }
+        check("maxRequestIDLength = 120" in goBridgeText && "request_id must not be a relative path segment" in goBridgeText) {
+            "Go bridge must mirror Android request-id path-segment hardening."
+        }
+        check("effective_operation" in savedJobText && "savedJobRequestBuilder.run(nextRequestId(\"job-run\"), jobId, backendHint, effectiveOperation)" in viewModelText && "savedJobRequestBuilder.replay(nextRequestId(\"run-replay\"), runId, jobId, effectiveOperation)" in viewModelText) {
+            "Saved Job Run and Run Again must carry effective-operation hints for foreground policy."
+        }
+        check("terminalOperationsAreNotResurrectedByLateProgress" in runtimeTestText && "cancellingOperationsStayCancellingWhenProgressArrives" in runtimeTestText && "duplicateRequestIdCannotBeReboundToDifferentPayload" in runtimeTestText) {
+            "BR21 runtime regression tests are missing."
+        }
+        check("savedJobWrappersHonorEffectiveOperationHint" in classifierTestText && "nonExecutionWrappersIgnoreEffectiveOperationHint" in classifierTestText) {
+            "BR21 classifier regression tests are missing."
+        }
+        check("rejectsParentDirectoryRequestIdEvenWithoutSlash" in bridgeLayoutTestText && "rejectsOverlongRequestId" in bridgeLayoutTestText) {
+            "BR21 request-id regression tests are missing."
+        }
+        check("savedJobRunAndReplayCarryEffectiveOperationHintsForAndroidForegroundPolicy" in savedJobTestText) {
+            "BR21 saved-job foreground regression test is missing."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxRuntimeLifetimeForegroundCancellationSeal")
+}

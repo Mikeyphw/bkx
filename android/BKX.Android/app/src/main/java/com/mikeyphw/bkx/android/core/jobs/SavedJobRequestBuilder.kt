@@ -56,23 +56,25 @@ object SavedJobRequestBuilder {
         },
     )
 
-    fun plan(requestId: String, jobId: String, repositoryBackendHint: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_PLAN, jobId, repositoryBackendHint)
-    fun run(requestId: String, jobId: String, repositoryBackendHint: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_RUN, jobId, repositoryBackendHint)
-    fun replay(requestId: String, runId: String, jobId: String? = null): BridgeRequestEnvelope = BridgeRequestEnvelope(
+    fun plan(requestId: String, jobId: String, repositoryBackendHint: String? = null, effectiveOperation: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_PLAN, jobId, repositoryBackendHint, effectiveOperation)
+    fun run(requestId: String, jobId: String, repositoryBackendHint: String? = null, effectiveOperation: String? = null): BridgeRequestEnvelope = executionRequest(requestId, OPERATION_RUN, jobId, repositoryBackendHint, effectiveOperation)
+    fun replay(requestId: String, runId: String, jobId: String? = null, effectiveOperation: String? = null): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId,
         operation = OPERATION_REPLAY_RUN,
         payload = buildJsonObject {
             put("run_id", runId.trim().also { require(it.isNotBlank()) { "run id must not be blank" } })
             jobId?.trim()?.takeIf { it.isNotBlank() }?.let { put("job_id", requireJobId(it)) }
+            effectiveOperation?.trim()?.takeIf { it.isNotBlank() }?.let { put("effective_operation", it) }
         },
     )
 
-    private fun executionRequest(requestId: String, operation: String, jobId: String, repositoryBackendHint: String?): BridgeRequestEnvelope = BridgeRequestEnvelope(
+    private fun executionRequest(requestId: String, operation: String, jobId: String, repositoryBackendHint: String?, effectiveOperation: String?): BridgeRequestEnvelope = BridgeRequestEnvelope(
         requestId = requestId,
         operation = operation,
         payload = buildJsonObject {
             put("job_id", requireJobId(jobId))
             repositoryBackendHint?.trim()?.takeIf { it.isNotBlank() }?.let { put("repository_backend", it) }
+            effectiveOperation?.trim()?.takeIf { it.isNotBlank() }?.let { put("effective_operation", it) }
         },
     )
 

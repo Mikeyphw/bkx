@@ -107,6 +107,7 @@ preflight = [
     ":app:verifyBkxPersonalSigningContract",
     ":app:verifyBkxAndroidReleaseDocs",
     ":app:verifyBkxBackupAutomationRoadmapFinalSeal",
+    ":app:verifyBkxRuntimeLifetimeForegroundCancellationSeal",
 ]
 
 compile = [

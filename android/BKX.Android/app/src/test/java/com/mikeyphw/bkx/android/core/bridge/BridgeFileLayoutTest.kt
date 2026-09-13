@@ -25,4 +25,30 @@ class BridgeFileLayoutTest {
             requestId = "../escape",
         )
     }
+
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsParentDirectoryRequestIdEvenWithoutSlash() {
+        BridgeFileLayout.forRequest(
+            baseDirectoryPath = "/termux/home/.bkx-android",
+            requestId = "..",
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsCurrentDirectoryRequestIdEvenWithoutSlash() {
+        BridgeFileLayout.forRequest(
+            baseDirectoryPath = "/termux/home/.bkx-android",
+            requestId = ".",
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsOverlongRequestId() {
+        BridgeFileLayout.forRequest(
+            baseDirectoryPath = "/termux/home/.bkx-android",
+            requestId = "a".repeat(BridgeRequestIdPolicy.MAX_LENGTH + 1),
+        )
+    }
+
 }

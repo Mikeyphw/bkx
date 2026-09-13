@@ -79,6 +79,90 @@ class OperationRuntimeContractTest {
     }
 
     @Test
+    fun terminalOperationsAreNotResurrectedByLateProgress() {
+        val started = tracker.trackStarted(OperationRuntimeState(), "req-terminal", "backup.create", 100)
+        val completed = tracker.finish(
+            state = started,
+            result = BridgeResultEnvelope(
+                protocolVersion = 1,
+                requestId = "req-terminal",
+                status = BridgeResultStatus.Success,
+                summary = "done",
+            ),
+            nowEpochMillis = 200,
+        )
+
+        val afterLateProgress = tracker.consume(
+            state = completed,
+            envelope = BridgeProgressEnvelope(requestId = "req-terminal", seq = 1, phase = "late", message = "late progress"),
+            observedAtEpochMillis = 300,
+        )
+
+        assertEquals(ActiveOperationStatus.Success, afterLateProgress.activeFor("req-terminal")?.status)
+        assertEquals(1.0, afterLateProgress.activeFor("req-terminal")?.progress)
+        assertEquals(null, afterLateProgress.progressEvents["req-terminal"])
+    }
+
+    @Test
+    fun cancellingOperationsStayCancellingWhenProgressArrives() {
+        val started = tracker.trackStarted(OperationRuntimeState(), "req-cancel-sticky", "backup.snapshot", 100)
+        val cancelling = tracker.markCancelling(started, "req-cancel-sticky", "cancel-req-cancel-sticky", 150)
+        val progressed = tracker.consume(
+            state = cancelling,
+            envelope = BridgeProgressEnvelope(
+                requestId = "req-cancel-sticky",
+                seq = 1,
+                phase = "copying",
+                message = "copying data",
+                progress = 0.25,
+            ),
+            observedAtEpochMillis = 160,
+        )
+
+        assertEquals(ActiveOperationStatus.Cancelling, progressed.activeFor("req-cancel-sticky")?.status)
+        assertEquals(0.25, progressed.activeFor("req-cancel-sticky")?.progress)
+        assertTrue(progressed.hasActiveWork)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun duplicateRequestIdCannotBeReboundToDifferentPayload() {
+        val started = tracker.trackStarted(
+            state = OperationRuntimeState(),
+            requestId = "req-dup",
+            operation = "backup.create",
+            startedAtEpochMillis = 100,
+            requestFingerprint = "payload-a",
+        )
+        tracker.trackStarted(
+            state = started,
+            requestId = "req-dup",
+            operation = "backup.create",
+            startedAtEpochMillis = 200,
+            requestFingerprint = "payload-b",
+        )
+    }
+
+    @Test
+    fun duplicateRequestIdWithSamePayloadDoesNotResetActiveOperation() {
+        val started = tracker.trackStarted(
+            state = OperationRuntimeState(),
+            requestId = "req-same",
+            operation = "backup.create",
+            startedAtEpochMillis = 100,
+            requestFingerprint = "payload-a",
+        )
+        val duplicate = tracker.trackStarted(
+            state = started,
+            requestId = "req-same",
+            operation = "backup.create",
+            startedAtEpochMillis = 999,
+            requestFingerprint = "payload-a",
+        )
+
+        assertEquals(100L, duplicate.activeFor("req-same")?.startedAtEpochMillis)
+    }
+
+    @Test
     fun cancellationAndTypedTimeoutFailureAreRepresented() {
         val started = tracker.trackStarted(OperationRuntimeState(), "req-1", "restore.extract", 100)
         val cancelling = tracker.markCancelling(started, requestId = "req-1", cancelRequestId = "cancel-req-1", nowEpochMillis = 150)

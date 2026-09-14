@@ -116,6 +116,11 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+data class OperationFeedbackKey(
+    val destination: BkxDestination,
+    val requestId: String,
+)
+
 data class OperationSurfaceFeedback(
     val requestId: String,
     val operation: String,
@@ -149,6 +154,7 @@ data class BkxHomeUiState(
     val transfer: TransferUiState = TransferUiState(),
     val operationRuntime: OperationRuntimeState = OperationRuntimeState(),
     val operationResult: OperationResultUiState = OperationResultUiState.NotStarted,
+    val operationFeedbackByRequest: Map<OperationFeedbackKey, OperationSurfaceFeedback> = emptyMap(),
     val operationFeedback: Map<BkxDestination, OperationSurfaceFeedback> = emptyMap(),
     val uiMessage: BkxUiMessage? = null,
     val filesystemBrowser: FilesystemBrowserUiState = FilesystemBrowserUiState(),
@@ -977,6 +983,13 @@ class BkxAppViewModel(
         if (feedbackDestination != null) {
             _state.update { current ->
                 current.copy(
+                    operationFeedbackByRequest = current.operationFeedbackByRequest + (
+                        OperationFeedbackKey(feedbackDestination, request.requestId) to OperationSurfaceFeedback(
+                            requestId = request.requestId,
+                            operation = request.operation,
+                            startedAtEpochMillis = startedAt,
+                        )
+                    ),
                     operationFeedback = current.operationFeedback + (
                         feedbackDestination to OperationSurfaceFeedback(
                             requestId = request.requestId,
@@ -1031,6 +1044,15 @@ class BkxAppViewModel(
         _state.update { current ->
             current.copy(
                 operationResult = result,
+                operationFeedbackByRequest = current.operationFeedbackByRequest + (
+                    OperationFeedbackKey(destination, request.requestId) to OperationSurfaceFeedback(
+                        requestId = request.requestId,
+                        operation = request.operation,
+                        startedAtEpochMillis = startedAt,
+                        result = result,
+                        completedAtEpochMillis = finishedAt,
+                    )
+                ),
                 operationFeedback = current.operationFeedback + (
                     destination to OperationSurfaceFeedback(
                         requestId = request.requestId,

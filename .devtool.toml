@@ -113,6 +113,7 @@ preflight = [
     ":app:verifyBkxBackupArchiveRestoreCorrectnessSeal",
     ":app:verifyBkxRepositoryResticSnapshotControlPlaneSeal",
     ":app:verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
+    ":app:verifyBkxPersistenceSettingsMigrationSeal",
 ]
 
 compile = [
@@ -228,4 +229,4 @@ low_priority = false
 [commit]
 enabled = true
 strategy = "single"
-message = "fix(android): seal BKX transfer rclone google drive remotes"
+message = "fix(android): seal BKX persistence settings migrations"

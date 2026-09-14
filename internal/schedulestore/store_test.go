@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"bkx/internal/statepaths"
 )
 
 func TestScheduleLifecycle(t *testing.T) {
@@ -99,5 +101,45 @@ func TestBR27ScheduleStoreBulkDisableAndDeleteForJob(t *testing.T) {
 	left, err := s.List()
 	if err != nil || len(left) != 1 || left[0].ScheduleID != "other" {
 		t.Fatalf("left=%+v err=%v", left, err)
+	}
+}
+
+func TestBR34DefaultScheduleStoreUsesExplicitSharedStateAndSeedsLegacyDocument(t *testing.T) {
+	home := t.TempDir()
+	shared := filepath.Join(t.TempDir(), "shared")
+	t.Setenv(statepaths.EnvStateDir, shared)
+
+	legacy := &Store{Path: statepaths.LegacyScheduleStorePath(home)}
+	if _, err := legacy.Put(Schedule{ScheduleID: "legacy-schedule", JobID: "legacy-job", Enabled: true, IntervalMinutes: 60, Network: "none"}); err != nil {
+		t.Fatal(err)
+	}
+	store := Default(home)
+	if store.Path != filepath.Join(shared, "schedules", "schedules.json") {
+		t.Fatalf("unexpected canonical path: %s", store.Path)
+	}
+	items, err := store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].ScheduleID != "legacy-schedule" {
+		t.Fatalf("legacy schedule was not seeded: %#v", items)
+	}
+}
+
+func TestBR34ScheduleStoreMigratesMissingDocumentAndItemSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "schedules.json")
+	if err := os.WriteFile(path, []byte(`{"schedules":[{"schedule_id":"nightly","job_id":"phone","enabled":true,"interval_minutes":60,"network":"none","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z","revision":1}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	items, err := (&Store{Path: path}).List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].SchemaVersion != SchemaVersion {
+		t.Fatalf("legacy schedule schema not stamped: %#v", items)
+	}
+	items[0].Enabled = false
+	if _, err := (&Store{Path: path}).Put(items[0]); err != nil {
+		t.Fatalf("legacy-normalized schedule should stay writable: %v", err)
 	}
 }

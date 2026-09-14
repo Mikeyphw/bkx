@@ -30,15 +30,22 @@ enum class AppearancePreference {
     @SerialName("dark") Dark,
 }
 
+const val BKX_SETTINGS_SCHEMA_VERSION = 1
+
 @Serializable
 data class BkxSettings(
+    @SerialName("schema_version") val schemaVersion: Int = BKX_SETTINGS_SCHEMA_VERSION,
     val rootAccessMode: RootAccessMode = RootAccessMode.Preferred,
     val storageLocationLabel: String = "Direct filesystem access",
     val logPrivacyMode: LogPrivacyMode = LogPrivacyMode.Private,
     val progressPreference: ProgressPreference = ProgressPreference.EventDriven,
     val appearance: AppearancePreference = AppearancePreference.System,
     val dynamicColor: Boolean = true,
-)
+) {
+    init {
+        require(schemaVersion == BKX_SETTINGS_SCHEMA_VERSION) { "settings schema_version must be $BKX_SETTINGS_SCHEMA_VERSION" }
+    }
+}
 
 interface SettingsStore {
     suspend fun read(): BkxSettings

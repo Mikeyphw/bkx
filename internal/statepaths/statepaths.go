@@ -15,20 +15,24 @@ const (
 	EnvAndroidSharedStateDir = "BKX_ANDROID_SHARED_STATE_DIR"
 	MarkerFilename           = ".bkx-state.json"
 	SharedAndroidRoot        = "/storage/emulated/0/BKX/.state"
-	StateSchemaVersion       = 1
+	StateSchemaVersion       = 2
+	MinimumMarkerSchema      = 1
 )
 
 type Resolution struct {
 	Root   string
 	Source string
 	Shared bool
+	Reason string
 }
 
 type Marker struct {
-	SchemaVersion int    `json:"schema_version"`
-	Kind          string `json:"kind"`
-	CreatedAt     string `json:"created_at,omitempty"`
-	Creator       string `json:"creator,omitempty"`
+	SchemaVersion int      `json:"schema_version"`
+	Kind          string   `json:"kind"`
+	CreatedAt     string   `json:"created_at,omitempty"`
+	Creator       string   `json:"creator,omitempty"`
+	RootID        string   `json:"root_id,omitempty"`
+	Documents     []string `json:"documents,omitempty"`
 }
 
 func LegacyRoot(home string) string {
@@ -37,16 +41,17 @@ func LegacyRoot(home string) string {
 
 func Resolve(home string) Resolution {
 	if explicit := strings.TrimSpace(os.Getenv(EnvStateDir)); explicit != "" {
-		return Resolution{Root: filepath.Clean(explicit), Source: "environment", Shared: !samePath(filepath.Clean(explicit), LegacyRoot(home))}
+		clean := filepath.Clean(explicit)
+		return Resolution{Root: clean, Source: "environment", Shared: !samePath(clean, LegacyRoot(home)), Reason: "explicit-state-dir"}
 	}
 	// Termux and the Android app cannot see one another's private HOME trees.
 	// Once the Android app has initialized the non-secret shared control-plane
 	// marker, the real Termux home automatically converges on the same state.
 	sharedRoot := AndroidSharedRoot()
 	if IsCanonicalTermuxHome(home) && IsSharedAndroidStateInitialized() {
-		return Resolution{Root: sharedRoot, Source: "android-shared-marker", Shared: true}
+		return Resolution{Root: sharedRoot, Source: "android-shared-marker", Shared: true, Reason: "compatible-shared-marker"}
 	}
-	return Resolution{Root: LegacyRoot(home), Source: "home", Shared: false}
+	return Resolution{Root: LegacyRoot(home), Source: "home", Shared: false, Reason: "legacy-home-root"}
 }
 
 func JobStorePath(home string) string {
@@ -81,6 +86,14 @@ func LegacyRepositoryStorePath(home string) string {
 	return filepath.Join(LegacyRoot(home), "repositories", "repositories.json")
 }
 
+func LegacyScheduleStorePath(home string) string {
+	return filepath.Join(LegacyRoot(home), "schedules", "schedules.json")
+}
+
+func LegacyExecutionControlPath(home string) string {
+	return filepath.Join(LegacyRoot(home), "execution", "control.json")
+}
+
 func IsCanonicalTermuxHome(home string) bool {
 	clean := filepath.Clean(strings.TrimSpace(home))
 	return clean == "/data/data/com.termux/files/home" || clean == "/data/user/0/com.termux/files/home"
@@ -95,7 +108,7 @@ func AndroidSharedRoot() string {
 
 func IsSharedAndroidStateInitialized() bool {
 	marker, err := ReadMarker(AndroidSharedRoot())
-	return err == nil && marker.SchemaVersion == StateSchemaVersion && marker.Kind == "bkx-shared-control-plane"
+	return err == nil && ValidateMarker(marker) == nil
 }
 
 func EnsureMarker(root, creator string) error {
@@ -108,25 +121,35 @@ func EnsureMarker(root, creator string) error {
 	}
 	markerPath := filepath.Join(root, MarkerFilename)
 	if existing, err := ReadMarker(root); err == nil {
-		if existing.SchemaVersion != StateSchemaVersion || existing.Kind != "bkx-shared-control-plane" {
-			return fmt.Errorf("unsupported BKX state marker at %s", markerPath)
+		if err := ValidateMarker(existing); err != nil {
+			if existing.SchemaVersion > StateSchemaVersion {
+				return fmt.Errorf("unsupported future BKX state marker at %s", markerPath)
+			}
+			if err := quarantineInvalidMarker(markerPath); err != nil {
+				return err
+			}
+		} else {
+			return nil
 		}
-		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		if err := quarantineInvalidMarker(markerPath); err != nil {
+			return err
+		}
 	}
 	marker := Marker{
 		SchemaVersion: StateSchemaVersion,
 		Kind:          "bkx-shared-control-plane",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
 		Creator:       strings.TrimSpace(creator),
+		RootID:        StableRootID(root),
+		Documents:     []string{"jobs/jobs.json", "repositories/repositories.json", "schedules/schedules.json", "execution/control.json", "runs/runs.jsonl"},
 	}
 	data, err := json.MarshalIndent(marker, "", "  ")
 	if err != nil {
 		return err
 	}
 	data = append(data, '\n')
-	return atomicWrite(markerPath, data, 0o600)
+	return AtomicWriteFile(markerPath, data, 0o600)
 }
 
 func ReadMarker(root string) (Marker, error) {
@@ -140,6 +163,31 @@ func ReadMarker(root string) (Marker, error) {
 		return Marker{}, fmt.Errorf("invalid BKX state marker: %w", err)
 	}
 	return marker, nil
+}
+
+func ValidateMarker(marker Marker) error {
+	if marker.Kind != "bkx-shared-control-plane" {
+		return fmt.Errorf("unsupported BKX state marker kind %q", marker.Kind)
+	}
+	if marker.SchemaVersion < MinimumMarkerSchema || marker.SchemaVersion > StateSchemaVersion {
+		return fmt.Errorf("unsupported BKX state marker schema_version %d", marker.SchemaVersion)
+	}
+	return nil
+}
+
+func StableRootID(root string) string {
+	clean := filepath.Clean(strings.TrimSpace(root))
+	return strings.NewReplacer(string(filepath.Separator), "-", ":", "-", " ", "-").Replace(clean)
+}
+
+func quarantineInvalidMarker(markerPath string) error {
+	if _, err := os.Stat(markerPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	name := markerPath + ".invalid-" + time.Now().UTC().Format("20060102T150405.000000000Z")
+	return os.Rename(markerPath, name)
 }
 
 // SeedLegacyFile moves no data destructively. When the canonical shared store
@@ -165,14 +213,14 @@ func SeedLegacyFile(canonical, legacy string) error {
 	if err != nil {
 		return err
 	}
-	return atomicWrite(canonical, data, 0o600)
+	return AtomicWriteFile(canonical, data, 0o600)
 }
 
 func samePath(a, b string) bool {
 	return filepath.Clean(a) == filepath.Clean(b)
 }
 
-func atomicWrite(path string, data []byte, mode os.FileMode) error {
+func AtomicWriteFile(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
@@ -205,6 +253,10 @@ func atomicWrite(path string, data []byte, mode os.FileMode) error {
 	if err := os.Rename(tmp, path); err != nil {
 		cleanup()
 		return err
+	}
+	if d, err := os.Open(dir); err == nil {
+		_ = d.Sync()
+		_ = d.Close()
 	}
 	return nil
 }

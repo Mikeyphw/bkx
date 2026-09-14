@@ -45,3 +45,10 @@ class BR27SavedJobSchedulerContractTest {
         assertEquals(525_600L, BkxSavedJobScheduler.MAX_INTERVAL_MINUTES)
     }
 }
+
+class BR34SchedulerSchemaContractTest {
+    @Test
+    fun schedulerReadsCurrentSavedJobStoreSchemaVersion() {
+        assertEquals(com.mikeyphw.bkx.android.core.jobs.SAVED_JOB_SCHEMA_VERSION, 2)
+    }
+}

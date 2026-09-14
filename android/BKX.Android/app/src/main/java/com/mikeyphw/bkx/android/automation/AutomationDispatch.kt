@@ -31,31 +31,33 @@ class AutomationDispatchStore(context: Context) {
     private val json = Json { ignoreUnknownKeys = true }
 
     @SuppressLint("ApplySharedPref")
-    fun put(dispatch: AutomationDispatch) {
-        val ids = pendingIds().toMutableList().apply { remove(dispatch.dispatchId); add(dispatch.dispatchId) }
+    fun put(dispatch: AutomationDispatch) = synchronized(dispatchLock) {
+        val ids = pendingIdsLocked().toMutableList().apply { remove(dispatch.dispatchId); add(dispatch.dispatchId) }
         preferences.edit(commit = true) {
             putString(dispatch.dispatchId, json.encodeToString(dispatch))
             putString(KEY_INDEX, ids.joinToString("\n"))
         }
     }
 
-    fun read(dispatchId: String): AutomationDispatch? = preferences.getString(dispatchId, null)?.let { encoded ->
-        runCatching { json.decodeFromString<AutomationDispatch>(encoded) }.getOrNull()
+    fun read(dispatchId: String): AutomationDispatch? = synchronized(dispatchLock) {
+        preferences.getString(dispatchId, null)?.let { encoded ->
+            runCatching { json.decodeFromString<AutomationDispatch>(encoded) }.getOrNull()
+        }
     }
 
-    fun pendingIds(): List<String> = preferences.getString(KEY_INDEX, "").orEmpty().lineSequence().filter(String::isNotBlank).distinct().toList()
+    fun pendingIds(): List<String> = synchronized(dispatchLock) { pendingIdsLocked() }
 
     @SuppressLint("ApplySharedPref")
-    fun markDeliveryStarted(dispatchId: String): Boolean {
+    fun markDeliveryStarted(dispatchId: String): Boolean = synchronized(dispatchLock) {
         val key = "delivery_started:$dispatchId"
-        if (preferences.getBoolean(key, false)) return false
+        if (preferences.getBoolean(key, false)) return@synchronized false
         preferences.edit(commit = true) { putBoolean(key, true) }
-        return true
+        true
     }
 
     @SuppressLint("ApplySharedPref")
-    fun remove(dispatchId: String) {
-        val ids = pendingIds().filterNot { it == dispatchId }
+    fun remove(dispatchId: String) = synchronized(dispatchLock) {
+        val ids = pendingIdsLocked().filterNot { it == dispatchId }
         preferences.edit(commit = true) {
             remove(dispatchId)
             remove("delivery_started:$dispatchId")
@@ -64,8 +66,8 @@ class AutomationDispatchStore(context: Context) {
     }
 
     @SuppressLint("ApplySharedPref")
-    fun clear(): Int {
-        val ids = pendingIds()
+    fun clear(): Int = synchronized(dispatchLock) {
+        val ids = pendingIdsLocked()
         preferences.edit(commit = true) {
             ids.forEach { id ->
                 remove(id)
@@ -73,12 +75,20 @@ class AutomationDispatchStore(context: Context) {
             }
             putString(KEY_INDEX, "")
         }
-        return ids.size
+        ids.size
     }
+
+    private fun pendingIdsLocked(): List<String> = preferences.getString(KEY_INDEX, "")
+        .orEmpty()
+        .lineSequence()
+        .filter(String::isNotBlank)
+        .distinct()
+        .toList()
 
     private companion object {
         const val PREFERENCES_NAME = "bkx_automation_dispatch"
         const val KEY_INDEX = "dispatch_index"
+        val dispatchLock = Any()
     }
 }
 

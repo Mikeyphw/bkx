@@ -46,9 +46,9 @@ object BkxControlPlaneRootResolver {
         if (sharedAllowed && !marker.exists()) {
             runCatching {
                 shared.mkdirs()
-                marker.writeText(
-                    """{"schema_version":1,"kind":"${BkxSharedStateContract.MARKER_KIND}","creator":"android"}""" + "\n",
-                    Charsets.UTF_8,
+                BkxAtomicFilePublisher.publishText(
+                    marker,
+                    """{"schema_version":${BkxSharedStateContract.SCHEMA_VERSION},"kind":"${BkxSharedStateContract.MARKER_KIND}","creator":"android","documents":["jobs/jobs.json","repositories/repositories.json","schedules/schedules.json","execution/control.json","runs/runs.jsonl"]}""" + "\n",
                 )
             }
             if (marker.isFile && marker.canRead() && marker.length() in 1..MAX_MARKER_BYTES && markerIsValid(marker)) {
@@ -80,7 +80,8 @@ object BkxControlPlaneRootResolver {
 
     private fun markerIsValid(marker: File): Boolean = runCatching {
         val element = json.parseToJsonElement(marker.readText(Charsets.UTF_8)).jsonObject
-        element["schema_version"]?.jsonPrimitive?.content == "1" &&
+        val schema = element["schema_version"]?.jsonPrimitive?.content?.toIntOrNull() ?: return@runCatching false
+        schema in BkxSharedStateContract.MIN_SCHEMA_VERSION..BkxSharedStateContract.SCHEMA_VERSION &&
             element["kind"]?.jsonPrimitive?.content == BkxSharedStateContract.MARKER_KIND
     }.getOrDefault(false)
 

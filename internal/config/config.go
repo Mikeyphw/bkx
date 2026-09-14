@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -83,14 +84,28 @@ func Defaults() Config {
 }
 
 func FromMap(data map[string]any, baseDir string) (Config, error) {
+	home, _ := os.UserHomeDir()
+	return fromMapWithHome(data, baseDir, home)
+}
+
+func fromMapWithHome(data map[string]any, baseDir, home string) (Config, error) {
 	c := Defaults()
+	unknown := make([]string, 0)
+	keys := make([]string, 0, len(data))
 	for key := range data {
+		keys = append(keys, key)
 		if _, ok := publicFields[key]; !ok {
-			return Config{}, berror.Validation("Unknown BKX configuration key(s)", map[string]any{"keys": []string{key}})
+			unknown = append(unknown, key)
 		}
 	}
-	for key, value := range data {
-		if err := c.setFileValue(key, value, baseDir); err != nil {
+	sort.Strings(keys)
+	if len(unknown) > 0 {
+		sort.Strings(unknown)
+		return Config{}, berror.Validation("Unknown BKX configuration key(s)", map[string]any{"keys": unknown})
+	}
+	for _, key := range keys {
+		value := data[key]
+		if err := c.setFileValueWithHome(key, value, baseDir, home); err != nil {
 			return Config{}, err
 		}
 		c.provenance[key] = SourceFile
@@ -101,7 +116,13 @@ func FromMap(data map[string]any, baseDir string) (Config, error) {
 
 func FromEnv(environ map[string]string, cwd string) (Config, error) {
 	c := Defaults()
-	for envName, field := range envMap {
+	envNames := make([]string, 0, len(envMap))
+	for envName := range envMap {
+		envNames = append(envNames, envName)
+	}
+	sort.Strings(envNames)
+	for _, envName := range envNames {
+		field := envMap[envName]
 		raw, ok := environ[envName]
 		if !ok {
 			continue
@@ -130,13 +151,13 @@ func Load(cwd, home string, environ map[string]string) (Config, error) {
 			return Config{}, berror.External("System error reading BKX configuration: "+path, map[string]any{"path": path, "reason": err.Error()})
 		}
 		if info.IsDir() {
-			continue
+			return Config{}, berror.Validation("BKX configuration path is a directory: "+path, map[string]any{"path": path})
 		}
 		data, err := parseFlatYAML(path)
 		if err != nil {
 			return Config{}, berror.Validation("Failed to parse BKX configuration: "+path, map[string]any{"path": path, "reason": err.Error()})
 		}
-		fileConfig, err := FromMap(data, filepath.Dir(path))
+		fileConfig, err := fromMapWithHome(data, filepath.Dir(path), home)
 		if err != nil {
 			return Config{}, err
 		}
@@ -198,6 +219,11 @@ func (c Config) ToolPreferences() map[string]*string {
 }
 
 func (c *Config) setFileValue(field string, value any, baseDir string) error {
+	home, _ := os.UserHomeDir()
+	return c.setFileValueWithHome(field, value, baseDir, home)
+}
+
+func (c *Config) setFileValueWithHome(field string, value any, baseDir, home string) error {
 	switch field {
 	case "default_destination":
 		if value == nil {
@@ -208,7 +234,7 @@ func (c *Config) setFileValue(field string, value any, baseDir string) error {
 		if !ok {
 			return typeError(field, "path string or null", value)
 		}
-		path, err := normalizePath(s, baseDir)
+		path, err := normalizePathWithHome(s, baseDir, home)
 		if err != nil {
 			return err
 		}
@@ -312,11 +338,18 @@ func parseBool(raw, name string) (bool, error) {
 }
 
 func normalizePath(raw, baseDir string) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = ""
+	}
+	return normalizePathWithHome(raw, baseDir, home)
+}
+
+func normalizePathWithHome(raw, baseDir, home string) (string, error) {
 	value := strings.TrimSpace(raw)
 	if strings.HasPrefix(value, "~") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
+		if strings.TrimSpace(home) == "" {
+			return "", berror.Validation("home directory is required to expand ~ in BKX configuration path", map[string]any{"path": raw})
 		}
 		if value == "~" {
 			value = home

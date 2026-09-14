@@ -12,4 +12,7 @@ object BkxSharedStateContract {
     const val MARKER = ".bkx-state.json"
     const val ENVIRONMENT = "BKX_STATE_DIR"
     const val MARKER_KIND = "bkx-shared-control-plane"
+    const val SCHEMA_VERSION = 2
+    const val MIN_SCHEMA_VERSION = 1
 }
+

@@ -10,6 +10,7 @@ import android.os.PersistableBundle
 import androidx.core.content.edit
 import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
+import com.mikeyphw.bkx.android.core.jobs.SAVED_JOB_SCHEMA_VERSION
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.core.jobs.SavedJobStoreDocument
@@ -102,7 +103,7 @@ object BkxSavedJobScheduler {
         val encoded = BkxControlPlaneRootResolver.readBoundedDocument(source) ?: return emptyList()
         return runCatching {
             val document = json.decodeFromString<SavedJobStoreDocument>(encoded)
-            require(document.schemaVersion == 1) { "Unsupported BKX jobs schema." }
+            require(document.schemaVersion == SAVED_JOB_SCHEMA_VERSION) { "Unsupported BKX jobs schema." }
             document.jobs.take(BkxControlPlaneRootResolver.MAX_CONTROL_PLANE_ITEMS)
         }.getOrDefault(emptyList())
     }

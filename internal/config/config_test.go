@@ -1,9 +1,13 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"bkx/internal/berror"
 )
 
 func TestDefaultsMatchFrozenContract(t *testing.T) {
@@ -70,5 +74,39 @@ func TestResolveCLIWins(t *testing.T) {
 	}
 	if got.Source != SourceCLI || got.Value != 11 {
 		t.Fatalf("resolved=%#v", got)
+	}
+}
+
+func TestBR34ConfigErrorsAreDeterministicAndDirectoriesAreErrors(t *testing.T) {
+	_, err := FromMap(map[string]any{"zzz": true, "aaa": false}, t.TempDir())
+	if err == nil || !strings.Contains(err.Error(), "Unknown BKX configuration") {
+		t.Fatalf("expected unknown key error, got %v", err)
+	}
+	var coded *berror.Error
+	if !errors.As(err, &coded) {
+		t.Fatalf("expected typed error, got %T", err)
+	}
+	keys, ok := coded.Details["keys"].([]string)
+	if !ok || len(keys) != 2 || keys[0] != "aaa" || keys[1] != "zzz" {
+		t.Fatalf("unknown keys not deterministic: %#v", coded.Details["keys"])
+	}
+
+	cwd := t.TempDir()
+	if err := os.Mkdir(filepath.Join(cwd, ".bkx.yaml"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(cwd, t.TempDir(), map[string]string{}); err == nil {
+		t.Fatal("expected config-directory error")
+	}
+}
+
+func TestBR34ConfigTildeExpansionUsesSuppliedHome(t *testing.T) {
+	home := filepath.Join(t.TempDir(), "home")
+	cfg, err := fromMapWithHome(map[string]any{"default_destination": "~/bkx"}, t.TempDir(), home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultDestination == nil || *cfg.DefaultDestination != filepath.Join(home, "bkx") {
+		t.Fatalf("destination=%v want %s", cfg.DefaultDestination, filepath.Join(home, "bkx"))
 	}
 }

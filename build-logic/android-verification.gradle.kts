@@ -2286,3 +2286,61 @@ tasks.register("verifyBkxCliRepositorySnapshotTransferJobsDomainSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxCliRepositorySnapshotTransferJobsDomainSeal")
 }
+
+tasks.register("verifyBkxPersistenceSettingsMigrationSeal") {
+    group = "verification"
+    description = "Verifies BR34 persistence, settings, migration, shared-root, and atomic-publication contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val statepaths = repositoryRoot.resolve("internal/statepaths/statepaths.go").readText()
+        val config = repositoryRoot.resolve("internal/config/config.go").readText()
+        val scheduleStore = repositoryRoot.resolve("internal/schedulestore/store.go").readText()
+        val rcloneRuntime = repositoryRoot.resolve("internal/rcloneops/runtime.go").readText()
+        val sharedContract = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/state/BkxSharedStateContract.kt").readText()
+        val rootResolver = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/state/BkxControlPlaneRootResolver.kt").readText()
+        val atomicPublisher = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/state/BkxAtomicFilePublisher.kt").readText()
+        val embeddedBackend = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/embedded/EmbeddedBkxBackend.kt").readText()
+        val scheduler = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/automation/BkxSavedJobScheduler.kt").readText()
+        val dispatch = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/automation/AutomationDispatch.kt").readText()
+        val settings = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/settings/BkxSettings.kt").readText()
+        val viewModel = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt").readText()
+        val doc = repositoryRoot.resolve("BR34_PERSISTENCE_SETTINGS_MIGRATION_SEAL.md")
+        check(statepaths.contains("StateSchemaVersion       = 2") && statepaths.contains("ValidateMarker") && statepaths.contains("quarantineInvalidMarker") && statepaths.contains("AtomicWriteFile")) {
+            "BR34 state marker compatibility/recovery/atomic write contract is missing."
+        }
+        check(statepaths.contains("LegacyScheduleStorePath") && scheduleStore.contains("LegacyPath") && scheduleStore.contains("SeedLegacyFile") && scheduleStore.contains("normalizeLegacyDocument")) {
+            "BR34 schedule shared-state migration/legacy seed contract is missing."
+        }
+        check(config.contains("sort.Strings(keys)") && config.contains("sort.Strings(envNames)") && config.contains("configuration path is a directory") && config.contains("normalizePathWithHome")) {
+            "BR34 deterministic config parsing/root-normalization contract is missing."
+        }
+        check(rcloneRuntime.contains("func (r Runtime) Configured() bool") && rcloneRuntime.contains("len(names) > 0") && rcloneRuntime.contains("BKX rclone config path is not configured")) {
+            "BR34 rclone configured truth contract is missing."
+        }
+        check(sharedContract.contains("SCHEMA_VERSION = 2") && sharedContract.contains("MIN_SCHEMA_VERSION = 1") && rootResolver.contains("BkxAtomicFilePublisher.publishText") && rootResolver.contains("MIN_SCHEMA_VERSION..BkxSharedStateContract.SCHEMA_VERSION")) {
+            "BR34 Android shared-state marker schema/atomic creation contract is missing."
+        }
+        check(atomicPublisher.contains("Direct overwrite") && atomicPublisher.contains("if (!temp.renameTo(target))") && !embeddedBackend.contains("target.writeText(content)")) {
+            "BR34 embedded request/result atomic publication contract is missing."
+        }
+        check(scheduler.contains("SAVED_JOB_SCHEMA_VERSION") && dispatch.contains("synchronized(dispatchLock)") && settings.contains("BKX_SETTINGS_SCHEMA_VERSION") && viewModel.contains("operationFeedbackByRequest")) {
+            "BR34 Android scheduler/dispatch/settings/request-feedback persistence contract is missing."
+        }
+        listOf(
+            repositoryRoot.resolve("internal/statepaths/statepaths_test.go"),
+            repositoryRoot.resolve("internal/config/config_test.go"),
+            repositoryRoot.resolve("internal/schedulestore/store_test.go"),
+            repositoryRoot.resolve("internal/rcloneops/runtime_test.go"),
+            repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/core/state/BkxSharedStateContractTest.kt"),
+            repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/automation/BkxSavedJobSchedulerContractTest.kt")
+        ).forEach { file -> check(file.isFile) { "BR34 contract test missing: ${file.name}" } }
+        check(doc.isFile && doc.readText().contains("Overlay 14 of 16")) {
+            "BR34 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxPersistenceSettingsMigrationSeal")
+}

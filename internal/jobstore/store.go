@@ -227,39 +227,7 @@ func (s *Store) writeUnlocked(doc document) error {
 		return berror.Validation("saved jobs must be JSON serializable", map[string]any{"reason": err.Error()})
 	}
 	data = append(data, '\n')
-	dir := filepath.Dir(s.Path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, "."+filepath.Base(s.Path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.Path); err != nil {
-		return err
-	}
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
+	return statepaths.AtomicWriteFile(s.Path, data, 0o600)
 }
 
 func cloneJob(job models.SavedJob) models.SavedJob {

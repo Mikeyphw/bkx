@@ -137,3 +137,21 @@ func TestConfiguredRemoteNamesIgnoreUnsafeSections(t *testing.T) {
 		t.Fatalf("names=%v", names)
 	}
 }
+
+func TestBR34ConfiguredRequiresAUsableRemoteSection(t *testing.T) {
+	runtime, _ := fakeRuntime(t)
+	empty := filepath.Join(t.TempDir(), "rclone.conf")
+	if err := os.WriteFile(empty, []byte("# comments only\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runtime.Config = empty
+	if runtime.Configured() {
+		t.Fatal("comments-only config must not be treated as configured")
+	}
+	if err := os.WriteFile(empty, []byte("[drive]\ntype = drive\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !runtime.Configured() {
+		t.Fatal("remote section should be configured")
+	}
+}

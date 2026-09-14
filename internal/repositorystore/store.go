@@ -166,34 +166,8 @@ func (s *Store) writeUnlocked(doc document) error {
 		return berror.Validation("repositories must be JSON serializable", map[string]any{"reason": err.Error()})
 	}
 	data = append(data, '\n')
-	dir := filepath.Dir(s.Path)
-	f, err := os.CreateTemp(dir, "."+filepath.Base(s.Path)+".*.tmp")
-	if err != nil {
-		return berror.WrapExternal("creating repository store temporary file", dir, "filesystem", err)
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.Path); err != nil {
+	if err := statepaths.AtomicWriteFile(s.Path, data, 0o600); err != nil {
 		return berror.WrapExternal("publishing repository store", s.Path, "filesystem", err)
-	}
-	if d, err := os.Open(dir); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
 	}
 	return nil
 }

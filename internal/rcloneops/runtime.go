@@ -73,11 +73,15 @@ func Available() bool {
 
 func Configured() bool {
 	runtime, err := RuntimeFromEnvironment()
-	if err != nil || runtime.Config == "" {
+	if err != nil {
 		return false
 	}
-	info, err := os.Stat(runtime.Config)
-	return err == nil && !info.IsDir() && info.Size() > 0
+	return runtime.Configured()
+}
+
+func (r Runtime) Configured() bool {
+	names, err := r.ConfiguredRemoteNames()
+	return err == nil && len(names) > 0
 }
 
 func (r Runtime) Probe(ctx context.Context) (RuntimeInfo, error) {
@@ -117,7 +121,7 @@ func (r Runtime) requireConfigForRemote(values ...string) error {
 
 func (r Runtime) ConfiguredRemoteNames() (map[string]bool, error) {
 	if r.Config == "" {
-		return nil, nil
+		return nil, fmt.Errorf("BKX rclone config path is not configured")
 	}
 	info, err := os.Stat(r.Config)
 	if err != nil || info.IsDir() || info.Size() == 0 {

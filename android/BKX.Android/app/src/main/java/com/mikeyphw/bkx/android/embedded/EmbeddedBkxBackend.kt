@@ -1,7 +1,5 @@
 package com.mikeyphw.bkx.android.embedded
 
-import android.os.Process
-
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.backend.BackendSubmission
@@ -12,6 +10,7 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeRequestFiles
 import com.mikeyphw.bkx.android.core.bridge.BridgeResultEnvelope
 import java.io.File
 import java.io.IOException
+import com.mikeyphw.bkx.android.core.state.BkxAtomicFilePublisher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -122,17 +121,7 @@ class EmbeddedBkxBackend(
         if (!parent.exists() && !parent.mkdirs()) {
             throw IOException("Could not create embedded request directory: ${parent.absolutePath}")
         }
-        val temp = File(
-            parent,
-            ".${target.name}.tmp-${Process.myPid()}-${Process.myTid()}-${System.nanoTime().toString(16)}",
-        )
-        temp.writeText(content)
-        if (!temp.renameTo(target)) {
-            target.writeText(content)
-            if (!temp.delete() && temp.exists()) {
-                throw IOException("Could not remove temporary embedded result file: ${temp.absolutePath}")
-            }
-        }
+        BkxAtomicFilePublisher.publishText(target, content)
     }
 
     private companion object {

@@ -244,40 +244,7 @@ func (s *Store) writeUnlocked(records []models.RunRecord) error {
 		out.Write(data)
 		out.WriteByte('\n')
 	}
-	dir := filepath.Dir(s.Path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	f, err := os.CreateTemp(dir, "."+filepath.Base(s.Path)+".*.tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(out.Bytes()); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.Path); err != nil {
-		return err
-	}
-	d, err := os.Open(dir)
-	if err == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
+	return statepaths.AtomicWriteFile(s.Path, out.Bytes(), 0o600)
 }
 
 func (s *Store) applyRetention(records []models.RunRecord) []models.RunRecord {

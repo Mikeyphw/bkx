@@ -38,9 +38,14 @@ type document struct {
 	Schedules     []Schedule `json:"schedules"`
 }
 
-type Store struct{ Path string }
+type Store struct {
+	Path       string
+	LegacyPath string
+}
 
-func Default(home string) *Store  { return &Store{Path: statepaths.ScheduleStorePath(home)} }
+func Default(home string) *Store {
+	return &Store{Path: statepaths.ScheduleStorePath(home), LegacyPath: statepaths.LegacyScheduleStorePath(home)}
+}
 func (s *Store) LockPath() string { return s.Path + ".lock" }
 
 func Validate(v Schedule) error {
@@ -227,6 +232,11 @@ func (s *Store) readDocument(fn func(*document) error) error {
 		return err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if strings.TrimSpace(s.LegacyPath) != "" {
+		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
+			return berror.WrapExternal("seeding shared schedules from legacy state", s.LegacyPath, "filesystem", err)
+		}
+	}
 	doc := document{SchemaVersion: SchemaVersion, Schedules: []Schedule{}}
 	if data, err := os.ReadFile(s.Path); err == nil {
 		if err := json.Unmarshal(data, &doc); err != nil {
@@ -235,14 +245,26 @@ func (s *Store) readDocument(fn func(*document) error) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if doc.Schedules == nil {
-		doc.Schedules = []Schedule{}
-	}
-	stampLegacyScheduleRevisions(&doc)
+	normalizeLegacyDocument(&doc)
 	if err := validateDocument(doc); err != nil {
 		return err
 	}
 	return fn(&doc)
+}
+
+func normalizeLegacyDocument(doc *document) {
+	if doc.SchemaVersion == 0 {
+		doc.SchemaVersion = SchemaVersion
+	}
+	if doc.Schedules == nil {
+		doc.Schedules = []Schedule{}
+	}
+	for i := range doc.Schedules {
+		if doc.Schedules[i].SchemaVersion == 0 {
+			doc.Schedules[i].SchemaVersion = SchemaVersion
+		}
+	}
+	stampLegacyScheduleRevisions(doc)
 }
 
 func stampLegacyScheduleRevisions(doc *document) {
@@ -266,21 +288,20 @@ func (s *Store) withDocument(fn func(*document) error) error {
 		return err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	if strings.TrimSpace(s.LegacyPath) != "" {
+		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
+			return berror.WrapExternal("seeding shared schedules from legacy state", s.LegacyPath, "filesystem", err)
+		}
+	}
 	doc := document{SchemaVersion: SchemaVersion, Schedules: []Schedule{}}
 	if data, err := os.ReadFile(s.Path); err == nil {
 		if err := json.Unmarshal(data, &doc); err != nil {
 			return fmt.Errorf("invalid schedule store: %w", err)
 		}
-		if err := validateDocument(doc); err != nil {
-			return err
-		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	if doc.Schedules == nil {
-		doc.Schedules = []Schedule{}
-	}
-	stampLegacyScheduleRevisions(&doc)
+	normalizeLegacyDocument(&doc)
 	if err := fn(&doc); err != nil {
 		return err
 	}
@@ -295,35 +316,7 @@ func (s *Store) withDocument(fn func(*document) error) error {
 		return err
 	}
 	data = append(data, '\n')
-	f, err := os.CreateTemp(filepath.Dir(s.Path), ".schedules.*.tmp")
-	if err != nil {
-		return err
-	}
-	tmp := f.Name()
-	defer os.Remove(tmp)
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return err
-	}
-	if _, err := f.Write(data); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, s.Path); err != nil {
-		return err
-	}
-	if d, err := os.Open(filepath.Dir(s.Path)); err == nil {
-		_ = d.Sync()
-		_ = d.Close()
-	}
-	return nil
+	return statepaths.AtomicWriteFile(s.Path, data, 0o600)
 }
 
 func validateDocument(doc document) error {

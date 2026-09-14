@@ -120,12 +120,26 @@ func isEmptyRenderValue(value any) bool {
 }
 
 func formatTextValue(value any) string {
-	switch value.(type) {
-	case map[string]any, []any:
-		data, _ := json.Marshal(value)
-		return string(data)
+	if formatted, ok := formatCollectionTextValue(value); ok {
+		return formatted
+	}
+	return fmt.Sprint(value)
+}
+
+func formatCollectionTextValue(value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	rv := reflect.ValueOf(value)
+	switch rv.Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		data, err := json.Marshal(value)
+		if err != nil {
+			return fmt.Sprint(value), true
+		}
+		return string(data), true
 	default:
-		return fmt.Sprint(value)
+		return "", false
 	}
 }
 

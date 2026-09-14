@@ -3,7 +3,18 @@ set -euo pipefail
 repo="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 out_root="${1:?usage: build-go-android-runtime.sh OUTPUT_JNILIBS_DIR}"
 out="$out_root/arm64-v8a/libbkxgo.so"
-commit="${BKX_BUILD_COMMIT:-dev}"
+commit="${BKX_BUILD_COMMIT:-}"
+if [[ -z "$commit" ]]; then
+  if git -C "$repo" rev-parse --short=12 HEAD >/dev/null 2>&1; then
+    commit="$(git -C "$repo" rev-parse --short=12 HEAD)"
+  else
+    commit="unknown"
+  fi
+fi
+if [[ "$commit" == "dev" || "$commit" == "unknown" ]]; then
+  echo "BKX_BUILD_COMMIT must be a real Git revision for Android runtime packaging" >&2
+  exit 64
+fi
 mkdir -p "$(dirname -- "$out")"
 tmp="$(mktemp "${TMPDIR:-/tmp}/bkx-go-android-runtime.XXXXXX")"
 trap 'rm -f "$tmp"' EXIT HUP INT TERM

@@ -30,8 +30,11 @@ devtool -r ~/Code/bkx --target bkx_android validate \
   --task :app:verifyBkxAndroidSigningPlaceholders \
   --task :app:verifyBkxPersonalSigningContract \
   --task :app:verifyBkxAndroidReleaseDocs \
+  --task :app:verifyBkxReleasePackagingSigningNativeRuntimeSeal \
+  --task :app:verifyBkxReleaseMergedManifestContract \
   --task :app:testDebugUnitTest \
   --task :app:lintDebug \
+  --task :app:lintRelease \
   --task :app:assembleDebug \
   --task :app:assembleDebugAndroidTest \
   --task :app:assembleRelease
@@ -45,6 +48,21 @@ scripts/validate.sh
 ```
 
 `verifyBkxCloudProductReleaseSeal` is the Android-side OV1–OV6 evidence gate. It requires the structured rclone contract, first-class Google Drive product contract, restore/progress safety gates, roadmap matrix, acceptance checklists, and current verifier scripts.
+
+## BR35 release packaging/signing/native runtime seal
+
+`verifyBkxReleasePackagingSigningNativeRuntimeSeal` is the deployability gate for BR35. It verifies that release APKs are minified/resource-shrunk, release lint is part of the validation lane, the merged release manifest is inspected after Android manifest merging, native 16 KiB validation runs in the packaging phase rather than cheap preflight, and the generated Go runtime is stamped with a real Git commit through `BKX_BUILD_COMMIT`.
+
+The physical-device lane can now qualify the exact release APK that will be installed:
+
+```bash
+cd ~/Code/bkx/android/BKX.Android
+./scripts/qualify-device.sh \
+  --release-apk app/build/outputs/apk/release/app-release.apk \
+  --android-test-apk app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+```
+
+This records the installed package path, `dumpsys package` evidence, APK SHA-256, and screenshots under `artifacts/qualification-screenshots`.
 
 ## Google Drive release setup
 

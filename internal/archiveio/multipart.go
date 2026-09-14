@@ -1,12 +1,36 @@
 package archiveio
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
+
+const multipartManifestSchemaVersion = 1
+
+type MultipartManifestPart struct {
+	Index  int    `json:"index"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	SHA256 string `json:"sha256"`
+}
+
+type MultipartManifest struct {
+	SchemaVersion int                     `json:"schema_version"`
+	ArchiveBase   string                  `json:"archive_base"`
+	PartCount     int                     `json:"part_count"`
+	TotalBytes    int64                   `json:"total_bytes"`
+	CreatedAt     string                  `json:"created_at"`
+	Parts         []MultipartManifestPart `json:"parts"`
+}
+
+func multipartManifestPath(base string) string { return base + ".bkx-parts.json" }
 
 // BKX split archives keep the logical archive at base and append additional
 // byte-range parts as base.part002, base.part003, ... . Concatenating the
@@ -21,6 +45,11 @@ func multipartPartName(base string, index int) string {
 }
 
 func multipartPartPaths(base string) ([]string, error) {
+	if manifest, err := readMultipartManifest(base); err == nil {
+		return manifestPartPaths(base, manifest)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
 	if err := validateMultipartPart(base); err != nil {
 		return nil, err
 	}
@@ -37,6 +66,69 @@ func multipartPartPaths(base string) ([]string, error) {
 			return nil, err
 		}
 		parts = append(parts, path)
+	}
+	return parts, nil
+}
+
+func readMultipartManifest(base string) (MultipartManifest, error) {
+	path := multipartManifestPath(base)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return MultipartManifest{}, os.ErrNotExist
+		}
+		return MultipartManifest{}, err
+	}
+	var manifest MultipartManifest
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		return MultipartManifest{}, fmt.Errorf("invalid archive part manifest %s: %w", path, err)
+	}
+	return manifest, nil
+}
+
+func manifestPartPaths(base string, manifest MultipartManifest) ([]string, error) {
+	if manifest.SchemaVersion != multipartManifestSchemaVersion {
+		return nil, fmt.Errorf("unsupported archive part manifest schema %d", manifest.SchemaVersion)
+	}
+	if manifest.ArchiveBase != filepath.Base(base) {
+		return nil, fmt.Errorf("archive part manifest belongs to %s, not %s", manifest.ArchiveBase, filepath.Base(base))
+	}
+	if manifest.PartCount < 1 || manifest.PartCount != len(manifest.Parts) {
+		return nil, fmt.Errorf("archive part manifest part count mismatch")
+	}
+	parts := make([]string, 0, len(manifest.Parts))
+	dir := filepath.Dir(base)
+	var total int64
+	for expected, part := range manifest.Parts {
+		if part.Index != expected+1 || part.Name == "" || filepath.Base(part.Name) != part.Name {
+			return nil, fmt.Errorf("archive part manifest contains invalid part %d", expected+1)
+		}
+		path := filepath.Join(dir, part.Name)
+		if err := validateMultipartPart(path); err != nil {
+			return nil, err
+		}
+		if part.Index == 1 && path != base {
+			return nil, fmt.Errorf("archive part manifest first part is not the base archive")
+		}
+		st, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		if st.Size() != part.Size {
+			return nil, fmt.Errorf("archive part manifest size mismatch for %s", path)
+		}
+		sum, err := sha256File(path)
+		if err != nil {
+			return nil, err
+		}
+		if sum != part.SHA256 {
+			return nil, fmt.Errorf("archive part manifest checksum mismatch for %s", path)
+		}
+		total += st.Size()
+		parts = append(parts, path)
+	}
+	if total != manifest.TotalBytes {
+		return nil, fmt.Errorf("archive part manifest total size mismatch")
 	}
 	return parts, nil
 }
@@ -278,6 +370,76 @@ func multipartFinalPaths(base string, count int) []string {
 		out = append(out, multipartPartName(base, index))
 	}
 	return out
+}
+
+func writeMultipartManifest(base string, parts []string, totalBytes int64) (string, error) {
+	if len(parts) < 2 {
+		return "", nil
+	}
+	manifest := MultipartManifest{
+		SchemaVersion: multipartManifestSchemaVersion,
+		ArchiveBase:   filepath.Base(base),
+		PartCount:     len(parts),
+		TotalBytes:    totalBytes,
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339Nano),
+		Parts:         make([]MultipartManifestPart, 0, len(parts)),
+	}
+	for index, path := range parts {
+		st, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		sum, err := sha256File(path)
+		if err != nil {
+			return "", err
+		}
+		manifest.Parts = append(manifest.Parts, MultipartManifestPart{Index: index + 1, Name: filepath.Base(path), Size: st.Size(), SHA256: sum})
+	}
+	payload, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	payload = append(payload, '\n')
+	manifestPath := multipartManifestPath(base)
+	f, err := os.OpenFile(manifestPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		if os.IsExist(err) {
+			return "", fmt.Errorf("archive part manifest already exists: %s", manifestPath)
+		}
+		return "", err
+	}
+	keep := false
+	defer func() {
+		_ = f.Close()
+		if !keep {
+			_ = os.Remove(manifestPath)
+		}
+	}()
+	if _, err := f.Write(payload); err != nil {
+		return "", err
+	}
+	if err := f.Sync(); err != nil {
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	keep = true
+	_ = syncDirLocal(filepath.Dir(base))
+	return manifestPath, nil
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // publishMultipart makes sidecars visible before the logical base path and

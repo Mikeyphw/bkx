@@ -2344,3 +2344,156 @@ tasks.register("verifyBkxPersistenceSettingsMigrationSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxPersistenceSettingsMigrationSeal")
 }
+
+tasks.register("verifyBkxReleaseMergedManifestContract") {
+    group = "verification"
+    description = "Verify the final merged release manifest instead of only source AndroidManifest.xml."
+    dependsOn("processReleaseMainManifest")
+    val mergedManifest = layout.buildDirectory.file("intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml")
+    inputs.file(mergedManifest)
+    doLast {
+        val manifestFile = mergedManifest.get().asFile
+        check(manifestFile.isFile) { "Missing merged release manifest: ${manifestFile.absolutePath}" }
+        val manifest = manifestFile.readText()
+        val required = listOf(
+            "android.permission.INTERNET",
+            "android.permission.POST_NOTIFICATIONS",
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
+            "com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService",
+            "android:foregroundServiceType=\"dataSync\"",
+            "android:allowBackup=\"false\"",
+            "android:fullBackupContent=\"false\"",
+        )
+        val missing = required.filterNot { it in manifest }
+        check(missing.isEmpty()) {
+            "Merged release manifest is missing BKX release markers: ${missing.joinToString()}"
+        }
+    }
+}
+
+tasks.register("bkxAndroidReleasePreflightSeal") {
+    group = "verification"
+    description = "Stage 1 BKX release gate: static source, dependency lane, docs, signing placeholders and contracts."
+    dependsOn(
+        "verifyBkxAndroidSdk36DependencyLane",
+        "verifyBkxEmbeddedEngineContract",
+        "verifyBkxRootStorageContract",
+        "verifyBkxProductUiContract",
+        "verifyBkxRcloneRemoteTransportContract",
+        "verifyBkxGoogleDriveProductContract",
+        "verifyBkxAutomationProductContract",
+        "verifyBkxCloudProductReleaseSeal",
+        "verifyBkxAndroidReleaseDocs",
+        "verifyBkxAndroidSigningPlaceholders",
+        "verifyBkxPersonalSigningContract",
+        "verifyBkxAndroidManifestReleaseContract",
+        "testDebugUnitTest",
+    )
+}
+
+tasks.register("bkxAndroidReleasePackageSeal") {
+    group = "verification"
+    description = "Stage 2 BKX release gate: package, shrink, release lint, merged manifest and native 16 KiB runtime checks."
+    dependsOn(
+        "assembleRelease",
+        "lintRelease",
+        "verifyBkxReleaseMergedManifestContract",
+        "verifyBkx16KbNativePageSizeContract",
+    )
+}
+
+tasks.register("bkxAndroidReleaseInstrumentationSeal") {
+    group = "verification"
+    description = "Stage 3 BKX release gate: instrumentation qualification when a device is available."
+    dependsOn("connectedDebugAndroidTest")
+}
+
+tasks.register("bkxAndroidReleaseFinalSeal") {
+    group = "verification"
+    description = "Staged BKX Android final release seal."
+    dependsOn(
+        "bkxAndroidReleasePreflightSeal",
+        "bkxAndroidReleasePackageSeal",
+        "bkxAndroidReleaseInstrumentationSeal",
+    )
+}
+
+tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
+    group = "verification"
+    description = "Verifies BR35 release packaging, signing, native runtime, CI, and exact-artifact qualification contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val appBuild = repositoryRoot.resolve("android/BKX.Android/app/build.gradle.kts").readText()
+        val androidBuild = repositoryRoot.resolve("android/BKX.Android/build.gradle.kts").readText()
+        val verification = repositoryRoot.resolve("build-logic/android-verification.gradle.kts").readText()
+        val devtool = repositoryRoot.resolve(".devtool.toml").readText()
+        val goRuntimeScript = repositoryRoot.resolve("scripts/build-go-android-runtime.sh").readText()
+        val rcloneInstaller = repositoryRoot.resolve("scripts/install-rclone-android-runtime.sh").readText()
+        val qualifyDevice = repositoryRoot.resolve("android/BKX.Android/scripts/qualify-device.sh").readText()
+        val ci = repositoryRoot.resolve(".github/workflows/ci.yml").readText()
+        val releaseContract = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/release/BkxReleaseArtifactPolicy.kt").readText()
+        val releaseDocs = repositoryRoot.resolve("android/BKX.Android/docs/RELEASE_VALIDATION.md").readText()
+        val multipart = repositoryRoot.resolve("internal/archiveio/multipart.go").readText()
+        val create = repositoryRoot.resolve("internal/archiveio/create.go").readText()
+        val render = repositoryRoot.resolve("internal/publiccli/render.go").readText()
+        val doc = repositoryRoot.resolve("BR35_RELEASE_PACKAGING_SIGNING_NATIVE_RUNTIME_SEAL.md")
+
+        check(appBuild.contains("bkxResolvedBuildCommit") && appBuild.contains("environment(\"BKX_BUILD_COMMIT\", buildCommit.get())") && goRuntimeScript.contains("BKX_BUILD_COMMIT must be a real Git revision")) {
+            "BR35 Git commit stamping for the Android Go runtime is missing."
+        }
+        check(appBuild.contains("inputs.file(bkxRepositoryRoot.resolve(\"go.sum\"))") && appBuild.contains("inputs.file(bkxVersionFile)") && appBuild.contains("inputs.property(\"bkxBuildCommit\", bkxBuildCommit)")) {
+            "BR35 generated Go runtime task does not model all release-critical inputs."
+        }
+        check(appBuild.contains("bkxAndroidVersionCode") && appBuild.contains("major * 1_000_000 + minor * 1_000 + patch") && releaseContract.contains("androidVersionCode")) {
+            "BR35 non-colliding Android versionCode lane is missing."
+        }
+        check(appBuild.contains("isMinifyEnabled = true") && appBuild.contains("isShrinkResources = true") && repositoryRoot.resolve("android/BKX.Android/app/proguard-rules.pro").isFile) {
+            "BR35 release shrink/minify contract is missing."
+        }
+        check(androidBuild.contains("dependencyLocking") && androidBuild.contains("lockAllConfigurations")) {
+            "BR35 dependency locking is not enabled for Android builds."
+        }
+        check(verification.contains("verifyBkxReleaseMergedManifestContract") && verification.contains("processReleaseMainManifest")) {
+            "BR35 must verify the merged release manifest, not only source text."
+        }
+        check(verification.contains("bkxAndroidReleasePreflightSeal") && verification.contains("bkxAndroidReleasePackageSeal") && verification.contains("bkxAndroidReleaseInstrumentationSeal") && verification.contains("bkxAndroidReleaseFinalSeal")) {
+            "BR35 staged release seal tasks are missing."
+        }
+        check("verifyBkx16KbNativePageSizeContract" !in devtool.substringAfter("preflight = [").substringBefore("]") && "verifyBkx16KbNativePageSizeContract" in devtool.substringAfter("package = [").substringBefore("]")) {
+            "BR35 native page-size APK verification must run in the package phase, not cheap preflight."
+        }
+        check("lintRelease" in verification && "lintRelease" in devtool && "lintRelease" in releaseDocs) {
+            "BR35 release lint is missing from the validation lane."
+        }
+        check(rcloneInstaller.contains("RCLONE_SOURCE_SHA256") && rcloneInstaller.contains("RCLONE_VENDOR_SHA256") && rcloneInstaller.contains("BKX_REQUIRED_NDK_REVISION=\"29.0.14206865\"") && rcloneInstaller.contains("BKX_ANDROID_PAGE_SIZE=\"16384\"")) {
+            "BR35 rclone/native-runtime release inputs are not pinned."
+        }
+        check(qualifyDevice.contains("--release-apk") && qualifyDevice.contains("--android-test-apk") && qualifyDevice.contains("bkxExactReleaseArtifact true") && qualifyDevice.contains("release-apk.sha256")) {
+            "BR35 exact release APK physical qualification is missing."
+        }
+        check(ci.contains("android-release-packaging") && ci.contains("gradle-version: '9.7.1'") && ci.contains("verifyBkxReleasePackagingSigningNativeRuntimeSeal")) {
+            "BR35 GitHub CI Android release packaging job is missing."
+        }
+        check(multipart.contains("MultipartManifest") && multipart.contains("PartCount") && multipart.contains("SHA256") && create.contains("MultipartManifestPath")) {
+            "BR35 split archive manifest/part-count metadata contract is missing."
+        }
+        check(render.contains("formatCollectionTextValue") && render.contains("json.Marshal(value)")) {
+            "BR35 human typed-error collection rendering must not use Go-native slice formatting."
+        }
+        listOf(
+            repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/contracts/ReleasePackagingSigningNativeRuntimeContractTest.kt"),
+            repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/core/release/BkxReleaseArtifactPolicyTest.kt"),
+            repositoryRoot.resolve("internal/archiveio/multipart_manifest_test.go"),
+            repositoryRoot.resolve("internal/publiccli/br35_render_text_test.go"),
+        ).forEach { file -> check(file.isFile) { "BR35 contract test missing: ${file.name}" } }
+        check(doc.isFile && doc.readText().contains("Overlay 15 of 16")) {
+            "BR35 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxReleasePackagingSigningNativeRuntimeSeal", "bkxAndroidReleaseFinalSeal")
+}

@@ -30,18 +30,19 @@ const (
 )
 
 type CreateResult struct {
-	Success            bool     `json:"success"`
-	DryRun             bool     `json:"dry_run"`
-	FilesArchived      int      `json:"files_archived"`
-	BytesWritten       int64    `json:"bytes_written"`
-	OriginalSize       int64    `json:"original_size"`
-	ArchivePath        string   `json:"archive_path"`
-	SplitParts         []string `json:"split_parts"`
-	VerificationPassed *bool    `json:"verification_passed"`
-	CompressionRatio   float64  `json:"compression_ratio"`
-	Warnings           []string `json:"warnings"`
-	Errors             []string `json:"errors"`
-	DurationMS         int64    `json:"duration_ms"`
+	Success               bool     `json:"success"`
+	DryRun                bool     `json:"dry_run"`
+	FilesArchived         int      `json:"files_archived"`
+	BytesWritten          int64    `json:"bytes_written"`
+	OriginalSize          int64    `json:"original_size"`
+	ArchivePath           string   `json:"archive_path"`
+	SplitParts            []string `json:"split_parts"`
+	MultipartManifestPath string   `json:"multipart_manifest_path,omitempty"`
+	VerificationPassed    *bool    `json:"verification_passed"`
+	CompressionRatio      float64  `json:"compression_ratio"`
+	Warnings              []string `json:"warnings"`
+	Errors                []string `json:"errors"`
+	DurationMS            int64    `json:"duration_ms"`
 }
 
 func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(int, int64)) (CreateResult, error) {
@@ -151,12 +152,23 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 	if err := publishMultipart(stagedPaths, finalPaths); err != nil {
 		return CreateResult{}, berror.WrapExternal("publishing archive", output, "go-os", err)
 	}
-	published = true
 
 	written, err := multipartTotalSize(finalPaths)
 	if err != nil {
+		removeAll(finalPaths)
 		return CreateResult{}, mapPathError(output, err)
 	}
+	multipartManifest := ""
+	if validated.SplitSize != nil {
+		manifestPath, manifestErr := writeMultipartManifest(output, finalPaths, written)
+		if manifestErr != nil {
+			removeAll(finalPaths)
+			return CreateResult{}, berror.WrapExternal("publishing archive part manifest", output, "go-os", manifestErr)
+		}
+		multipartManifest = manifestPath
+	}
+	published = true
+
 	original := manifest.TotalSize()
 	ratio := 1.0
 	if original > 0 {
@@ -168,7 +180,7 @@ func Create(spec models.ArchiveCreateSpec, implicitDefault bool, progress func(i
 	}
 	result := CreateResult{
 		Success: true, DryRun: false, FilesArchived: len(manifest.Files()), BytesWritten: written, OriginalSize: original,
-		ArchivePath: output, SplitParts: splitParts, VerificationPassed: verification, CompressionRatio: ratio,
+		ArchivePath: output, SplitParts: splitParts, MultipartManifestPath: multipartManifest, VerificationPassed: verification, CompressionRatio: ratio,
 		Warnings: warnings, Errors: []string{}, DurationMS: time.Since(started).Milliseconds(),
 	}
 	if progress != nil {

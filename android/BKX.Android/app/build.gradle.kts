@@ -27,6 +27,9 @@ abstract class BuildBkxGoAndroidRuntimeTask @Inject constructor(
     @get:Input
     abstract val buildScriptPath: Property<String>
 
+    @get:Input
+    abstract val buildCommit: Property<String>
+
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
@@ -34,6 +37,7 @@ abstract class BuildBkxGoAndroidRuntimeTask @Inject constructor(
     fun buildRuntime() {
         execOperations.exec {
             workingDir(repositoryRootPath.get())
+            environment("BKX_BUILD_COMMIT", buildCommit.get())
             commandLine(
                 "bash",
                 buildScriptPath.get(),
@@ -163,11 +167,35 @@ val bkxVersionName = Regex("""(?m)^\s*Version\s*=\s*"([^"]+)"\s*$""")
     ?.groupValues
     ?.get(1)
     ?: error("BKX version is missing from internal/version/version.go")
-val bkxVersionParts = bkxVersionName.split(".").map { part ->
-    part.toIntOrNull() ?: error("BKX Android requires a numeric major.minor.patch version; found $bkxVersionName")
+fun bkxAndroidVersionCode(versionName: String): Int {
+    val parts = versionName.split(".").map { part ->
+        part.toIntOrNull() ?: error("BKX Android requires a numeric major.minor.patch version; found $versionName")
+    }
+    check(parts.size == 3) { "BKX Android requires major.minor.patch; found $versionName" }
+    val (major, minor, patch) = parts
+    check(major in 0..1999 && minor in 0..999 && patch in 0..999) {
+        "BKX Android versionCode supports major 0..1999 and minor/patch 0..999; found $versionName"
+    }
+    return major * 1_000_000 + minor * 1_000 + patch
 }
-check(bkxVersionParts.size == 3) { "BKX Android requires major.minor.patch; found $bkxVersionName" }
-val bkxVersionCode = bkxVersionParts[0] * 10_000 + bkxVersionParts[1] * 100 + bkxVersionParts[2]
+
+val bkxVersionCode = bkxAndroidVersionCode(bkxVersionName)
+
+fun bkxResolvedBuildCommit(repositoryRoot: File): String {
+    providers.environmentVariable("BKX_BUILD_COMMIT").orNull?.trim()?.takeIf { it.isNotEmpty() && it != "dev" }?.let { return it }
+    return runCatching {
+        ProcessBuilder("git", "rev-parse", "--short=12", "HEAD")
+            .directory(repositoryRoot)
+            .redirectErrorStream(true)
+            .start()
+            .inputStream
+            .bufferedReader()
+            .readText()
+            .trim()
+    }.getOrElse { "unknown" }.ifBlank { "unknown" }
+}
+
+val bkxBuildCommit = bkxResolvedBuildCommit(bkxRepositoryRoot)
 
 val bkxSigningPropertiesFile = File(
     providers.environmentVariable("BKX_ANDROID_SIGNING_PROPERTIES").orNull
@@ -228,6 +256,12 @@ android {
             }
         }
         getByName("release") {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
             if (bkxPersonalSigningConfigured) {
                 signingConfig = signingConfigs.getByName("bkxPersonal")
             }
@@ -484,11 +518,15 @@ val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("bui
     description = "Build the generated ARM64 Go protocol-v1 runtime packaged by BKX Android."
     repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
     buildScriptPath.set(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh").absolutePath)
+    buildCommit.set(bkxBuildCommit)
     outputDirectory.set(bkxGoRuntimeJniDir)
     inputs.file(bkxRepositoryRoot.resolve("go.mod"))
+    inputs.file(bkxRepositoryRoot.resolve("go.sum"))
+    inputs.file(bkxVersionFile)
     inputs.dir(bkxRepositoryRoot.resolve("cmd/bkx"))
     inputs.dir(bkxRepositoryRoot.resolve("internal"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/build-go-android-runtime.sh"))
+    inputs.property("bkxBuildCommit", bkxBuildCommit)
 }
 
 val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRuntimeTask>("installBkxRcloneAndroidRuntime") {

@@ -11,8 +11,11 @@ class BkxAndroidReleaseContractTest {
         listOf(
             ":app:testDebugUnitTest",
             ":app:lintDebug",
+            ":app:lintRelease",
             ":app:connectedDebugAndroidTest",
             ":app:assembleRelease",
+            ":app:verifyBkxReleaseMergedManifestContract",
+            ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
             ":app:verifyBkxRuntimeHardeningContract",
             ":app:verifyBkxRestoreSafetySeal",
             ":app:verifyBkxPerformanceAndProgressContract",
@@ -36,5 +39,7 @@ class BkxAndroidReleaseContractTest {
         assertTrue(cases.contains("cooperative cancellation"))
         assertTrue(cases.contains("protected Android restore root"))
         assertTrue(cases.contains("confirmation bypass"))
+        assertTrue(cases.contains("exact release APK"))
+        assertTrue(cases.contains("Git commit"))
     }
 }

@@ -24,10 +24,13 @@ object BkxAndroidReleaseContract {
         ":app:verifyBkxFinalReleaseContract",
         ":app:testDebugUnitTest",
         ":app:lintDebug",
+        ":app:lintRelease",
         ":app:connectedDebugAndroidTest",
         ":app:assembleDebug",
         ":app:assembleDebugAndroidTest",
         ":app:assembleRelease",
+        ":app:verifyBkxReleaseMergedManifestContract",
+        ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
         ":app:bkxAndroidReleaseSeal",
     )
 
@@ -51,5 +54,10 @@ object BkxAndroidReleaseContract {
         "protected Android restore root",
         "root-sensitive restore confirmation bypass",
         "archive traversal or link member",
+        "release Go runtime stamped with Git commit",
+        "exact release APK physical qualification",
+        "release merged manifest permission and service proof",
+        "Android reproducible build inputs",
+        "split archive manifest and part-count metadata",
     )
 }

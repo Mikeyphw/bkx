@@ -68,10 +68,10 @@ args = [
 restore = ["help"]
 build = [":app:assembleDebug"]
 test = [":app:testDebugUnitTest"]
-lint = [":app:lintDebug"]
+lint = [":app:lintDebug", ":app:lintRelease"]
 instrumentation = [":app:connectedDebugAndroidTest"]
 release = [":app:bkxAndroidReleaseSeal"]
-package = [":app:assembleRelease"]
+package = [":app:assembleRelease", ":app:verifyBkxReleaseMergedManifestContract", ":app:verifyBkx16KbNativePageSizeContract"]
 clean = [":app:clean"]
 
 [targets.bkx_android.artifacts]
@@ -85,7 +85,6 @@ preflight = [
     ":app:verifyBkxRootStorageContract",
     ":app:verifyBkxProductUiContract",
     ":app:verifyBkxRcloneRemoteTransportContract",
-    ":app:verifyBkx16KbNativePageSizeContract",
     ":app:verifyBkxGoogleDriveProductContract",
     ":app:verifyBkxAutomationProductContract",
     ":app:verifyBkxCloudProductReleaseSeal",
@@ -114,6 +113,7 @@ preflight = [
     ":app:verifyBkxRepositoryResticSnapshotControlPlaneSeal",
     ":app:verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
     ":app:verifyBkxPersistenceSettingsMigrationSeal",
+    ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
 ]
 
 compile = [
@@ -132,10 +132,13 @@ package = [
   ":app:assembleDebug",
   ":app:assembleDebugAndroidTest",
   ":app:assembleRelease",
+  ":app:verifyBkx16KbNativePageSizeContract",
+  ":app:verifyBkxReleaseMergedManifestContract",
 ]
 
 lint = [
   ":app:lintDebug",
+  ":app:lintRelease",
 ]
 
 

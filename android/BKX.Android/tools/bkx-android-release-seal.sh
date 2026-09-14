@@ -18,6 +18,8 @@ fail() {
 [[ -f android/BKX.Android/tools/setup-personal-signing.sh ]] || fail "missing permanent signing setup helper"
 [[ -f android/BKX.Android/tools/print-personal-signing-fingerprint.sh ]] || fail "missing signing fingerprint helper"
 [[ -f scripts/verify-native-page-size.go ]] || fail "missing Go-native 16 KiB ELF/APK verifier"
+[[ -f android/BKX.Android/app/proguard-rules.pro ]] || fail "missing release R8 keep rules"
+[[ -f android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/release/BkxReleaseArtifactPolicy.kt ]] || fail "missing BR35 release artifact policy"
 
 for marker in \
   ':app:testDebugUnitTest' \
@@ -29,6 +31,9 @@ for marker in \
   ':app:verifyBkxAutomationProductContract' \
   ':app:verifyBkxCloudProductReleaseSeal' \
   ':app:verifyBkxPersonalSigningContract' \
+  ':app:verifyBkxReleaseMergedManifestContract' \
+  ':app:verifyBkxReleasePackagingSigningNativeRuntimeSeal' \
+  ':app:lintRelease' \
   ':app:bkxAndroidReleaseSeal'; do
   grep -R -- "$marker" .devtool.toml android/BKX.Android/docs >/dev/null || fail "missing release marker $marker"
 done
@@ -59,6 +64,14 @@ done
 
 if find android/BKX.Android -name 'bkx-release-signing.properties' -o -name '*.jks' -o -name '*.keystore' -o -name '*.p12' -o -name '*.pfx' | grep -q .; then
   fail "release signing secret appears to be inside source tree"
+fi
+
+for marker in   'bkxAndroidReleasePreflightSeal'   'bkxAndroidReleasePackageSeal'   'bkxAndroidReleaseInstrumentationSeal'   'bkxAndroidReleaseFinalSeal'   'bkxResolvedBuildCommit'   'isMinifyEnabled = true'   'isShrinkResources = true'; do
+  grep -R -- "$marker" android/BKX.Android/app/build.gradle.kts build-logic/android-verification.gradle.kts >/dev/null || fail "missing BR35 release-packaging marker $marker"
+done
+
+if grep -A40 'preflight = \[' .devtool.toml | grep -B40 '\]' | grep -q ':app:verifyBkx16KbNativePageSizeContract'; then
+  fail "16 KiB APK verification must not run in cheap preflight"
 fi
 
 printf 'BKX Android release seal static preflight passed. Run Devtool final validation from RELEASE_VALIDATION.md.\n'

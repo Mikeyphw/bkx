@@ -226,7 +226,13 @@ class AndroidProviderStagingManager(
     }
 
     private fun String?.safeName(fallback: String): String {
-        val candidate = this.orEmpty().trim().replace(Regex("[\/\u0000-\u001f]"), "_").trim('.', ' ')
+        val candidate = this.orEmpty()
+            .trim()
+            .map { char ->
+                if (char == '/' || char == '\\' || char.code in 0..0x1F) '_' else char
+            }
+            .joinToString("")
+            .trim('.', ' ')
         return candidate.take(MAX_NAME_CHARS).ifBlank { fallback }
     }
 

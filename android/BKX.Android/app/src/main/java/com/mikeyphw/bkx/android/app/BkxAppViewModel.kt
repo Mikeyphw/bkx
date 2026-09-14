@@ -162,7 +162,6 @@ data class BkxHomeUiState(
     val providerImportMessage: String? = null,
     val googleDrive: GoogleDriveUiState = GoogleDriveUiState(),
     val settings: BkxSettings = BkxSettings(),
-    val screenStatuses: Map<BkxDestination, ScreenStatus> = initialScreenStatuses(),
 ) {
     val backendToolState: BackendToolState = BackendToolState(
         readiness = readiness,
@@ -178,6 +177,32 @@ data class BkxHomeUiState(
     val currentRouteKey: BkxRouteKey get() = BkxRouteKey.from(selectedDestination, backupRoute, archiveDetailSection, moreRoute)
     val rootAvailable: Boolean get() = (readiness as? BackendReadiness.Ready)?.isRoot == true
     val activeOperationCount: Int get() = operationRuntime.activeWork().size
+
+    /** Derived from canonical feature state; never independently mutated. */
+    fun screenStatus(destination: BkxDestination): ScreenStatus = when (destination) {
+        BkxDestination.Home -> when (readiness) {
+            BackendReadiness.Checking -> ScreenStatus.Loading
+            is BackendReadiness.Ready -> ScreenStatus.Content
+            else -> ScreenStatus.Error(readiness.title, readiness.message)
+        }
+        BkxDestination.Backup -> ScreenStatus.Content
+        BkxDestination.Archives -> when (val archiveState = archiveReadOnly.listState) {
+            ArchiveWorkflowUiState.Idle -> ScreenStatus.Empty("Open Archives to load indexed backups.")
+            ArchiveWorkflowUiState.Loading -> ScreenStatus.Loading
+            is ArchiveWorkflowUiState.Content -> if (archiveState.value.isEmpty()) {
+                ScreenStatus.Empty("No BKX archives have been indexed yet.")
+            } else {
+                ScreenStatus.Content
+            }
+            is ArchiveWorkflowUiState.Failed -> ScreenStatus.Error("Could not load archives", archiveState.summary)
+        }
+        BkxDestination.Activity -> if (recentRuns.isEmpty() && operationRuntime.activeOperations.isEmpty()) {
+            ScreenStatus.Empty("No backup, restore, verification, or transfer activity yet.")
+        } else {
+            ScreenStatus.Content
+        }
+        BkxDestination.More -> ScreenStatus.Content
+    }
 }
 
 sealed interface BkxHomeEvent {
@@ -730,7 +755,6 @@ class BkxAppViewModel(
         _state.update { current ->
             current.copy(
                 archiveReadOnly = current.archiveReadOnly.copy(listState = ArchiveWorkflowUiState.Loading),
-                screenStatuses = current.screenStatuses + (BkxDestination.Archives to ScreenStatus.Loading),
             )
         }
         executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
@@ -758,13 +782,6 @@ class BkxAppViewModel(
                             browsePage = current.archiveReadOnly.browsePage.takeIf { selectedStillPresent },
                             verification = if (selectedStillPresent) current.archiveReadOnly.verification else com.mikeyphw.bkx.android.core.archives.ArchiveVerificationUiState.NotStarted,
                         ),
-                        screenStatuses = current.screenStatuses + (
-                            BkxDestination.Archives to if (archives.isEmpty()) {
-                                ScreenStatus.Empty("No BKX archives have been indexed yet.")
-                            } else {
-                                ScreenStatus.Content
-                            }
-                        ),
                     )
                 }
             } else {
@@ -772,9 +789,6 @@ class BkxAppViewModel(
                     current.copy(
                         archiveReadOnly = current.archiveReadOnly.copy(
                             listState = ArchiveWorkflowUiState.Failed(result.errors, result.summary),
-                        ),
-                        screenStatuses = current.screenStatuses + (
-                            BkxDestination.Archives to ScreenStatus.Error("Could not load archives", result.summary)
                         ),
                     )
                 }
@@ -1947,7 +1961,6 @@ class BkxAppViewModel(
                 current.copy(
                     isRefreshing = false,
                     readiness = readiness,
-                    screenStatuses = current.screenStatuses.withBackendStatus(readiness),
                 )
             }
         }
@@ -1979,16 +1992,7 @@ class BkxAppViewModel(
 
     private fun publishRuns(runs: List<RunSummary>) {
         _state.update { current ->
-            current.copy(
-                recentRuns = runs,
-                screenStatuses = current.screenStatuses + (
-                    BkxDestination.Activity to if (runs.isEmpty() && current.operationRuntime.activeOperations.isEmpty()) {
-                        ScreenStatus.Empty("No backup, restore, verification, or transfer activity yet.")
-                    } else {
-                        ScreenStatus.Content
-                    }
-                ),
-            )
+            current.copy(recentRuns = runs)
         }
     }
 
@@ -2090,20 +2094,6 @@ class BkxAppViewModelFactory(
     }
 }
 
-private fun initialScreenStatuses(): Map<BkxDestination, ScreenStatus> = mapOf(
-    BkxDestination.Home to ScreenStatus.Content,
-    BkxDestination.Backup to ScreenStatus.Content,
-    BkxDestination.Archives to ScreenStatus.Content,
-    BkxDestination.Activity to ScreenStatus.Loading,
-    BkxDestination.More to ScreenStatus.Content,
-)
-
-private fun Map<BkxDestination, ScreenStatus>.withBackendStatus(readiness: BackendReadiness): Map<BkxDestination, ScreenStatus> =
-    this + (BkxDestination.Home to if (readiness is BackendReadiness.ProbeFailed) {
-        ScreenStatus.Error(readiness.title, readiness.message)
-    } else {
-        ScreenStatus.Content
-    })
 
 private fun defaultRequestBaseDirectory(): String =
     File(System.getProperty("java.io.tmpdir") ?: "/tmp", "bkx-android-requests").absolutePath

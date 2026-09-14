@@ -37,6 +37,16 @@ class AndroidStorageAccessManager(
         val locations = mutableListOf<StorageLocation>()
         val seen = mutableSetOf<String>()
 
+        fun directUsability(path: String, requiresRoot: Boolean): LocationUsability {
+            RootPathPolicy.restrictedWriteReason(path)?.let { reason ->
+                return LocationUsability(false, reason)
+            }
+            if (!requiresRoot && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && state() == AllFilesAccessState.NeedsGrant) {
+                return LocationUsability(false, "Android all-files access is not granted for direct filesystem browsing.")
+            }
+            return LocationUsability(true, null)
+        }
+
         fun add(location: StorageLocation) {
             val normalized = RootPathPolicy.canonicalize(location.path)
             val usability = directUsability(normalized, location.requiresRoot)
@@ -47,16 +57,6 @@ class AndroidStorageAccessManager(
                     unavailableReason = usability.reason,
                 )
             }
-        }
-
-        fun directUsability(path: String, requiresRoot: Boolean): LocationUsability {
-            RootPathPolicy.restrictedWriteReason(path)?.let { reason ->
-                return LocationUsability(false, reason)
-            }
-            if (!requiresRoot && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && state() == AllFilesAccessState.NeedsGrant) {
-                return LocationUsability(false, "Android all-files access is not granted for direct filesystem browsing.")
-            }
-            return LocationUsability(true, null)
         }
 
         add(StorageLocation("shared", "Internal storage", BkxStorageLocations.SHARED_STORAGE, StorageLocationKind.Shared, false))

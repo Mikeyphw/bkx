@@ -114,6 +114,7 @@ preflight = [
     ":app:verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
     ":app:verifyBkxPersistenceSettingsMigrationSeal",
     ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
+    ":app:verifyBkxRegressionHarnessFinalAuditSeal",
 ]
 
 compile = [
@@ -232,4 +233,4 @@ low_priority = false
 [commit]
 enabled = true
 strategy = "single"
-message = "fix(android): seal BKX persistence settings migrations"
+message = "fix(android): repair BKX BR36 final Kotlin compile gate v5"

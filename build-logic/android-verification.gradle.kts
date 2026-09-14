@@ -1528,9 +1528,7 @@ tasks.register("verifyBkxAndroidGoBridgeResultContractSeal") {
     val viewModel = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt")
     val opModels = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android/core/operations/OperationModels.kt")
     val mainGo = repositoryRootDir.resolve("cmd/bkx/main.go")
-    val artifactMetadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
-
-    inputs.files(gateway, wire, backend, bridgeJson, bridgeModels, viewModel, opModels, mainGo, artifactMetadata)
+    inputs.files(gateway, wire, backend, bridgeJson, bridgeModels, viewModel, opModels, mainGo)
 
     doLast {
         val gatewayText = gateway.readText()
@@ -1541,7 +1539,6 @@ tasks.register("verifyBkxAndroidGoBridgeResultContractSeal") {
         val viewModelText = viewModel.readText()
         val opModelsText = opModels.readText()
         val mainText = mainGo.readText()
-        val metadataText = artifactMetadata.readText()
 
         check("PendingCommand" in gatewayText && "sessionId" in gatewayText && "completePendingForSession" in gatewayText) {
             "BR22 requires session-scoped pending replies so old readers cannot fail replacement-session commands."
@@ -1593,9 +1590,7 @@ tasks.register("verifyBkxStorageFilesystemRootSafetySeal") {
     val goPathPolicy = repositoryRootDir.resolve("internal/validation/path_policy.go")
     val goValidation = repositoryRootDir.resolve("internal/validation/validation.go")
     val goDispatcher = repositoryRootDir.resolve("internal/services/dispatcher.go")
-    val metadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
-
-    inputs.files(pathPolicy, stagedPlanner, providerPort, providerManager, rootPolicy, rootGateway, storageModels, storageManager, goPathPolicy, goValidation, goDispatcher, metadata)
+    inputs.files(pathPolicy, stagedPlanner, providerPort, providerManager, rootPolicy, rootGateway, storageModels, storageManager, goPathPolicy, goValidation, goDispatcher)
 
     doLast {
         val pathPolicyText = pathPolicy.readText()
@@ -1609,7 +1604,6 @@ tasks.register("verifyBkxStorageFilesystemRootSafetySeal") {
         val goPathPolicyText = goPathPolicy.readText()
         val goValidationText = goValidation.readText()
         val goDispatcherText = goDispatcher.readText()
-        val metadataText = metadata.readText()
 
         check("restrictedWriteReason" in pathPolicyText && "/Android/data" in pathPolicyText && "/Android/obb" in pathPolicyText) {
             "BR23 requires canonical Android path policy for restricted shared-storage trees."
@@ -1669,11 +1663,9 @@ tasks.register("verifyBkxBackupArchiveRestoreCorrectnessSeal") {
     val backupOps = repositoryRootDir.resolve("internal/backupops/backup.go")
     val archiveIo = repositoryRootDir.resolve("internal/archiveio/archiveio.go")
     val restoreIo = repositoryRootDir.resolve("internal/archiveio/restore.go")
-    val metadata = repositoryRootDir.resolve(".devtool-artifact/manifest.json")
-
     inputs.files(
         backupBuilder, backupModels, archiveBuilder, archiveModels, restoreBuilder, restoreModels,
-        backupTest, archiveTest, restoreTest, dispatcher, dispatcherTest, backupOps, archiveIo, restoreIo, metadata,
+        backupTest, archiveTest, restoreTest, dispatcher, dispatcherTest, backupOps, archiveIo, restoreIo,
     )
 
     doLast {
@@ -1684,7 +1676,6 @@ tasks.register("verifyBkxBackupArchiveRestoreCorrectnessSeal") {
         val archiveTestText = archiveTest.readText()
         val dispatcherText = dispatcher.readText()
         val dispatcherTestText = dispatcherTest.readText()
-        val metadataText = metadata.readText()
 
         check("plan_request_id" in backupBuilderText && "plan_token" in backupBuilderText && "backup.create preview does not match" in backupBuilderText) {
             "BR24 backup create must require request-bound plan evidence from the current draft."
@@ -2192,7 +2183,7 @@ tasks.register("verifyBkxCliBackupArchiveRestoreDomainSeal") {
         check(archiveLimits.contains("safePageWindow") && archiveLimits.contains("archiveBudget") && archiveLimits.contains("compressionExtensionWarnings")) {
             "BR32 archive resource/compression limits are missing."
         }
-        check(archive.contains("safePageWindow(page, pageSize") && archive.contains("duplicate normalized archive member destination") && archive.contains("ChecksumsValid: false")) {
+        check(archive.contains("safePageWindow(page, pageSize") && archive.contains("duplicate normalized member destination") && archive.contains("result.ChecksumsValid = false")) {
             "BR32 archive list/verify duplicate-member protections are missing."
         }
         check(create.contains("if validated.DryRun") && create.contains("compressionExtensionWarnings") && multipart.contains("publishArchivePartNoReplace")) {
@@ -2259,10 +2250,10 @@ tasks.register("verifyBkxCliRepositorySnapshotTransferJobsDomainSeal") {
         check(maintenance.contains("DefaultSnapshotBrowseLimit") && maintenance.contains("Truncated") && maintenance.contains("validation.NormalizePatterns") && maintenance.contains("emitRetentionProgress")) {
             "BR33 Restic snapshot browse/restore/retention contract is missing."
         }
-        check(retentionModel.contains("\"host\": true") && retentionModel.contains("\"tags\": true") && retentionModel.contains("\"none\": true") && retentionModel.contains("resticDurationPattern")) {
+        check(retentionModel.contains("case \"\", \"none\", \"host\", \"tags\"") && retentionModel.contains("KeepTags") && retentionModel.contains("resticDurationPattern")) {
             "BR33 retention model compatibility contract is missing."
         }
-        check(retention.contains("dry_run") && retention.contains("retention_set") && retention.contains("retention_clear")) {
+        check(retention.contains("dry_run") && retention.contains("func retentionSet") && retention.contains("func retentionClear")) {
             "BR33 retention dry-run CLI contract is missing."
         }
         check(jobs.contains("validateExecutableOperation") && jobs.contains("safeWriteExport") && jobs.contains("validateJobOverrideKeys") && jobs.contains("jobRevisions")) {
@@ -2496,4 +2487,118 @@ tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
 
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxReleasePackagingSigningNativeRuntimeSeal", "bkxAndroidReleaseFinalSeal")
+}
+
+tasks.register("verifyBkxRegressionHarnessFinalAuditSeal") {
+    group = "verification"
+    description = "Verifies BR36 behavioral regression harness, cross-target fixtures, residual defect ledger, and final-gate contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val ledger = repositoryRoot.resolve("docs/BR36_DEFECT_LEDGER.md")
+        check(ledger.isFile) { "BR36 defect ledger is missing." }
+        val ledgerText = ledger.readText()
+        listOf("Overlay 16 of 16", "A01-24", "A02-17", "A12-21", "C06-02").forEach { marker ->
+            check(ledgerText.contains(marker)) { "BR36 defect ledger is missing $marker." }
+        }
+
+        val runtime = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxApplicationRuntime.kt").readText()
+        check(runtime.contains("internal interface BkxStartupSteps") && runtime.contains("startupSteps.recoverOperations()") && runtime.contains("startupSteps.recoverAutomation()") && runtime.contains("startupSteps.reconcileSchedules()")) {
+            "BR36 injectable behavioral startup barrier is missing."
+        }
+        val runtimeBehaviorTest = repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/app/runtime/BkxApplicationRuntimeBehaviorTest.kt").readText()
+        check(runtimeBehaviorTest.contains("concurrentAuthorizedIngressRunsColdStartBarrierExactlyOnceInOrder") && runtimeBehaviorTest.contains("startupFailureIsIsolatedAndLaterStepsStillRun")) {
+            "BR36 startup behavior tests are missing."
+        }
+        val delayedBackendTest = repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/app/BkxBackendOutOfOrderBehaviorTest.kt").readText()
+        check(delayedBackendTest.contains("newerReadinessRefreshWinsWhenOlderBackendProbeCompletesLast") && delayedBackendTest.contains("CompletableDeferred")) {
+            "BR36 delayed/out-of-order backend readiness behavior test is missing."
+        }
+
+        val viewModel = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/BkxAppViewModel.kt").readText()
+        check(!viewModel.contains("val screenStatuses:") && !viewModel.contains("screenStatuses =") && viewModel.contains("fun screenStatus(destination: BkxDestination): ScreenStatus")) {
+            "BR36 must derive destination status from canonical state instead of independently mutating screenStatuses."
+        }
+        val statusTest = repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/app/BkxHomeUiStateStatusTest.kt").readText()
+        check(statusTest.contains("aggregateStatusMapCannotDivergeBecauseStateHasNoStoredScreenStatusesProperty")) {
+            "BR36 derived UI status regression test is missing."
+        }
+
+        val driveCoordinator = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/drive/GoogleDriveAuthorizationCoordinator.kt").readText()
+        check(driveCoordinator.contains("interface GoogleDriveAuthorizationClient") && driveCoordinator.contains("class GoogleDriveAuthorizationCoordinator") && driveCoordinator.contains("generation") && driveCoordinator.contains("activeAuthorizationGeneration") && driveCoordinator.contains("credentialStore.disconnectLocal()")) {
+            "BR36 generation-serialized Google Drive authorization coordinator is missing."
+        }
+        val driveTest = repositoryRoot.resolve("android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/app/drive/GoogleDriveAuthorizationCoordinatorTest.kt").readText()
+        listOf(
+            "concurrentUiAndAutomationRefreshCoalesceOntoOneAuthorizationRequest",
+            "consentCompletionSupersedesOlderAuthorizeGenerationAndRejectsItsLateCallback",
+            "disconnectClearsLocalCredentialBeforeRemoteRevokeCompletesAndRejectsLateAuthorizeCallback",
+            "failedAuthorizationDoesNotMutateExistingCredential",
+        ).forEach { marker -> check(driveTest.contains(marker)) { "BR36 Drive lifecycle test missing $marker." } }
+
+        listOf(
+            "android/BKX.Android/app/src/test/resources/bridge/br36_request_backup_plan.json",
+            "android/BKX.Android/app/src/test/resources/bridge/br36_result_failure.json",
+            "android/BKX.Android/app/src/test/java/com/mikeyphw/bkx/android/core/bridge/Br36GoldenBridgeFixtureTest.kt",
+            "internal/bridge/testdata/br36_request_backup_plan.json",
+            "internal/bridge/testdata/br36_result_failure.json",
+            "internal/bridge/br36_golden_test.go",
+            "internal/audit/br36_final_gate_test.go",
+        ).forEach { relative ->
+            check(repositoryRoot.resolve(relative).isFile) { "BR36 cross-target regression artifact missing: $relative" }
+        }
+
+        val snapshots = repositoryRoot.resolve("internal/resticops/maintenance.go").readText()
+        val snapshotTest = repositoryRoot.resolve("internal/resticops/br36_snapshot_ordering_test.go").readText()
+        check(snapshots.contains("parseSnapshotTime(item.Time)") && snapshots.contains("ti.After(tj)") && snapshots.contains("snapshots[i].ID > snapshots[j].ID")) {
+            "BR36 absolute-time snapshot ordering source contract is missing."
+        }
+        check(snapshotTest.contains("+02:00") && snapshotTest.contains("+01:00") && snapshotTest.contains("malformed timestamp")) {
+            "BR36 snapshot ordering regression cases are missing."
+        }
+
+        val devtool = repositoryRoot.resolve(".devtool.toml").readText()
+        check(devtool.contains(":app:verifyBkxRegressionHarnessFinalAuditSeal")) {
+            "BR36 verification task is not wired into Devtool preflight."
+        }
+        val goDoc = repositoryRoot.resolve("BR36_GO_REGRESSION_HARNESS_FINAL_AUDIT_SEAL.md")
+        val androidDoc = repositoryRoot.resolve("BR36_ANDROID_REGRESSION_HARNESS_FINAL_AUDIT_SEAL.md")
+        check(goDoc.isFile && goDoc.readText().contains("Overlay 16 of 16")) { "BR36 Go target seal doc is missing." }
+        check(androidDoc.isFile && androidDoc.readText().contains("Overlay 16 of 16")) { "BR36 Android target seal doc is missing." }
+    }
+}
+
+tasks.register("bkxBr36FinalAuditSeal") {
+    group = "verification"
+    description = "Final BR21-BR36 static/unit/lint/package regression gate; instrumentation remains device-conditional in Devtool."
+    dependsOn(
+        "verifyBkxRuntimeLifetimeForegroundCancellationSeal",
+        "verifyBkxAndroidGoBridgeResultContractSeal",
+        "verifyBkxStorageFilesystemRootSafetySeal",
+        "verifyBkxBackupArchiveRestoreCorrectnessSeal",
+        "verifyBkxRepositoryResticSnapshotControlPlaneSeal",
+        "verifyBkxTransferRcloneGoogleDriveRemoteSeal",
+        "verifyBkxSavedJobsSchedulerTaskerRunHistorySeal",
+        "verifyBkxStartupAppGraphReadinessSeal",
+        "verifyBkxAndroidNavigationStaleStateBindingSeal",
+        "verifyBkxUiTruthfulnessAccessibilityProductCopySeal",
+        "verifyBkxCliParserConfigErrorContractSeal",
+        "verifyBkxCliBackupArchiveRestoreDomainSeal",
+        "verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
+        "verifyBkxPersistenceSettingsMigrationSeal",
+        "verifyBkxReleasePackagingSigningNativeRuntimeSeal",
+        "verifyBkxRegressionHarnessFinalAuditSeal",
+        "testDebugUnitTest",
+        "lintDebug",
+        "lintRelease",
+        "bkxAndroidReleasePackageSeal",
+    )
+}
+
+tasks.named("bkxAndroidReleasePreflightSeal") {
+    dependsOn("verifyBkxRegressionHarnessFinalAuditSeal")
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxRegressionHarnessFinalAuditSeal")
 }

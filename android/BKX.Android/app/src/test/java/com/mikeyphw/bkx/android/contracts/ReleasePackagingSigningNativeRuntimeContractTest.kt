@@ -14,9 +14,9 @@ class ReleasePackagingSigningNativeRuntimeContractTest {
     fun gradleBuildStampsNativeRuntimeAndModelsInputs() {
         val build = File(androidRoot, "app/build.gradle.kts").readText()
         assertTrue(build.contains("bkxResolvedBuildCommit"))
-        assertTrue(build.contains("environment("BKX_BUILD_COMMIT", buildCommit.get())"))
-        assertTrue(build.contains("inputs.file(bkxRepositoryRoot.resolve("go.sum"))"))
-        assertTrue(build.contains("inputs.property("bkxBuildCommit", bkxBuildCommit)"))
+        assertTrue(build.contains("""environment("BKX_BUILD_COMMIT", buildCommit.get())"""))
+        assertTrue(build.contains("""inputs.file(bkxRepositoryRoot.resolve("go.sum"))"""))
+        assertTrue(build.contains("""inputs.property("bkxBuildCommit", bkxBuildCommit)"""))
         assertTrue(build.contains("bkxAndroidVersionCode"))
         assertTrue(build.contains("major * 1_000_000 + minor * 1_000 + patch"))
     }

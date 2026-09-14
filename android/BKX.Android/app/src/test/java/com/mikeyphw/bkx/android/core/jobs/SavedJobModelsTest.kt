@@ -73,9 +73,9 @@ class SavedJobModelsTest {
         )
 
         assertEquals("jobs.run", run.operation)
-        assertEquals(""backup.snapshot"", run.payload["effective_operation"].toString())
+        assertEquals("\"backup.snapshot\"", run.payload["effective_operation"].toString())
         assertEquals("runs.replay", replay.operation)
-        assertEquals(""transfer.run"", replay.payload["effective_operation"].toString())
+        assertEquals("\"transfer.run\"", replay.payload["effective_operation"].toString())
     }
 
 }

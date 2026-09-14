@@ -1,0 +1,17 @@
+{
+  "protocol_version": 1,
+  "request_id": "br36-golden-failure",
+  "status": "failure",
+  "summary": "Operation failed safely.",
+  "artifacts": [],
+  "metrics": {
+    "duration_ms": 42
+  },
+  "errors": [
+    {
+      "code": "validation_error",
+      "message": "invalid input",
+      "action": "Correct the request and retry."
+    }
+  ]
+}

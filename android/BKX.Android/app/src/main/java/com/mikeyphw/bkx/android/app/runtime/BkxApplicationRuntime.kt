@@ -5,6 +5,7 @@ import com.mikeyphw.bkx.android.automation.AutomationDispatcher
 import com.mikeyphw.bkx.android.automation.BkxSavedJobScheduler
 import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRoot
 import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -13,9 +14,9 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.launch
 
 sealed interface BkxApplicationRuntimePhase {
     data object Created : BkxApplicationRuntimePhase
@@ -43,6 +44,42 @@ data class BkxApplicationRuntimeState(
 )
 
 /**
+ * Injectable startup effects used by the process runtime barrier.
+ *
+ * Keeping the ordering policy independent from Android static entry points lets
+ * unit tests exercise real cold-start sequencing, failure isolation and
+ * concurrent ingress rather than checking source strings.
+ */
+internal interface BkxStartupSteps {
+    suspend fun resolveControlPlaneRoot(): BkxControlPlaneRoot
+    suspend fun recoverOperations()
+    suspend fun recoverAutomation()
+    suspend fun reconcileSchedules()
+}
+
+private class AndroidBkxStartupSteps(
+    context: Context,
+    private val coordinatorProvider: () -> BkxOperationCoordinator,
+) : BkxStartupSteps {
+    private val appContext = context.applicationContext ?: context
+
+    override suspend fun resolveControlPlaneRoot(): BkxControlPlaneRoot =
+        BkxControlPlaneRootResolver.resolve(appContext)
+
+    override suspend fun recoverOperations() {
+        coordinatorProvider().initializeAndRecoverInterruptedOperations()
+    }
+
+    override suspend fun recoverAutomation() {
+        AutomationDispatcher.recoverPending(appContext)
+    }
+
+    override suspend fun reconcileSchedules() {
+        BkxSavedJobScheduler.reconcile(appContext)
+    }
+}
+
+/**
  * Process-owned runtime lifecycle for BKX Android.
  *
  * The Application object installs this owner but does not execute recovery,
@@ -50,12 +87,19 @@ data class BkxApplicationRuntimeState(
  * suspendable barrier before starting background work, and UI startup asks for
  * the same barrier without blocking the main thread.
  */
-class BkxApplicationRuntime(
-    context: Context,
-    private val coordinatorProvider: () -> BkxOperationCoordinator,
+class BkxApplicationRuntime internal constructor(
+    private val startupSteps: BkxStartupSteps,
+    dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
-    private val appContext = context.applicationContext ?: context
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    constructor(
+        context: Context,
+        coordinatorProvider: () -> BkxOperationCoordinator,
+    ) : this(
+        startupSteps = AndroidBkxStartupSteps(context, coordinatorProvider),
+        dispatcher = Dispatchers.IO,
+    )
+
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
     private val mutex = Mutex()
     private val _state = MutableStateFlow(BkxApplicationRuntimeState())
     val state: StateFlow<BkxApplicationRuntimeState> = _state.asStateFlow()
@@ -73,22 +117,31 @@ class BkxApplicationRuntime(
 
     suspend fun awaitReadyForExecution(ingress: BkxStartupIngress): BkxApplicationRuntimeState = mutex.withLock {
         val current = _state.value
-        if (current.phase is BkxApplicationRuntimePhase.Ready) return@withLock current.copy(ingress = ingress).also { _state.value = it }
+        if (current.phase is BkxApplicationRuntimePhase.Ready) {
+            return@withLock current.copy(ingress = ingress).also { _state.value = it }
+        }
         if (current.phase is BkxApplicationRuntimePhase.ShuttingDown) return@withLock current
 
         val steps = mutableListOf<String>()
         val failures = mutableListOf<String>()
+        var root: BkxControlPlaneRoot? = null
         _state.value = current.copy(phase = BkxApplicationRuntimePhase.Initializing, ingress = ingress)
 
-        val root = BkxControlPlaneRootResolver.resolve(appContext).also { steps += "control-plane:${it.source.name}:${it.reason}" }
+        runCatching { startupSteps.resolveControlPlaneRoot() }
+            .onSuccess {
+                root = it
+                steps += "control-plane:${it.source.name}:${it.reason}"
+            }
+            .onFailure { error -> failures += failureLabel("control-plane", error) }
+
         runStep("operation-recovery", steps, failures) {
-            coordinatorProvider().initializeAndRecoverInterruptedOperations()
+            startupSteps.recoverOperations()
         }
         runStep("automation-recovery", steps, failures) {
-            AutomationDispatcher.recoverPending(appContext)
+            startupSteps.recoverAutomation()
         }
         runStep("schedule-reconcile", steps, failures) {
-            BkxSavedJobScheduler.reconcile(appContext)
+            startupSteps.reconcileSchedules()
         }
 
         val phase = if (failures.isEmpty()) {
@@ -117,6 +170,9 @@ class BkxApplicationRuntime(
     ) {
         runCatching { block() }
             .onSuccess { steps += name }
-            .onFailure { error -> failures += "$name:${error::class.java.simpleName}:${error.message.orEmpty()}" }
+            .onFailure { error -> failures += failureLabel(name, error) }
     }
+
+    private fun failureLabel(name: String, error: Throwable): String =
+        "$name:${error::class.java.simpleName}:${error.message.orEmpty()}"
 }

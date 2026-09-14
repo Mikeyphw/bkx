@@ -53,7 +53,7 @@ object RestrictedLocationPolicy {
         if (normalized.isBlank()) {
             return FileAccessIssue.UnavailableLocation(path, "staging location is blank")
         }
-        if (!path.trim().replace('\', '/').startsWith("/")) {
+        if (!path.trim().replace('\\', '/').startsWith("/")) {
             return FileAccessIssue.UnavailableLocation(path, "staging location must be an absolute shared path")
         }
         return AndroidPathPolicy.restrictedWriteReason(normalized)?.let { reason ->

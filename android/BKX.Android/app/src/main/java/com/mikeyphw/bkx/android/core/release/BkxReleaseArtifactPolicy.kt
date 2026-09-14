@@ -47,8 +47,8 @@ object BkxReleaseArtifactPolicy {
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_DATA_SYNC",
         "com.mikeyphw.bkx.android.app.service.BkxOperationForegroundService",
-        "android:foregroundServiceType="dataSync"",
-        "android:allowBackup="false"",
-        "android:fullBackupContent="false"",
+        "android:foregroundServiceType=\"dataSync\"",
+        "android:allowBackup=\"false\"",
+        "android:fullBackupContent=\"false\"",
     )
 }

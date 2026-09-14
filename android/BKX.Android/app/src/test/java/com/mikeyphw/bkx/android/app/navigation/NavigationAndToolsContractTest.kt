@@ -16,9 +16,8 @@ class NavigationAndToolsContractTest {
             listOf(BkxDestination.Home, BkxDestination.Backup, BkxDestination.Archives, BkxDestination.Activity, BkxDestination.More),
             state.destinations,
         )
-        BkxDestination.entries.forEach { destination ->
-            assertTrue("Missing screen status for $destination", state.screenStatuses.containsKey(destination))
-        }
+        val derivedStatuses = BkxDestination.entries.associateWith(state::screenStatus)
+        assertEquals(BkxDestination.entries.toSet(), derivedStatuses.keys)
         assertFalse(state.destinations.any { it.label == "Tools" || it.label == "Settings" || it.label == "Restore" || it.label == "Transfers" })
     }
 

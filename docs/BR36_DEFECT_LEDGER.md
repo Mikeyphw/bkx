@@ -37,16 +37,13 @@ The first BR36 validation attempt was intentionally rollback-safe and exposed ad
 | BR32/BR33 static token checks described older source spellings/shapes. | Refreshed assertions to current checksum, retention model, and retention CLI implementation tokens. | `android-verification.gradle.kts` |
 | Android validation duplicated the full BR21–BR36 task list in the command. | `bkxBr36FinalAuditSeal` now owns release lint as well as the existing unit/static/package dependencies, so one aggregate task is sufficient. | `android-verification.gradle.kts` |
 
-## BR36 v5 full Go-gate repair ledger
 
-The v4 Devtool run reached the complete Go test suite and exposed seven remaining test-contract regressions across four packages. v5 fixes the entire observed batch in the same final overlay rather than adding a seventeenth roadmap item.
+## BR36-ANDROID-V4 — Staged file planner compile seal
 
-| Gate finding | Repair in BR36 v5 | Evidence |
-| --- | --- | --- |
-| Corrupt zstd ZIP tests treated the FreshDir parent directory as the publication target. | Assert the parent contains no generated destination or staging entry after failure; the parent itself may legitimately be created by `ExtractRestore`. | `zstd_integrity_test.go` |
-| Local split-backup fixture still used a short-period arithmetic byte pattern. | Use the seeded high-entropy PRNG fixture already exercised successfully by remote multipart tests. | `backup_test.go`, `backup_remote_test.go` |
-| Frozen V1 oracle rejected additive BR26 transfer mappings and BR24/BR32 restore preview precision. | Normalize only those named post-V1 additions for the three affected frozen cases; dedicated later-overlay tests remain authoritative. | `oracle_test.go` |
-| Backup integration test called `backup.create` without matching plan evidence. | Bind `plan_request_id` and `plan_token` from the emitted `backup_plan` artifact. | `dispatcher_test.go` |
-| Transfer integration/cancellation tests assumed a one-artifact plan and omitted matching plan evidence. | Accept bounded mapping artifacts and bind evidence for each run/cancellation plan. | `dispatcher_test.go` |
-| Local and remote restore integration tests called `restore.extract` without preview evidence. | Bind `preview_request_id` and `plan_token` from the matching `restore_plan` artifact. | `dispatcher_test.go` |
-| Restore integration tests assumed FreshDir writes directly into the caller-selected parent. | Read the authoritative returned `restored_path` artifact instead of reconstructing the generated child directory. | `dispatcher_test.go` |
+- Finding: the Android final gate exposed an invalid Kotlin backslash character literal in `StagedFilePlanner.kt`, reported by both debug and release Kotlin compilation.
+- Fix: keep the existing path normalization behavior but encode the backslash literal as `replace('\\', '/')`.
+- Evidence: `:app:compileDebugKotlin` and `:app:compileReleaseKotlin` can now parse the staged-file planner source; no production policy semantics were changed.
+
+## BR36 v5 Android compile-gate repair
+
+The Android final gate now also seals the Kotlin compile blockers exposed by the aggregate `bkxBr36FinalAuditSeal` run: release manifest marker strings use escaped quotes, storage location direct-usability checks are declared before first use in `discoverLocations`, and provider staging sanitizes slash, backslash, and control characters without relying on invalid Kotlin regex escapes.

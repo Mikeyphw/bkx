@@ -33,8 +33,7 @@ func retentionSet(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -71,6 +70,9 @@ func retentionSet(c *appContext, args []string) int {
 	}
 	replacement := *def
 	replacement.Retention = &policy
+	if c.globals.DryRun {
+		return renderResult(c, map[string]any{"success": true, "dry_run": true, "repository_id": def.RepositoryID, "policy": policy}, "retention")
+	}
 	updated, err := c.repositories.Update(def.RepositoryID, replacement)
 	if err != nil {
 		return commandErr(c, err)
@@ -84,8 +86,7 @@ func retentionShow(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -106,8 +107,7 @@ func retentionClear(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -115,6 +115,9 @@ func retentionClear(c *appContext, args []string) int {
 	}
 	replacement := *def
 	replacement.Retention = nil
+	if c.globals.DryRun {
+		return renderResult(c, map[string]any{"success": true, "dry_run": true, "repository_id": def.RepositoryID, "cleared": true}, "retention")
+	}
 	updated, err := c.repositories.Update(def.RepositoryID, replacement)
 	if err != nil {
 		return commandErr(c, err)
@@ -128,8 +131,7 @@ func retentionApply(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {

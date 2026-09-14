@@ -2,6 +2,9 @@ package publiccli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 
 	"bkx/internal/berror"
@@ -26,8 +29,7 @@ func repositoryAdd(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	location, hasLocation := a.stringValue("location")
 	remote, hasRemote := a.stringValue("remote")
@@ -109,8 +111,7 @@ func repositoryList(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if len(a.Positionals) != 0 {
-		usageError(c.stderr, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
 	}
 	items, err := c.repositories.List()
 	if err != nil {
@@ -139,8 +140,7 @@ func repositoryShow(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	item, code := getRepository(c, a.Positionals[0])
 	if item == nil {
@@ -155,8 +155,7 @@ func repositoryStatus(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -164,7 +163,7 @@ func repositoryStatus(c *appContext, args []string) int {
 	}
 	listed, err := resticops.ListSnapshots(
 		models.RepositoryAccessSpec{Repository: def.Location, CredentialRef: def.CredentialRef},
-		resticops.SnapshotListOptions{},
+		resticops.SnapshotListOptions{Limit: 1},
 		resticops.Options{},
 	)
 	if err != nil {
@@ -187,22 +186,33 @@ func repositoryStatus(c *appContext, args []string) int {
 }
 
 func repositoryRemove(c *appContext, args []string) int {
-	a, ok := parseFor(c, "repository remove", args, map[string]optionSpec{})
+	a, ok := parseFor(c, "repository remove", args, map[string]optionSpec{"--force": {Key: "force", Kind: optionBoolTrue}})
 	if !ok {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
-	deleted, err := c.repositories.Delete(strings.TrimSpace(a.Positionals[0]))
+	repositoryID := strings.TrimSpace(a.Positionals[0])
+	if _, code := getRepository(c, repositoryID); code != -1 {
+		return code
+	}
+	force := a.Bools["force"]
+	deps, depErr := repositoryDependencies(c, repositoryID)
+	if depErr != nil {
+		return commandErr(c, depErr)
+	}
+	if !force && len(deps) > 0 {
+		return commandErr(c, berror.Validation("repository is still referenced by saved jobs or schedules", map[string]any{"repository_id": repositoryID, "dependencies": deps, "action": "delete or disable dependents first, or rerun with --force"}))
+	}
+	deleted, err := c.repositories.Delete(repositoryID)
 	if err != nil {
 		return commandErr(c, err)
 	}
 	if !deleted {
-		return commandErr(c, berror.NotFound("Repository not found: "+a.Positionals[0], map[string]any{"repository_id": a.Positionals[0]}))
+		return commandErr(c, berror.NotFound("Repository not found: "+repositoryID, map[string]any{"repository_id": repositoryID}))
 	}
-	return renderResult(c, map[string]any{"repository_id": a.Positionals[0], "deleted": true}, "repository_delete")
+	return renderResult(c, map[string]any{"repository_id": repositoryID, "deleted": true, "dependencies": deps}, "repository_delete")
 }
 
 func repositoryInit(c *appContext, args []string) int {
@@ -249,7 +259,25 @@ func repositoryInit(c *appContext, args []string) int {
 	}
 	if raw, set := a.stringValue("credential_ref"); set {
 		raw = strings.TrimSpace(raw)
+		if _, err := models.CredentialEnvironmentKey(raw); err != nil {
+			return commandErr(c, err)
+		}
 		credentialRef = &raw
+	}
+	normalized, normalizeErr := resticops.NormalizeRepository(repository)
+	if normalizeErr != nil {
+		return commandErr(c, normalizeErr)
+	}
+	repository = normalized
+	parent := ""
+	parentMissing := false
+	if !strings.Contains(repository, "://") && !strings.Contains(repository, ":") {
+		parent = filepath.Dir(repository)
+		if parent != "." {
+			if _, statErr := os.Stat(parent); os.IsNotExist(statErr) {
+				parentMissing = true
+			}
+		}
 	}
 	lease, err := beginCLIExecution(c, "repository.init", "", repositoryLeaseID(c, repository))
 	if err != nil {
@@ -258,6 +286,7 @@ func repositoryInit(c *appContext, args []string) int {
 	defer lease.Close()
 	result, err := resticops.Init(models.RepositoryInitSpec{Engine: engine, Repository: repository, CredentialRef: credentialRef}, resticops.Options{Cancelled: lease.Cancelled})
 	if err != nil {
+		cleanupRepositoryInitParent(parent, parentMissing)
 		return commandErr(c, err)
 	}
 	return renderResult(c, result, "repository")
@@ -273,8 +302,7 @@ func repositoryCheck(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -285,6 +313,9 @@ func repositoryCheck(c *appContext, args []string) int {
 		readData = *v
 	}
 	subset, _ := a.stringValue("read_data_subset")
+	if readData && strings.TrimSpace(subset) != "" {
+		return commandErr(c, berror.Validation("use either --read-data or --read-data-subset, not both", nil))
+	}
 	lease, err := beginCLIExecution(c, "repository.check", "", def.RepositoryID)
 	if err != nil {
 		return commandErr(c, err)
@@ -308,8 +339,7 @@ func repositoryPrune(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "REPOSITORY_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	def, code := getRepository(c, a.Positionals[0])
 	if def == nil {
@@ -324,6 +354,12 @@ func repositoryPrune(c *appContext, args []string) int {
 	}
 	maxUnused, _ := a.stringValue("max_unused")
 	maxRepack, _ := a.stringValue("max_repack_size")
+	if err := validateResticPruneOption("--max-unused", maxUnused); err != nil {
+		return commandErr(c, err)
+	}
+	if err := validateResticSizeOption("--max-repack-size", maxRepack); err != nil {
+		return commandErr(c, err)
+	}
 	var options resticops.Options
 	var lease *cliExecutionLease
 	var err error
@@ -340,4 +376,64 @@ func repositoryPrune(c *appContext, args []string) int {
 		return commandErr(c, err)
 	}
 	return renderResult(c, result, "repository_prune")
+}
+
+func repositoryDependencies(c *appContext, repositoryID string) ([]map[string]string, error) {
+	deps := []map[string]string{}
+	jobs, err := c.jobs.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, job := range jobs {
+		if job.Operation.RepositoryRef != nil && strings.TrimSpace(*job.Operation.RepositoryRef) == repositoryID {
+			deps = append(deps, map[string]string{"type": "job", "id": job.JobID})
+		}
+	}
+	schedules, err := c.schedules.List()
+	if err != nil {
+		return nil, err
+	}
+	for _, schedule := range schedules {
+		for _, dep := range deps {
+			if dep["type"] == "job" && dep["id"] == schedule.JobID {
+				deps = append(deps, map[string]string{"type": "schedule", "id": schedule.ScheduleID, "job_id": schedule.JobID})
+			}
+		}
+	}
+	return deps, nil
+}
+
+func cleanupRepositoryInitParent(parent string, wasMissing bool) {
+	if !wasMissing || parent == "" || parent == "." || parent == string(filepath.Separator) {
+		return
+	}
+	entries, err := os.ReadDir(parent)
+	if err == nil && len(entries) == 0 {
+		_ = os.Remove(parent)
+	}
+}
+
+var resticPercentPattern = regexp.MustCompile(`^(?:100|[1-9]?[0-9])%$`)
+var resticSizePattern = regexp.MustCompile(`^[1-9][0-9]*(?:[KMGTP]i?B?|B)?$`)
+
+func validateResticPruneOption(flag, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if !resticPercentPattern.MatchString(value) {
+		return berror.Validation(flag+" must be a Restic percentage such as 5% or 100%", map[string]any{"value": value})
+	}
+	return nil
+}
+
+func validateResticSizeOption(flag, value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if !resticSizePattern.MatchString(value) {
+		return berror.Validation(flag+" must be a Restic size such as 512MiB or 10G", map[string]any{"value": value})
+	}
+	return nil
 }

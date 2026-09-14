@@ -61,3 +61,20 @@ func TestSyncUsesDeleteCeilingAndPropagatesSanitizedWarnings(t *testing.T) {
 		t.Fatalf("sync delete ceiling not passed to rclone:\n%s", log)
 	}
 }
+
+func TestBR33TransferRejectsDuplicateDestinationTargets(t *testing.T) {
+	runtime, _ := fakeRuntime(t)
+	root := t.TempDir()
+	sourceA := filepath.Join(root, "a", "same")
+	sourceB := filepath.Join(root, "b", "same")
+	if err := os.MkdirAll(sourceA, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(sourceB, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runtime.Transfer(context.Background(), "push", []string{sourceA, sourceB}, t.TempDir(), TransferOptions{})
+	if err == nil || !strings.Contains(err.Error(), "multiple sources") {
+		t.Fatalf("expected duplicate target collision, got %v", err)
+	}
+}

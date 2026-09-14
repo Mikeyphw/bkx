@@ -61,6 +61,7 @@ var commandHandlers = map[string]commandHandler{
 	"job import":          jobImport,
 	"job list":            jobList,
 	"job plan":            jobPlan,
+	"job revisions":       jobRevisions,
 	"job run":             jobRun,
 	"job save":            jobCreate,
 	"job show":            jobShow,
@@ -74,6 +75,7 @@ var commandHandlers = map[string]commandHandler{
 	"tools explain":       toolsExplain,
 	"transfer pull":       transferPull,
 	"transfer push":       transferPush,
+	"transfer sync":       transferSync,
 	"ui start":            uiStart,
 }
 
@@ -639,7 +641,11 @@ func archiveVerify(c *appContext, args []string) int {
 }
 
 func transferOptions() map[string]optionSpec {
-	return map[string]optionSpec{"--verify": {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse}, "--overwrite": {Key: "overwrite", Kind: optionBoolTrue}}
+	return map[string]optionSpec{
+		"--verify": {Key: "verify", Kind: optionBoolTrue}, "--no-verify": {Key: "verify", Kind: optionBoolFalse},
+		"--overwrite":         {Key: "overwrite", Kind: optionBoolTrue},
+		"--sync-delete-limit": {Key: "sync_delete_limit", Kind: optionValue},
+	}
 }
 
 func transferCommand(c *appContext, args []string, direction string) int {
@@ -651,6 +657,19 @@ func transferCommand(c *appContext, args []string, direction string) int {
 		return cliUsageError(c, err)
 	}
 	spec := models.TransferSpec{Sources: []string{a.Positionals[0]}, Destination: a.Positionals[1], Direction: direction, Verify: resolveVerify(c, a), DryRun: c.globals.DryRun, Overwrite: a.Bools["overwrite"]}
+	if direction == "sync" {
+		spec.DeleteExtraneousOnSync = true
+		if raw, set := a.stringValue("sync_delete_limit"); set {
+			limit, err := a.intValue("sync_delete_limit", 0)
+			if err != nil {
+				return commandErr(c, berror.Validation(err.Error(), nil))
+			}
+			spec.SyncDeleteLimit = limit
+			_ = raw
+		}
+	} else if a.has("sync_delete_limit") {
+		return commandErr(c, berror.Validation("--sync-delete-limit is valid only with transfer sync", map[string]any{"direction": direction}))
+	}
 	if c.globals.DryRun {
 		plan, err := transferPlan(spec, "transfer "+direction)
 		if err != nil {
@@ -661,7 +680,12 @@ func transferCommand(c *appContext, args []string, direction string) int {
 		}
 		return berror.ExitOK
 	}
-	result, err := transferops.Run(spec, transferops.Options{RunStore: c.store})
+	lease, err := beginCLIExecution(c, "transfer.run", "", transferLeaseID(spec))
+	if err != nil {
+		return commandErr(c, err)
+	}
+	defer lease.Close()
+	result, err := transferops.Run(spec, transferops.Options{RunStore: c.store, RunID: lease.requestID, Cancelled: lease.Cancelled})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -669,6 +693,12 @@ func transferCommand(c *appContext, args []string, direction string) int {
 }
 func transferPush(c *appContext, args []string) int { return transferCommand(c, args, "push") }
 func transferPull(c *appContext, args []string) int { return transferCommand(c, args, "pull") }
+func transferSync(c *appContext, args []string) int { return transferCommand(c, args, "sync") }
+
+func transferLeaseID(spec models.TransferSpec) string {
+	parts := append([]string{strings.TrimSpace(spec.Direction), strings.TrimSpace(spec.Destination)}, spec.Sources...)
+	return strings.Join(parts, "|")
+}
 
 func restoreOptions() map[string]optionSpec {
 	return map[string]optionSpec{
@@ -818,13 +848,14 @@ type runSummary struct {
 	SourceCount int     `json:"source_count"`
 }
 type runListResult struct {
-	Runs       []runSummary `json:"runs"`
-	TotalCount int          `json:"total_count"`
-	Limit      int          `json:"limit"`
+	Runs          []runSummary `json:"runs"`
+	TotalCount    int          `json:"total_count"`
+	Limit         int          `json:"limit"`
+	NextPageToken string       `json:"next_page_token,omitempty"`
 }
 
 func runList(c *appContext, args []string) int {
-	specs := map[string]optionSpec{"-l": {Key: "limit", Kind: optionValue}, "--limit": {Key: "limit", Kind: optionValue}, "-o": {Key: "operation", Kind: optionValue}, "--operation": {Key: "operation", Kind: optionValue}}
+	specs := map[string]optionSpec{"-l": {Key: "limit", Kind: optionValue}, "--limit": {Key: "limit", Kind: optionValue}, "-o": {Key: "operation", Kind: optionValue}, "--operation": {Key: "operation", Kind: optionValue}, "--page-token": {Key: "page_token", Kind: optionValue}}
 	a, ok := parseFor(c, "run list", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -840,14 +871,13 @@ func runList(c *appContext, args []string) int {
 	if c.store == nil {
 		return commandErr(c, berror.Validation("Run history is disabled", nil))
 	}
-	records, err := c.store.List(limit, operation)
+	pageToken, _ := a.stringValue("page_token")
+	page, err := c.store.ListPage(limit, operation, pageToken)
 	if err != nil {
 		return commandErr(c, err)
 	}
-	count, err := c.store.Count(operation)
-	if err != nil {
-		return commandErr(c, err)
-	}
+	records := page.Records
+	count := page.Total
 	summaries := make([]runSummary, 0, len(records))
 	for _, r := range records {
 		summaries = append(summaries, runSummary{
@@ -855,7 +885,7 @@ func runList(c *appContext, args []string) int {
 			StartedAt: r.StartedAt, CompletedAt: r.CompletedAt, SourceCount: len(r.SourcePaths),
 		})
 	}
-	return renderResult(c, runListResult{Runs: summaries, TotalCount: count, Limit: limit}, "run_list")
+	return renderResult(c, runListResult{Runs: summaries, TotalCount: count, Limit: limit, NextPageToken: page.NextPageToken}, "run_list")
 }
 
 func runShow(c *appContext, args []string) int {
@@ -878,8 +908,8 @@ func runShow(c *appContext, args []string) int {
 	}
 	var timing any
 	if record.CompletedAt != nil {
-		start, e1 := time.Parse("2006-01-02T15:04:05.999999999", record.StartedAt)
-		end, e2 := time.Parse("2006-01-02T15:04:05.999999999", *record.CompletedAt)
+		start, e1 := time.Parse(time.RFC3339Nano, record.StartedAt)
+		end, e2 := time.Parse(time.RFC3339Nano, *record.CompletedAt)
 		if e1 == nil && e2 == nil {
 			timing = []any{record.StartedAt, end.Sub(start).Seconds()}
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -16,15 +17,17 @@ import (
 
 func jobCommonOptions() map[string]optionSpec {
 	return map[string]optionSpec{
-		"--name":           {Key: "name", Kind: optionValue},
-		"--description":    {Key: "description", Kind: optionValue},
-		"--operation":      {Key: "operation", Kind: optionValue},
-		"--params-json":    {Key: "params_json", Kind: optionValue},
-		"--repository-ref": {Key: "repository_ref", Kind: optionValue},
-		"--credential-ref": {Key: "credential_ref", Kind: optionMultiValue},
-		"--tag":            {Key: "tag", Kind: optionMultiValue},
-		"--enabled":        {Key: "enabled", Kind: optionBoolTrue},
-		"--disabled":       {Key: "enabled", Kind: optionBoolFalse},
+		"--name":                  {Key: "name", Kind: optionValue},
+		"--description":           {Key: "description", Kind: optionValue},
+		"--operation":             {Key: "operation", Kind: optionValue},
+		"--params-json":           {Key: "params_json", Kind: optionValue},
+		"--repository-ref":        {Key: "repository_ref", Kind: optionValue},
+		"--credential-ref":        {Key: "credential_ref", Kind: optionMultiValue},
+		"--tag":                   {Key: "tag", Kind: optionMultiValue},
+		"--enabled":               {Key: "enabled", Kind: optionBoolTrue},
+		"--disabled":              {Key: "enabled", Kind: optionBoolFalse},
+		"--clear-tags":            {Key: "clear_tags", Kind: optionBoolTrue},
+		"--clear-credential-refs": {Key: "clear_credential_refs", Kind: optionBoolTrue},
 	}
 }
 
@@ -101,8 +104,8 @@ func makeOperation(a leafArgs, fallback *models.OperationSpecV2) (models.Operati
 			spec.CredentialRefs = append(spec.CredentialRefs, models.SecretReference{ID: strings.TrimSpace(ref)})
 		}
 	}
-	if err := models.ValidateOperationSpecV2(spec); err != nil {
-		return spec, berror.Validation("invalid saved operation", map[string]any{"reason": err.Error()})
+	if err := validateExecutableOperation(spec); err != nil {
+		return spec, err
 	}
 	return spec, nil
 }
@@ -123,8 +126,7 @@ func jobCreate(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	jobID := a.Positionals[0]
 	if _, set := a.stringValue("operation"); !set {
@@ -156,8 +158,7 @@ func jobList(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if len(a.Positionals) > 0 {
-		usageError(c.stderr, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
-		return berror.ExitUsage
+		return cliUsageError(c, fmt.Errorf("unexpected argument: %s", a.Positionals[0]))
 	}
 	jobs, err := c.jobs.List()
 	if err != nil {
@@ -186,8 +187,7 @@ func jobShow(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	j, code := getJob(c, a.Positionals[0])
 	if j == nil {
@@ -204,8 +204,7 @@ func jobEdit(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	cur, code := getJob(c, a.Positionals[0])
 	if cur == nil {
@@ -221,7 +220,9 @@ func jobEdit(c *appContext, args []string) int {
 	if v, set := a.triBool("enabled"); set {
 		repl.Enabled = *v
 	}
-	if tags := a.multiValue("tag"); len(tags) > 0 {
+	if a.Bools["clear_tags"] {
+		repl.Tags = nil
+	} else if tags := a.multiValue("tag"); len(tags) > 0 {
 		repl.Tags = tags
 	}
 	op, err := makeOperation(a, &cur.Operation)
@@ -250,8 +251,7 @@ func jobClone(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 2, 2, "SOURCE_JOB_ID TARGET_JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	src, code := getJob(c, a.Positionals[0])
 	if src == nil {
@@ -280,8 +280,11 @@ func jobDelete(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
+	}
+	removedSchedules, schedErr := c.schedules.DeleteForJob(a.Positionals[0])
+	if schedErr != nil {
+		return commandErr(c, schedErr)
 	}
 	deleted, err := c.jobs.Delete(a.Positionals[0])
 	if err != nil {
@@ -301,7 +304,8 @@ func jobDelete(c *appContext, args []string) int {
 			}
 		}
 	}
-	return renderResult(c, map[string]any{"job_id": a.Positionals[0], "deleted": true}, "job_delete")
+	notifyAndroidScheduler()
+	return renderResult(c, map[string]any{"job_id": a.Positionals[0], "deleted": true, "schedules_removed": removedSchedules}, "job_delete")
 }
 
 func jobExport(c *appContext, args []string) int {
@@ -310,8 +314,7 @@ func jobExport(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	j, code := getJob(c, a.Positionals[0])
 	if j == nil {
@@ -324,8 +327,8 @@ func jobExport(c *appContext, args []string) int {
 		if err != nil {
 			return commandErr(c, err)
 		}
-		if err := os.WriteFile(path, data, 0600); err != nil {
-			return commandErr(c, berror.WrapExternal("writing job export", path, "filesystem", err))
+		if err := safeWriteExport(path, data); err != nil {
+			return commandErr(c, err)
 		}
 		return renderResult(c, map[string]any{"job_id": j.JobID, "output": path}, "job_export")
 	}
@@ -339,8 +342,7 @@ func jobImport(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "FILE"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	path, err := canonicalOptionalPath(a.Positionals[0])
 	if err != nil {
@@ -363,6 +365,9 @@ func jobImport(c *appContext, args []string) int {
 	j.Revision = 0
 	j.CreatedAt = ""
 	j.UpdatedAt = ""
+	if err := validateExecutableOperation(j.Operation); err != nil {
+		return commandErr(c, err)
+	}
 	created, err := c.jobs.Create(j)
 	if err != nil {
 		return commandErr(c, err)
@@ -395,6 +400,24 @@ func applySets(params map[string]any, values []string) error {
 	return nil
 }
 
+func jobRevisions(c *appContext, args []string) int {
+	a, ok := parseFor(c, "job revisions", args, map[string]optionSpec{})
+	if !ok {
+		return berror.ExitOK
+	}
+	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
+		return cliUsageError(c, err)
+	}
+	revisions, err := c.jobs.Revisions(a.Positionals[0])
+	if err != nil {
+		return commandErr(c, err)
+	}
+	if len(revisions) == 0 {
+		return commandErr(c, berror.NotFound("Saved job not found: "+a.Positionals[0], map[string]any{"job_id": a.Positionals[0]}))
+	}
+	return renderResult(c, map[string]any{"job_id": a.Positionals[0], "revisions": revisions, "total": len(revisions)}, "job_revisions")
+}
+
 func jobRun(c *appContext, args []string) int {
 	specs := map[string]optionSpec{"--set": {Key: "set", Kind: optionMultiValue}, "--request-id": {Key: "request_id", Kind: optionValue}, "--dry-run": {Key: "dry_run", Kind: optionBoolTrue}}
 	a, ok := parseFor(c, "job run", args, specs)
@@ -402,8 +425,7 @@ func jobRun(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	j, code := getJob(c, a.Positionals[0])
 	if j == nil {
@@ -415,6 +437,9 @@ func jobRun(c *appContext, args []string) int {
 	requestID, set := a.stringValue("request_id")
 	if !set || strings.TrimSpace(requestID) == "" {
 		requestID = fmt.Sprintf("cli-job-%d-%d", os.Getpid(), time.Now().UnixNano())
+	}
+	if err := validateJobOverrideKeys(j.Operation.Operation, a.multiValue("set")); err != nil {
+		return commandErr(c, err)
 	}
 	plan := c.globals.DryRun || a.Bools["dry_run"]
 	payload, _ := json.Marshal(map[string]any{"job_id": j.JobID, "overrides": a.multiValue("set")})
@@ -438,12 +463,14 @@ func jobPlan(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	j, code := getJob(c, a.Positionals[0])
 	if j == nil {
 		return code
+	}
+	if err := validateJobOverrideKeys(j.Operation.Operation, a.multiValue("set")); err != nil {
+		return commandErr(c, err)
 	}
 	payload, _ := json.Marshal(map[string]any{"job_id": j.JobID, "overrides": a.multiValue("set")})
 	d := services.NewWithStores(c.store, c.repositories, c.jobs)
@@ -460,17 +487,18 @@ func replayOperation(record models.RunRecord) (models.OperationSpecV2, error) {
 
 func runReplay(c *appContext, args []string) int {
 	specs := map[string]optionSpec{
-		"--set":        {Key: "set", Kind: optionMultiValue},
-		"--request-id": {Key: "request_id", Kind: optionValue},
-		"--dry-run":    {Key: "dry_run", Kind: optionBoolTrue},
+		"--set":                   {Key: "set", Kind: optionMultiValue},
+		"--clear-tags":            {Key: "clear_tags", Kind: optionBoolTrue},
+		"--clear-credential-refs": {Key: "clear_credential_refs", Kind: optionBoolTrue},
+		"--request-id":            {Key: "request_id", Kind: optionValue},
+		"--dry-run":               {Key: "dry_run", Kind: optionBoolTrue},
 	}
 	a, ok := parseFor(c, "run replay", args, specs)
 	if !ok {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 1, 1, "RUN_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	if c.store == nil {
 		return commandErr(c, berror.Validation("Run history is disabled", nil))
@@ -499,8 +527,7 @@ func jobCreateFromRun(c *appContext, args []string) int {
 		return berror.ExitOK
 	}
 	if err := requirePositionals(a.Positionals, 2, 2, "RUN_ID JOB_ID"); err != nil {
-		usageError(c.stderr, err)
-		return berror.ExitUsage
+		return cliUsageError(c, err)
 	}
 	if c.store == nil {
 		return commandErr(c, berror.Validation("Run history is disabled", nil))
@@ -526,4 +553,61 @@ func jobCreateFromRun(c *appContext, args []string) int {
 		return commandErr(c, err)
 	}
 	return renderResult(c, created, "job")
+}
+
+func safeWriteExport(path string, data []byte) error {
+	clean, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil || strings.TrimSpace(path) == "" {
+		return berror.Validation("invalid job export path", map[string]any{"path": path})
+	}
+	if info, err := os.Lstat(clean); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			return berror.Validation("job export refuses to overwrite a symbolic link", map[string]any{"path": clean})
+		}
+		return berror.Validation("job export refuses to overwrite an existing file", map[string]any{"path": clean})
+	} else if !os.IsNotExist(err) {
+		return berror.WrapExternal("checking job export target", clean, "filesystem", err)
+	}
+	f, err := os.OpenFile(clean, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return berror.WrapExternal("creating job export", clean, "filesystem", err)
+	}
+	defer f.Close()
+	if _, err := f.Write(data); err != nil {
+		return berror.WrapExternal("writing job export", clean, "filesystem", err)
+	}
+	return f.Sync()
+}
+
+func validateExecutableOperation(op models.OperationSpecV2) error {
+	if err := models.ValidateOperationSpecV2(op); err != nil {
+		return berror.Validation("Invalid operation spec", map[string]any{"reason": err.Error()})
+	}
+	allowed := map[string]bool{
+		"archive.create": true, "backup.create": true, "backup.snapshot": true, "repository.check": true, "repository.prune": true,
+		"retention.apply": true, "restore.extract": true, "snapshots.restore": true, "transfer.run": true,
+	}
+	if !allowed[op.Operation] {
+		return berror.Validation("operation is not allowed in saved jobs", map[string]any{"operation": op.Operation})
+	}
+	return nil
+}
+
+func validateJobOverrideKeys(operation string, sets []string) error {
+	for _, raw := range sets {
+		key := strings.TrimSpace(strings.SplitN(raw, "=", 2)[0])
+		if key == "" || strings.Contains(key, "..") || strings.ContainsAny(key, "/\\") {
+			return berror.Validation("job override key is invalid", map[string]any{"key": key})
+		}
+		lower := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(key, "-", "_"), ".", "_"))
+		for _, token := range []string{"secret", "password", "token", "credential", "client_secret", "private_key", "session", "cookie", "bearer", "auth"} {
+			if strings.Contains(lower, token) {
+				return berror.Validation("job overrides cannot change secret or credential fields", map[string]any{"operation": operation, "key": key})
+			}
+		}
+		if lower == "operation" || lower == "schema_version" || lower == "repository_ref" {
+			return berror.Validation("job override key targets immutable operation metadata", map[string]any{"operation": operation, "key": key})
+		}
+	}
+	return nil
 }

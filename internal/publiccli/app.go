@@ -482,6 +482,7 @@ Transfer operations
 Commands:
   pull
   push
+  sync
 `,
 	"ui": `Usage: bkx ui COMMAND [ARGS]...
 
@@ -510,6 +511,7 @@ var LeafHelp = map[string]string{
 	"job clone":           "Usage: bkx job clone SOURCE_JOB_ID TARGET_JOB_ID [OPTIONS]\n",
 	"job delete":          "Usage: bkx job delete JOB_ID\n",
 	"job plan":            "Usage: bkx job plan [OPTIONS] JOB_ID\n",
+	"job revisions":       "Usage: bkx job revisions JOB_ID\n",
 	"job run":             "Usage: bkx job run [OPTIONS] JOB_ID\n",
 	"job export":          "Usage: bkx job export [OPTIONS] JOB_ID\n",
 	"job import":          "Usage: bkx job import [OPTIONS] FILE\n",
@@ -548,5 +550,6 @@ var LeafHelp = map[string]string{
 	"tools explain":       "Usage: bkx tools explain [CATEGORY]...\n",
 	"transfer push":       "Usage: bkx transfer push [OPTIONS] SOURCE DESTINATION\n",
 	"transfer pull":       "Usage: bkx transfer pull [OPTIONS] SOURCE DESTINATION\n",
+	"transfer sync":       "Usage: bkx transfer sync [OPTIONS] SOURCE DESTINATION\n",
 	"ui start":            "Usage: bkx ui start [OPTIONS]\n",
 }

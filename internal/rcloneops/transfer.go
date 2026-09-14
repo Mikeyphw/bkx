@@ -109,6 +109,7 @@ func (r Runtime) Transfer(ctx context.Context, mode string, sources []string, de
 	}
 
 	mappings := make([]transferMapping, 0, len(sources))
+	seenTargets := map[string]string{}
 	total := Size{}
 	for _, source := range sources {
 		entry, size, err := r.Measure(ctx, source)
@@ -127,6 +128,14 @@ func (r Runtime) Transfer(ctx context.Context, mode string, sources []string, de
 				return TransferResult{}, err
 			}
 		}
+		targetKey, err := transferTargetKey(target)
+		if err != nil {
+			return TransferResult{}, err
+		}
+		if prior, exists := seenTargets[targetKey]; exists {
+			return TransferResult{}, fmt.Errorf("rclone transfer would write multiple sources to %s (%s and %s)", target, prior, source)
+		}
+		seenTargets[targetKey] = source
 		mappings = append(mappings, transferMapping{source: source, destination: target, sourceEntry: entry})
 	}
 	emitTransferProgress(options, Progress{FilesTotal: total.Files, BytesTotal: total.Bytes})
@@ -207,6 +216,14 @@ func destinationChild(destination, child string) (string, error) {
 		return JoinURI(destination, child)
 	}
 	return joinDestination(destination, child)
+}
+
+func transferTargetKey(destination string) (string, error) {
+	resolved, err := commandLocation(destination)
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
 }
 
 func emitTransferProgress(options TransferOptions, progress Progress) {

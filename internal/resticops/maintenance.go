@@ -13,13 +13,16 @@ import (
 
 	"bkx/internal/berror"
 	"bkx/internal/models"
+	"bkx/internal/validation"
 )
 
 const (
-	DefaultSnapshotListLimit = 1000
-	MaxSnapshotListLimit     = 5000
-	DefaultSnapshotDiffLimit = 1000
-	MaxSnapshotDiffLimit     = 5000
+	DefaultSnapshotListLimit   = 1000
+	MaxSnapshotListLimit       = 5000
+	DefaultSnapshotDiffLimit   = 1000
+	MaxSnapshotDiffLimit       = 5000
+	DefaultSnapshotBrowseLimit = 1000
+	MaxSnapshotBrowseLimit     = 5000
 )
 
 type SnapshotListOptions struct {
@@ -44,6 +47,13 @@ type SnapshotBrowseResult struct {
 	SnapshotID string                `json:"snapshot_id"`
 	Path       string                `json:"path"`
 	Entries    []models.SnapshotNode `json:"entries"`
+	Limit      int                   `json:"limit,omitempty"`
+	Truncated  bool                  `json:"truncated,omitempty"`
+}
+
+type SnapshotBrowseOptions struct {
+	Recursive bool
+	Limit     int
 }
 
 type DiffChange struct {
@@ -237,7 +247,11 @@ func ResolveSnapshot(spec models.RepositoryAccessSpec, selector string, options 
 	if value == "" {
 		return models.SnapshotDescriptor{}, berror.Validation("snapshot selector must not be empty", nil)
 	}
-	listed, err := ListSnapshots(spec, SnapshotListOptions{}, options)
+	listOptions := SnapshotListOptions{}
+	if value != "latest" && !strings.HasPrefix(value, "latest~") && len(value) >= 8 && len(value) >= 32 {
+		listOptions.Limit = MaxSnapshotListLimit
+	}
+	listed, err := ListSnapshots(spec, listOptions, options)
 	if err != nil {
 		return models.SnapshotDescriptor{}, err
 	}
@@ -277,6 +291,10 @@ func ResolveSnapshot(spec models.RepositoryAccessSpec, selector string, options 
 }
 
 func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, recursive bool, options Options) (SnapshotBrowseResult, error) {
+	return BrowseSnapshotWithOptions(spec, selector, path, SnapshotBrowseOptions{Recursive: recursive}, options)
+}
+
+func BrowseSnapshotWithOptions(spec models.RepositoryAccessSpec, selector, path string, browseOptions SnapshotBrowseOptions, options Options) (SnapshotBrowseResult, error) {
 	runner, repository, base, env, err := prepareAccess(spec, options)
 	if err != nil {
 		return SnapshotBrowseResult{}, err
@@ -298,7 +316,7 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 	}
 	args := append([]string{"--json"}, base...)
 	args = append(args, "ls")
-	if recursive {
+	if browseOptions.Recursive {
 		args = append(args, "--recursive")
 	}
 	args = append(args, snapshot.ID, browsePath)
@@ -306,7 +324,9 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 	if runErr != nil {
 		return SnapshotBrowseResult{}, external("browsing Restic snapshot", repository, stderr, runErr)
 	}
+	limit := normalizeLimit(browseOptions.Limit, DefaultSnapshotBrowseLimit, MaxSnapshotBrowseLimit)
 	entries := []models.SnapshotNode{}
+	truncated := false
 	for lineNumber, line := range bytes.Split(stdout, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
 		if len(line) == 0 {
@@ -348,10 +368,14 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 		if cleanPath == browsePath {
 			continue
 		}
-		entries = append(entries, models.SnapshotNode{
-			Name: strings.TrimSpace(node.Name), Type: strings.TrimSpace(node.Type), Path: cleanPath, Size: node.Size,
-			Permissions: node.Permissions, ModTime: node.MTime,
-		})
+		if len(entries) < limit {
+			entries = append(entries, models.SnapshotNode{
+				Name: strings.TrimSpace(node.Name), Type: strings.TrimSpace(node.Type), Path: cleanPath, Size: node.Size,
+				Permissions: node.Permissions, ModTime: node.MTime,
+			})
+		} else {
+			truncated = true
+		}
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		id, jd := entries[i].Type == "dir", entries[j].Type == "dir"
@@ -360,7 +384,7 @@ func BrowseSnapshot(spec models.RepositoryAccessSpec, selector, path string, rec
 		}
 		return strings.ToLower(entries[i].Name) < strings.ToLower(entries[j].Name)
 	})
-	return SnapshotBrowseResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Path: browsePath, Entries: entries}, nil
+	return SnapshotBrowseResult{Success: true, Repository: repository, SnapshotID: snapshot.ID, Path: browsePath, Entries: entries, Limit: limit, Truncated: truncated}, nil
 }
 
 type SnapshotDiffOptions struct {
@@ -455,6 +479,16 @@ func RestoreSnapshot(spec models.RepositoryAccessSpec, selector string, restore 
 	if err != nil {
 		return RestoreResult{}, err
 	}
+	includes, err := validation.NormalizePatterns(restore.Includes, "includes")
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	excludes, err := validation.NormalizePatterns(restore.Excludes, "excludes")
+	if err != nil {
+		return RestoreResult{}, err
+	}
+	restore.Includes = includes
+	restore.Excludes = excludes
 	if len(restore.Includes) > 0 && len(restore.Excludes) > 0 {
 		return RestoreResult{}, berror.Validation("snapshot restore accepts include or exclude filters, not both", nil)
 	}
@@ -578,6 +612,7 @@ func CheckRepository(spec models.RepositoryAccessSpec, check CheckOptions, optio
 	if v := strings.TrimSpace(check.ReadDataSubset); v != "" {
 		args = append(args, "--read-data-subset", v)
 	}
+	emitRetentionProgress(options, "preparing", 0, 0)
 	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
 		if errors.Is(runErr, ErrCancelled) {
@@ -604,6 +639,7 @@ func ForgetSnapshot(spec models.RepositoryAccessSpec, selector string, options O
 	}
 	args := append([]string{}, base...)
 	args = append(args, "forget", snapshot.ID)
+	emitRetentionProgress(options, "preparing", 0, 0)
 	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
 		if errors.Is(runErr, ErrCancelled) {
@@ -661,6 +697,7 @@ func ApplyRetention(spec models.RepositoryAccessSpec, policy models.RetentionPol
 	if dryRun {
 		args = append(args, "--dry-run")
 	}
+	emitRetentionProgress(options, "preparing", 0, 0)
 	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
 		if errors.Is(runErr, ErrCancelled) {
@@ -668,6 +705,7 @@ func ApplyRetention(spec models.RepositoryAccessSpec, policy models.RetentionPol
 		}
 		return MaintenanceResult{}, external("applying Restic retention policy", repository, stderr, runErr)
 	}
+	emitRetentionProgress(options, "complete", 1, 1)
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "retention", DryRun: dryRun, DurationMS: time.Since(started).Milliseconds()}, nil
 }
 
@@ -688,6 +726,7 @@ func PruneRepository(spec models.RepositoryAccessSpec, prune PruneOptions, optio
 	if v := strings.TrimSpace(prune.MaxRepackSize); v != "" {
 		args = append(args, "--max-repack-size", v)
 	}
+	emitRetentionProgress(options, "preparing", 0, 0)
 	_, stderr, runErr := runWithStaleLockRecovery(runner, args, env, base, options.Cancelled, nil, nil)
 	if runErr != nil {
 		if errors.Is(runErr, ErrCancelled) {
@@ -696,4 +735,10 @@ func PruneRepository(spec models.RepositoryAccessSpec, prune PruneOptions, optio
 		return MaintenanceResult{}, external("pruning Restic repository", repository, stderr, runErr)
 	}
 	return MaintenanceResult{Success: true, Repository: repository, Operation: "prune", DryRun: prune.DryRun, DurationMS: time.Since(started).Milliseconds()}, nil
+}
+
+func emitRetentionProgress(options Options, stage string, current, total int64) {
+	if options.Progress != nil {
+		options.Progress(ProgressEvent{Stage: stage, Files: current, TotalFiles: total})
+	}
 }

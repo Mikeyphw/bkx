@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -67,22 +68,23 @@ func ValidateRetentionPolicy(policy RetentionPolicy) error {
 		}
 	}
 	if policy.KeepWithin != nil {
-		set = true
-		if strings.TrimSpace(*policy.KeepWithin) == "" {
+		value := strings.TrimSpace(*policy.KeepWithin)
+		if value == "" {
 			return fmt.Errorf("keep_within must not be empty")
 		}
-	}
-	for _, tag := range policy.KeepTags {
-		set = true
-		if strings.TrimSpace(tag) == "" {
-			return fmt.Errorf("keep_tags must not contain empty values")
+		if !resticDurationPattern.MatchString(value) {
+			return fmt.Errorf("keep_within must use Restic duration syntax, for example 24h, 7d, 1m, or 1y")
 		}
+		set = true
+	}
+	for range policy.KeepTags {
+		set = true
 	}
 	if !set {
 		return fmt.Errorf("retention policy must contain at least one keep rule")
 	}
 	switch policy.GroupBy {
-	case "", "host,paths", "host,paths,tags", "paths,tags", "host,tags", "paths":
+	case "", "none", "host", "tags", "host,paths", "host,paths,tags", "paths,tags", "host,tags", "paths":
 	default:
 		return fmt.Errorf("unsupported retention group_by %q", policy.GroupBy)
 	}
@@ -130,3 +132,5 @@ type RepositoryAccessSpec struct {
 	Repository    string  `json:"repository"`
 	CredentialRef *string `json:"credential_ref,omitempty"`
 }
+
+var resticDurationPattern = regexp.MustCompile(`^[0-9]+(?:h|d|w|m|y)$`)

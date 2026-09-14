@@ -2218,3 +2218,71 @@ tasks.register("verifyBkxCliBackupArchiveRestoreDomainSeal") {
 tasks.named("bkxAndroidReleaseSeal") {
     dependsOn("verifyBkxCliBackupArchiveRestoreDomainSeal")
 }
+
+tasks.register("verifyBkxCliRepositorySnapshotTransferJobsDomainSeal") {
+    group = "verification"
+    description = "Verifies BR33 CLI repository, snapshot, transfer, saved-job, schedule, and run-history domain contracts."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val publicCliRoot = repositoryRoot.resolve("internal/publiccli")
+        val resticOpsRoot = repositoryRoot.resolve("internal/resticops")
+        val rcloneOpsRoot = repositoryRoot.resolve("internal/rcloneops")
+        val scheduleStoreRoot = repositoryRoot.resolve("internal/schedulestore")
+        val modelsRoot = repositoryRoot.resolve("internal/models")
+        val commands = publicCliRoot.resolve("commands.go").readText()
+        val repository = publicCliRoot.resolve("repository.go").readText()
+        val jobs = publicCliRoot.resolve("jobs.go").readText()
+        val schedule = publicCliRoot.resolve("schedule.go").readText()
+        val snapshot = publicCliRoot.resolve("snapshot.go").readText()
+        val retention = publicCliRoot.resolve("retention.go").readText()
+        val maintenance = resticOpsRoot.resolve("maintenance.go").readText()
+        val transfer = rcloneOpsRoot.resolve("transfer.go").readText()
+        val store = scheduleStoreRoot.resolve("store.go").readText()
+        val retentionModel = modelsRoot.resolve("snapshot_maintenance.go").readText()
+        val doc = repositoryRoot.resolve("BR33_CLI_REPOSITORY_SNAPSHOT_TRANSFER_JOBS_DOMAIN_SEAL.md")
+        check(commands.contains("\"transfer sync\":       transferSync") && commands.contains("--sync-delete-limit") && commands.contains("beginCLIExecution(c, \"transfer.run\"")) {
+            "BR33 transfer sync/delete-ceiling/execution-lease CLI contract is missing."
+        }
+        check(transfer.contains("SyncDeleteLimit") && transfer.contains("--max-delete") && transfer.contains("transferTargetKey") && transfer.contains("multiple sources")) {
+            "BR33 rclone sync delete ceiling or duplicate-target guard is missing."
+        }
+        check(commands.contains("ListPage(limit, operation, pageToken)") && commands.contains("NextPageToken")) {
+            "BR33 run-history pagination contract is missing."
+        }
+        check(repository.contains("repositoryDependencies") && repository.contains("--force") && repository.contains("cleanupRepositoryInitParent") && repository.contains("validateResticPruneOption")) {
+            "BR33 repository dependency/init/prune safety contract is missing."
+        }
+        check(snapshot.contains("BrowseSnapshotWithOptions") && snapshot.contains("DiffSnapshotsWithOptions") && snapshot.contains("snapshot_forget") && snapshot.contains("validation.NormalizePatterns")) {
+            "BR33 snapshot CLI bounds/dry-run/pattern contract is missing."
+        }
+        check(maintenance.contains("DefaultSnapshotBrowseLimit") && maintenance.contains("Truncated") && maintenance.contains("validation.NormalizePatterns") && maintenance.contains("emitRetentionProgress")) {
+            "BR33 Restic snapshot browse/restore/retention contract is missing."
+        }
+        check(retentionModel.contains("\"host\": true") && retentionModel.contains("\"tags\": true") && retentionModel.contains("\"none\": true") && retentionModel.contains("resticDurationPattern")) {
+            "BR33 retention model compatibility contract is missing."
+        }
+        check(retention.contains("dry_run") && retention.contains("retention_set") && retention.contains("retention_clear")) {
+            "BR33 retention dry-run CLI contract is missing."
+        }
+        check(jobs.contains("validateExecutableOperation") && jobs.contains("safeWriteExport") && jobs.contains("validateJobOverrideKeys") && jobs.contains("jobRevisions")) {
+            "BR33 saved-job executable/export/override/revision contract is missing."
+        }
+        check(schedule.contains("expected_revision") && schedule.contains("disabled saved job") && store.contains("PutExpected") && store.contains("SetEnabledExpected") && store.contains("readDocument")) {
+            "BR33 schedule revision and side-effect-free read contract is missing."
+        }
+        listOf(
+            modelsRoot.resolve("br33_retention_contract_test.go"),
+            scheduleStoreRoot.resolve("br33_schedule_revision_test.go"),
+            publicCliRoot.resolve("br33_cli_repository_snapshot_transfer_jobs_test.go"),
+            rcloneOpsRoot.resolve("transfer_test.go")
+        ).forEach { file -> check(file.isFile) { "BR33 contract test missing: ${file.name}" } }
+        check(doc.isFile && doc.readText().contains("Overlay 13 of 16")) {
+            "BR33 handoff doc must preserve overlay number and roadmap total."
+        }
+    }
+}
+
+tasks.named("bkxAndroidReleaseSeal") {
+    dependsOn("verifyBkxCliRepositorySnapshotTransferJobsDomainSeal")
+}

@@ -7,6 +7,7 @@ import (
 	"bkx/internal/berror"
 	"bkx/internal/models"
 	"bkx/internal/resticops"
+	"bkx/internal/validation"
 )
 
 func snapshotAccessOptions() map[string]optionSpec {
@@ -133,7 +134,7 @@ func mergeOptions(base map[string]optionSpec, extra map[string]optionSpec) map[s
 }
 
 func snapshotList(c *appContext, args []string) int {
-	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--host": {Key: "host", Kind: optionValue}, "--path": {Key: "path", Kind: optionValue}, "--tag": {Key: "tag", Kind: optionMultiValue}})
+	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--host": {Key: "host", Kind: optionValue}, "--path": {Key: "path", Kind: optionValue}, "--tag": {Key: "tag", Kind: optionMultiValue}, "--limit": {Key: "limit", Kind: optionValue}})
 	a, ok := parseFor(c, "snapshot list", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -144,7 +145,11 @@ func snapshotList(c *appContext, args []string) int {
 	}
 	host, _ := a.stringValue("host")
 	path, _ := a.stringValue("path")
-	result, err := resticops.ListSnapshots(access, resticops.SnapshotListOptions{Host: host, Path: path, Tags: a.multiValue("tag")}, resticops.Options{})
+	limit, err := a.intValue("limit", 0)
+	if err != nil {
+		return commandErr(c, berror.Validation(err.Error(), nil))
+	}
+	result, err := resticops.ListSnapshots(access, resticops.SnapshotListOptions{Host: host, Path: path, Tags: a.multiValue("tag"), Limit: limit}, resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -152,7 +157,7 @@ func snapshotList(c *appContext, args []string) int {
 }
 
 func snapshotBrowse(c *appContext, args []string) int {
-	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--path": {Key: "path", Kind: optionValue}, "--recursive": {Key: "recursive", Kind: optionBoolTrue}})
+	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--path": {Key: "path", Kind: optionValue}, "--recursive": {Key: "recursive", Kind: optionBoolTrue}, "--limit": {Key: "limit", Kind: optionValue}})
 	a, ok := parseFor(c, "snapshot browse", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -166,7 +171,11 @@ func snapshotBrowse(c *appContext, args []string) int {
 	if v, ok := a.triBool("recursive"); ok && v != nil {
 		recursive = *v
 	}
-	result, err := resticops.BrowseSnapshot(access, positionals[0], path, recursive, resticops.Options{})
+	limit, err := a.intValue("limit", 0)
+	if err != nil {
+		return commandErr(c, berror.Validation(err.Error(), nil))
+	}
+	result, err := resticops.BrowseSnapshotWithOptions(access, positionals[0], path, resticops.SnapshotBrowseOptions{Recursive: recursive, Limit: limit}, resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -190,7 +199,7 @@ func snapshotShow(c *appContext, args []string) int {
 }
 
 func snapshotDiff(c *appContext, args []string) int {
-	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--metadata": {Key: "metadata", Kind: optionBoolTrue}})
+	specs := mergeOptions(snapshotAccessOptions(), map[string]optionSpec{"--metadata": {Key: "metadata", Kind: optionBoolTrue}, "--limit": {Key: "limit", Kind: optionValue}})
 	a, ok := parseFor(c, "snapshot diff", args, specs)
 	if !ok {
 		return berror.ExitOK
@@ -203,7 +212,11 @@ func snapshotDiff(c *appContext, args []string) int {
 	if v, ok := a.triBool("metadata"); ok && v != nil {
 		metadata = *v
 	}
-	result, err := resticops.DiffSnapshots(access, positionals[0], positionals[1], metadata, resticops.Options{})
+	limit, err := a.intValue("limit", 0)
+	if err != nil {
+		return commandErr(c, berror.Validation(err.Error(), nil))
+	}
+	result, err := resticops.DiffSnapshotsWithOptions(access, positionals[0], positionals[1], resticops.SnapshotDiffOptions{Metadata: metadata, MaxChanges: limit}, resticops.Options{})
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -241,7 +254,15 @@ func snapshotRestore(c *appContext, args []string) int {
 		defer lease.Close()
 		options.Cancelled = lease.Cancelled
 	}
-	result, err := resticops.RestoreSnapshot(access, positionals[0], resticops.RestoreOptions{Target: abs, Includes: a.multiValue("include"), Excludes: a.multiValue("exclude"), Overwrite: overwrite, DryRun: c.globals.DryRun}, options)
+	includes, err := validation.NormalizePatterns(a.multiValue("include"), "includes")
+	if err != nil {
+		return commandErr(c, err)
+	}
+	excludes, err := validation.NormalizePatterns(a.multiValue("exclude"), "excludes")
+	if err != nil {
+		return commandErr(c, err)
+	}
+	result, err := resticops.RestoreSnapshot(access, positionals[0], resticops.RestoreOptions{Target: abs, Includes: includes, Excludes: excludes, Overwrite: overwrite, DryRun: c.globals.DryRun}, options)
 	if err != nil {
 		return commandErr(c, err)
 	}
@@ -261,6 +282,13 @@ func snapshotForget(c *appContext, args []string) int {
 	confirm := false
 	if v, ok := a.triBool("confirm"); ok && v != nil {
 		confirm = *v
+	}
+	if c.globals.DryRun {
+		resolved, err := resticops.ResolveSnapshot(access, positionals[0], resticops.Options{})
+		if err != nil {
+			return commandErr(c, err)
+		}
+		return renderResult(c, map[string]any{"success": true, "operation": "forget", "dry_run": true, "repository": access.Repository, "snapshot_id": resolved.ID}, "snapshot_forget")
 	}
 	if !confirm {
 		return commandErr(c, berror.Validation("snapshot forget requires --confirm; it never prunes automatically", map[string]any{"action": "Review the snapshot ID, then rerun with --confirm."}))

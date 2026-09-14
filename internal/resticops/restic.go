@@ -695,9 +695,23 @@ func randomRunID() string {
 }
 func external(action, resource string, stderr []byte, err error) error {
 	text := strings.TrimSpace(string(stderr))
-	details := map[string]any{"tool": "restic", "resource": resource, "reason": err.Error()}
+	details := map[string]any{"tool": "restic", "resource": resource, "reason": err.Error(), "error_type": "tool_exit"}
+	if code := toolExitCode(err); code != nil {
+		details["tool_exit_code"] = *code
+	}
 	if text != "" {
 		details["stderr"] = text
+		details["tool_stderr"] = text
 	}
 	return berror.External("Restic failed while "+action, details)
+}
+
+func toolExitCode(err error) *int {
+	type exitCoder interface{ ExitCode() int }
+	var coder exitCoder
+	if errors.As(err, &coder) {
+		code := coder.ExitCode()
+		return &code
+	}
+	return nil
 }

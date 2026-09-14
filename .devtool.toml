@@ -112,6 +112,7 @@ preflight = [
     ":app:verifyBkxStorageFilesystemRootSafetySeal",
     ":app:verifyBkxBackupArchiveRestoreCorrectnessSeal",
     ":app:verifyBkxRepositoryResticSnapshotControlPlaneSeal",
+    ":app:verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
 ]
 
 compile = [

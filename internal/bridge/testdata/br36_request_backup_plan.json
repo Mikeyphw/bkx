@@ -1,0 +1,11 @@
+{
+  "protocol_version": 1,
+  "request_id": "br36-golden-backup-plan",
+  "operation": "backup.plan",
+  "payload": {
+    "sources": ["/storage/emulated/0/Documents"],
+    "destination": "/storage/emulated/0/BKX/backup.bkx",
+    "compression": "zstd",
+    "dry_run": true
+  }
+}

@@ -1488,6 +1488,9 @@ func restoreSpecFromBridge(p map[string]any, dry bool) (models.RestoreSpec, erro
 	verify, _ := boolDefault(p, "verify", true)
 	fresh, _ := boolDefault(p, "fresh_dir", true)
 	confirm, _ := boolDefault(p, "confirm_overwrite", false)
+	if !dry && confirm {
+		return models.RestoreSpec{}, berror.Validation("restore.extract confirm_overwrite=true means the destructive confirmation is still pending", map[string]any{"confirm_overwrite": true})
+	}
 	return models.RestoreSpec{Archive: archive, Destination: destPtr, Paths: paths, Overwrite: overwrite, Verify: verify, DryRun: dry, FreshDir: fresh, ConfirmOverwrite: confirm}, nil
 }
 

@@ -59,14 +59,14 @@ func TestZstdNativeFramesRoundTripWithoutExternalTools(t *testing.T) {
 				if err != nil || !restored.Success {
 					t.Fatalf("restore=%+v err=%v", restored, err)
 				}
-				got, err := os.ReadFile(filepath.Join(destination, "source", "payload.bin"))
+				got, err := os.ReadFile(filepath.Join(restored.DestinationPath, "source", "payload.bin"))
 				if err != nil {
 					t.Fatal(err)
 				}
 				if !bytes.Equal(got, payload) {
 					t.Fatal("binary content changed during zstd restore")
 				}
-				empty, err := os.ReadFile(filepath.Join(destination, "source", "empty.bin"))
+				empty, err := os.ReadFile(filepath.Join(restored.DestinationPath, "source", "empty.bin"))
 				if err != nil || len(empty) != 0 {
 					t.Fatalf("empty file restore: %v", err)
 				}
@@ -183,8 +183,17 @@ func TestZstdZipRejectsWrongCentralDirectoryCRCAndSize(t *testing.T) {
 			if result, err := ExtractRestore(models.RestoreSpec{Archive: out, Destination: &dest, Verify: false, FreshDir: true}, nil); err == nil && result.Success {
 				t.Fatal("corrupt zstd ZIP published during restore")
 			}
-			if _, err := os.Stat(dest); !os.IsNotExist(err) {
-				t.Fatal("failed zstd restore must not publish its staging directory")
+			// FreshDir uses dest as the parent for a generated restore directory, so
+			// the parent itself may legitimately be created before extraction. A
+			// failed restore must leave that parent empty: neither the generated
+			// destination nor the temporary .bkx-restore staging directory may
+			// survive the error path.
+			entries, readErr := os.ReadDir(dest)
+			if readErr != nil && !os.IsNotExist(readErr) {
+				t.Fatalf("inspect failed restore destination: %v", readErr)
+			}
+			if len(entries) != 0 {
+				t.Fatalf("failed zstd restore published or leaked staging entries: %v", entries)
 			}
 		})
 	}

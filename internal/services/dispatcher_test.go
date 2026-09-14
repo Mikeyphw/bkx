@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"bkx/internal/archiveio"
@@ -21,6 +22,37 @@ func mustStore(t *testing.T, path string) *runstore.Store {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func bindPlanEvidence(t *testing.T, payload map[string]any, result Result, label, requestField string) {
+	t.Helper()
+	for _, item := range result.Artifacts {
+		if item.Label != label {
+			continue
+		}
+		if item.SHA256 == nil || strings.TrimSpace(*item.SHA256) == "" {
+			t.Fatalf("%s artifact missing plan token: %+v", label, item)
+		}
+		const prefix = "embedded://plan/"
+		if !strings.HasPrefix(item.Path, prefix) {
+			t.Fatalf("%s artifact has unexpected path: %s", label, item.Path)
+		}
+		payload[requestField] = strings.TrimPrefix(item.Path, prefix)
+		payload["plan_token"] = *item.SHA256
+		return
+	}
+	t.Fatalf("%s artifact missing from result: %+v", label, result)
+}
+
+func restoredArtifactPath(t *testing.T, result Result, base string) string {
+	t.Helper()
+	for _, item := range result.Artifacts {
+		if item.Label == "restored_path" && filepath.Base(item.Path) == base {
+			return item.Path
+		}
+	}
+	t.Fatalf("restored path %q missing from result: %+v", base, result)
+	return ""
 }
 
 func TestSupportedOperationsMatchFrozenBridge(t *testing.T) {
@@ -112,6 +144,7 @@ func TestBackupArchiveRestoreRunsAndArchiveIndexDispatch(t *testing.T) {
 	if plan.Metrics == nil || plan.Metrics.FilesTotal == nil || *plan.Metrics.FilesTotal != 1 || plan.Metrics.BytesTotal == nil || *plan.Metrics.BytesTotal != 5 {
 		t.Fatalf("backup plan metrics=%+v", plan.Metrics)
 	}
+	bindPlanEvidence(t, payload, plan, "backup_plan", "plan_request_id")
 	var progress []Progress
 	created, err := d.Dispatch(OperationContext{RequestID: "backup-run", Progress: func(p Progress) { progress = append(progress, p) }}, "backup.create", raw(payload))
 	if err != nil {
@@ -156,7 +189,24 @@ func TestBackupArchiveRestoreRunsAndArchiveIndexDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runs.Artifacts) != 1 {
+	var runArtifacts, pageArtifacts int
+	for _, artifact := range runs.Artifacts {
+		switch artifact.Label {
+		case "run":
+			runArtifacts++
+			if artifact.Path != "embedded://runs/backup-run" || artifact.Metadata["run_id"] != "backup-run" {
+				t.Fatalf("unexpected run artifact=%+v", artifact)
+			}
+		case "run_history_page":
+			pageArtifacts++
+			if artifact.Path != "embedded://runs/page" || artifact.Metadata["total"] != "1" {
+				t.Fatalf("unexpected run history page artifact=%+v", artifact)
+			}
+		default:
+			t.Fatalf("unexpected runs.list artifact=%+v result=%+v", artifact, runs)
+		}
+	}
+	if runArtifacts != 1 || pageArtifacts != 1 {
 		t.Fatalf("runs=%+v", runs)
 	}
 	shown, err := d.Dispatch(OperationContext{}, "runs.show", raw(map[string]any{"run_id": "backup-run"}))
@@ -175,6 +225,7 @@ func TestBackupArchiveRestoreRunsAndArchiveIndexDispatch(t *testing.T) {
 	if preview.Status != "success" || len(preview.Artifacts) < 1 {
 		t.Fatalf("preview=%+v", preview)
 	}
+	bindPlanEvidence(t, restorePayload, preview, "restore_plan", "preview_request_id")
 	restored, err := d.Dispatch(OperationContext{RequestID: "restore-run"}, "restore.extract", raw(restorePayload))
 	if err != nil {
 		t.Fatal(err)
@@ -182,8 +233,9 @@ func TestBackupArchiveRestoreRunsAndArchiveIndexDispatch(t *testing.T) {
 	if restored.Status != "success" {
 		t.Fatalf("restored=%+v", restored)
 	}
-	if b, err := os.ReadFile(filepath.Join(restoreDir, filepath.Base(src), "a.txt")); err != nil || string(b) != "hello" {
-		t.Fatalf("restored content %q err=%v", b, err)
+	restoredFile := restoredArtifactPath(t, restored, "a.txt")
+	if b, err := os.ReadFile(restoredFile); err != nil || string(b) != "hello" {
+		t.Fatalf("restored content %q err=%v path=%s", b, err, restoredFile)
 	}
 }
 
@@ -201,9 +253,10 @@ func TestTransferDispatchAndCancellation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if plan.Status != "success" || len(plan.Artifacts) != 1 {
+	if plan.Status != "success" || len(plan.Artifacts) < 1 {
 		t.Fatalf("plan=%+v", plan)
 	}
+	bindPlanEvidence(t, payload, plan, "transfer_plan", "plan_request_id")
 	var progress []Progress
 	result, err := d.Dispatch(OperationContext{RequestID: "tr", Progress: func(p Progress) { progress = append(progress, p) }}, "transfer.run", raw(payload))
 	if err != nil {
@@ -218,7 +271,13 @@ func TestTransferDispatchAndCancellation(t *testing.T) {
 	if b, _ := os.ReadFile(dest); string(b) != "payload" {
 		t.Fatalf("dest=%q", b)
 	}
-	_, err = d.Dispatch(OperationContext{RequestID: "cancelled", Cancelled: func() bool { return true }}, "transfer.run", raw(map[string]any{"sources": []any{map[string]any{"location": src, "remote": false}}, "destination": map[string]any{"location": filepath.Join(root, "never"), "remote": false}, "mode": "push", "verify": false, "overwrite": false}))
+	cancelPayload := map[string]any{"sources": []any{map[string]any{"location": src, "remote": false}}, "destination": map[string]any{"location": filepath.Join(root, "never"), "remote": false}, "mode": "push", "verify": false, "overwrite": false}
+	cancelPlan, err := d.Dispatch(OperationContext{RequestID: "cancel-plan"}, "transfer.plan", raw(cancelPayload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindPlanEvidence(t, cancelPayload, cancelPlan, "transfer_plan", "plan_request_id")
+	_, err = d.Dispatch(OperationContext{RequestID: "cancelled", Cancelled: func() bool { return true }}, "transfer.run", raw(cancelPayload))
 	if !errors.Is(err, ErrCancelled) {
 		t.Fatalf("cancel err=%v", err)
 	}
@@ -495,13 +554,15 @@ esac
 	if err != nil || preview.Status != "success" {
 		t.Fatalf("preview=%+v err=%v", preview, err)
 	}
+	bindPlanEvidence(t, restorePayload, preview, "restore_plan", "preview_request_id")
 	restored, err := d.Dispatch(OperationContext{RequestID: "remote-restore"}, "restore.extract", raw(restorePayload))
 	if err != nil || restored.Status != "success" {
 		t.Fatalf("restored=%+v err=%v", restored, err)
 	}
-	got, err := os.ReadFile(filepath.Join(restoreDir, filepath.Base(source), "cloud.txt"))
+	restoredFile := restoredArtifactPath(t, restored, "cloud.txt")
+	got, err := os.ReadFile(restoredFile)
 	if err != nil || string(got) != "cloud-payload" {
-		t.Fatalf("restored content=%q err=%v", got, err)
+		t.Fatalf("restored content=%q err=%v path=%s", got, err, restoredFile)
 	}
 }
 

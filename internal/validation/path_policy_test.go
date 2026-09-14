@@ -37,3 +37,18 @@ func TestBR23StorageCapacityProbeAcceptsTempDestination(t *testing.T) {
 		t.Fatalf("temp destination rejected: %v", err)
 	}
 }
+
+func TestBR36AndroidPrivatePackageRootParsing(t *testing.T) {
+	cases := map[string]string{
+		"/data/data/com.termux/files/usr/tmp/output":  "/data/data/com.termux",
+		"/data/user/0/com.example/files/output":       "/data/user/0/com.example",
+		"/data/user_de/10/com.example/cache/output":   "/data/user_de/10/com.example",
+		"/data/system/users/0/settings.xml":           "",
+		"/storage/emulated/0/Download/archive.bakery": "",
+	}
+	for input, want := range cases {
+		if got := androidPrivatePackageRoot(input); got != want {
+			t.Fatalf("androidPrivatePackageRoot(%q)=%q want %q", input, got, want)
+		}
+	}
+}

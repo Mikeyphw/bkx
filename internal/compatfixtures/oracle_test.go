@@ -118,6 +118,13 @@ func canonicalize(v any, work, home string) any {
 		if _, ok := out["created_at"]; ok {
 			out["created_at"] = "<archive-created-at>"
 		}
+		// GO/BR31 added typed error metadata after the immutable Python oracle
+		// was frozen. Dedicated BR31 tests verify these fields; strip only the
+		// additive metadata here so the historical parity oracle stays frozen.
+		if out["type"] == "error" {
+			delete(out, "error_type")
+			delete(out, "exit_code")
+		}
 		return out
 	case []any:
 		out := make([]any, len(x))
@@ -139,6 +146,52 @@ func normalizeJSON(t *testing.T, raw string, work, home string) any {
 		t.Fatalf("decode JSON: %v\n%s", err, raw)
 	}
 	return canonicalize(v, work, home)
+}
+
+// normalizePostV1PlanAdditions removes only fields that later Go overlays add
+// to the frozen V1 dry-run plan envelope. Dedicated BR24/BR26/BR32 tests own
+// these richer fields, while this oracle continues to prove that the original
+// V1 contract remains a compatibility floor.
+func normalizePostV1PlanAdditions(caseName string, value any) any {
+	root, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	spec, ok := root["spec"].(map[string]any)
+	if !ok {
+		return value
+	}
+	switch caseName {
+	case "transfer-push-plan":
+		// BR26 exposes bounded executable mappings alongside the original steps.
+		delete(spec, "mappings")
+	case "restore-extract-plan", "restore-pick-plan":
+		// BR24/BR32 preview the concrete FreshDir destination and exact byte/file
+		// counts. V1 exposed only the caller-selected parent and left those
+		// estimates unknown, so normalize the additive precision here.
+		spec["total_bytes"] = nil
+		if caseName == "restore-extract-plan" {
+			spec["total_files"] = nil
+		}
+		steps, _ := spec["steps"].([]any)
+		for _, rawStep := range steps {
+			step, ok := rawStep.(map[string]any)
+			if !ok || step["step_type"] != "restore" {
+				continue
+			}
+			step["bytes_affected"] = nil
+			if caseName == "restore-extract-plan" {
+				step["files_affected"] = nil
+				step["destination"] = "$WORK/restore"
+			} else {
+				step["destination"] = "$WORK/pick"
+			}
+			if details, ok := step["details"].(map[string]any); ok {
+				delete(details, "existing_files")
+			}
+		}
+	}
+	return value
 }
 
 func jsonEqual(got, want any) bool {
@@ -181,6 +234,7 @@ func TestFrozenReferenceOracleCLI(t *testing.T) {
 				t.Fatalf("exit=%d want=%d stderr=%s", rc, tc.ExitCode, stderr.String())
 			}
 			got := normalizeJSON(t, stdout.String(), work, home)
+			got = normalizePostV1PlanAdditions(tc.Name, got)
 			if !jsonEqual(got, tc.Stdout) {
 				g, _ := json.MarshalIndent(got, "", "  ")
 				w, _ := json.MarshalIndent(tc.Stdout, "", "  ")

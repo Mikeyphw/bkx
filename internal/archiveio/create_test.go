@@ -65,7 +65,7 @@ func TestCreateTarAndZipTransactionalVerified(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if listed.TotalEntries != 6 {
+			if listed.TotalEntries != 5 {
 				t.Fatalf("entries=%d want 5: %+v", listed.TotalEntries, listed.Entries)
 			}
 		})
@@ -130,8 +130,15 @@ func TestCreateUnsupportedFailsClosed(t *testing.T) {
 func TestCreateSplitArchivesAreTransparentToListVerifyAndRestore(t *testing.T) {
 	src := fixtureTree(t)
 	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
+	// Use a deterministic xorshift stream instead of a short-period arithmetic
+	// pattern. The latter compresses so aggressively that a nominal 3x-split
+	// fixture may legitimately produce only one compressed part.
+	state := uint64(0x9e3779b97f4a7c15)
 	for i := range blob {
-		blob[i] = byte((i*37 + i/11) & 0xff)
+		state ^= state << 13
+		state ^= state >> 7
+		state ^= state << 17
+		blob[i] = byte(state >> 56)
 	}
 	if err := os.WriteFile(filepath.Join(src, "blob.bin"), blob, 0o600); err != nil {
 		t.Fatal(err)

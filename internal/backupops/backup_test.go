@@ -3,6 +3,7 @@ package backupops
 import (
 	"encoding/json"
 	"errors"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -251,20 +252,16 @@ func TestParseSpecJSONRequiresFrozenShape(t *testing.T) {
 func TestCreateSplitPublishesAllPartsAndLogicalArchiveVerifies(t *testing.T) {
 	src := fixture(t)
 	// Make the payload large enough to force multiple parts after zstd compression.
-	if err := os.WriteFile(filepath.Join(src, "blob.bin"), make([]byte, 128*1024), 0o600); err != nil {
-		t.Fatal(err)
-	}
 	dest := filepath.Join(t.TempDir(), "final")
 	name := "split-fixture"
 	split := validation.MinSplitSizeBytes
 	spec := backupSpec(src, &dest)
 	spec.ArchiveName = &name
 	spec.SplitSize = &split
-	// Incompressible-ish deterministic payload so a small split size definitely rolls.
+	// A seeded PRNG keeps this fixture reproducible while avoiding the short
+	// period arithmetic pattern that zstd can compress below the split limit.
 	blob := make([]byte, int(validation.MinSplitSizeBytes*3+4096))
-	for i := range blob {
-		blob[i] = byte((i*31 + i/7) & 0xff)
-	}
+	_, _ = rand.New(rand.NewSource(19)).Read(blob)
 	if err := os.WriteFile(filepath.Join(src, "blob.bin"), blob, 0o600); err != nil {
 		t.Fatal(err)
 	}

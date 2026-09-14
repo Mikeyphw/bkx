@@ -51,19 +51,23 @@ func InspectLocalPathPolicy(path string) (LocalPathPolicy, error) {
 		return LocalPathPolicy{}, err
 	}
 	policy := LocalPathPolicy{CleanPath: clean}
+	ownedPrivateData := isOwnedAndroidPrivateDataPath(clean)
 	if reason := restrictedSharedAndroidPath(clean); reason != "" {
 		policy.RestrictedReason = reason
 		policy.SharedRestricted = true
 	}
 	if policy.RestrictedReason == "" {
 		for _, root := range protectedLocalWriteRoots {
+			if ownedPrivateData && (root == "/data/data" || root == "/data/user" || root == "/data/user_de") {
+				continue
+			}
 			if pathEqualOrUnder(clean, root) {
 				policy.RestrictedReason = root + " is a protected Android or pseudo-filesystem destination"
 				break
 			}
 		}
 	}
-	policy.RootSensitive = isRootSensitive(clean)
+	policy.RootSensitive = isRootSensitive(clean) && !ownedPrivateData
 	return policy, nil
 }
 
@@ -132,6 +136,43 @@ func policyCleanPath(path string) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(clean), nil
+}
+
+func androidPrivatePackageRoot(path string) string {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	lower := strings.ToLower(clean)
+	if strings.HasPrefix(lower, "/data/data/") {
+		rest := strings.TrimPrefix(clean, "/data/data/")
+		if pkg, _, ok := strings.Cut(rest, "/"); ok && pkg != "" {
+			return "/data/data/" + pkg
+		} else if rest != "" {
+			return "/data/data/" + rest
+		}
+	}
+	for _, base := range []string{"/data/user/", "/data/user_de/"} {
+		if !strings.HasPrefix(lower, base) {
+			continue
+		}
+		rest := strings.TrimPrefix(clean, base)
+		parts := strings.SplitN(rest, "/", 3)
+		if len(parts) >= 2 && parts[0] != "" && parts[1] != "" {
+			return strings.TrimSuffix(base, "/") + "/" + parts[0] + "/" + parts[1]
+		}
+	}
+	return ""
+}
+
+func isOwnedAndroidPrivateDataPath(path string) bool {
+	root := androidPrivatePackageRoot(path)
+	if root == "" {
+		return false
+	}
+	info, err := os.Stat(root)
+	if err != nil {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && int(stat.Uid) == os.Geteuid()
 }
 
 func restrictedSharedAndroidPath(path string) string {

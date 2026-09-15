@@ -195,13 +195,33 @@ class GoNativeGateway(
         val closingSession = sessionId
         writer = null
         current.destroy()
-        if (!current.waitFor(SESSION_SHUTDOWN_GRACE_MS, TimeUnit.MILLISECONDS)) {
-            current.destroyForcibly()
-            current.waitFor(SESSION_SHUTDOWN_FORCE_MS, TimeUnit.MILLISECONDS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!current.waitFor(SESSION_SHUTDOWN_GRACE_MS, TimeUnit.MILLISECONDS)) {
+                current.destroyForcibly()
+                current.waitFor(SESSION_SHUTDOWN_FORCE_MS, TimeUnit.MILLISECONDS)
+            }
+        } else if (!waitForLegacyProcess(current, SESSION_SHUTDOWN_GRACE_MS)) {
+            // API 24-25 has no timed wait or destroyForcibly. Calling destroy again is
+            // harmless, and bounded polling keeps session replacement from hanging.
+            current.destroy()
+            waitForLegacyProcess(current, SESSION_SHUTDOWN_FORCE_MS)
         }
         process = null
         sessionStateRoot = null
         completePendingForSession(closingSession, error)
+    }
+
+    private fun waitForLegacyProcess(candidate: Process, timeoutMillis: Long): Boolean {
+        val deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        while (isAlive(candidate) && System.nanoTime() < deadlineNanos) {
+            try {
+                Thread.sleep(LEGACY_PROCESS_POLL_MS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return !isAlive(candidate)
+            }
+        }
+        return !isAlive(candidate)
     }
 
     private fun completePendingForSession(closingSession: Long, error: Throwable) {
@@ -254,6 +274,7 @@ class GoNativeGateway(
         const val EXECUTE_TIMEOUT_MS = 6L * 60L * 60L * 1000L
         const val SESSION_SHUTDOWN_GRACE_MS = 750L
         const val SESSION_SHUTDOWN_FORCE_MS = 250L
+        const val LEGACY_PROCESS_POLL_MS = 25L
         const val MAX_STDERR_LOG_BYTES = 512L * 1024L
         const val MAX_STDERR_LINE_CHARS = 8 * 1024
     }

@@ -1,5 +1,10 @@
 package com.mikeyphw.bkx.android.core.files
 
+import android.annotation.SuppressLint
+
+// These are paths owned by Android and Termux installations, not this app's storage.
+// Context storage APIs cannot express the cross-app locations this policy classifies.
+@SuppressLint("SdCardPath")
 object AndroidPathPolicy {
     private val blockedExactRoots = setOf(
         "/",

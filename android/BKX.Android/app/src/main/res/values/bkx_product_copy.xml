@@ -1,4 +1,5 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <!-- Stable product-language contracts consumed by source-level contract tests. -->
     <string name="bkx_truth_engine_checking">BKX has not finished proving engine readiness yet.</string>
     <string name="bkx_truth_engine_verified">Engine verified</string>
     <string name="bkx_truth_engine_root_verified">Engine verified with root</string>

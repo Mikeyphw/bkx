@@ -80,7 +80,8 @@ fun HomeScreen(
             } else {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(truth.engine.label, style = MaterialTheme.typography.titleMedium)
+                        Text("Ready to protect your files", style = MaterialTheme.typography.titleMedium)
+                        Text(truth.engine.label, style = MaterialTheme.typography.bodyMedium)
                         Text(
                             truth.engine.detail,
                             style = MaterialTheme.typography.bodySmall,

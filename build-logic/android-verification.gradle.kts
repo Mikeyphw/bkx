@@ -795,23 +795,29 @@ tasks.register("verifyBkxCloudProductReleaseSeal") {
 // Final hardening and release-seal gates.
 tasks.register("verifyBkxRuntimeHardeningContract") {
     group = "verification"
-    description = "Verify process-scoped execution, interruption recovery, cooperative progress/cancellation, and dynamic root routing."
+    description = "Verify process-scoped execution, interrupt recovery behind the BR28 startup barrier, cooperative progress/cancellation, and dynamic root routing."
     val sourceRoot = layout.projectDirectory.dir("src/main/java/com/mikeyphw/bkx/android").asFile
     val coordinator = sourceRoot.resolve("app/runtime/BkxOperationCoordinator.kt")
+    val runtime = sourceRoot.resolve("app/runtime/BkxApplicationRuntime.kt")
     val application = sourceRoot.resolve("app/BkxAndroidApplication.kt")
     val graph = sourceRoot.resolve("app/di/DefaultBackendGraph.kt")
     val gateway = sourceRoot.resolve("embedded/RootAwareGateway.kt")
     val operations = sourceRoot.resolve("core/operations/OperationModels.kt")
-    inputs.files(coordinator, application, graph, gateway, operations)
+    inputs.files(coordinator, runtime, application, graph, gateway, operations)
     doLast {
         val coordinatorText = coordinator.readText()
+        val runtimeText = runtime.readText()
         val applicationText = application.readText()
         val graphText = graph.readText()
         val gatewayText = gateway.readText()
         val operationsText = operations.readText()
         check("SupervisorJob() + Dispatchers.IO" in coordinatorText) { "Long BKX work must be application-scoped, not ViewModel-scoped." }
-        check("recoverInterruptedOperations" in applicationText && "OperationFailureMapper.interrupted" in coordinatorText) {
-            "Persisted in-flight work must be classified as interrupted after process death."
+        check(
+            "markApplicationCreated()" in applicationText &&
+                "initializeAndRecoverInterruptedOperations" in runtimeText &&
+                "OperationFailureMapper.interrupted" in coordinatorText,
+        ) {
+            "Persisted in-flight work must be classified as interrupted through the BR28 authorized startup barrier, not eager Application startup."
         }
         check("startProgressPoller" in coordinatorText && "backendPort.progress" in coordinatorText) {
             "Embedded progress must be consumed while an operation is active."
@@ -823,7 +829,7 @@ tasks.register("verifyBkxRuntimeHardeningContract") {
             "Concurrent foreground operations must keep the service alive until the last foreground operation finishes."
         }
         check("modeProvider = { settings.readNow().rootAccessMode }" in graphText) { "Root preference must resolve dynamically for the next operation." }
-        check("requestRoutes" in gatewayText && "requestIdFrom" in gatewayText) { "Root/local execution route must stay pinned for progress and cancellation of an active request." }
+        check("requestRoutes" in gatewayText && "parseRequest" in gatewayText && "requestRoutes[parsed.requestId]" in gatewayText) { "Root/local execution route must stay pinned for progress and cancellation of an active request." }
         check("Interrupted" in operationsText && "bounded(" in operationsText) { "Interrupted state and bounded operation history must remain persisted contracts." }
     }
 }
@@ -1995,7 +2001,8 @@ tasks.register("verifyBkxStartupAppGraphReadinessSeal") {
         check(testRoot.resolve("contracts/StartupReadinessSealContractTest.kt").isFile) {
             "BR28 startup readiness contract test is missing."
         }
-        check(repositoryRoot.resolve("BR28_STARTUP_APP_GRAPH_READINESS_SEAL.md").readText().contains("Overlay 8 of 16")) {
+        val br28HandoffText = repositoryRoot.resolve("BR28_STARTUP_APP_GRAPH_READINESS_SEAL.md").readText().replace("**", "")
+        check(br28HandoffText.contains("Overlay 8 of 16")) {
             "BR28 handoff doc must preserve overlay number and roadmap total."
         }
     }
@@ -2365,22 +2372,8 @@ tasks.register("verifyBkxReleaseMergedManifestContract") {
 
 tasks.register("bkxAndroidReleasePreflightSeal") {
     group = "verification"
-    description = "Stage 1 BKX release gate: static source, dependency lane, docs, signing placeholders and contracts."
-    dependsOn(
-        "verifyBkxAndroidSdk36DependencyLane",
-        "verifyBkxEmbeddedEngineContract",
-        "verifyBkxRootStorageContract",
-        "verifyBkxProductUiContract",
-        "verifyBkxRcloneRemoteTransportContract",
-        "verifyBkxGoogleDriveProductContract",
-        "verifyBkxAutomationProductContract",
-        "verifyBkxCloudProductReleaseSeal",
-        "verifyBkxAndroidReleaseDocs",
-        "verifyBkxAndroidSigningPlaceholders",
-        "verifyBkxPersonalSigningContract",
-        "verifyBkxAndroidManifestReleaseContract",
-        "testDebugUnitTest",
-    )
+    description = "Stage 1 BKX release gate: optimized static source, dependency lane, docs, signing placeholders and contracts."
+    dependsOn("bkxBr37StaticPreflightSeal")
 }
 
 tasks.register("bkxAndroidReleasePackageSeal") {
@@ -2452,10 +2445,23 @@ tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
         check(verification.contains("bkxAndroidReleasePreflightSeal") && verification.contains("bkxAndroidReleasePackageSeal") && verification.contains("bkxAndroidReleaseInstrumentationSeal") && verification.contains("bkxAndroidReleaseFinalSeal")) {
             "BR35 staged release seal tasks are missing."
         }
-        check("verifyBkx16KbNativePageSizeContract" !in devtool.substringAfter("preflight = [").substringBefore("]") && "verifyBkx16KbNativePageSizeContract" in devtool.substringAfter("package = [").substringBefore("]")) {
+        val devtoolValidationPhases = devtool.substringAfter("[validation.phases]").substringBefore("[validation]")
+        val devtoolPreflightPhase = devtoolValidationPhases.substringAfter("preflight = [").substringBefore("]")
+        val devtoolPackagePhase = devtoolValidationPhases.substringAfter("package = [").substringBefore("]")
+        check(
+            "verifyBkx16KbNativePageSizeContract" !in devtoolPreflightPhase &&
+                (
+                    "verifyBkx16KbNativePageSizeContract" in devtoolPackagePhase ||
+                        "bkxBr37PackageAndReleaseLintSeal" in devtoolPackagePhase
+                )
+        ) {
             "BR35 native page-size APK verification must run in the package phase, not cheap preflight."
         }
-        check("lintRelease" in verification && "lintRelease" in devtool && "lintRelease" in releaseDocs) {
+        check(
+            "lintRelease" in verification &&
+                ("lintRelease" in devtool || "bkxBr37PackageAndReleaseLintSeal" in devtool) &&
+                ("lintRelease" in releaseDocs || "bkxBr37PackageAndReleaseLintSeal" in releaseDocs)
+        ) {
             "BR35 release lint is missing from the validation lane."
         }
         check(rcloneInstaller.contains("RCLONE_SOURCE_SHA256") && rcloneInstaller.contains("RCLONE_VENDOR_SHA256") && rcloneInstaller.contains("BKX_REQUIRED_NDK_REVISION=\"29.0.14206865\"") && rcloneInstaller.contains("BKX_ANDROID_PAGE_SIZE=\"16384\"")) {
@@ -2558,8 +2564,11 @@ tasks.register("verifyBkxRegressionHarnessFinalAuditSeal") {
         }
 
         val devtool = repositoryRoot.resolve(".devtool.toml").readText()
-        check(devtool.contains(":app:verifyBkxRegressionHarnessFinalAuditSeal")) {
-            "BR36 verification task is not wired into Devtool preflight."
+        check(
+            devtool.contains(":app:verifyBkxRegressionHarnessFinalAuditSeal") ||
+                devtool.contains(":app:bkxBr37StaticPreflightSeal")
+        ) {
+            "BR36 verification must remain wired into Devtool preflight directly or through the BR37 optimized aggregate."
         }
         val goDoc = repositoryRoot.resolve("BR36_GO_REGRESSION_HARNESS_FINAL_AUDIT_SEAL.md")
         val androidDoc = repositoryRoot.resolve("BR36_ANDROID_REGRESSION_HARNESS_FINAL_AUDIT_SEAL.md")
@@ -2568,31 +2577,161 @@ tasks.register("verifyBkxRegressionHarnessFinalAuditSeal") {
     }
 }
 
+val bkxBr37StaticPreflightTasks = listOf(
+    "verifyBkxGradleTaskGraphOptimizationSeal",
+    "verifyBkxAndroidSdk36DependencyLane",
+    "verifyBkxEmbeddedEngineContract",
+    "verifyBkxRootStorageContract",
+    "verifyBkxProductUiContract",
+    "verifyBkxRcloneRemoteTransportContract",
+    "verifyBkxGoogleDriveProductContract",
+    "verifyBkxAutomationProductContract",
+    "verifyBkxRuntimeHardeningContract",
+    "verifyBkxRestoreSafetySeal",
+    "verifyBkxPerformanceAndProgressContract",
+    "verifyBkxStorageCompletenessContract",
+    "verifyBkxAccessibilityVisualContract",
+    "verifyBkxUxHardeningContract",
+    "verifyBkxReleaseHygiene",
+    "verifyBkxDeviceQualificationContract",
+    "verifyBkxFinalReleaseContract",
+    "verifyBkxAndroidManifestReleaseContract",
+    "verifyBkxAndroidSigningPlaceholders",
+    "verifyBkxPersonalSigningContract",
+    "verifyBkxAndroidReleaseDocs",
+    "verifyBkxBackupAutomationRoadmapFinalSeal",
+    "verifyBkxRuntimeLifetimeForegroundCancellationSeal",
+    "verifyBkxAndroidGoBridgeResultContractSeal",
+    "verifyBkxStorageFilesystemRootSafetySeal",
+    "verifyBkxBackupArchiveRestoreCorrectnessSeal",
+    "verifyBkxRepositoryResticSnapshotControlPlaneSeal",
+    "verifyBkxTransferRcloneGoogleDriveRemoteSeal",
+    "verifyBkxSavedJobsSchedulerTaskerRunHistorySeal",
+    "verifyBkxCliParserConfigErrorContractSeal",
+    "verifyBkxCliBackupArchiveRestoreDomainSeal",
+    "verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
+    "verifyBkxPersistenceSettingsMigrationSeal",
+    "verifyBkxReleasePackagingSigningNativeRuntimeSeal",
+    "verifyBkxRegressionHarnessFinalAuditSeal",
+)
+
+val bkxBr37BehavioralUnitTasks = listOf(
+    "compileDebugUnitTestKotlin",
+    "testDebugUnitTest",
+    "verifyBkxStartupAppGraphReadinessSeal",
+    "verifyBkxAndroidNavigationStaleStateBindingSeal",
+    "verifyBkxUiTruthfulnessAccessibilityProductCopySeal",
+)
+
+val bkxBr37PackageAndReleaseLintTasks = listOf(
+    "bkxAndroidReleasePackageSeal",
+    "verifyBkxCloudProductReleaseSeal",
+    "verifyBkxGoProductionCutoverContract",
+    "verifyBkxGoOnlyAndroidRuntimeContract",
+)
+
+tasks.register("bkxBr37StaticPreflightSeal") {
+    group = "verification"
+    description = "BR37 optimized cheap static preflight; excludes unit-test, package/lint, instrumentation, and Go Exec lanes."
+    dependsOn(bkxBr37StaticPreflightTasks)
+}
+
+tasks.register("bkxBr37BehavioralUnitSeal") {
+    group = "verification"
+    description = "BR37 optimized behavioral/unit gate; runs the full unit-test suite once, then BR28-BR30 behavioral seals, so overlay validation fixes real regressions instead of routing around them."
+    dependsOn(bkxBr37BehavioralUnitTasks)
+}
+
+tasks.register("bkxBr37PackageAndReleaseLintSeal") {
+    group = "verification"
+    description = "BR37 optimized package gate; runs release packaging, release lint, merged-manifest, native-page-size, cloud, and Go-runtime cutover evidence once."
+    dependsOn(bkxBr37PackageAndReleaseLintTasks)
+}
+
 tasks.register("bkxBr36FinalAuditSeal") {
     group = "verification"
-    description = "Final BR21-BR36 static/unit/lint/package regression gate; instrumentation remains device-conditional in Devtool."
+    description = "Optimized BR21-BR36 final gate grouped into static, unit, debug-lint, and package/release-lint phases; instrumentation remains device-conditional in Devtool."
     dependsOn(
-        "verifyBkxRuntimeLifetimeForegroundCancellationSeal",
-        "verifyBkxAndroidGoBridgeResultContractSeal",
-        "verifyBkxStorageFilesystemRootSafetySeal",
-        "verifyBkxBackupArchiveRestoreCorrectnessSeal",
-        "verifyBkxRepositoryResticSnapshotControlPlaneSeal",
-        "verifyBkxTransferRcloneGoogleDriveRemoteSeal",
-        "verifyBkxSavedJobsSchedulerTaskerRunHistorySeal",
-        "verifyBkxStartupAppGraphReadinessSeal",
-        "verifyBkxAndroidNavigationStaleStateBindingSeal",
-        "verifyBkxUiTruthfulnessAccessibilityProductCopySeal",
-        "verifyBkxCliParserConfigErrorContractSeal",
-        "verifyBkxCliBackupArchiveRestoreDomainSeal",
-        "verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
-        "verifyBkxPersistenceSettingsMigrationSeal",
-        "verifyBkxReleasePackagingSigningNativeRuntimeSeal",
-        "verifyBkxRegressionHarnessFinalAuditSeal",
-        "testDebugUnitTest",
+        "bkxBr37StaticPreflightSeal",
+        "bkxBr37BehavioralUnitSeal",
         "lintDebug",
-        "lintRelease",
-        "bkxAndroidReleasePackageSeal",
+        "bkxBr37PackageAndReleaseLintSeal",
     )
+}
+
+tasks.register("verifyBkxGradleTaskGraphOptimizationSeal") {
+    group = "verification"
+    description = "Verifies the BR37 Gradle task graph optimization and Devtool split-phase wiring."
+    doLast {
+        val androidRootDir = rootProject.layout.projectDirectory.asFile
+        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val devtool = repositoryRoot.resolve(".devtool.toml").readText()
+        val verification = repositoryRoot.resolve("build-logic/android-verification.gradle.kts").readText()
+        val validationGuide = androidRootDir.resolve("docs/RELEASE_VALIDATION.md").readText()
+        val doc = repositoryRoot.resolve("BR37_GRADLE_TASK_GRAPH_OPTIMIZATION_SEAL.md")
+
+        check(":app:bkxBr37StaticPreflightSeal" in devtool) {
+            "BR37 Devtool preflight must use the optimized static aggregate."
+        }
+        check(":app:bkxBr37BehavioralUnitSeal" in devtool) {
+            "BR37 Devtool unit-test phase must use the optimized behavioral/unit aggregate."
+        }
+        check(":app:bkxBr37PackageAndReleaseLintSeal" in devtool) {
+            "BR37 Devtool package phase must use the optimized package/release-lint aggregate."
+        }
+        val validationPhases = devtool.substringAfter("[validation.phases]").substringBefore("[validation]")
+        val lintPhase = Regex("""(?s)lint = \[.*?\]""").find(validationPhases)?.value
+            ?: error("BR37 Devtool validation lint phase is missing.")
+        check(":app:lintRelease" !in lintPhase) {
+            "BR37 Devtool validation lint phase must not rerun release lint outside the package aggregate."
+        }
+        check("val bkxBr37StaticPreflightTasks = listOf" in verification) {
+            "BR37 static preflight task list is missing."
+        }
+        val optimizedGateMarker = """tasks.register("bkxBr37OptimizedGradleTaskSeal")"""
+        val optimizedGateStart = verification.lastIndexOf(optimizedGateMarker)
+        check(optimizedGateStart >= 0) { "BR37 optimized apply gate task registration is missing." }
+        val optimizedGateBody = verification.substring(optimizedGateStart)
+            .substringBefore("tasks.named(\"bkxAndroidReleasePreflightSeal\")", "")
+        check("dependsOn(\"bkxBr37StaticPreflightSeal\")" in optimizedGateBody && "bkxBr36FinalAuditSeal" !in optimizedGateBody && "testDebugUnitTest" !in optimizedGateBody) {
+            "BR37 optimized apply gate must stop at static preflight and must not rerun unit tests or the BR36 full final gate."
+        }
+        check("verifyBkxEmbeddedParitySeal" !in bkxBr37StaticPreflightTasks && "verifyBkxLargeTreePerformanceSeal" !in bkxBr37StaticPreflightTasks) {
+            "BR37 static preflight must not rerun Go compatibility/performance Exec tests that belong to the bkx target lane."
+        }
+        check("testDebugUnitTest" !in bkxBr37StaticPreflightTasks && "lintRelease" !in bkxBr37StaticPreflightTasks && "connectedDebugAndroidTest" !in bkxBr37StaticPreflightTasks) {
+            "BR37 static preflight must not invoke unit tests, release lint or instrumentation."
+        }
+        val behavioralStart = verification.indexOf("val bkxBr37BehavioralUnitTasks = listOf")
+        check(behavioralStart >= 0) { "BR37 behavioral task list is missing." }
+        val behavioralTasksBlock = verification.substring(behavioralStart).substringBefore("val bkxBr37PackageAndReleaseLintTasks")
+        check("compileDebugUnitTestKotlin" in behavioralTasksBlock && "testDebugUnitTest" in behavioralTasksBlock) {
+            "BR37 behavioral lane must run the full unit-test suite once after compiling unit sources."
+        }
+        check("BkxApplicationRuntime.kt" in verification && "markApplicationCreated()" in verification) {
+            "BR37 must refresh the runtime hardening static contract for the BR28 startup barrier architecture."
+        }
+        check("bkxBr37OptimizedGradleTaskSeal" in validationGuide && "bkxBr37StaticPreflightSeal" in validationGuide) {
+            "BR37 release validation guide must document the optimized aggregate tasks."
+        }
+        val docText = doc.readText()
+        check(doc.isFile && docText.contains("Overlay 17 of 17") && docText.contains("v3 correction") && docText.contains("v6 focused behavioral lane correction") && docText.contains("v7 full unit repair correction")) {
+            "BR37 Gradle optimization seal doc is missing its cumulative correction notes."
+        }
+        val coordinatorText = repositoryRoot.resolve("android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/app/runtime/BkxOperationCoordinator.kt").readText()
+        check("progressTracker.fail(current, requestId, failure" in coordinatorText) {
+            "BR37 v3 must persist typed cancellation-rejection failures into OperationRuntimeState.failureStates."
+        }
+        check("For BR37 v7 full regression repair validation" in validationGuide && "testDebugUnitTest" in validationGuide) {
+            "BR37 release validation guide must document that the behavioral lane owns the full unit suite."
+        }
+    }
+}
+
+tasks.register("bkxBr37OptimizedGradleTaskSeal") {
+    group = "verification"
+    description = "BR37 optimized apply gate: validates the reduced static preflight graph without rerunning unit tests, release packaging, release lint, instrumentation, or Go-backed package evidence."
+    dependsOn("bkxBr37StaticPreflightSeal")
 }
 
 tasks.named("bkxAndroidReleasePreflightSeal") {

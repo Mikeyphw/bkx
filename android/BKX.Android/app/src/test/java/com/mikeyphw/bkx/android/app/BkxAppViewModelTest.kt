@@ -47,18 +47,35 @@ import com.mikeyphw.bkx.android.core.runs.VerificationState
 import com.mikeyphw.bkx.android.core.settings.AppearancePreference
 import com.mikeyphw.bkx.android.core.settings.BkxSettings
 import com.mikeyphw.bkx.android.core.settings.InMemorySettingsStore
+import java.nio.file.Files
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+
+@OptIn(ExperimentalCoroutinesApi::class)
+private fun TestScope.waitUntil(timeoutMillis: Long, condition: () -> Boolean) {
+    val deadlineNanos = System.nanoTime() + timeoutMillis * 1_000_000
+    while (!condition()) {
+        advanceUntilIdle()
+        if (condition()) {
+            return
+        }
+        if (System.nanoTime() >= deadlineNanos) {
+            throw AssertionError("Timed out waiting for condition")
+        }
+        Thread.sleep(10)
+    }
+}
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class BkxAppViewModelTest {
@@ -281,7 +298,9 @@ class BkxAppViewModelTest {
     @Test
     fun submitOperationCancellationDispatchesBackendCancelAndKeepsCancellingState() = runTest(dispatcher) {
         val backend = FakeBackendPort()
-        val viewModel = viewModel(backend = backend)
+        val requestRoot = Files.createTempDirectory("bkx-cancel-requests").toAbsolutePath().toString()
+        val cancelFilePath = "$requestRoot/op-cancel/cancel.json"
+        val viewModel = viewModel(backend = backend, requestBaseDirectoryPath = requestRoot)
 
         advanceUntilIdle()
         viewModel.onEvent(
@@ -289,13 +308,13 @@ class BkxAppViewModelTest {
                 requestId = "op-cancel",
                 operation = "transfer.run",
                 startedAtEpochMillis = 100,
-                cancelFilePath = "/tmp/bkx/op-cancel/cancel.json",
+                cancelFilePath = cancelFilePath,
             ),
         )
         viewModel.onEvent(
             BkxHomeEvent.SubmitOperationCancellation(
                 requestId = "op-cancel",
-                cancelFilePath = "/tmp/bkx/op-cancel/cancel.json",
+                cancelFilePath = cancelFilePath,
                 cancelRequestId = "cancel-op-cancel",
                 requestedAtEpochMillis = 150,
             ),
@@ -303,7 +322,7 @@ class BkxAppViewModelTest {
         advanceUntilIdle()
 
         assertEquals("op-cancel", backend.cancellations.single().first)
-        assertEquals("/tmp/bkx/op-cancel/cancel.json", backend.cancellations.single().second)
+        assertEquals(cancelFilePath, backend.cancellations.single().second)
         assertEquals(ActiveOperationStatus.Cancelling, viewModel.state.value.operationRuntime.activeFor("op-cancel")?.status)
     }
 
@@ -337,7 +356,7 @@ class BkxAppViewModelTest {
                 protocolVersion = 1,
                 requestId = "placeholder",
                 status = BridgeResultStatus.Failure,
-                summary = "job create failed",
+                summary = "bad job",
                 errors = listOf(BridgeError("validation_error", "bad job")),
             ),
         )
@@ -350,20 +369,26 @@ class BkxAppViewModelTest {
 
         advanceUntilIdle()
         viewModel.onEvent(BkxHomeEvent.CreateSavedJob(draft))
+        waitUntil(timeoutMillis = 5_000) { viewModel.state.value.savedJobs.actionInProgress == null }
         advanceUntilIdle()
 
-        assertEquals(null, viewModel.state.value.savedJobs.actionInProgress)
-        assertTrue(viewModel.state.value.savedJobs.lastActionMessage.orEmpty().contains("bad job"))
+        val savedJobState = viewModel.state.value.savedJobs
+        assertEquals(null, savedJobState.actionInProgress)
+        assertTrue(
+            "Expected saved job failure message to preserve backend error detail, got: ${savedJobState.lastActionMessage}",
+            savedJobState.lastActionMessage.orEmpty().contains("bad job"),
+        )
     }
 
     private fun viewModel(
         backend: FakeBackendPort = FakeBackendPort(),
         runSummaryStore: InMemoryRunSummaryStore = InMemoryRunSummaryStore(),
+        requestBaseDirectoryPath: String = Files.createTempDirectory("bkx-viewmodel-requests").toAbsolutePath().toString(),
     ) = BkxAppViewModel(
         backendPort = backend,
         runSummaryStore = runSummaryStore,
         operationStateStore = InMemoryOperationStateStore(),
         settingsStore = InMemorySettingsStore(),
-        requestBaseDirectoryPath = "/tmp/bkx",
+        requestBaseDirectoryPath = requestBaseDirectoryPath,
     )
 }

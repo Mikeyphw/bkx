@@ -146,7 +146,10 @@ class BkxOperationCoordinator(
 
         val submission = backendPort.cancel(requestId, files.cancelFilePath)
         if (!submission.accepted) {
-            return OperationOutcome.Failed(OperationFailureMapper.fromBackendReadiness(submission.readiness))
+            val failure = OperationFailureMapper.fromBackendReadiness(submission.readiness)
+            mutateState { current -> progressTracker.fail(current, requestId, failure, System.currentTimeMillis()) }
+            if (manageForeground) stopForegroundShellIfIdle(requestId)
+            return OperationOutcome.Failed(failure)
         }
         return OperationOutcome.CancellationAccepted(requestId)
     }

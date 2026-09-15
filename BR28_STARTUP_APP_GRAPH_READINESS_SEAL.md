@@ -1,6 +1,6 @@
 # BR28 — Startup/App Graph and Readiness Seal
 
-Overlay **8 of 16** in the BKX A01-C17 remediation roadmap.
+Overlay 8 of 16 in the BKX A01-C17 remediation roadmap.
 
 ## Scope
 

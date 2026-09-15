@@ -67,11 +67,11 @@ args = [
 [targets.bkx_android.tasks]
 restore = ["help"]
 build = [":app:assembleDebug"]
-test = [":app:testDebugUnitTest"]
-lint = [":app:lintDebug", ":app:lintRelease"]
+test = [":app:bkxBr37BehavioralUnitSeal"]
+lint = [":app:lintDebug"]
 instrumentation = [":app:connectedDebugAndroidTest"]
 release = [":app:bkxAndroidReleaseSeal"]
-package = [":app:assembleRelease", ":app:verifyBkxReleaseMergedManifestContract", ":app:verifyBkx16KbNativePageSizeContract"]
+package = [":app:bkxBr37PackageAndReleaseLintSeal"]
 clean = [":app:clean"]
 
 [targets.bkx_android.artifacts]
@@ -79,42 +79,12 @@ output_directory = "artifacts/android"
 required = true
 
 [validation.phases]
+# BR37: keep Devtool split validation from re-running expensive package,
+# lint, unit-test, and Go compatibility lanes during the cheap preflight phase.
+# The aggregate tasks below preserve the same release evidence while letting Gradle
+# deduplicate dependencies within each phase.
 preflight = [
-    ":app:verifyBkxAndroidSdk36DependencyLane",
-    ":app:verifyBkxEmbeddedEngineContract",
-    ":app:verifyBkxRootStorageContract",
-    ":app:verifyBkxProductUiContract",
-    ":app:verifyBkxRcloneRemoteTransportContract",
-    ":app:verifyBkxGoogleDriveProductContract",
-    ":app:verifyBkxAutomationProductContract",
-    ":app:verifyBkxCloudProductReleaseSeal",
-    ":app:verifyBkxRuntimeHardeningContract",
-    ":app:verifyBkxRestoreSafetySeal",
-    ":app:verifyBkxPerformanceAndProgressContract",
-    ":app:verifyBkxLargeTreePerformanceSeal",
-    ":app:verifyBkxStorageCompletenessContract",
-    ":app:verifyBkxAccessibilityVisualContract",
-    ":app:verifyBkxUxHardeningContract",
-    ":app:verifyBkxEmbeddedParitySeal",
-    ":app:verifyBkxReleaseHygiene",
-    ":app:verifyBkxDeviceQualificationContract",
-    ":app:verifyBkxGoProductionCutoverContract",
-    ":app:verifyBkxGoOnlyAndroidRuntimeContract",
-    ":app:verifyBkxFinalReleaseContract",
-    ":app:verifyBkxAndroidManifestReleaseContract",
-    ":app:verifyBkxAndroidSigningPlaceholders",
-    ":app:verifyBkxPersonalSigningContract",
-    ":app:verifyBkxAndroidReleaseDocs",
-    ":app:verifyBkxBackupAutomationRoadmapFinalSeal",
-    ":app:verifyBkxRuntimeLifetimeForegroundCancellationSeal",
-    ":app:verifyBkxAndroidGoBridgeResultContractSeal",
-    ":app:verifyBkxStorageFilesystemRootSafetySeal",
-    ":app:verifyBkxBackupArchiveRestoreCorrectnessSeal",
-    ":app:verifyBkxRepositoryResticSnapshotControlPlaneSeal",
-    ":app:verifyBkxCliRepositorySnapshotTransferJobsDomainSeal",
-    ":app:verifyBkxPersistenceSettingsMigrationSeal",
-    ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
-    ":app:verifyBkxRegressionHarnessFinalAuditSeal",
+    ":app:bkxBr37StaticPreflightSeal",
 ]
 
 compile = [
@@ -126,20 +96,15 @@ resources = [
 ]
 
 unit-test = [
-  ":app:testDebugUnitTest",
+  ":app:bkxBr37BehavioralUnitSeal",
 ]
 
 package = [
-  ":app:assembleDebug",
-  ":app:assembleDebugAndroidTest",
-  ":app:assembleRelease",
-  ":app:verifyBkx16KbNativePageSizeContract",
-  ":app:verifyBkxReleaseMergedManifestContract",
+  ":app:bkxBr37PackageAndReleaseLintSeal",
 ]
 
 lint = [
   ":app:lintDebug",
-  ":app:lintRelease",
 ]
 
 
@@ -233,4 +198,4 @@ low_priority = false
 [commit]
 enabled = true
 strategy = "single"
-message = "fix(android): repair BKX BR36 final Kotlin compile gate v5"
+message = "fix(android): repair BKX BR37 optimized graph and behavioral gate v6"

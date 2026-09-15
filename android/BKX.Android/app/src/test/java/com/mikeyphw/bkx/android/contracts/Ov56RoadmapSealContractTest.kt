@@ -30,14 +30,16 @@ class Ov56RoadmapSealContractTest {
         val devtool = File(repositoryRoot, ".devtool.toml").readText()
         val gradle = File(repositoryRoot, "build-logic/android-verification.gradle.kts").readText()
         listOf(
-            ":app:verifyBkxRcloneRemoteTransportContract",
-            ":app:verifyBkxGoogleDriveProductContract",
-            ":app:verifyBkxCloudProductReleaseSeal",
-        ).forEach { task -> assertTrue("Devtool preflight missing $task", devtool.contains(task)) }
-        assertTrue(gradle.contains("tasks.register(\"verifyBkxGoogleDriveProductContract\")"))
-        assertTrue(gradle.contains("tasks.register(\"verifyBkxCloudProductReleaseSeal\")"))
-        assertTrue(gradle.contains("tasks.named(\"bkxAndroidReleaseSeal\")"))
+            ":app:bkxBr37StaticPreflightSeal",
+            ":app:bkxBr37BehavioralUnitSeal",
+            ":app:bkxBr37PackageAndReleaseLintSeal",
+        ).forEach { task -> assertTrue("Devtool optimized validation missing $task", devtool.contains(task)) }
+        assertTrue(gradle.contains("""tasks.register("verifyBkxGoogleDriveProductContract")"""))
+        assertTrue(gradle.contains("""tasks.register("verifyBkxCloudProductReleaseSeal")"""))
+        assertTrue(gradle.contains("""tasks.named("bkxAndroidReleaseSeal")"""))
         assertTrue(gradle.contains("\"verifyBkxCloudProductReleaseSeal\""))
+        val packagePhase = devtool.substringAfter("package = [").substringBefore("]")
+        assertTrue(packagePhase.contains(":app:bkxBr37PackageAndReleaseLintSeal"))
     }
 
     @Test

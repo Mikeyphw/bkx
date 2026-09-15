@@ -14,10 +14,22 @@ import org.junit.Test
 import java.io.File
 
 class UiTruthfulnessAccessibilityContractTest {
-    private val mainRoot = File("src/main/java/com/mikeyphw/bkx/android")
-    private val resources = File("src/main/res/values/bkx_product_copy.xml").readText()
+    private val appRoot = locateAppRoot()
+    private val repositoryRoot = locateRepositoryRoot(appRoot)
+    private val mainRoot = File(appRoot, "src/main/java/com/mikeyphw/bkx/android")
+    private val resources = File(appRoot, "src/main/res/values/bkx_product_copy.xml").readText()
     private val components = File(mainRoot, "app/ui/components/BkxComponents.kt").readText()
-    private val verification = File("../../build-logic/android-verification.gradle.kts").readText()
+    private val verification = File(repositoryRoot, "build-logic/android-verification.gradle.kts").readText()
+
+    private fun locateAppRoot(): File =
+        generateSequence(File(requireNotNull(System.getProperty("user.dir"))).canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "src/main/AndroidManifest.xml").isFile }
+            ?: error("Unable to locate BKX Android app root from ${File(".").canonicalPath}")
+
+    private fun locateRepositoryRoot(appRoot: File): File =
+        generateSequence(appRoot.canonicalFile) { it.parentFile }
+            .firstOrNull { File(it, "go.mod").isFile && File(it, "build-logic/android-verification.gradle.kts").isFile }
+            ?: error("Unable to locate BKX repository root from ${appRoot.canonicalPath}")
 
     @Test
     fun readyCopyRequiresVerifiedBackendReadiness() {

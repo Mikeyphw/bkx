@@ -56,7 +56,7 @@ class AutomationProductContractTest {
         val coordinator = File(mainRoot, "app/runtime/BkxOperationCoordinator.kt").readText()
         val service = File(mainRoot, "automation/BkxAutomationService.kt").readText()
         assertTrue(coordinator.contains("manageForeground: Boolean = true"))
-        assertTrue(coordinator.contains("if (manageForeground && request.operation in FOREGROUND_OPERATIONS)"))
+        assertTrue(coordinator.contains("OperationClassifier.requiresForeground(operation)"))
         assertTrue(service.contains("startForeground"))
         assertTrue(service.contains("START_REDELIVER_INTENT"))
     }

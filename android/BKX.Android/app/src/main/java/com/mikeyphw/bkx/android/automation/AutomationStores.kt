@@ -119,7 +119,7 @@ class SharedPreferencesAutomationStateStore(context: Context) : AutomationStateP
         return activeKeys.size
     }
 
-    override fun complete(result: AutomationResult) {
+    override fun complete(result: AutomationResult) = synchronized(updateLock) {
         val existing = preferences.getString(KEY_INDEX, "").orEmpty().lineSequence().filter(String::isNotBlank).toMutableList()
         existing.remove(result.requestId)
         existing.add(0, result.requestId)
@@ -133,6 +133,7 @@ class SharedPreferencesAutomationStateStore(context: Context) : AutomationStateP
     }
 
     private companion object {
+        val updateLock = Any()
         const val PREFERENCES_NAME = "bkx_automation_state"
         const val KEY_INDEX = "terminal_index"
         const val MAX_TERMINAL_RESULTS = 50

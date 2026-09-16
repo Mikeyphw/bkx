@@ -24,7 +24,7 @@ class SharedPreferencesRunSummaryStore(
         .sortedByDescending { it.startedAtEpochMillis }
         .take(limit)
 
-    override suspend fun upsert(summary: RunSummary) {
+    override suspend fun upsert(summary: RunSummary) = synchronized(updateLock) {
         val next = (readAll().filterNot { it.requestId == summary.requestId } + summary)
             .sortedByDescending { it.startedAtEpochMillis }
             .take(MAX_STORED_RUNS)
@@ -37,6 +37,7 @@ class SharedPreferencesRunSummaryStore(
     }
 
     private companion object {
+        val updateLock = Any()
         const val KEY_RUNS = "runs"
         const val MAX_STORED_RUNS = 50
     }

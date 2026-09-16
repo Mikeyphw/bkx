@@ -40,7 +40,7 @@ class AndroidProviderStagingManager(
         reserveCapacity(expectedSize ?: MIN_UNKNOWN_STREAM_RESERVE_BYTES)
         val lease = newRequestDirectory()
         val target = File(lease.directory, name)
-        val copy = copyDocument(parsed, target)
+        val copy = runCatching { copyDocument(parsed, target) }.getOrElse { error -> releaseStagingLease(lease.id); throw error }
         ProviderStagedItem(
             sourceUri = uri,
             displayName = name,
@@ -64,7 +64,7 @@ class AndroidProviderStagingManager(
         val lease = newRequestDirectory()
         val targetRoot = File(lease.directory, rootName).also { check(it.mkdirs()) { "Could not create provider staging folder." } }
         val totals = CopyTotals()
-        copyTree(treeUri, treeId, targetRoot, totals, depth = 0)
+        runCatching { copyTree(treeUri, treeId, targetRoot, totals, depth = 0) }.getOrElse { error -> releaseStagingLease(lease.id); throw error }
         ProviderStagedItem(
             sourceUri = uri,
             displayName = rootName,
@@ -80,7 +80,7 @@ class AndroidProviderStagingManager(
 
     override fun releaseStagingLease(leaseId: String): Boolean {
         val id = leaseId.trim()
-        if (id.isBlank()) return false
+        if (!LEASE_ID_PATTERN.matches(id)) return false
         activeLeaseIds.remove(id)
         val dir = File(stagingRoot, id)
         File(dir, ACTIVE_LEASE_MARKER).delete()
@@ -128,6 +128,7 @@ class AndroidProviderStagingManager(
                     val copied = copyDocument(childUri, childTarget)
                     totals.files += 1
                     totals.bytes += copied.bytes
+                    check(totals.bytes <= MAX_STAGED_BYTES) { "Provider tree exceeds the staging size limit." }
                 }
             }
         }
@@ -148,6 +149,8 @@ class AndroidProviderStagingManager(
                     output.write(buffer, 0, count)
                     digest.update(buffer, 0, count)
                     bytes += count
+                    check(bytes <= MAX_STAGED_BYTES) { "Provider document exceeds the staging size limit." }
+                    checkStagingCapacity()
                 }
                 output.fd.sync()
             }
@@ -205,10 +208,15 @@ class AndroidProviderStagingManager(
         stagingRoot.listFiles().orEmpty()
             .filter { file ->
                 file.lastModified() in 1 until cutoff &&
-                    file.name !in activeLeaseIds &&
                     File(file, ACTIVE_LEASE_MARKER).lastModified().let { markerTime -> markerTime == 0L || markerTime < cutoff }
             }
             .forEach { it.deleteRecursively() }
+    }
+
+    private fun checkStagingCapacity() {
+        check(StatFs(stagingRoot.absolutePath).availableBytes >= STAGING_HEADROOM_BYTES) {
+            "Provider staging ran out of safe free space; import stopped."
+        }
     }
 
     private fun reserveCapacity(requiredBytes: Long) {
@@ -244,6 +252,8 @@ class AndroidProviderStagingManager(
         const val COPY_BUFFER_BYTES = 1024 * 1024
         const val MAX_TREE_DEPTH = 64
         const val MAX_TREE_ENTRIES = 100_000L
+        const val MAX_STAGED_BYTES = 8L * 1024L * 1024L * 1024L
+        val LEASE_ID_PATTERN = Regex("item-[0-9]+-[0-9a-f]+")
         const val MAX_NAME_CHARS = 180
         const val STAGING_MAX_AGE_MS = 24L * 60L * 60L * 1000L
         const val STAGING_HEADROOM_BYTES = 32L * 1024L * 1024L

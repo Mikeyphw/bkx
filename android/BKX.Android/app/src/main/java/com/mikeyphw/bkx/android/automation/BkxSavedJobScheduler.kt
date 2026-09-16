@@ -20,8 +20,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -172,6 +173,7 @@ private class ScheduleJobIdStore(context: Context) {
 
 class BkxSavedJobScheduleService : JobService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val jobs = ConcurrentHashMap<Int, Job>()
 
     override fun onStartJob(params: JobParameters): Boolean {
         val scheduleId = params.extras.getString(BkxSavedJobScheduler.EXTRA_SCHEDULE_ID).orEmpty()
@@ -182,7 +184,7 @@ class BkxSavedJobScheduleService : JobService() {
             jobFinished(params, false)
             return false
         }
-        scope.launch {
+        val job = scope.launch {
             try {
                 DefaultBackendGraph.applicationRuntime(this@BkxSavedJobScheduleService)
                     .awaitReadyForExecution(BkxStartupIngress.ScheduledJob)
@@ -208,14 +210,17 @@ class BkxSavedJobScheduleService : JobService() {
                     AutomationProgressSink.None,
                 )
             } finally {
+                jobs.remove(params.jobId)
                 jobFinished(params, false)
             }
         }
+        jobs[params.jobId] = job
+        job.invokeOnCompletion { jobs.remove(params.jobId, job) }
         return true
     }
 
     override fun onStopJob(params: JobParameters): Boolean {
-        scope.coroutineContext.cancelChildren()
+        jobs.remove(params.jobId)?.cancel()
         return true
     }
 

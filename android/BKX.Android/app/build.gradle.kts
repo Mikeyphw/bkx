@@ -184,14 +184,10 @@ val bkxVersionCode = bkxAndroidVersionCode(bkxVersionName)
 fun bkxResolvedBuildCommit(repositoryRoot: File): String {
     providers.environmentVariable("BKX_BUILD_COMMIT").orNull?.trim()?.takeIf { it.isNotEmpty() && it != "dev" }?.let { return it }
     return runCatching {
-        ProcessBuilder("git", "rev-parse", "--short=12", "HEAD")
-            .directory(repositoryRoot)
-            .redirectErrorStream(true)
-            .start()
-            .inputStream
-            .bufferedReader()
-            .readText()
-            .trim()
+        providers.exec {
+            workingDir(repositoryRoot)
+            commandLine("git", "rev-parse", "--short=12", "HEAD")
+        }.standardOutput.asText.get().trim()
     }.getOrElse { "unknown" }.ifBlank { "unknown" }
 }
 

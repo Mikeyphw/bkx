@@ -1960,12 +1960,12 @@ tasks.named("bkxAndroidReleaseSeal") {
 tasks.register("verifyBkxStartupAppGraphReadinessSeal") {
     group = "verification"
     description = "Verifies BR28 startup/app graph readiness barrier and lazy hydration contracts."
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+    val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
     dependsOn("testDebugUnitTest")
     doLast {
-        val androidRootDir = rootProject.layout.projectDirectory.asFile
-        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
-        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
-        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
         val application = appRoot.resolve("app/BkxAndroidApplication.kt").readText()
         val runtime = appRoot.resolve("app/runtime/BkxApplicationRuntime.kt").readText()
         val graph = appRoot.resolve("app/di/DefaultBackendGraph.kt").readText()
@@ -2016,12 +2016,12 @@ tasks.named("bkxAndroidReleaseSeal") {
 tasks.register("verifyBkxAndroidNavigationStaleStateBindingSeal") {
     group = "verification"
     description = "Verifies BR29 Android navigation, route-local state and stale response binding contracts."
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+    val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
     dependsOn("testDebugUnitTest")
     doLast {
-        val androidRootDir = rootProject.layout.projectDirectory.asFile
-        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
-        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
-        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
         val navigation = appRoot.resolve("app/navigation/BkxNavigation.kt").readText()
         val viewModel = appRoot.resolve("app/BkxAppViewModel.kt").readText()
         val mainActivity = appRoot.resolve("app/MainActivity.kt").readText()
@@ -2058,12 +2058,12 @@ tasks.named("bkxAndroidReleaseSeal") {
 tasks.register("verifyBkxUiTruthfulnessAccessibilityProductCopySeal") {
     group = "verification"
     description = "Verifies BR30 UI truthfulness, busy gating, accessibility semantics and localized product copy contracts."
+    val androidRootDir = rootProject.layout.projectDirectory.asFile
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
+    val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
     dependsOn("testDebugUnitTest")
     doLast {
-        val androidRootDir = rootProject.layout.projectDirectory.asFile
-        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
-        val appRoot = androidRootDir.resolve("app/src/main/java/com/mikeyphw/bkx/android")
-        val testRoot = androidRootDir.resolve("app/src/test/java/com/mikeyphw/bkx/android")
         val truth = appRoot.resolve("app/BkxUiTruthPolicy.kt").readText()
         val components = appRoot.resolve("app/ui/components/BkxComponents.kt").readText()
         val home = appRoot.resolve("feature/home/HomeScreen.kt").readText()

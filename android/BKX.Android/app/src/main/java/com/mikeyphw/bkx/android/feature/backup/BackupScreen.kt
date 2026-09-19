@@ -51,6 +51,7 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxStatusPill
 import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
 import com.mikeyphw.bkx.android.core.backup.BackupCompression
+import com.mikeyphw.bkx.android.core.backup.BackupEngineKind
 import com.mikeyphw.bkx.android.core.backup.BackupDestinationSelection
 import com.mikeyphw.bkx.android.core.backup.BackupPlanDraft
 import com.mikeyphw.bkx.android.core.backup.BackupSourceSelection
@@ -58,6 +59,7 @@ import com.mikeyphw.bkx.android.core.backup.BackupSplitPolicy
 import com.mikeyphw.bkx.android.core.drive.GoogleDriveRcloneConfig
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.operations.ActiveOperationStatus
+import com.mikeyphw.bkx.android.core.remotes.RcloneConfigManager
 import com.mikeyphw.bkx.android.core.operations.OperationResultUiState
 import com.mikeyphw.bkx.android.feature.home.formatBytes
 import com.mikeyphw.bkx.android.feature.home.formatTime
@@ -71,15 +73,28 @@ fun BackupScreen(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(selected = state.backupRoute == BackupRoute.Overview, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Overview)) }, label = { Text("Backup now") })
-            FilterChip(selected = state.backupRoute == BackupRoute.Jobs, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Jobs)) }, label = { Text("Jobs") })
-            FilterChip(selected = state.backupRoute == BackupRoute.Snapshots, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Snapshots)) }, label = { Text("Snapshots") })
-            FilterChip(selected = state.backupRoute == BackupRoute.Repositories, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Repositories)) }, label = { Text("Repositories") })
-            FilterChip(selected = state.backupRoute == BackupRoute.History, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.History)) }, label = { Text("History") })
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp)) {
+            val routes = listOf(
+                BackupRoute.Overview to "Create", BackupRoute.Jobs to "Jobs",
+                BackupRoute.Snapshots to "Snapshots", BackupRoute.Repositories to "Repositories",
+            )
+            if (maxWidth < 520.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    routes.chunked(2).forEach { row ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            row.forEach { (route, label) ->
+                                FilterChip(selected = state.backupRoute == route, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(route)) }, label = { Text(label) }, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            } else {
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    routes.forEach { (route, label) ->
+                        FilterChip(selected = state.backupRoute == route, onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(route)) }, label = { Text(label) }, modifier = Modifier.weight(1f))
+                    }
+                }
+            }
         }
         when (state.backupRoute) {
             BackupRoute.Overview -> BackupCreateScreen(state, onEvent, Modifier.weight(1f))
@@ -140,20 +155,23 @@ private fun BackupCreateScreen(
     val compressionSupported = draft.compression.requiredCapability in capabilities
     val remoteDestinationSelected = draft.destination?.stagedDirectoryPath?.startsWith("rclone://", ignoreCase = true) == true
     val remoteBackupSupported = "backup.remote" in capabilities
-    val selectedCapabilitiesSupported = compressionSupported &&
-        (!draft.split.enabled || splitSupported) &&
-        (!remoteDestinationSelected || remoteBackupSupported)
+    val selectedCapabilitiesSupported = if (draft.engine == BackupEngineKind.Restic) {
+        "backup.snapshot" in capabilities
+    } else compressionSupported && (!draft.split.enabled || splitSupported) && (!remoteDestinationSelected || remoteBackupSupported)
     val providerTreeLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.toString()?.let { onEvent(BkxHomeEvent.ImportProviderBackupTree(it)) }
     }
     val activeBackup = state.operationRuntime.activeOperations.values
-        .filter { it.operation == "backup.create" && it.status in setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling) }
+        .filter { it.operation in setOf("backup.create", "backup.snapshot") && it.status in setOf(ActiveOperationStatus.Queued, ActiveOperationStatus.Running, ActiveOperationStatus.Cancelling) }
         .maxByOrNull { it.lastSeenEpochMillis }
     val backupFeedback = state.operationFeedback[BkxDestination.Backup]
-    var chooseSource by rememberSaveable { mutableStateOf(draft.source == null) }
-    var chooseDestination by rememberSaveable { mutableStateOf(draft.destination == null) }
+    var chooseSource by rememberSaveable { mutableStateOf(false) }
+    var chooseDestination by rememberSaveable { mutableStateOf(false) }
     var showAdvancedSource by rememberSaveable { mutableStateOf(false) }
     var showAdvancedDestination by rememberSaveable { mutableStateOf(false) }
+    var showRcloneBrowser by rememberSaveable { mutableStateOf(false) }
+    var rcloneRemoteName by rememberSaveable { mutableStateOf("") }
+    var rcloneStartPath by rememberSaveable { mutableStateOf("") }
     var showOptions by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
     val destinationFreeBytes = remember(draft.destination?.stagedDirectoryPath) {
@@ -171,10 +189,10 @@ private fun BackupCreateScreen(
         ) {
             BkxPageHeader(
                 title = "Create backup",
-                subtitle = "Choose what to protect, where to save it, then review the real file and space estimate before starting.",
+                subtitle = "Choose a source, backup engine, and destination. Review the plan before anything is written.",
             )
 
-            BackupOperationFeedback(activeBackup, backupFeedback?.result, onEvent)
+            BackupOperationFeedback(activeBackup, backupFeedback?.result, draft.engine, onEvent)
 
             if (wide) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap)) {
@@ -189,6 +207,7 @@ private fun BackupCreateScreen(
                             onProvider = { providerTreeLauncher.launch(null) },
                             onEvent = onEvent,
                         )
+                        BackupEngineSection(state = state, draft = draft, onEvent = onEvent)
                         BackupDestinationSection(
                             state = state,
                             draft = draft,
@@ -196,6 +215,12 @@ private fun BackupCreateScreen(
                             advanced = showAdvancedDestination,
                             onExpandedChange = { chooseDestination = it },
                             onAdvancedChange = { showAdvancedDestination = it },
+                            showRcloneBrowser = showRcloneBrowser,
+                            onShowRcloneBrowserChange = { showRcloneBrowser = it },
+                            rcloneRemoteName = rcloneRemoteName,
+                            onRcloneRemoteNameChange = { rcloneRemoteName = it },
+                            rcloneStartPath = rcloneStartPath,
+                            onRcloneStartPathChange = { rcloneStartPath = it },
                             onEvent = onEvent,
                         )
                         BackupOptionsSection(
@@ -230,6 +255,7 @@ private fun BackupCreateScreen(
                     onProvider = { providerTreeLauncher.launch(null) },
                     onEvent = onEvent,
                 )
+                BackupEngineSection(state = state, draft = draft, onEvent = onEvent)
                 BackupDestinationSection(
                     state = state,
                     draft = draft,
@@ -237,6 +263,12 @@ private fun BackupCreateScreen(
                     advanced = showAdvancedDestination,
                     onExpandedChange = { chooseDestination = it },
                     onAdvancedChange = { showAdvancedDestination = it },
+                    showRcloneBrowser = showRcloneBrowser,
+                    onShowRcloneBrowserChange = { showRcloneBrowser = it },
+                    rcloneRemoteName = rcloneRemoteName,
+                    onRcloneRemoteNameChange = { rcloneRemoteName = it },
+                    rcloneStartPath = rcloneStartPath,
+                    onRcloneStartPathChange = { rcloneStartPath = it },
                     onEvent = onEvent,
                 )
                 BackupOptionsSection(
@@ -265,6 +297,7 @@ private fun BackupCreateScreen(
 private fun BackupOperationFeedback(
     activeBackup: com.mikeyphw.bkx.android.core.operations.ActiveOperation?,
     result: OperationResultUiState?,
+    engine: BackupEngineKind,
     onEvent: (BkxHomeEvent) -> Unit,
 ) {
     if (activeBackup != null) {
@@ -304,8 +337,11 @@ private fun BackupOperationFeedback(
         is OperationResultUiState.Success -> BkxSurfaceCard {
             BkxStatusPill("BACKUP COMPLETE")
             Text(result.summary, style = MaterialTheme.typography.bodyLarge)
-            OutlinedButton(onClick = { onEvent(BkxHomeEvent.SelectDestination(BkxDestination.Archives)) }, modifier = Modifier.fillMaxWidth()) {
-                Text("Open archive library")
+            OutlinedButton(onClick = {
+                if (engine == BackupEngineKind.Restic) onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Snapshots))
+                else onEvent(BkxHomeEvent.SelectDestination(BkxDestination.Archives))
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (engine == BackupEngineKind.Restic) "Open snapshots" else "Open archive library")
             }
         }
         is OperationResultUiState.Failed -> BkxSurfaceCard {
@@ -332,12 +368,12 @@ private fun BackupSourceSection(
     onProvider: () -> Unit,
     onEvent: (BkxHomeEvent) -> Unit,
 ) {
-    BkxSectionHeader("From")
+    BkxSectionHeader("1. What")
     BkxSurfaceCard {
         val source = draft.source
         if (source != null) {
             LocationSummary(source.label, source.stagedPath, if (source.originalUri != null) "Files & other apps" else locationKind(source.stagedPath, state.rootAvailable))
-            TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Done" else "Change source") }
+            TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Close choices" else "Change") }
         } else {
             Text("Choose what to back up", style = MaterialTheme.typography.titleMedium)
             Text("Pick a common location, browse the filesystem, or choose a folder from Files.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -390,6 +426,30 @@ private fun BackupSourceSection(
 }
 
 @Composable
+private fun BackupEngineSection(state: BkxHomeUiState, draft: BackupPlanDraft, onEvent: (BkxHomeEvent) -> Unit) {
+    BkxSectionHeader("2. Backup with")
+    BkxSurfaceCard {
+        Text("Choose the backup model", style = MaterialTheme.typography.titleMedium)
+        Text("BKX archive creates a portable archive. Restic creates an incremental snapshot in a repository.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(
+                selected = draft.engine == BackupEngineKind.Bakery,
+                onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Bakery, repositoryId = null))) },
+                label = { Text("BKX archive") }, modifier = Modifier.weight(1f),
+            )
+            FilterChip(
+                selected = draft.engine == BackupEngineKind.Restic,
+                onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Restic, destination = null))) },
+                label = { Text("Restic") }, modifier = Modifier.weight(1f),
+            )
+        }
+        if (draft.engine == BackupEngineKind.Restic && state.repositories.items.isEmpty()) {
+            Text("Create a repository before making a Restic snapshot.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
 private fun BackupDestinationSection(
     state: BkxHomeUiState,
     draft: BackupPlanDraft,
@@ -397,14 +457,47 @@ private fun BackupDestinationSection(
     advanced: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onAdvancedChange: (Boolean) -> Unit,
+    showRcloneBrowser: Boolean,
+    onShowRcloneBrowserChange: (Boolean) -> Unit,
+    rcloneRemoteName: String,
+    onRcloneRemoteNameChange: (String) -> Unit,
+    rcloneStartPath: String,
+    onRcloneStartPathChange: (String) -> Unit,
     onEvent: (BkxHomeEvent) -> Unit,
 ) {
-    BkxSectionHeader("To")
+    val context = LocalContext.current
+    val rcloneSnapshot = remember(context, showRcloneBrowser) { RcloneConfigManager(context).snapshot() }
+    val importedRemotes = rcloneSnapshot.profiles.filterNot { it.managedByBkx }
+    BkxSectionHeader("3. Where")
     BkxSurfaceCard {
+        if (draft.engine == BackupEngineKind.Restic) {
+            val selected = state.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }
+            if (selected != null) {
+                LocationSummary(selected.name, selected.location, "Restic repository")
+                TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Close choices" else "Change") }
+            } else {
+                Text("Choose a Restic repository", style = MaterialTheme.typography.titleMedium)
+                Text("Snapshots are stored in a configured Restic repository.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = { onExpandedChange(true) }) { Text("Choose repository") }
+            }
+            if (expanded) {
+                BkxDivider()
+                if (state.repositories.items.isEmpty()) {
+                    Text("No repositories configured yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    OutlinedButton(onClick = { onEvent(BkxHomeEvent.OpenBackupRoute(BackupRoute.Repositories)) }, modifier = Modifier.fillMaxWidth()) { Text("Create repository") }
+                } else state.repositories.items.forEach { repo ->
+                    LocationChoice(repo.name, repo.location, "Restic · ${repo.backend}") {
+                        onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(repositoryId = repo.repositoryId, destination = null)))
+                        onExpandedChange(false)
+                    }
+                }
+            }
+            return@BkxSurfaceCard
+        }
         val destination = draft.destination
         if (destination != null) {
             LocationSummary(destination.label, destination.stagedDirectoryPath, locationKind(destination.stagedDirectoryPath, false))
-            TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Done" else "Change destination") }
+            TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Close choices" else "Change") }
         } else {
             Text("Choose where to save the archive", style = MaterialTheme.typography.titleMedium)
             Text("Save locally or connect Google Drive for first-class cloud backup.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -435,6 +528,42 @@ private fun BackupDestinationSection(
                 ) {
                     Text("Google Drive", style = MaterialTheme.typography.titleMedium)
                     Text("Connect once, then back up directly to BKX on Drive.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            LocationChoice(
+                "Rclone remote",
+                draft.destination?.stagedDirectoryPath?.takeIf { it.startsWith("rclone://", true) } ?: "Choose a remote and folder",
+                "Imported or custom remote · browse inside folders",
+            ) {
+                val current = draft.destination?.stagedDirectoryPath?.takeIf { it.startsWith("rclone://", true) }
+                if (current != null) {
+                    val withoutScheme = current.removePrefix("rclone://")
+                    onRcloneRemoteNameChange(withoutScheme.substringBefore('/'))
+                    onRcloneStartPathChange(withoutScheme.substringAfter('/', ""))
+                }
+                onShowRcloneBrowserChange(true)
+            }
+            if (showRcloneBrowser) {
+                BkxSurfaceCard {
+                    Text("Choose an rclone remote", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Choose a configured remote, then browse to the exact folder you want to use.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (importedRemotes.isEmpty()) {
+                        Text("No custom rclone remotes are configured yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Import an rclone.conf from More → rclone remotes, then return here.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        importedRemotes.forEach { profile ->
+                            LocationChoice(profile.name, "rclone://${profile.name}", "Rclone remote · Browse folders") {
+                                onRcloneRemoteNameChange(profile.name)
+                                onRcloneStartPathChange("")
+                                onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupDestination, "rclone://${profile.name}"))
+                                onShowRcloneBrowserChange(false)
+                            }
+                        }
+                    }
+                    TextButton(onClick = { onShowRcloneBrowserChange(false) }) { Text("Close") }
                 }
             }
             OutlinedButton(
@@ -481,9 +610,9 @@ private fun BackupOptionsSection(
     BkxSurfaceCard {
         Text(
             buildList {
-                add(draft.compression.displayLabel())
+                add(if (draft.engine == BackupEngineKind.Restic) "Restic snapshot" else draft.compression.displayLabel())
                 if (draft.verification.verifyAfterCreate) add("Verify")
-                if (draft.split.enabled) add("Split")
+                if (draft.engine == BackupEngineKind.Bakery && draft.split.enabled) add("Split")
             }.joinToString(" · "),
             style = MaterialTheme.typography.titleMedium,
         )
@@ -494,6 +623,7 @@ private fun BackupOptionsSection(
         )
         if (expanded) {
             BkxDivider()
+            if (draft.engine == BackupEngineKind.Bakery) {
             OutlinedTextField(
                 value = draft.archiveName,
                 onValueChange = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(archiveName = it))) },
@@ -513,9 +643,10 @@ private fun BackupOptionsSection(
                     )
                 }
             }
+            }
             BkxSettingSwitch(
                 title = "Verify after backup",
-                summary = "Check the completed archive before reporting success.",
+                summary = if (draft.engine == BackupEngineKind.Restic) "Verify the new Restic snapshot before reporting success." else "Check the completed archive before reporting success.",
                 checked = draft.verification.verifyAfterCreate,
                 onCheckedChange = { enabled -> onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(verification = draft.verification.copy(verifyAfterCreate = enabled)))) },
             )
@@ -525,6 +656,7 @@ private fun BackupOptionsSection(
                 checked = draft.filters.includeHidden,
                 onCheckedChange = { enabled -> onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(filters = draft.filters.copy(includeHidden = enabled)))) },
             )
+            if (draft.engine == BackupEngineKind.Bakery) {
             BkxSettingSwitch(
                 title = "Split large backups",
                 summary = if (splitSupported) "Create 1 GB parts for constrained filesystems." else "This BKX engine does not support split archives.",
@@ -534,6 +666,7 @@ private fun BackupOptionsSection(
                     onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(split = if (enabled) BackupSplitPolicy(true, 1024L * 1024L * 1024L) else BackupSplitPolicy())))
                 },
             )
+            }
         }
     }
 }
@@ -555,8 +688,9 @@ private fun BackupReviewSection(
     BkxSectionHeader("Review")
     BkxSurfaceCard {
         BkxKeyValue("Source", draft.source?.label ?: "Not selected")
-        BkxKeyValue("Destination", draft.destination?.label ?: "Not selected")
-        BkxKeyValue("Compression", draft.compression.displayLabel())
+        BkxKeyValue("Engine", if (draft.engine == BackupEngineKind.Restic) "Restic snapshot" else "BKX archive")
+        BkxKeyValue("Destination", if (draft.engine == BackupEngineKind.Restic) state.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }?.name ?: "No repository selected" else draft.destination?.label ?: "Not selected")
+        if (draft.engine == BackupEngineKind.Bakery) BkxKeyValue("Compression", draft.compression.displayLabel())
         planning.preview?.let { preview ->
             BkxDivider()
             Text("Preflight", style = MaterialTheme.typography.titleMedium)

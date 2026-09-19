@@ -70,6 +70,10 @@ class StartupReadinessSealContractTest {
         assertTrue(scheduler.contains("readBoundedDocument"))
         assertTrue(scheduler.contains("schemaVersion == 1"))
         assertTrue(gateway.contains("BkxControlPlaneRootResolver.resolve(appContext, stateNamespace)"))
+        assertTrue(gateway.contains("runtimeExitError(started, stderrLog)"))
+        assertTrue(gateway.contains("Runtime stderr:"))
+        assertTrue(gateway.contains("exit code "))
+        assertTrue(gateway.contains("stderr.writeText(\"\", Charsets.UTF_8)"))
     }
 
     @Test

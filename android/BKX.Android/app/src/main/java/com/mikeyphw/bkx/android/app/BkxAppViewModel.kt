@@ -282,6 +282,7 @@ sealed interface BkxHomeEvent {
 
     data class OpenFilesystemBrowser(val target: FilesystemSelectionTarget, val initialPath: String) : BkxHomeEvent
     data class NavigateFilesystem(val path: String) : BkxHomeEvent
+    data class CreateFilesystemFolder(val name: String) : BkxHomeEvent
     data object ToggleFilesystemHidden : BkxHomeEvent
     data class SelectFilesystemPath(val path: String, val isDirectory: Boolean) : BkxHomeEvent
     data object CloseFilesystemBrowser : BkxHomeEvent
@@ -511,6 +512,7 @@ class BkxAppViewModel(
 
             is BkxHomeEvent.OpenFilesystemBrowser -> openFilesystemBrowser(event.target, event.initialPath)
             is BkxHomeEvent.NavigateFilesystem -> loadFilesystem(event.path)
+            is BkxHomeEvent.CreateFilesystemFolder -> createFilesystemFolder(event.name)
             BkxHomeEvent.ToggleFilesystemHidden -> {
                 _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(showHidden = !current.filesystemBrowser.showHidden)) }
                 loadFilesystem(_state.value.filesystemBrowser.currentPath)
@@ -705,7 +707,15 @@ class BkxAppViewModel(
         val draft = _state.value.backupPlanning.draft
         if (draft.validationIssues().isNotEmpty()) return
         val draftFingerprint = draft.fingerprint()
-        val request = backupRequestBuilder.buildPlanRequest(nextRequestId("backup-plan"), draft)
+        val request = if (draft.engine == com.mikeyphw.bkx.android.core.backup.BackupEngineKind.Restic) {
+            val repository = _state.value.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }
+                ?: return
+            RepositoryRequestBuilder.snapshot(
+                requestId = nextRequestId("backup-plan"), repository = repository,
+                sources = listOfNotNull(draft.source?.stagedPath), excludes = draft.filters.excludePatterns,
+                verify = draft.verification.verifyAfterCreate, dryRun = true,
+            )
+        } else backupRequestBuilder.buildPlanRequest(nextRequestId("backup-plan"), draft)
         bindResponse(request, BkxBoundEntityKind.BackupDraft, draftFingerprint, draftFingerprint)
         _state.update { current -> current.copy(backupPlanning = current.backupPlanning.copy(planRequestId = request.requestId, preview = null)) }
         executeRequest(
@@ -739,9 +749,23 @@ class BkxAppViewModel(
     private fun createBackup() {
         val planning = _state.value.backupPlanning
         if (!planning.canCreateBackup) return
-        val request = backupRequestBuilder.buildCreateRequest(nextRequestId("backup-create"), planning.draft, planning.preview)
+        val draft = planning.draft
+        val request = if (draft.engine == com.mikeyphw.bkx.android.core.backup.BackupEngineKind.Restic) {
+            val repository = _state.value.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }
+                ?: return
+            RepositoryRequestBuilder.snapshot(
+                requestId = nextRequestId("backup-snapshot"), repository = repository,
+                sources = listOfNotNull(draft.source?.stagedPath), excludes = draft.filters.excludePatterns,
+                verify = draft.verification.verifyAfterCreate,
+            )
+        } else backupRequestBuilder.buildCreateRequest(nextRequestId("backup-create"), draft, planning.preview)
         executeRequest(request, recordInHistory = true, feedbackDestination = BkxDestination.Backup) { result ->
-            if (result.status == BridgeResultStatus.Success) refreshArchives()
+            if (result.status == BridgeResultStatus.Success) {
+                if (draft.engine == com.mikeyphw.bkx.android.core.backup.BackupEngineKind.Restic) {
+                    draft.repositoryId?.let { selectSnapshotRepository(it) }
+                    refreshSnapshots()
+                } else refreshArchives()
+            }
         }
     }
 
@@ -1168,6 +1192,25 @@ class BkxAppViewModel(
             } else {
                 _state.update { current -> current.copy(filesystemBrowser = current.filesystemBrowser.copy(loading = false, error = result.summary.ifBlank { "Could not list this path." })) }
             }
+        }
+    }
+
+    private fun createFilesystemFolder(name: String) {
+        val browser = _state.value.filesystemBrowser
+        val clean = name.trim()
+        if (!browser.open || !browser.isRemote || clean.isBlank() || clean == "." || clean == ".." || clean.contains('/') || clean.contains('\\')) {
+            _state.update { it.copy(filesystemBrowser = it.filesystemBrowser.copy(error = "Enter a single valid folder name.")) }
+            return
+        }
+        val request = BridgeRequestEnvelope(
+            requestId = nextRequestId("filesystem-mkdir"),
+            operation = "filesystem.mkdir",
+            payload = buildJsonObject { put("path", browser.currentPath); put("name", clean) },
+        )
+        _state.update { it.copy(filesystemBrowser = it.filesystemBrowser.copy(loading = true, error = null)) }
+        executeRequest(request, recordInHistory = false, deliverFailureResults = true) { result ->
+            if (result.status == BridgeResultStatus.Success) loadFilesystem(browser.currentPath)
+            else _state.update { it.copy(filesystemBrowser = it.filesystemBrowser.copy(loading = false, error = result.summary.ifBlank { "Could not create folder." })) }
         }
     }
 

@@ -105,6 +105,7 @@ class GoNativeGateway(
         val tmp = appContext.cacheDir.resolve("bkx-$stateNamespace-tmp").apply { mkdirs() }
         val state = appContext.filesDir.resolve("bkx/$stateNamespace").apply { mkdirs() }
         val stderr = state.resolve("runtime.stderr.log")
+        runCatching { stderr.writeText("", Charsets.UTF_8) }
         val legacyRunHistory = state.resolve("runs.jsonl")
         val runHistory = desiredStateRoot.resolve("runs").resolve("runs.jsonl")
         val builder = ProcessBuilder(
@@ -127,12 +128,12 @@ class GoNativeGateway(
         writer = startedWriter
         sessionStateRoot = desiredStateRoot.absolutePath
         sessionId = newSessionId
-        startReader(started, newSessionId)
         startErrorReader(started, stderr)
+        startReader(started, newSessionId, stderr)
         SessionHandle(newSessionId, startedWriter)
     }
 
-    private fun startReader(started: Process, readerSessionId: Long) {
+    private fun startReader(started: Process, readerSessionId: Long, stderrLog: File) {
         Thread({
             try {
                 started.inputStream.bufferedReader(Charsets.UTF_8).useLines { lines ->
@@ -145,7 +146,7 @@ class GoNativeGateway(
                     }
                 }
                 if (isAlive(started)) started.destroy()
-                completePendingForSession(readerSessionId, IllegalStateException("BKX Go runtime session ended."))
+                completePendingForSession(readerSessionId, runtimeExitError(started, stderrLog))
             } catch (error: Throwable) {
                 completePendingForSession(readerSessionId, error)
             } finally {
@@ -224,6 +225,27 @@ class GoNativeGateway(
         return !isAlive(candidate)
     }
 
+    private fun runtimeExitError(candidate: Process, stderrLog: File): IllegalStateException {
+        // stderr is drained on a sibling thread, so allow a tiny bounded window for the
+        // final diagnostic lines to reach disk after stdout reaches EOF.
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(STDERR_DRAIN_GRACE_MS)
+        while (isAlive(candidate) && System.nanoTime() < deadline) Thread.yield()
+        val exitCode = runCatching { candidate.exitValue() }.getOrNull()
+        val stderrTail = runCatching {
+            stderrLog.takeIf { it.isFile }?.readText(Charsets.UTF_8)
+                ?.takeLast(MAX_STDERR_DIAGNOSTIC_CHARS)
+                ?.trim()
+        }.getOrNull().orEmpty()
+        val detail = buildString {
+            append("BKX Go runtime session ended")
+            if (exitCode != null) append(" (exit code ").append(exitCode).append(')')
+            append('.')
+            if (stderrTail.isNotBlank()) append(" Runtime stderr: ").append(stderrTail)
+            else append(" No runtime stderr was emitted.")
+        }
+        return IllegalStateException(detail)
+    }
+
     private fun completePendingForSession(closingSession: Long, error: Throwable) {
         pending.values
             .filter { it.sessionId == closingSession }
@@ -277,6 +299,8 @@ class GoNativeGateway(
         const val LEGACY_PROCESS_POLL_MS = 25L
         const val MAX_STDERR_LOG_BYTES = 512L * 1024L
         const val MAX_STDERR_LINE_CHARS = 8 * 1024
+        const val MAX_STDERR_DIAGNOSTIC_CHARS = 4 * 1024
+        const val STDERR_DRAIN_GRACE_MS = 100L
     }
 
     private data class SessionHandle(

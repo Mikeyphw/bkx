@@ -72,11 +72,11 @@ object RepositoryRequestBuilder {
         },
     )
 
-    fun snapshot(requestId: String, repository: RepositoryDefinition, sources: List<String>, tags: List<String> = emptyList(), excludes: List<String> = emptyList(), verify: Boolean = true): BridgeRequestEnvelope {
+    fun snapshot(requestId: String, repository: RepositoryDefinition, sources: List<String>, tags: List<String> = emptyList(), excludes: List<String> = emptyList(), verify: Boolean = true, dryRun: Boolean = false): BridgeRequestEnvelope {
         require(sources.isNotEmpty() && sources.none { it.isBlank() }) { "snapshot sources must not be blank" }
         return BridgeRequestEnvelope(requestId = requestId, operation = OPERATION_SNAPSHOT, payload = repositoryPayload(repository) {
             put("engine", BackupEngineKind.Restic.wireValue)
-            put("sources", strings(sources)); put("tags", strings(tags)); put("excludes", strings(excludes)); put("verify", verify)
+            put("sources", strings(sources)); put("tags", strings(tags)); put("excludes", strings(excludes)); put("verify", verify); put("dry_run", dryRun)
         })
     }
 

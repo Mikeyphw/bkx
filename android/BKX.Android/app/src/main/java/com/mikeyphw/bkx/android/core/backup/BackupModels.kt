@@ -77,6 +77,8 @@ data class BackupVerificationPolicy(
 }
 
 data class BackupPlanDraft(
+    val engine: BackupEngineKind = BackupEngineKind.Bakery,
+    val repositoryId: String? = null,
     val source: BackupSourceSelection? = null,
     val destination: BackupDestinationSelection? = null,
     val archiveName: String = "",
@@ -87,9 +89,10 @@ data class BackupPlanDraft(
 ) {
     fun validationIssues(): List<BackupPlanIssue> = buildList {
         if (source == null) add(BackupPlanIssue.MissingSource)
-        if (destination == null) add(BackupPlanIssue.MissingDestination)
-        if (source != null && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
-        if (archiveName.isNotBlank() && normalizedArchiveName() == null) add(BackupPlanIssue.InvalidArchiveName)
+        if (engine == BackupEngineKind.Bakery && destination == null) add(BackupPlanIssue.MissingDestination)
+        if (engine == BackupEngineKind.Restic && repositoryId.isNullOrBlank()) add(BackupPlanIssue.MissingRepository)
+        if (engine == BackupEngineKind.Bakery && source != null && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
+        if (engine == BackupEngineKind.Bakery && archiveName.isNotBlank() && normalizedArchiveName() == null) add(BackupPlanIssue.InvalidArchiveName)
         if (filters.followSymlinks) add(BackupPlanIssue.FollowSymlinksUnsupported)
     }
 
@@ -99,6 +102,8 @@ data class BackupPlanDraft(
     }
 
     fun fingerprint(): String = listOf(
+        engine.wireValue,
+        repositoryId.orEmpty(),
         source?.sourceId.orEmpty(),
         source?.stagedPath.orEmpty(),
         destination?.destinationId.orEmpty(),
@@ -177,6 +182,11 @@ sealed interface BackupPlanIssue {
     data object MissingSource : BackupPlanIssue {
         override val code: String = "missing_source"
         override val message: String = "Choose a backup source before planning."
+    }
+
+    data object MissingRepository : BackupPlanIssue {
+        override val code = "missing_repository"
+        override val message = "Choose a Restic repository before planning."
     }
 
     data object MissingDestination : BackupPlanIssue {

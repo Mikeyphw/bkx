@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"bkx/internal/berror"
+	"bkx/internal/filelock"
 	"bkx/internal/statepaths"
 )
 
@@ -220,10 +221,11 @@ func (s *Store) withDocument(fn func(*document) error) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	unlock, err := filelock.Acquire(lock, filelock.Exclusive)
+	if err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlock()
 
 	doc := document{SchemaVersion: schemaVersion, Leases: map[string]Lease{}, Cancellations: map[string]string{}}
 	if data, err := os.ReadFile(s.Path); err == nil {

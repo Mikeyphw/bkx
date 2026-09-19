@@ -15,7 +15,12 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,11 +38,13 @@ fun FilesystemBrowserDialog(
 ) {
     if (!state.open) return
     val target = state.target ?: return
+    var newFolderName by remember(state.currentPath) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = { onEvent(BkxHomeEvent.CloseFilesystemBrowser) },
         title = { Text(if (state.isRemote) "Choose a remote path" else "Choose a filesystem path") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(if (state.isRemote) "Current remote folder" else "Current folder", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(state.currentPath, style = MaterialTheme.typography.bodySmall)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
@@ -48,8 +55,28 @@ fun FilesystemBrowserDialog(
                         Text(if (state.showHidden) "Hide dotfiles" else "Show dotfiles")
                     }
                 }
+                if (state.isRemote && target.folderOnly) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(
+                            value = newFolderName,
+                            onValueChange = { newFolderName = it },
+                            label = { Text("New folder name") },
+                            singleLine = true,
+                            enabled = !state.loading,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedButton(
+                            onClick = { onEvent(BkxHomeEvent.CreateFilesystemFolder(newFolderName)) },
+                            enabled = newFolderName.trim().isNotEmpty() && !state.loading,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text("Create folder here") }
+                    }
+                }
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (state.loading) Text("Loading…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.loading) Text("Loading folders…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!state.loading && state.error == null && state.entries.isEmpty()) {
+                    Text("This folder is empty.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
                     items(state.entries, key = { it.path }) { entry ->
                         FilesystemEntryRow(entry, state.folderOnly, onEvent)
@@ -59,7 +86,10 @@ fun FilesystemBrowserDialog(
         },
         confirmButton = {
             if (state.canUseCurrentFolder) {
-                Button(onClick = { onEvent(BkxHomeEvent.SelectFilesystemPath(state.currentPath, true)) }) {
+                Button(
+                    onClick = { onEvent(BkxHomeEvent.SelectFilesystemPath(state.currentPath, true)) },
+                    enabled = !state.loading,
+                ) {
                     Text("Use this folder")
                 }
             }

@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"bkx/internal/berror"
+	"bkx/internal/filelock"
 	"bkx/internal/models"
 	"bkx/internal/rcloneops"
 	"bkx/internal/statepaths"
@@ -63,10 +63,11 @@ func (s *Store) withLock(fn func() error) error {
 		return berror.WrapExternal("opening repository store lock", s.LockPath(), "filesystem", err)
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	unlock, err := filelock.Acquire(lock, filelock.Exclusive)
+	if err != nil {
 		return berror.WrapExternal("locking repositories", s.LockPath(), "filesystem", err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlock()
 	if strings.TrimSpace(s.LegacyPath) != "" {
 		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
 			return berror.WrapExternal("seeding shared repositories from legacy state", s.LegacyPath, "filesystem", err)

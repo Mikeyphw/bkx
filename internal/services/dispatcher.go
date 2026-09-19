@@ -112,7 +112,7 @@ func NewWithStores(store *runstore.Store, repositories *repositorystore.Store, j
 	return &Dispatcher{RunStore: store, Repositories: repositories, Jobs: jobs, Schedules: schedulestore.Default(home), Control: executioncontrol.Default(home), StorageLocations: defaultStorageLocations()}
 }
 func SupportedOperations() []string {
-	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.replay", "runs.show", "schedules.delete", "schedules.list", "schedules.put", "schedules.set_enabled", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
+	return []string{"archive.browse", "archive.info", "archive.list", "archive.verify", "backup.create", "backup.plan", "backup.snapshot", "filesystem.list", "filesystem.mkdir", "filesystem.stat", "jobs.clone", "jobs.create", "jobs.delete", "jobs.list", "jobs.plan", "jobs.run", "jobs.show", "jobs.update", "repository.check", "repository.init", "repository.prune", "repositories.add", "repositories.list", "repositories.remove", "repositories.show", "retention.apply", "retention.clear", "retention.set", "retention.show", "restore.extract", "restore.preview", "runs.list", "runs.replay", "runs.show", "schedules.delete", "schedules.list", "schedules.put", "schedules.set_enabled", "snapshots.browse", "snapshots.diff", "snapshots.forget", "snapshots.list", "snapshots.restore", "snapshots.show", "storage.locations", "transfer.plan", "transfer.run"}
 }
 
 func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.RawMessage) (Result, error) {
@@ -242,6 +242,8 @@ func (d *Dispatcher) Dispatch(ctx OperationContext, operation string, raw json.R
 		return d.storage(p)
 	case "filesystem.list":
 		return d.filesystemList(ctx, p)
+	case "filesystem.mkdir":
+		return d.filesystemMkdir(ctx, p)
 	case "filesystem.stat":
 		return d.filesystemStat(ctx, p)
 	default:
@@ -1178,6 +1180,34 @@ func (d *Dispatcher) rcloneFilesystemList(ctx OperationContext, location string,
 		suffix = " More entries are available."
 	}
 	return success(fmt.Sprintf("Listed %d of %d remote entries.%s", len(page), len(filtered), suffix), nil, arts), nil
+}
+
+func (d *Dispatcher) filesystemMkdir(ctx OperationContext, p map[string]any) (Result, error) {
+	parent, err := requiredString(p, "path")
+	if err != nil {
+		return Result{}, err
+	}
+	name, err := requiredString(p, "name")
+	if err != nil {
+		return Result{}, err
+	}
+	if !rcloneops.IsLocation(parent) {
+		return Result{}, berror.Validation("filesystem.mkdir currently supports rclone destinations only", map[string]any{"path": parent})
+	}
+	runtime, err := rcloneops.RuntimeFromEnvironment()
+	if err != nil {
+		return Result{}, berror.External("rclone remote browser is unavailable", map[string]any{"dependency": "rclone", "reason": err.Error()})
+	}
+	if err := checkCancelled(ctx, "creating remote folder"); err != nil {
+		return Result{}, err
+	}
+	commandCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	child, err := runtime.Mkdir(commandCtx, parent, name)
+	if err != nil {
+		return Result{}, berror.WrapExternal("creating rclone folder", parent, "rclone", err)
+	}
+	return success("Remote folder created.", nil, []Artifact{{Label: "directory", Path: child}}), nil
 }
 
 func (d *Dispatcher) filesystemStat(ctx OperationContext, p map[string]any) (Result, error) {

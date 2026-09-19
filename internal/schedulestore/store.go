@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"bkx/internal/berror"
+	"bkx/internal/filelock"
 	"bkx/internal/statepaths"
 )
 
@@ -228,10 +228,11 @@ func (s *Store) readDocument(fn func(*document) error) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_SH); err != nil {
+	unlock, err := filelock.Acquire(lock, filelock.Shared)
+	if err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlock()
 	if strings.TrimSpace(s.LegacyPath) != "" {
 		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
 			return berror.WrapExternal("seeding shared schedules from legacy state", s.LegacyPath, "filesystem", err)
@@ -284,10 +285,11 @@ func (s *Store) withDocument(fn func(*document) error) error {
 		return err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	unlock, err := filelock.Acquire(lock, filelock.Exclusive)
+	if err != nil {
 		return err
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlock()
 	if strings.TrimSpace(s.LegacyPath) != "" {
 		if err := statepaths.SeedLegacyFile(s.Path, s.LegacyPath); err != nil {
 			return berror.WrapExternal("seeding shared schedules from legacy state", s.LegacyPath, "filesystem", err)

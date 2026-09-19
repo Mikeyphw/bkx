@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"bkx/internal/berror"
 	"bkx/internal/executioncontrol"
+	"bkx/internal/filelock"
 	"bkx/internal/models"
 	"bkx/internal/statepaths"
 )
@@ -142,10 +142,11 @@ func (s *Store) withLock(fn func() error) error {
 		return berror.WrapExternal("opening run-history lock", s.LockPath(), "filesystem", err)
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+	unlock, err := filelock.Acquire(lock, filelock.Exclusive)
+	if err != nil {
 		return berror.WrapExternal("locking run history", s.LockPath(), "filesystem", err)
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+	defer unlock()
 	return fn()
 }
 

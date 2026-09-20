@@ -372,7 +372,12 @@ private fun BackupSourceSection(
     BkxSurfaceCard {
         val source = draft.source
         if (source != null) {
-            LocationSummary(source.label, source.stagedPath, if (source.originalUri != null) "Files & other apps" else locationKind(source.stagedPath, state.rootAvailable))
+            if (source.kind == com.mikeyphw.bkx.android.core.backup.BackupSourceKind.Chroot) {
+                LocationSummary(source.label, "Managed by chrootctl", "Chroot")
+            } else {
+                val path = requireNotNull(source.filesystemPath)
+                LocationSummary(source.label, path, if (source.originalUri != null) "Files & other apps" else locationKind(path, state.rootAvailable))
+            }
             TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Close choices" else "Change") }
         } else {
             Text("Choose what to back up", style = MaterialTheme.typography.titleMedium)
@@ -397,7 +402,7 @@ private fun BackupSourceSection(
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
-                    onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupSource, draft.source?.stagedPath ?: BkxStorageLocations.SHARED_STORAGE)) },
+                    onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupSource, draft.source?.filesystemPath ?: BkxStorageLocations.SHARED_STORAGE)) },
                     modifier = Modifier.weight(1f),
                 ) { Text("Browse device") }
                 OutlinedButton(onClick = onProvider, enabled = !state.providerImportInProgress, modifier = Modifier.weight(1f)) {
@@ -407,7 +412,7 @@ private fun BackupSourceSection(
             TextButton(onClick = { onAdvancedChange(!advanced) }) { Text(if (advanced) "Hide manual path" else "Manual path · Advanced") }
             if (advanced) {
                 OutlinedTextField(
-                    value = draft.source?.stagedPath.orEmpty(),
+                    value = draft.source?.filesystemPath.orEmpty(),
                     onValueChange = { path ->
                         onEvent(
                             BkxHomeEvent.UpdateBackupDraft(

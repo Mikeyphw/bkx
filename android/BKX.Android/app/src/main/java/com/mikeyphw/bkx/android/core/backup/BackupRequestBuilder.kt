@@ -11,6 +11,7 @@ import kotlinx.serialization.json.putJsonObject
 class BackupRequestBuilder {
     fun buildPlanRequest(requestId: String, draft: BackupPlanDraft): BridgeRequestEnvelope {
         draft.requireValid()
+        require(draft.engine != BackupEngineKind.Chrootctl) { "chrootctl backups are orchestrated by ChrootctlExportCoordinator, not the Go backup bridge." }
         return BridgeRequestEnvelope(
             requestId = requestId,
             operation = OPERATION_BACKUP_PLAN,
@@ -24,6 +25,7 @@ class BackupRequestBuilder {
         preview: BackupPlanPreview?,
     ): BridgeRequestEnvelope {
         draft.requireValid()
+        require(draft.engine != BackupEngineKind.Chrootctl) { "chrootctl backups are orchestrated by ChrootctlExportCoordinator, not the Go backup bridge." }
         require(preview != null) { "backup.create requires a successful backup.plan preview first." }
         require(preview.draftFingerprint == draft.fingerprint()) {
             "backup.create preview does not match the current draft."
@@ -49,14 +51,16 @@ class BackupRequestBuilder {
 
 fun BackupPlanDraft.toPlanPayload(extra: JsonObject = buildJsonObject { }): JsonObject {
     requireValid()
+    require(engine != BackupEngineKind.Chrootctl) { "chrootctl backup plans must not be serialized as filesystem backup payloads." }
     val safeSource = requireNotNull(source)
+    val safeSourcePath = requireNotNull(safeSource.filesystemPath) { "Go backup payload requires a filesystem source." }
     val safeDestination = requireNotNull(destination)
     return buildJsonObject {
         put("operation_mode", "plan_then_create")
         putJsonObject("source") {
             put("source_id", safeSource.sourceId)
             put("label", safeSource.label)
-            put("staged_path", safeSource.stagedPath)
+            put("staged_path", safeSourcePath)
             safeSource.originalUri?.let { put("original_uri", it) }
         }
         putJsonObject("destination") {

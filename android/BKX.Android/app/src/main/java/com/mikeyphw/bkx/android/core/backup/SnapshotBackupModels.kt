@@ -7,6 +7,7 @@ import kotlinx.serialization.Serializable
 enum class BackupEngineKind(val wireValue: String) {
     @SerialName("bakery") Bakery("bakery"),
     @SerialName("restic") Restic("restic"),
+    @SerialName("chrootctl") Chrootctl("chrootctl"),
 }
 
 @Serializable

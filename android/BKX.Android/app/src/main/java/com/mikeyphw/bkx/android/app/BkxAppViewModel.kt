@@ -712,7 +712,7 @@ class BkxAppViewModel(
                 ?: return
             RepositoryRequestBuilder.snapshot(
                 requestId = nextRequestId("backup-plan"), repository = repository,
-                sources = listOfNotNull(draft.source?.stagedPath), excludes = draft.filters.excludePatterns,
+                sources = listOfNotNull(draft.source?.filesystemPath), excludes = draft.filters.excludePatterns,
                 verify = draft.verification.verifyAfterCreate, dryRun = true,
             )
         } else backupRequestBuilder.buildPlanRequest(nextRequestId("backup-plan"), draft)
@@ -755,7 +755,7 @@ class BkxAppViewModel(
                 ?: return
             RepositoryRequestBuilder.snapshot(
                 requestId = nextRequestId("backup-snapshot"), repository = repository,
-                sources = listOfNotNull(draft.source?.stagedPath), excludes = draft.filters.excludePatterns,
+                sources = listOfNotNull(draft.source?.filesystemPath), excludes = draft.filters.excludePatterns,
                 verify = draft.verification.verifyAfterCreate,
             )
         } else backupRequestBuilder.buildCreateRequest(nextRequestId("backup-create"), draft, planning.preview)

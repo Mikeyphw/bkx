@@ -4,17 +4,43 @@ import com.mikeyphw.bkx.android.core.files.ContentUriPathPolicy
 
 private const val MIN_SPLIT_SIZE_BYTES = 1024L * 1024L
 
+enum class BackupSourceKind { Filesystem, Chroot }
+
 data class BackupSourceSelection(
     val sourceId: String,
     val label: String,
-    val stagedPath: String,
+    val stagedPath: String? = null,
     val originalUri: String? = null,
+    val kind: BackupSourceKind = BackupSourceKind.Filesystem,
+    val chrootName: String? = null,
 ) {
     init {
         require(sourceId.isNotBlank()) { "Backup source id must not be blank." }
         require(label.isNotBlank()) { "Backup source label must not be blank." }
-        require(stagedPath.isNotBlank()) { "Backup source staged path must not be blank." }
-        ContentUriPathPolicy.requireNotContentUriPath(stagedPath)
+        when (kind) {
+            BackupSourceKind.Filesystem -> {
+                require(!stagedPath.isNullOrBlank()) { "Filesystem backup source staged path must not be blank." }
+                require(chrootName == null) { "Filesystem backup source must not carry a chroot name." }
+                ContentUriPathPolicy.requireNotContentUriPath(requireNotNull(stagedPath))
+            }
+            BackupSourceKind.Chroot -> {
+                require(stagedPath == null) { "Chroot backup source must not masquerade as a filesystem path." }
+                require(originalUri == null) { "Chroot backup source must not carry a provider URI." }
+                require(!chrootName.isNullOrBlank()) { "Chroot backup source requires a chroot name." }
+                require(sourceId == "chroot:$chrootName") { "Chroot backup source id must be derived from its chroot name." }
+            }
+        }
+    }
+
+    val filesystemPath: String? get() = stagedPath.takeIf { kind == BackupSourceKind.Filesystem }
+
+    companion object {
+        fun chroot(name: String, label: String = name): BackupSourceSelection = BackupSourceSelection(
+            sourceId = "chroot:$name",
+            label = label,
+            kind = BackupSourceKind.Chroot,
+            chrootName = name,
+        )
     }
 }
 
@@ -91,7 +117,10 @@ data class BackupPlanDraft(
         if (source == null) add(BackupPlanIssue.MissingSource)
         if (engine == BackupEngineKind.Bakery && destination == null) add(BackupPlanIssue.MissingDestination)
         if (engine == BackupEngineKind.Restic && repositoryId.isNullOrBlank()) add(BackupPlanIssue.MissingRepository)
-        if (engine == BackupEngineKind.Bakery && source != null && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
+        if (source?.kind == BackupSourceKind.Chroot && engine != BackupEngineKind.Chrootctl) add(BackupPlanIssue.ChrootRequiresNativeExport)
+        if (engine == BackupEngineKind.Chrootctl && source?.kind != BackupSourceKind.Chroot) add(BackupPlanIssue.ChrootctlRequiresChrootSource)
+        if (engine == BackupEngineKind.Chrootctl && destination == null) add(BackupPlanIssue.MissingDestination)
+        if (engine == BackupEngineKind.Bakery && source?.kind == BackupSourceKind.Filesystem && destination != null && source.stagedPath == destination.stagedDirectoryPath) add(BackupPlanIssue.SourceEqualsDestination)
         if (engine == BackupEngineKind.Bakery && archiveName.isNotBlank() && normalizedArchiveName() == null) add(BackupPlanIssue.InvalidArchiveName)
         if (filters.followSymlinks) add(BackupPlanIssue.FollowSymlinksUnsupported)
     }
@@ -105,7 +134,9 @@ data class BackupPlanDraft(
         engine.wireValue,
         repositoryId.orEmpty(),
         source?.sourceId.orEmpty(),
+        source?.kind?.name.orEmpty(),
         source?.stagedPath.orEmpty(),
+        source?.chrootName.orEmpty(),
         destination?.destinationId.orEmpty(),
         destination?.stagedDirectoryPath.orEmpty(),
         normalizedArchiveName() ?: archiveName.trim(),
@@ -182,6 +213,16 @@ sealed interface BackupPlanIssue {
     data object MissingSource : BackupPlanIssue {
         override val code: String = "missing_source"
         override val message: String = "Choose a backup source before planning."
+    }
+
+    data object ChrootRequiresNativeExport : BackupPlanIssue {
+        override val code = "chroot_requires_native_export"
+        override val message = "Chroot sources must use chrootctl native export."
+    }
+
+    data object ChrootctlRequiresChrootSource : BackupPlanIssue {
+        override val code = "chrootctl_requires_chroot_source"
+        override val message = "chrootctl native export requires a chroot source."
     }
 
     data object MissingRepository : BackupPlanIssue {

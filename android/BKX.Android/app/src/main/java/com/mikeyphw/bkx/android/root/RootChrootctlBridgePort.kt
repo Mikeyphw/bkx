@@ -11,6 +11,8 @@ import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessPort
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlRunResult
 import com.mikeyphw.bkx.android.core.settings.RootAccessMode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -51,17 +53,30 @@ class RootChrootctlBridgePort(
         val encoded = ChrootctlBridgeCodec.encodeRequest(request)
         var operationId: String? = null
         var terminal: ChrootctlOperationEvent? = null
-        val startRaw = rootClient.chrootctlStreamOperation(encoded) { rawEvent ->
-            val event = ChrootctlBridgeCodec.decodeEvent(rawEvent, request.requestId)
-            event.operationId.takeIf(String::isNotBlank)?.let { id ->
-                operationId = id
-                operationLedger.recordStarted(request.requestId, id)
+        val startRaw = try {
+            rootClient.chrootctlStreamOperation(encoded) { rawEvent ->
+                val event = ChrootctlBridgeCodec.decodeEvent(rawEvent, request.requestId)
+                event.operationId.takeIf(String::isNotBlank)?.let { id ->
+                    operationId = id
+                    operationLedger.recordStarted(request.requestId, id)
+                }
+                if (event.terminal) {
+                    terminal = event
+                    event.operationId.takeIf(String::isNotBlank)?.let { operationLedger.recordTerminal(request.requestId, it) }
+                }
+                onEvent(event)
             }
-            if (event.terminal) {
-                terminal = event
-                event.operationId.takeIf(String::isNotBlank)?.let { operationLedger.recordTerminal(request.requestId, it) }
+        } catch (cancelled: CancellationException) {
+            // Closing the Binder/PFD stream alone does not cancel chrootctl's
+            // persistent operation. Explicitly cancel the authoritative
+            // operation before propagating coroutine cancellation.
+            val id = operationId ?: operationLedger.operationId(request.requestId)
+            if (!id.isNullOrBlank()) {
+                withContext(NonCancellable) {
+                    runCatching { rootClient.chrootctlCancelOperationJson(id) }
+                }
             }
-            onEvent(event)
+            throw cancelled
         }
         val start = ChrootctlBridgeCodec.decodeResponse(startRaw, request.requestId)
         if (start.ok && terminal == null) {

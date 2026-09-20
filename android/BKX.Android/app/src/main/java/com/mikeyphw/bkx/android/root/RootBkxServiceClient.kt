@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.ServiceConnection
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import com.mikeyphw.bkx.android.core.bridge.BridgeRequestIdPolicy
 import com.topjohnwu.superuser.Shell
 import com.topjohnwu.superuser.ipc.RootService
 import kotlinx.coroutines.CancellationException
@@ -108,6 +109,59 @@ class RootBkxServiceClient(
             try {
                 ParcelFileDescriptor.AutoCloseInputStream(readSide).use { input ->
                     readBoundedNdjson(input, CHROOTCTL_MAX_EVENT_BYTES, onEvent)
+                }
+            } finally {
+                closeOnCancel?.dispose()
+                runCatching { readSide.close() }
+            }
+        }
+        return started
+    }
+
+    /**
+     * Streams one registry-verified chrootctl chroot-export artifact through a
+     * Binder pipe. The UID-0 side accepts only artifacts currently registered
+     * by chrootctl; this is not an arbitrary privileged file-read primitive.
+     */
+    suspend fun chrootctlCopyManagedExportArtifact(
+        copyId: String,
+        path: String,
+        output: java.io.OutputStream,
+        onBytesCopied: suspend (Long) -> Unit = {},
+    ): String {
+        val normalizedCopyId = BridgeRequestIdPolicy.normalize(copyId)
+        require(path.startsWith('/') && path.length <= CHROOTCTL_MAX_ARTIFACT_PATH_CHARS && '\u0000' !in path) {
+            "Invalid chrootctl managed export path."
+        }
+        val pipe = ParcelFileDescriptor.createPipe()
+        val readSide = pipe[0]
+        val writeSide = pipe[1]
+        val started = try {
+            call(CHROOTCTL_START_TIMEOUT_MS) { service ->
+                service.chrootctlCopyManagedExportArtifact(normalizedCopyId, path, writeSide)
+            }
+        } finally {
+            runCatching { writeSide.close() }
+        }
+        if (!runCatching { JSONObject(started).optBoolean("ok", false) }.getOrDefault(false)) {
+            runCatching { readSide.close() }
+            return started
+        }
+        withContext(Dispatchers.IO) {
+            val closeOnCancel = coroutineContext[Job]?.invokeOnCompletion { runCatching { readSide.close() } }
+            try {
+                ParcelFileDescriptor.AutoCloseInputStream(readSide).use { input ->
+                    val buffer = ByteArray(CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES)
+                    var total = 0L
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        output.write(buffer, 0, count)
+                        total += count
+                        onBytesCopied(total)
+                    }
+                    output.flush()
                 }
             } finally {
                 closeOnCancel?.dispose()
@@ -296,6 +350,8 @@ class RootBkxServiceClient(
         const val CHROOTCTL_START_TIMEOUT_MS = 20_000L
         const val CHROOTCTL_CANCEL_TIMEOUT_MS = 20_000L
         const val CHROOTCTL_MAX_BINDER_REQUEST_BYTES = 256 * 1024
+        const val CHROOTCTL_MAX_ARTIFACT_PATH_CHARS = 4096
+        const val CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES = 256 * 1024
         const val CHROOTCTL_MAX_EVENT_BYTES = 256 * 1024
         const val PROGRESS_TIMEOUT_MS = 10_000L
         const val CANCEL_TIMEOUT_MS = 20_000L

@@ -4,8 +4,10 @@ import android.content.Intent
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.system.Os
+import com.mikeyphw.bkx.android.core.bridge.BridgeRequestIdPolicy
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessCodec
 import com.mikeyphw.bkx.android.embedded.GoNativeGateway
+import java.io.FileInputStream
 import com.topjohnwu.superuser.ipc.RootService
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -35,6 +37,7 @@ class BkxRootEngineService : RootService() {
         ThreadPoolExecutor.AbortPolicy(),
     )
     private val activeChrootctlRequests = ConcurrentHashMap<String, Boolean>()
+    private val activeChrootctlCopies = ConcurrentHashMap<String, Boolean>()
 
     private val binder = object : IBkxRootEngineService.Stub() {
         override fun uid(): Int = Os.getuid()
@@ -53,6 +56,10 @@ class BkxRootEngineService : RootService() {
 
         override fun chrootctlStartOperation(requestJson: String, output: ParcelFileDescriptor): String = requireRoot {
             startChrootctlOperation(requestJson, output)
+        }
+
+        override fun chrootctlCopyManagedExportArtifact(copyId: String, path: String, output: ParcelFileDescriptor): String = requireRoot {
+            startManagedExportCopy(copyId, path, output)
         }
 
         override fun chrootctlOperationJson(operationId: String): String = requireRoot {
@@ -81,6 +88,7 @@ class BkxRootEngineService : RootService() {
     override fun onDestroy() {
         chrootctlExecutor.shutdownNow()
         activeChrootctlRequests.clear()
+        activeChrootctlCopies.clear()
         goGateway.close()
         super.onDestroy()
     }
@@ -181,6 +189,95 @@ class BkxRootEngineService : RootService() {
         return chrootctlSuccess(validated.requestId, JSONObject().put("state", "started"))
     }
 
+    private fun startManagedExportCopy(copyId: String, path: String, output: ParcelFileDescriptor): String {
+        val normalizedCopyId = runCatching { BridgeRequestIdPolicy.normalize(copyId) }.getOrElse { error ->
+            runCatching { output.close() }
+            return chrootctlFailure("unknown", "INVALID_COPY_ID", error.message ?: "Invalid managed artifact copy id.")
+        }
+        if (!path.startsWith('/') || path.length > CHROOTCTL_MAX_ARTIFACT_PATH_CHARS || '\u0000' in path) {
+            runCatching { output.close() }
+            return chrootctlFailure(normalizedCopyId, "INVALID_ARTIFACT_PATH", "Invalid managed chrootctl export path.")
+        }
+        if (activeChrootctlCopies.putIfAbsent(normalizedCopyId, true) != null) {
+            runCatching { output.close() }
+            return chrootctlFailure(normalizedCopyId, "COPY_ALREADY_ACTIVE", "Managed artifact copy $normalizedCopyId is already active.")
+        }
+        val executable = trustedChrootctlExecutable(normalizedCopyId)
+        if (executable == null) {
+            activeChrootctlCopies.remove(normalizedCopyId)
+            runCatching { output.close() }
+            return chrootctlFailure(normalizedCopyId, "CHROOTCTL_NOT_READY", "The active chrootctl module/runtime is not ready for BKX.")
+        }
+        val artifact = runCatching { resolveManagedExportArtifact(executable, path) }.getOrElse { error ->
+            activeChrootctlCopies.remove(normalizedCopyId)
+            runCatching { output.close() }
+            return chrootctlFailure(normalizedCopyId, "UNTRUSTED_MANAGED_ARTIFACT", error.message ?: "Managed export validation failed.")
+        }
+        val owned = runCatching { ParcelFileDescriptor.dup(output.fileDescriptor) }.getOrElse { error ->
+            activeChrootctlCopies.remove(normalizedCopyId)
+            runCatching { output.close() }
+            return chrootctlFailure(normalizedCopyId, "OUTPUT_DUPLICATION_FAILED", error.message ?: "Unable to duplicate artifact output descriptor.")
+        }
+        runCatching { output.close() }
+        try {
+            chrootctlExecutor.execute {
+                try {
+                    ParcelFileDescriptor.AutoCloseOutputStream(owned).use { destination ->
+                        FileInputStream(artifact.path).use { source ->
+                            val buffer = ByteArray(CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES)
+                            var copied = 0L
+                            while (copied < artifact.sizeBytes) {
+                                val remaining = artifact.sizeBytes - copied
+                                val count = source.read(buffer, 0, minOf(buffer.size.toLong(), remaining).toInt())
+                                check(count > 0) { "Managed chrootctl export ended before the registered size was copied." }
+                                destination.write(buffer, 0, count)
+                                copied += count
+                            }
+                            check(source.read() == -1) { "Managed chrootctl export grew after registry validation." }
+                            destination.flush()
+                        }
+                    }
+                } catch (_: Throwable) {
+                    runCatching { owned.close() }
+                } finally {
+                    activeChrootctlCopies.remove(normalizedCopyId)
+                }
+            }
+        } catch (_: RejectedExecutionException) {
+            activeChrootctlCopies.remove(normalizedCopyId)
+            runCatching { owned.close() }
+            return chrootctlFailure(normalizedCopyId, "ROOT_SERVICE_BUSY", "The BKX chrootctl worker queue is full; retry after current work completes.")
+        }
+        return chrootctlSuccess(
+            normalizedCopyId,
+            JSONObject()
+                .put("state", "started")
+                .put("artifactId", artifact.artifactId)
+                .put("path", artifact.path)
+                .put("sizeBytes", artifact.sizeBytes),
+        )
+    }
+
+    private fun resolveManagedExportArtifact(executable: String, requestedPath: String): TrustedChrootctlExportArtifact {
+        val queryId = "bkx-artifact-${System.nanoTime().toString(16)}"
+        val request = JSONObject()
+            .put("protocolVersion", 1)
+            .put("requestId", queryId)
+            .put("operation", "artifacts.list")
+            .put("payload", JSONObject())
+            .toString()
+        val result = ChrootctlBridgeProcess(executable).invoke(
+            arguments = listOf("app", "query", "--request-file", "-"),
+            requestJson = request,
+        )
+        val checked = validateChrootctlProcessResult(executable, result, queryId)
+        val response = when (checked) {
+            is ChrootctlOutputValidation.Accepted -> checked.json
+            is ChrootctlOutputValidation.Rejected -> error(checked.message)
+        }
+        return ChrootctlManagedArtifactPolicy.resolveExport(response, requestedPath)
+    }
+
     private fun invokeChrootctlOperationCommand(command: String, operationId: String): String {
         if (command !in setOf("operation", "cancel", "reconcile") || !ChrootctlRootBridgePolicy.validOperationId(operationId)) {
             return chrootctlFailure(operationId.take(128).ifBlank { "unknown" }, "INVALID_OPERATION_ID", "Invalid chrootctl operation id.")
@@ -267,5 +364,7 @@ class BkxRootEngineService : RootService() {
         const val ROOT_STATE_NAMESPACE = "go-root"
         const val CHROOTCTL_MAX_WORKERS = 2
         const val CHROOTCTL_MAX_QUEUED_WORK = 4
+        const val CHROOTCTL_MAX_ARTIFACT_PATH_CHARS = 4096
+        const val CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES = 256 * 1024
     }
 }

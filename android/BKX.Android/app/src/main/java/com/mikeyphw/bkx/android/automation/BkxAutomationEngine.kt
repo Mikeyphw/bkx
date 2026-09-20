@@ -44,6 +44,9 @@ import com.mikeyphw.bkx.android.core.transfer.toTransferPreviewSummary
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -102,10 +105,12 @@ class BkxAutomationEngine(
     private val operationPort: AutomationOperationPort,
     private val stateStore: AutomationStatePort,
     private val driveRefreshPort: ManagedDriveRefreshPort,
+    private val chrootSavedJobPort: ChrootctlSavedJobExecutionPort? = null,
 ) {
     private val executionInstanceId: String = UUID.randomUUID().toString().substring(0, 8)
 
     private val executions = ConcurrentHashMap<String, CompletableDeferred<AutomationResult>>()
+    private val activeChrootExecutions = ConcurrentHashMap<String, Job>()
     private val backupBuilder = BackupRequestBuilder()
     private val restoreBuilder = RestoreRequestBuilder()
     private val archiveBuilder = ArchiveRequestBuilder()
@@ -151,6 +156,8 @@ class BkxAutomationEngine(
                 AutomationAction.Cancel -> runCancel(request, progress)
                 AutomationAction.Status -> runStatus(request)
             }
+        } catch (cancelled: CancellationException) {
+            AutomationResult(request.requestId, request.action, "cancelled", request.requestId, "Automation cancelled.")
         } catch (error: Throwable) {
             terminalFailure(request, "automation_exception", error.message ?: error::class.java.simpleName)
         } finally {
@@ -295,6 +302,21 @@ class BkxAutomationEngine(
     }
 
     private suspend fun runSavedJob(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
+        val catalogRequestId = "automation-catalog-job-${request.jobId.hashCode().toUInt().toString(16)}"
+        val catalogJob = when (val outcome = operationPort.execute(TaskerV2RequestBuilder.showJob(catalogRequestId, request.jobId), false)) {
+            is OperationOutcome.Completed -> SavedJobBridgeCodec.decodeArtifacts(outcome.result.artifacts).firstOrNull()
+            else -> null
+        }
+        if (catalogJob != null && (com.mikeyphw.bkx.android.core.jobs.ChrootctlSavedJobContract.isChrootExport(catalogJob.operation) || com.mikeyphw.bkx.android.core.jobs.ChrootctlSavedJobContract.isChrootImport(catalogJob.operation))) {
+            val port = chrootSavedJobPort ?: return terminalFailure(request, "chrootctl_job_executor_unavailable", "Chroot saved-job execution is unavailable.")
+            val executionJob = currentCoroutineContext()[Job]
+            if (executionJob != null) activeChrootExecutions[request.requestId] = executionJob
+            return try {
+                port.execute(catalogJob, request, progress)
+            } finally {
+                if (executionJob != null) activeChrootExecutions.remove(request.requestId, executionJob)
+            }
+        }
         val configuredRepository = request.repositoryId.takeIf(String::isNotBlank)
         val overrideRepository = savedJobRepositoryOverride(request.jobOverrides)
         val repositoryId = overrideRepository ?: configuredRepository ?: resolveJobRepository(request.jobId).orEmpty()
@@ -394,6 +416,10 @@ class BkxAutomationEngine(
 
     private suspend fun runCancel(request: AutomationRequest, progress: AutomationProgressSink): AutomationResult {
         progress.onStage("Cancelling operation")
+        activeChrootExecutions[request.targetRequestId]?.let { execution ->
+            execution.cancel(CancellationException("Cancellation requested by ${request.requestId}"))
+            return AutomationResult(request.requestId, request.action, "accepted", request.targetRequestId, "Cancellation requested for chroot export.")
+        }
         val stage = stateStore.activeStage(request.targetRequestId) ?: request.targetRequestId
         return when (val outcome = operationPort.cancel(stage, stageId(request.requestId, "cancel"))) {
             is OperationOutcome.CancellationAccepted -> AutomationResult(request.requestId, request.action, "accepted", stage, "Cancellation requested.")

@@ -12,6 +12,7 @@ import com.mikeyphw.bkx.android.app.di.DefaultBackendGraph
 import com.mikeyphw.bkx.android.app.runtime.BkxStartupIngress
 import com.mikeyphw.bkx.android.core.jobs.SAVED_JOB_SCHEMA_VERSION
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
+import com.mikeyphw.bkx.android.core.jobs.ChrootctlSavedJobContract
 import com.mikeyphw.bkx.android.core.jobs.SavedJobScheduleDefinition
 import com.mikeyphw.bkx.android.core.jobs.SavedJobStoreDocument
 import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
@@ -46,7 +47,7 @@ object BkxSavedJobScheduler {
         val jobsById = readJobs(appContext).associateBy { it.jobId }
         val schedules = readSchedules(appContext).filter { schedule ->
             val job = jobsById[schedule.jobId]
-            schedule.enabled && schedule.intervalMinutes in MIN_INTERVAL_MINUTES..MAX_INTERVAL_MINUTES && job?.enabled == true
+            schedule.enabled && schedule.intervalMinutes in MIN_INTERVAL_MINUTES..MAX_INTERVAL_MINUTES && job?.enabled == true && job.operation.let { runCatching { ChrootctlSavedJobContract.requireSchedulable(it) }.isSuccess }
         }
         val idStore = ScheduleJobIdStore(appContext)
         val assignedIds = idStore.assignIds(schedules.map { it.scheduleId })

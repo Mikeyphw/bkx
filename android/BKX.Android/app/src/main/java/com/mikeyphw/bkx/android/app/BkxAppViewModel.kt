@@ -69,6 +69,7 @@ import com.mikeyphw.bkx.android.core.files.FilesystemBrowserUiState
 import com.mikeyphw.bkx.android.core.files.FilesystemEntryKind
 import com.mikeyphw.bkx.android.core.files.FilesystemSelectionTarget
 import com.mikeyphw.bkx.android.core.jobs.SavedJob
+import com.mikeyphw.bkx.android.core.jobs.ChrootctlSavedJobContract
 import com.mikeyphw.bkx.android.core.jobs.SavedJobBridgeCodec
 import com.mikeyphw.bkx.android.core.jobs.SavedJobDraft
 import com.mikeyphw.bkx.android.core.jobs.SavedJobRequestBuilder
@@ -290,6 +291,7 @@ sealed interface BkxHomeEvent {
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RequestBackupPlan : BkxHomeEvent
     data object CreateBackup : BkxHomeEvent
+    data object SaveChrootExportJob : BkxHomeEvent
     data class SetChrootImportSource(val location: String) : BkxHomeEvent
     data class SetChrootImportName(val name: String) : BkxHomeEvent
     data class SetChrootImportConflict(val conflict: String) : BkxHomeEvent
@@ -511,6 +513,7 @@ class BkxAppViewModel(
             }
             BkxHomeEvent.RequestBackupPlan -> requestBackupPlan()
             BkxHomeEvent.CreateBackup -> createBackup()
+            BkxHomeEvent.SaveChrootExportJob -> saveChrootExportJob()
             is BkxHomeEvent.SetChrootImportSource -> invalidateChrootImportPreview { copy(sourceLocation = event.location, preview = null, confirmationArmed = false, error = null) }
             is BkxHomeEvent.SetChrootImportName -> invalidateChrootImportPreview { copy(requestedName = event.name, preview = null, confirmationArmed = false) }
             is BkxHomeEvent.SetChrootImportConflict -> invalidateChrootImportPreview { copy(conflict = event.conflict, preview = null, confirmationArmed = false) }
@@ -815,6 +818,22 @@ class BkxAppViewModel(
                 _state.update { current -> current.copy(backupPlanning = BackupPlanningUiState.withPreview(current.backupPlanning.draft, preview)) }
             }
         }
+    }
+
+    private fun saveChrootExportJob() {
+        val draft = _state.value.backupPlanning.draft
+        val plan = runCatching { ChrootBackupDomain.exportPlan(draft) }.getOrElse {
+            _state.update { current -> current.copy(uiMessage = BkxUiMessage(messageSequence.incrementAndGet(), it.message ?: "Select a chroot and destination before saving the job.")) }
+            return
+        }
+        val safeName = plan.chrootName.lowercase().replace(Regex("[^a-z0-9._-]+"), "-").trim('-').ifBlank { "chroot" }
+        createSavedJob(SavedJobDraft(
+            jobId = "chroot-export-$safeName-${System.currentTimeMillis().toString(36)}",
+            name = "Export ${plan.chrootName}",
+            description = "Native chrootctl export published by BKX",
+            tags = listOf("chrootctl", "export"),
+            operation = ChrootctlSavedJobContract.exportSpec(plan),
+        ))
     }
 
     private fun createBackup() {

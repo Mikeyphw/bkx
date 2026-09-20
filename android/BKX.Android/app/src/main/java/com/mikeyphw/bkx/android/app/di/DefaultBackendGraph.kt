@@ -6,6 +6,7 @@ import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlImportCoordinator
 import com.mikeyphw.bkx.android.app.runtime.BkxApplicationRuntime
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.automation.BkxAutomationEngine
+import com.mikeyphw.bkx.android.automation.ChrootctlSavedJobExecutor
 import com.mikeyphw.bkx.android.automation.BkxTaskerConditionPublisher
 import com.mikeyphw.bkx.android.automation.BkxTaskerConditionStore
 import com.mikeyphw.bkx.android.automation.SharedPreferencesBkxTaskerConditionStore
@@ -206,6 +207,12 @@ object DefaultBackendGraph {
             operationPort = CoordinatorAutomationOperationPort(operationCoordinator(context), runSummaryStore(context)),
             stateStore = SharedPreferencesAutomationStateStore(context.stableApplicationContext()),
             driveRefreshPort = GoogleManagedDriveRefreshPort(googleDriveAuthorizationManager(context)),
+            chrootSavedJobPort = ChrootctlSavedJobExecutor(
+                readiness = chrootctlReadinessPort(context),
+                bridge = chrootctlBridgePort(context),
+                coordinator = chrootctlExportCoordinator(context),
+                driveRefresh = GoogleManagedDriveRefreshPort(googleDriveAuthorizationManager(context)),
+            ),
         ).also { automationEngineInstance = it }
     }
 

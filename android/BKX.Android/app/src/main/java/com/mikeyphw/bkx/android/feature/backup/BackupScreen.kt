@@ -759,6 +759,13 @@ private fun BackupReviewSection(
                 modifier = Modifier.weight(1f),
             ) { Text("Start backup") }
         }
+        if (draft.engine == BackupEngineKind.Chrootctl && draft.source?.kind == com.mikeyphw.bkx.android.core.backup.BackupSourceKind.Chroot && draft.destination != null) {
+            OutlinedButton(
+                onClick = { onEvent(BkxHomeEvent.SaveChrootExportJob) },
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Save chroot export as job") }
+            Text("Saved chroot exports can run manually or on a schedule. Imports always remain interactive.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         listOfNotNull(reviewGate.message, startGate.message).distinct().firstOrNull()?.let { gateMessage ->
             Text(gateMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         }

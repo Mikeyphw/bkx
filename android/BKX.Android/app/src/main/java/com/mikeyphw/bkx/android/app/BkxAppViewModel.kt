@@ -41,6 +41,14 @@ import com.mikeyphw.bkx.android.core.backup.BackupPlanningUiState
 import com.mikeyphw.bkx.android.core.backup.BackupRequestBuilder
 import com.mikeyphw.bkx.android.core.backup.BackupVerificationExpectation
 import com.mikeyphw.bkx.android.core.backup.BackupWarningSeverity
+import com.mikeyphw.bkx.android.core.backup.ChrootBackupDomain
+import com.mikeyphw.bkx.android.core.backup.BackupEngineKind
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlBridgePort
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlChrootRecord
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlExportPreview
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadiness
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessPort
+import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlExportCoordinator
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
@@ -162,6 +170,10 @@ data class BkxHomeUiState(
     val providerImportMessage: String? = null,
     val googleDrive: GoogleDriveUiState = GoogleDriveUiState(),
     val settings: BkxSettings = BkxSettings(),
+    val chrootctlReadiness: ChrootctlReadiness? = null,
+    val chrootctlInventory: List<ChrootctlChrootRecord> = emptyList(),
+    val chrootctlLoading: Boolean = false,
+    val chrootctlMessage: String? = null,
 ) {
     val backendToolState: BackendToolState = BackendToolState(
         readiness = readiness,
@@ -253,6 +265,8 @@ sealed interface BkxHomeEvent {
     data class ForgetSnapshot(val snapshotId: String) : BkxHomeEvent
 
     data class UpdateBackupDraft(val draft: BackupPlanDraft) : BkxHomeEvent
+    data object RefreshChrootctlSources : BkxHomeEvent
+    data class SelectChrootBackupSource(val name: String) : BkxHomeEvent
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RequestBackupPlan : BkxHomeEvent
     data object CreateBackup : BkxHomeEvent
@@ -329,6 +343,9 @@ class BkxAppViewModel(
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
     private val applicationRuntime: BkxApplicationRuntime? = null,
+    private val chrootctlReadinessPort: ChrootctlReadinessPort? = null,
+    private val chrootctlBridgePort: ChrootctlBridgePort? = null,
+    private val chrootctlExportCoordinator: ChrootctlExportCoordinator? = null,
     private val operationCoordinator: BkxOperationCoordinator = BkxOperationCoordinator(
         context = null,
         backendPort = backendPort,
@@ -351,6 +368,7 @@ class BkxAppViewModel(
     private val messageSequence = AtomicLong(0L)
     private val routeSequence = AtomicLong(0L)
     private val activeResponseBindings = mutableMapOf<String, BkxResponseBinding>()
+    private var nativeChrootPreview: ChrootctlExportPreview? = null
     private val _state = MutableStateFlow(BkxHomeUiState())
     val state: StateFlow<BkxHomeUiState> = _state.asStateFlow()
 
@@ -445,9 +463,19 @@ class BkxAppViewModel(
             BkxHomeEvent.ExecuteSnapshotRestore -> runSnapshotRestore(dryRun = false)
             is BkxHomeEvent.ForgetSnapshot -> forgetSnapshot(event.snapshotId)
 
-            is BkxHomeEvent.UpdateBackupDraft -> _state.update { current ->
-                current.copy(backupPlanning = BackupPlanningUiState(draft = event.draft))
+            is BkxHomeEvent.UpdateBackupDraft -> {
+                nativeChrootPreview = null
+                val normalizedDraft = when {
+                    event.draft.source?.kind == BackupSourceKind.Chroot && event.draft.engine != BackupEngineKind.Chrootctl ->
+                        event.draft.copy(engine = BackupEngineKind.Chrootctl, repositoryId = null)
+                    event.draft.source?.kind == BackupSourceKind.Filesystem && event.draft.engine == BackupEngineKind.Chrootctl ->
+                        event.draft.copy(engine = BackupEngineKind.Bakery, repositoryId = null)
+                    else -> event.draft
+                }
+                _state.update { current -> current.copy(backupPlanning = BackupPlanningUiState(draft = normalizedDraft)) }
             }
+            BkxHomeEvent.RefreshChrootctlSources -> refreshChrootctlSources()
+            is BkxHomeEvent.SelectChrootBackupSource -> selectChrootBackupSource(event.name)
             is BkxHomeEvent.ApplyBackupPlanPreview -> applyIfBound(event.binding, event.preview.requestId, BkxBoundEntityKind.BackupDraft, currentBackupFingerprint(), currentBackupFingerprint()) {
                 it.copy(backupPlanning = BackupPlanningUiState.withPreview(it.backupPlanning.draft, event.preview))
             }
@@ -707,6 +735,10 @@ class BkxAppViewModel(
         val draft = _state.value.backupPlanning.draft
         if (draft.validationIssues().isNotEmpty()) return
         val draftFingerprint = draft.fingerprint()
+        if (draft.engine == BackupEngineKind.Chrootctl) {
+            requestChrootBackupPlan(draft, draftFingerprint)
+            return
+        }
         val request = if (draft.engine == com.mikeyphw.bkx.android.core.backup.BackupEngineKind.Restic) {
             val repository = _state.value.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }
                 ?: return
@@ -750,6 +782,10 @@ class BkxAppViewModel(
         val planning = _state.value.backupPlanning
         if (!planning.canCreateBackup) return
         val draft = planning.draft
+        if (draft.engine == BackupEngineKind.Chrootctl) {
+            createChrootBackup(draft)
+            return
+        }
         val request = if (draft.engine == com.mikeyphw.bkx.android.core.backup.BackupEngineKind.Restic) {
             val repository = _state.value.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }
                 ?: return
@@ -765,6 +801,75 @@ class BkxAppViewModel(
                     draft.repositoryId?.let { selectSnapshotRepository(it) }
                     refreshSnapshots()
                 } else refreshArchives()
+            }
+        }
+    }
+
+    private fun refreshChrootctlSources() {
+        val readinessPort = chrootctlReadinessPort
+        val bridge = chrootctlBridgePort
+        if (readinessPort == null || bridge == null) {
+            _state.update { it.copy(chrootctlMessage = "chrootctl integration is unavailable in this build.") }
+            return
+        }
+        _state.update { it.copy(chrootctlLoading = true, chrootctlMessage = null) }
+        viewModelScope.launch {
+            runCatching {
+                val readiness = readinessPort.probe()
+                val inventory = if (readiness.ready) bridge.listChroots(nextRequestId("chroots-list")) else emptyList()
+                readiness to inventory
+            }.onSuccess { (readiness, inventory) ->
+                _state.update { it.copy(chrootctlReadiness = readiness, chrootctlInventory = inventory, chrootctlLoading = false, chrootctlMessage = if (readiness.ready) null else readiness.detail) }
+            }.onFailure { error ->
+                _state.update { it.copy(chrootctlLoading = false, chrootctlMessage = error.message ?: "Could not query chrootctl.") }
+            }
+        }
+    }
+
+    private fun selectChrootBackupSource(name: String) {
+        val record = _state.value.chrootctlInventory.firstOrNull { it.name == name && it.installed } ?: return
+        nativeChrootPreview = null
+        val source = ChrootBackupDomain.source(record)
+        _state.update { current ->
+            current.copy(backupPlanning = BackupPlanningUiState(draft = current.backupPlanning.draft.copy(source = source, engine = BackupEngineKind.Chrootctl, repositoryId = null)))
+        }
+    }
+
+    private fun requestChrootBackupPlan(draft: BackupPlanDraft, draftFingerprint: String) {
+        val coordinator = chrootctlExportCoordinator ?: return
+        _state.update { current -> current.copy(backupPlanning = current.backupPlanning.copy(planRequestId = "chrootctl-preview", preview = null)) }
+        viewModelScope.launch {
+            runCatching { coordinator.preview(ChrootBackupDomain.exportPlan(draft)) }
+                .onSuccess { native ->
+                    if (_state.value.backupPlanning.draft.fingerprint() != draftFingerprint) return@onSuccess
+                    nativeChrootPreview = native
+                    _state.update { current -> current.copy(backupPlanning = BackupPlanningUiState.withPreview(current.backupPlanning.draft, ChrootBackupDomain.preview(draft, native))) }
+                }
+                .onFailure { error ->
+                    if (_state.value.backupPlanning.draft.fingerprint() == draftFingerprint) {
+                        _state.update { it.copy(chrootctlMessage = error.message ?: "Could not preview the chroot export.") }
+                    }
+                }
+        }
+    }
+
+    private fun createChrootBackup(draft: BackupPlanDraft) {
+        val coordinator = chrootctlExportCoordinator ?: return
+        val preview = nativeChrootPreview ?: return
+        val plan = ChrootBackupDomain.exportPlan(draft)
+        if (preview.planFingerprint != plan.fingerprint()) return
+        viewModelScope.launch {
+            _state.update { it.copy(chrootctlMessage = "Starting native chrootctl export…") }
+            runCatching {
+                coordinator.exportAndPublish(plan, preview) { progress ->
+                    _state.update { it.copy(chrootctlMessage = progress.message) }
+                }
+            }.onSuccess { publication ->
+                nativeChrootPreview = null
+                _state.update { it.copy(chrootctlMessage = "Chroot ${publication.chrootName} published and verified.") }
+                refreshArchives()
+            }.onFailure { error ->
+                _state.update { it.copy(chrootctlMessage = error.message ?: "Chroot export failed.") }
             }
         }
     }
@@ -2116,6 +2221,9 @@ class BkxAppViewModelFactory(
     private val archiveRootsProvider: (Boolean) -> List<String> = { emptyList() },
     private val requestBaseDirectoryPath: String = defaultRequestBaseDirectory(),
     private val applicationRuntime: BkxApplicationRuntime? = null,
+    private val chrootctlReadinessPort: ChrootctlReadinessPort? = null,
+    private val chrootctlBridgePort: ChrootctlBridgePort? = null,
+    private val chrootctlExportCoordinator: ChrootctlExportCoordinator? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -2130,6 +2238,9 @@ class BkxAppViewModelFactory(
                 archiveRootsProvider = archiveRootsProvider,
                 requestBaseDirectoryPath = requestBaseDirectoryPath,
                 applicationRuntime = applicationRuntime,
+                chrootctlReadinessPort = chrootctlReadinessPort,
+                chrootctlBridgePort = chrootctlBridgePort,
+                chrootctlExportCoordinator = chrootctlExportCoordinator,
                 operationCoordinator = operationCoordinator,
             ) as T
         }

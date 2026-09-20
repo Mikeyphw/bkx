@@ -381,7 +381,7 @@ private fun BackupSourceSection(
             TextButton(onClick = { onExpandedChange(!expanded) }) { Text(if (expanded) "Close choices" else "Change") }
         } else {
             Text("Choose what to back up", style = MaterialTheme.typography.titleMedium)
-            Text("Pick a common location, browse the filesystem, or choose a folder from Files.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Pick files and folders, or back up a managed chroot with chrootctl.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = { onExpandedChange(true) }) { Text("Choose source") }
         }
         if (expanded) {
@@ -400,6 +400,30 @@ private fun BackupSourceSection(
                     onExpandedChange(false)
                 }
             }
+            BkxDivider()
+            Text("Chroots", style = MaterialTheme.typography.titleSmall)
+            val chrootctl = state.chrootctlReadiness
+            when {
+                state.chrootctlLoading -> Text("Checking root and chrootctl…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                chrootctl?.ready == true -> {
+                    Text("chrootctl ready · ${chrootctl.backendVersion ?: chrootctl.moduleVersion ?: "compatible runtime"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val installedChroots = state.chrootctlInventory.filter { it.installed }
+                    if (installedChroots.isEmpty()) Text("No installed chroots were reported.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    installedChroots.forEach { record ->
+                        LocationChoice(record.name, listOf(record.distro, record.releaseName, record.arch).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "Managed chroot" }, "chrootctl") {
+                            onEvent(BkxHomeEvent.SelectChrootBackupSource(record.name))
+                            onExpandedChange(false)
+                        }
+                    }
+                }
+                chrootctl != null -> Text(chrootctl.detail, color = MaterialTheme.colorScheme.error)
+                else -> Text("Check for root + chrootctl to show managed chroots.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            OutlinedButton(onClick = { onEvent(BkxHomeEvent.RefreshChrootctlSources) }, enabled = !state.chrootctlLoading, modifier = Modifier.fillMaxWidth()) {
+                Text(if (state.chrootctlLoading) "Checking chrootctl…" else "Detect chrootctl & chroots")
+            }
+            state.chrootctlMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            BkxDivider()
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = { onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.BackupSource, draft.source?.filesystemPath ?: BkxStorageLocations.SHARED_STORAGE)) },
@@ -435,18 +459,15 @@ private fun BackupEngineSection(state: BkxHomeUiState, draft: BackupPlanDraft, o
     BkxSectionHeader("2. Backup with")
     BkxSurfaceCard {
         Text("Choose the backup model", style = MaterialTheme.typography.titleMedium)
-        Text("BKX archive creates a portable archive. Restic creates an incremental snapshot in a repository.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = draft.engine == BackupEngineKind.Bakery,
-                onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Bakery, repositoryId = null))) },
-                label = { Text("BKX archive") }, modifier = Modifier.weight(1f),
-            )
-            FilterChip(
-                selected = draft.engine == BackupEngineKind.Restic,
-                onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Restic, destination = null))) },
-                label = { Text("Restic") }, modifier = Modifier.weight(1f),
-            )
+        if (draft.source?.kind == com.mikeyphw.bkx.android.core.backup.BackupSourceKind.Chroot) {
+            BkxStatusPill("CHROOTCTL NATIVE EXPORT", MaterialTheme.colorScheme.primary)
+            Text("chrootctl owns chroot archive correctness; BKX verifies and publishes the resulting artifact to your selected destination.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            Text("BKX archive creates a portable archive. Restic creates an incremental snapshot in a repository.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = draft.engine == BackupEngineKind.Bakery, onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Bakery, repositoryId = null))) }, label = { Text("BKX archive") }, modifier = Modifier.weight(1f))
+                FilterChip(selected = draft.engine == BackupEngineKind.Restic, onClick = { onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(engine = BackupEngineKind.Restic, destination = null))) }, label = { Text("Restic") }, modifier = Modifier.weight(1f))
+            }
         }
         if (draft.engine == BackupEngineKind.Restic && state.repositories.items.isEmpty()) {
             Text("Create a repository before making a Restic snapshot.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -693,7 +714,7 @@ private fun BackupReviewSection(
     BkxSectionHeader("Review")
     BkxSurfaceCard {
         BkxKeyValue("Source", draft.source?.label ?: "Not selected")
-        BkxKeyValue("Engine", if (draft.engine == BackupEngineKind.Restic) "Restic snapshot" else "BKX archive")
+        BkxKeyValue("Engine", when (draft.engine) { BackupEngineKind.Restic -> "Restic snapshot"; BackupEngineKind.Chrootctl -> "chrootctl native export"; else -> "BKX archive" })
         BkxKeyValue("Destination", if (draft.engine == BackupEngineKind.Restic) state.repositories.items.firstOrNull { it.repositoryId == draft.repositoryId }?.name ?: "No repository selected" else draft.destination?.label ?: "Not selected")
         if (draft.engine == BackupEngineKind.Bakery) BkxKeyValue("Compression", draft.compression.displayLabel())
         planning.preview?.let { preview ->

@@ -24,6 +24,9 @@ class MainActivity : ComponentActivity() {
             archiveRootsProvider = { rooted -> DefaultBackendGraph.archiveSearchRoots(this, rooted) },
             requestBaseDirectoryPath = filesDir.resolve("bkx/requests").absolutePath,
             applicationRuntime = DefaultBackendGraph.applicationRuntime(this),
+            chrootctlReadinessPort = DefaultBackendGraph.chrootctlReadinessPort(this),
+            chrootctlBridgePort = DefaultBackendGraph.chrootctlBridgePort(this),
+            chrootctlExportCoordinator = DefaultBackendGraph.chrootctlExportCoordinator(this),
         )
     }
 

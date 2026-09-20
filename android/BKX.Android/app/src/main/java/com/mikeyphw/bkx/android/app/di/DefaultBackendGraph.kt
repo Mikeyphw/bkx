@@ -16,6 +16,7 @@ import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSavedJobStore
 import com.mikeyphw.bkx.android.core.backend.BackendPort
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlBridgePort
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessPort
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
@@ -29,6 +30,8 @@ import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.mikeyphw.bkx.android.embedded.RootAwareGateway
 import com.mikeyphw.bkx.android.files.AndroidProviderStagingManager
 import com.mikeyphw.bkx.android.root.RootBkxServiceClient
+import com.mikeyphw.bkx.android.root.RootChrootctlBridgePort
+import com.mikeyphw.bkx.android.root.ChrootctlOperationLedger
 import com.mikeyphw.bkx.android.root.RootChrootctlReadinessPort
 import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
 
@@ -39,6 +42,7 @@ object DefaultBackendGraph {
     @Volatile private var backendInstance: BackendPort? = null
     @Volatile private var rootClientInstance: RootBkxServiceClient? = null
     @Volatile private var chrootctlReadinessPortInstance: ChrootctlReadinessPort? = null
+    @Volatile private var chrootctlBridgePortInstance: ChrootctlBridgePort? = null
     @Volatile private var runStoreInstance: RunSummaryStore? = null
     @Volatile private var operationStoreInstance: OperationStateStore? = null
     @Volatile private var settingsStoreInstance: SharedPreferencesSettingsStore? = null
@@ -87,6 +91,19 @@ object DefaultBackendGraph {
                 rootClient = rootClient(appContext),
                 modeProvider = { settings.readNow().rootAccessMode },
             ).also { chrootctlReadinessPortInstance = it }
+        }
+    }
+
+    fun chrootctlBridgePort(context: Context): ChrootctlBridgePort = chrootctlBridgePortInstance ?: synchronized(this) {
+        chrootctlBridgePortInstance ?: run {
+            val appContext = context.stableApplicationContext()
+            val settings = sharedSettingsStore(appContext)
+            RootChrootctlBridgePort(
+                rootClient = rootClient(appContext),
+                readinessPort = chrootctlReadinessPort(appContext),
+                modeProvider = { settings.readNow().rootAccessMode },
+                operationLedger = ChrootctlOperationLedger(appContext),
+            ).also { chrootctlBridgePortInstance = it }
         }
     }
 
@@ -160,6 +177,7 @@ object DefaultBackendGraph {
         applicationRuntimeInstance = null
         coordinatorInstance = null
         backendInstance = null
+        chrootctlBridgePortInstance = null
         chrootctlReadinessPortInstance = null
         rootClientInstance?.release()
         rootClientInstance = null

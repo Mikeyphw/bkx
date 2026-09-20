@@ -50,6 +50,10 @@ class RootBkxServiceClient(
 
     suspend fun readinessJson(): String = call(READINESS_TIMEOUT_MS) { it.readinessJson() }
 
+    suspend fun chrootctlReadinessJson(): String = call(CHROOTCTL_READINESS_TIMEOUT_MS) {
+        it.chrootctlReadinessJson()
+    }
+
     suspend fun executeJson(requestJson: String): String = executeMutex.withLock {
         call(EXECUTE_TIMEOUT_MS) { it.executeJson(requestJson) }
     }
@@ -188,6 +192,7 @@ class RootBkxServiceClient(
         const val ROOT_PROBE_TIMEOUT_MS = 8_000L
         const val BIND_TIMEOUT_MS = 20_000L
         const val READINESS_TIMEOUT_MS = 20_000L
+        const val CHROOTCTL_READINESS_TIMEOUT_MS = 30_000L
         const val PROGRESS_TIMEOUT_MS = 10_000L
         const val CANCEL_TIMEOUT_MS = 20_000L
         const val EXECUTE_TIMEOUT_MS = 6L * 60L * 60L * 1000L

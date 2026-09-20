@@ -4,6 +4,7 @@ package com.mikeyphw.bkx.android.root;
 interface IBkxRootEngineService {
     int uid();
     String readinessJson();
+    String chrootctlReadinessJson();
     String executeJson(String requestJson);
     String progressJson(String requestId);
     String cancelJson(String requestId);

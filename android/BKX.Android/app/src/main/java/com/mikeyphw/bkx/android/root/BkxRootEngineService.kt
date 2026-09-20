@@ -3,6 +3,7 @@ package com.mikeyphw.bkx.android.root
 import android.content.Intent
 import android.os.IBinder
 import android.system.Os
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessCodec
 import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.topjohnwu.superuser.ipc.RootService
 import kotlinx.coroutines.runBlocking
@@ -22,6 +23,9 @@ class BkxRootEngineService : RootService() {
     private val binder = object : IBkxRootEngineService.Stub() {
         override fun uid(): Int = Os.getuid()
         override fun readinessJson(): String = requireRoot { runBlocking { goGateway.readinessJson() } }
+        override fun chrootctlReadinessJson(): String = requireRoot {
+            ChrootctlReadinessCodec.encode(ChrootctlRuntimeResolver.resolve())
+        }
         override fun executeJson(requestJson: String): String = requireRoot { runBlocking { goGateway.executeJson(requestJson) } }
         override fun progressJson(requestId: String): String = requireRoot { runBlocking { goGateway.progressJson(requestId) } }
         override fun cancelJson(requestId: String): String = requireRoot { runBlocking { goGateway.cancelJson(requestId) } }

@@ -16,6 +16,7 @@ import com.mikeyphw.bkx.android.app.store.SharedPreferencesRunSummaryStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSettingsStore
 import com.mikeyphw.bkx.android.app.store.SharedPreferencesSavedJobStore
 import com.mikeyphw.bkx.android.core.backend.BackendPort
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessPort
 import com.mikeyphw.bkx.android.core.files.ProviderStagingPort
 import com.mikeyphw.bkx.android.core.operations.OperationStateStore
 import com.mikeyphw.bkx.android.core.jobs.SavedJobStore
@@ -28,6 +29,7 @@ import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.mikeyphw.bkx.android.embedded.RootAwareGateway
 import com.mikeyphw.bkx.android.files.AndroidProviderStagingManager
 import com.mikeyphw.bkx.android.root.RootBkxServiceClient
+import com.mikeyphw.bkx.android.root.RootChrootctlReadinessPort
 import com.mikeyphw.bkx.android.storage.AndroidStorageAccessManager
 
 /** Process-scoped graph: one root client/backend/coordinator per Android process. */
@@ -35,6 +37,8 @@ private fun Context.stableApplicationContext(): Context = applicationContext ?: 
 
 object DefaultBackendGraph {
     @Volatile private var backendInstance: BackendPort? = null
+    @Volatile private var rootClientInstance: RootBkxServiceClient? = null
+    @Volatile private var chrootctlReadinessPortInstance: ChrootctlReadinessPort? = null
     @Volatile private var runStoreInstance: RunSummaryStore? = null
     @Volatile private var operationStoreInstance: OperationStateStore? = null
     @Volatile private var settingsStoreInstance: SharedPreferencesSettingsStore? = null
@@ -63,7 +67,7 @@ object DefaultBackendGraph {
             val appContext = context.stableApplicationContext()
             val settings = sharedSettingsStore(appContext)
             val local = GoNativeGateway(appContext)
-            val root = RootBkxServiceClient(appContext)
+            val root = rootClient(appContext)
             EmbeddedBkxBackend(
                 gateway = RootAwareGateway(
                     localGateway = local,
@@ -72,6 +76,22 @@ object DefaultBackendGraph {
                 ),
             ).also { backendInstance = it }
         }
+    }
+
+
+    fun chrootctlReadinessPort(context: Context): ChrootctlReadinessPort = chrootctlReadinessPortInstance ?: synchronized(this) {
+        chrootctlReadinessPortInstance ?: run {
+            val appContext = context.stableApplicationContext()
+            val settings = sharedSettingsStore(appContext)
+            RootChrootctlReadinessPort(
+                rootClient = rootClient(appContext),
+                modeProvider = { settings.readNow().rootAccessMode },
+            ).also { chrootctlReadinessPortInstance = it }
+        }
+    }
+
+    private fun rootClient(context: Context): RootBkxServiceClient = rootClientInstance ?: synchronized(this) {
+        rootClientInstance ?: RootBkxServiceClient(context.stableApplicationContext()).also { rootClientInstance = it }
     }
 
     fun runSummaryStore(context: Context): RunSummaryStore = runStoreInstance ?: synchronized(this) {
@@ -140,6 +160,9 @@ object DefaultBackendGraph {
         applicationRuntimeInstance = null
         coordinatorInstance = null
         backendInstance = null
+        chrootctlReadinessPortInstance = null
+        rootClientInstance?.release()
+        rootClientInstance = null
         runStoreInstance = null
         operationStoreInstance = null
         settingsStoreInstance = null

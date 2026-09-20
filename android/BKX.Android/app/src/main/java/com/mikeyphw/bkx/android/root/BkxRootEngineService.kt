@@ -8,6 +8,10 @@ import com.mikeyphw.bkx.android.core.bridge.BridgeRequestIdPolicy
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessCodec
 import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import java.io.FileInputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.security.MessageDigest
+import java.util.UUID
 import com.topjohnwu.superuser.ipc.RootService
 import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ConcurrentHashMap
@@ -60,6 +64,14 @@ class BkxRootEngineService : RootService() {
 
         override fun chrootctlCopyManagedExportArtifact(copyId: String, path: String, output: ParcelFileDescriptor): String = requireRoot {
             startManagedExportCopy(copyId, path, output)
+        }
+
+        override fun chrootctlStageImportArchive(requestId: String, filename: String, input: ParcelFileDescriptor): String = requireRoot {
+            stageChrootctlImport(requestId, filename, input)
+        }
+
+        override fun chrootctlCleanupImportStaging(requestId: String, stagingId: String, checksumSha256: String): String = requireRoot {
+            cleanupChrootctlImportStaging(requestId, stagingId, checksumSha256)
         }
 
         override fun chrootctlOperationJson(operationId: String): String = requireRoot {
@@ -278,6 +290,89 @@ class BkxRootEngineService : RootService() {
         return ChrootctlManagedArtifactPolicy.resolveExport(response, requestedPath)
     }
 
+    private fun stageChrootctlImport(requestId: String, filename: String, input: ParcelFileDescriptor): String {
+        if (!BridgeRequestIdPolicy.isValid(requestId) || filename.isBlank() || filename.length > 255 || '/' in filename || '\\' in filename || filename == "." || filename == "..") {
+            runCatching { input.close() }
+            return chrootctlFailure(requestId.take(128).ifBlank { "unknown" }, "INVALID_IMPORT_HANDOFF", "Invalid chroot import handoff request.")
+        }
+        if (trustedChrootctlExecutable(requestId) == null) {
+            runCatching { input.close() }
+            return chrootctlFailure(requestId, "CHROOTCTL_NOT_READY", "The active chrootctl module/runtime is not ready for BKX.")
+        }
+        val root = File("/data/local/tmp")
+        val directory = File(root, "chrootctl-transfer")
+        if (!directory.exists() && !directory.mkdir()) return chrootctlFailure(requestId, "IMPORT_STAGING_FAILED", "Unable to create chrootctl transfer staging.")
+        Os.chmod(directory.path, 0x1c0) // 0700
+        val stat = Os.lstat(directory.path)
+        if (stat.st_uid.toInt() != 0 || java.nio.file.Files.isSymbolicLink(directory.toPath()) || directory.canonicalFile != directory.absoluteFile) {
+            return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "chrootctl transfer staging is not a trusted root-owned directory.")
+        }
+        val id = UUID.randomUUID().toString().replace("-", "")
+        val target = File(directory, "$id-$filename")
+        val partial = File(directory, ".$id-$filename.partial")
+        val digest = MessageDigest.getInstance("SHA-256")
+        var total = 0L
+        try {
+            ParcelFileDescriptor.AutoCloseInputStream(input).use { source ->
+                FileOutputStream(partial).use { output ->
+                    val buffer = ByteArray(CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES)
+                    while (true) {
+                        val count = source.read(buffer)
+                        if (count < 0) break
+                        if (count == 0) continue
+                        total += count
+                        require(total <= CHROOTCTL_MAX_IMPORT_BYTES) { "Chroot import exceeds the BKX staging ceiling." }
+                        output.write(buffer, 0, count)
+                        digest.update(buffer, 0, count)
+                    }
+                    output.fd.sync()
+                }
+            }
+            require(total > 0L) { "Chroot import archive is empty." }
+            check(partial.renameTo(target)) { "Unable to atomically publish staged chroot import." }
+            Os.chmod(target.path, 0x180) // 0600
+            val checksum = digest.digest().joinToString("") { "%02x".format(it) }
+            val sidecar = File(directory, target.name + ".sha256")
+            FileOutputStream(sidecar).use { out -> out.write(("$checksum  ${target.name}\n").toByteArray()); out.fd.sync() }
+            Os.chmod(sidecar.path, 0x180)
+            return chrootctlSuccess(requestId, JSONObject().put("archive", target.path).put("path", target.path).put("bytes", total).put("checksum", checksum).put("checksumPath", sidecar.path).put("stagingId", id))
+        } catch (error: Throwable) {
+            partial.delete(); target.delete()
+            return chrootctlFailure(requestId, "IMPORT_STAGING_FAILED", error.message ?: error.javaClass.simpleName)
+        }
+    }
+
+    private fun cleanupChrootctlImportStaging(requestId: String, stagingId: String, checksumSha256: String): String {
+        if (!BridgeRequestIdPolicy.isValid(requestId) || !Regex("[a-f0-9]{32}").matches(stagingId) || !Regex("[a-f0-9]{64}").matches(checksumSha256.lowercase())) {
+            return chrootctlFailure(requestId.take(128).ifBlank { "unknown" }, "INVALID_IMPORT_CLEANUP", "Invalid chroot import cleanup request.")
+        }
+        val directory = File("/data/local/tmp/chrootctl-transfer")
+        if (!directory.isDirectory || java.nio.file.Files.isSymbolicLink(directory.toPath()) || directory.canonicalFile != directory.absoluteFile) {
+            return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "chrootctl transfer staging is not a trusted directory.")
+        }
+        val stat = Os.lstat(directory.path)
+        if (stat.st_uid.toInt() != 0 || (stat.st_mode.toInt() and 0x12) != 0) {
+            return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "chrootctl transfer staging ownership or permissions are unsafe.")
+        }
+        val matches = directory.listFiles().orEmpty().filter { it.isFile && !it.name.startsWith(".") && it.name.startsWith("$stagingId-") }
+        if (matches.size != 1) return chrootctlFailure(requestId, "IMPORT_STAGING_NOT_FOUND", "The exact retained chroot import staging artifact was not found.")
+        val target = matches.single()
+        if (java.nio.file.Files.isSymbolicLink(target.toPath()) || target.canonicalFile.parentFile != directory.canonicalFile) {
+            return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "The retained chroot import staging artifact is unsafe.")
+        }
+        val actual = MessageDigest.getInstance("SHA-256").let { digest ->
+            FileInputStream(target).use { input -> val buffer=ByteArray(CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES); while(true){ val n=input.read(buffer); if(n<0) break; if(n>0) digest.update(buffer,0,n) } }; digest.digest().joinToString(""){ "%02x".format(it) }
+        }
+        if (!actual.equals(checksumSha256, true)) return chrootctlFailure(requestId, "IMPORT_STAGING_CHANGED", "The retained chroot import staging artifact changed; cleanup was refused.")
+        val sidecar = File(directory, target.name + ".sha256")
+        if (sidecar.exists() && (java.nio.file.Files.isSymbolicLink(sidecar.toPath()) || sidecar.canonicalFile.parentFile != directory.canonicalFile)) {
+            return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "The retained checksum sidecar is unsafe.")
+        }
+        check(target.delete()) { "Unable to delete retained chroot import staging artifact." }
+        if (sidecar.exists()) check(sidecar.delete()) { "Unable to delete retained chroot import checksum sidecar." }
+        return chrootctlSuccess(requestId, JSONObject().put("stagingId", stagingId).put("cleaned", true))
+    }
+
     private fun invokeChrootctlOperationCommand(command: String, operationId: String): String {
         if (command !in setOf("operation", "cancel", "reconcile") || !ChrootctlRootBridgePolicy.validOperationId(operationId)) {
             return chrootctlFailure(operationId.take(128).ifBlank { "unknown" }, "INVALID_OPERATION_ID", "Invalid chrootctl operation id.")
@@ -366,5 +461,6 @@ class BkxRootEngineService : RootService() {
         const val CHROOTCTL_MAX_QUEUED_WORK = 4
         const val CHROOTCTL_MAX_ARTIFACT_PATH_CHARS = 4096
         const val CHROOTCTL_ARTIFACT_COPY_BUFFER_BYTES = 256 * 1024
+        const val CHROOTCTL_MAX_IMPORT_BYTES = 128L * 1024L * 1024L * 1024L
     }
 }

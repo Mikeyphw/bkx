@@ -171,6 +171,19 @@ class RootBkxServiceClient(
         return started
     }
 
+
+    suspend fun chrootctlStageImportArchive(requestId: String, filename: String, input: ParcelFileDescriptor): String {
+        val normalized = BridgeRequestIdPolicy.normalize(requestId)
+        require(filename.isNotBlank() && filename.length <= 255 && '/' !in filename && '\\' !in filename && filename !in setOf(".", "..")) { "Invalid chroot import filename." }
+        return call(EXECUTE_TIMEOUT_MS) { service -> service.chrootctlStageImportArchive(normalized, filename, input) }
+    }
+    suspend fun chrootctlCleanupImportStaging(requestId: String, stagingId: String, checksumSha256: String): String {
+        val normalized = BridgeRequestIdPolicy.normalize(requestId)
+        require(Regex("[a-f0-9]{32}").matches(stagingId)) { "Invalid chroot import staging id." }
+        require(Regex("[a-f0-9]{64}").matches(checksumSha256.lowercase())) { "Invalid chroot import staging checksum." }
+        return call(EXECUTE_TIMEOUT_MS) { service -> service.chrootctlCleanupImportStaging(normalized, stagingId, checksumSha256.lowercase()) }
+    }
+
     suspend fun executeJson(requestJson: String): String = executeMutex.withLock {
         call(EXECUTE_TIMEOUT_MS) { it.executeJson(requestJson) }
     }

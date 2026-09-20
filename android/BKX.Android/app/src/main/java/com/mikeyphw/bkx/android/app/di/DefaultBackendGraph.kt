@@ -2,6 +2,7 @@ package com.mikeyphw.bkx.android.app.di
 
 import android.content.Context
 import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlExportCoordinator
+import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlImportCoordinator
 import com.mikeyphw.bkx.android.app.runtime.BkxApplicationRuntime
 import com.mikeyphw.bkx.android.app.runtime.BkxOperationCoordinator
 import com.mikeyphw.bkx.android.automation.BkxAutomationEngine
@@ -31,6 +32,7 @@ import com.mikeyphw.bkx.android.embedded.GoNativeGateway
 import com.mikeyphw.bkx.android.embedded.RootAwareGateway
 import com.mikeyphw.bkx.android.files.AndroidProviderStagingManager
 import com.mikeyphw.bkx.android.root.ChrootctlArtifactHandoff
+import com.mikeyphw.bkx.android.root.ChrootctlImportHandoff
 import com.mikeyphw.bkx.android.root.RootBkxServiceClient
 import com.mikeyphw.bkx.android.root.RootChrootctlBridgePort
 import com.mikeyphw.bkx.android.root.ChrootctlOperationLedger
@@ -47,6 +49,8 @@ object DefaultBackendGraph {
     @Volatile private var chrootctlBridgePortInstance: ChrootctlBridgePort? = null
     @Volatile private var chrootctlArtifactHandoffInstance: ChrootctlArtifactHandoff? = null
     @Volatile private var chrootctlExportCoordinatorInstance: ChrootctlExportCoordinator? = null
+    @Volatile private var chrootctlImportHandoffInstance: ChrootctlImportHandoff? = null
+    @Volatile private var chrootctlImportCoordinatorInstance: ChrootctlImportCoordinator? = null
     @Volatile private var runStoreInstance: RunSummaryStore? = null
     @Volatile private var operationStoreInstance: OperationStateStore? = null
     @Volatile private var settingsStoreInstance: SharedPreferencesSettingsStore? = null
@@ -130,6 +134,21 @@ object DefaultBackendGraph {
         rootClientInstance ?: RootBkxServiceClient(context.stableApplicationContext()).also { rootClientInstance = it }
     }
 
+    fun chrootctlImportHandoff(context: Context): ChrootctlImportHandoff = chrootctlImportHandoffInstance ?: synchronized(this) {
+        chrootctlImportHandoffInstance ?: ChrootctlImportHandoff(
+            context.stableApplicationContext(),
+            rootClient(context.stableApplicationContext()),
+        ).also { chrootctlImportHandoffInstance = it }
+    }
+
+    fun chrootctlImportCoordinator(context: Context): ChrootctlImportCoordinator = chrootctlImportCoordinatorInstance ?: synchronized(this) {
+        chrootctlImportCoordinatorInstance ?: ChrootctlImportCoordinator(
+            chrootctl = chrootctlBridgePort(context.stableApplicationContext()),
+            handoff = chrootctlImportHandoff(context.stableApplicationContext()),
+            bkxOperations = operationCoordinator(context.stableApplicationContext()),
+        ).also { chrootctlImportCoordinatorInstance = it }
+    }
+
     fun runSummaryStore(context: Context): RunSummaryStore = runStoreInstance ?: synchronized(this) {
         runStoreInstance ?: SharedPreferencesRunSummaryStore(context.stableApplicationContext()).also { runStoreInstance = it }
     }
@@ -198,6 +217,8 @@ object DefaultBackendGraph {
         backendInstance = null
         chrootctlBridgePortInstance = null
         chrootctlExportCoordinatorInstance = null
+        chrootctlImportCoordinatorInstance = null
+        chrootctlImportHandoffInstance = null
         chrootctlArtifactHandoffInstance = null
         chrootctlReadinessPortInstance = null
         rootClientInstance?.release()

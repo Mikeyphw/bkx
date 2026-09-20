@@ -11,6 +11,8 @@ interface IBkxRootEngineService {
     String chrootctlPreviewJson(String requestJson);
     String chrootctlStartOperation(String requestJson, in ParcelFileDescriptor output);
     String chrootctlCopyManagedExportArtifact(String copyId, String path, in ParcelFileDescriptor output);
+    String chrootctlStageImportArchive(String requestId, String filename, in ParcelFileDescriptor input);
+    String chrootctlCleanupImportStaging(String requestId, String stagingId, String checksumSha256);
     String chrootctlOperationJson(String operationId);
     String chrootctlCancelOperationJson(String operationId);
     String chrootctlReconcileOperationJson(String operationId);

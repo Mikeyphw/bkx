@@ -302,6 +302,24 @@ object ChrootctlBridgeCodec {
         )
     }
 
+    fun importPayload(
+        archive: String,
+        name: String? = null,
+        conflict: String = "rename",
+        allowLegacyMetadata: Boolean = false,
+        importStrategy: String = "auto",
+        password: String? = null,
+        postImport: String? = null,
+    ): JsonObject = buildJsonObject {
+        put("archive", archive)
+        name?.takeIf { it.isNotBlank() }?.let { put("name", it) }
+        put("conflict", conflict)
+        put("allowLegacyMetadata", allowLegacyMetadata)
+        put("importStrategy", importStrategy)
+        password?.takeIf { it.isNotEmpty() }?.let { put("password", it) }
+        postImport?.takeIf { it.isNotBlank() }?.let { put("postImport", it) }
+    }
+
     fun bindPreview(payload: JsonObject, contract: ChrootctlPreviewContract): JsonObject = buildJsonObject {
         payload.forEach { (key, value) -> put(key, value) }
         put("previewId", contract.previewId)

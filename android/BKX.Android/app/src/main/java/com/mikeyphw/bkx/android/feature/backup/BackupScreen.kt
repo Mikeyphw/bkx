@@ -75,8 +75,8 @@ fun BackupScreen(
     Column(modifier = modifier.fillMaxSize()) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = BkxTokens.ScreenPadding, vertical = 8.dp)) {
             val routes = listOf(
-                BackupRoute.Overview to "Create", BackupRoute.Jobs to "Jobs",
-                BackupRoute.Snapshots to "Snapshots", BackupRoute.Repositories to "Repositories",
+                BackupRoute.Overview to "Create", BackupRoute.ImportChroot to "Import",
+                BackupRoute.Jobs to "Jobs", BackupRoute.Snapshots to "Snapshots", BackupRoute.Repositories to "Repositories",
             )
             if (maxWidth < 520.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -98,6 +98,7 @@ fun BackupScreen(
         }
         when (state.backupRoute) {
             BackupRoute.Overview -> BackupCreateScreen(state, onEvent, Modifier.weight(1f))
+            BackupRoute.ImportChroot -> ChrootImportScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Jobs -> SavedJobsScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Snapshots -> SnapshotsScreen(state, onEvent, Modifier.weight(1f))
             BackupRoute.Repositories -> RepositoriesScreen(state, onEvent, Modifier.weight(1f))
@@ -823,4 +824,92 @@ private fun usableSpaceFor(context: Context, path: String?): Long? {
         StatFs(existing.absolutePath).availableBytes
     }
     return bytes.takeIf { it > 0L }
+}
+
+
+@Composable
+private fun ChrootImportScreen(state: BkxHomeUiState, onEvent: (BkxHomeEvent) -> Unit, modifier: Modifier = Modifier) {
+    val ui = state.chrootImport
+    val context = LocalContext.current
+    var showImportRemotes by rememberSaveable { mutableStateOf(false) }
+    val importRemotes = remember(context, showImportRemotes) { RcloneConfigManager(context).snapshot().profiles }
+    Column(
+        modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = BkxTokens.ScreenPadding, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(BkxTokens.SectionGap),
+    ) {
+        BkxPageHeader("Import chroot", "Acquire and inspect an archive first. chrootctl owns archive validation and import; BKX never imports it as an ordinary filesystem restore.")
+        BkxSurfaceCard {
+            BkxSectionHeader("1. Archive", "Choose a local archive, BKX-managed Google Drive object, or another rclone:// remote object.")
+            OutlinedTextField(value=ui.sourceLocation, onValueChange={ onEvent(BkxHomeEvent.SetChrootImportSource(it)) }, label={Text("Archive location")}, enabled=!ui.loading, modifier=Modifier.fillMaxWidth())
+            Row(modifier=Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick={ onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.ChrootImportArchive, "/storage/emulated/0")) }, enabled=!ui.loading, modifier=Modifier.weight(1f)) { Text("Browse local") }
+                OutlinedButton(onClick={ showImportRemotes=true }, enabled=!ui.loading, modifier=Modifier.weight(1f)) { Text("Browse cloud / remote") }
+            }
+            if(showImportRemotes) {
+                BkxOutlinedSurface {
+                    Text("Choose cloud / rclone storage", style=MaterialTheme.typography.titleMedium)
+                    if(importRemotes.isEmpty()) Text("No rclone storage is configured. Connect Google Drive or import an rclone.conf, then return here.", color=MaterialTheme.colorScheme.onSurfaceVariant)
+                    importRemotes.forEach { profile ->
+                        val label = if (profile.managedByBkx) "Google Drive · ${profile.name}" else profile.name
+                        OutlinedButton(onClick={ showImportRemotes=false; onEvent(BkxHomeEvent.OpenFilesystemBrowser(FilesystemSelectionTarget.ChrootImportArchive, "rclone://${profile.name}")) }, modifier=Modifier.fillMaxWidth()) { Text(label) }
+                    }
+                    TextButton(onClick={showImportRemotes=false}) { Text("Close") }
+                }
+            }
+        }
+        BkxSurfaceCard {
+            BkxSectionHeader("2. Import choices", "These choices are bound to the inspection preview. Changing one requires inspection again.")
+            OutlinedTextField(value=ui.requestedName, onValueChange={onEvent(BkxHomeEvent.SetChrootImportName(it))}, label={Text("Requested name (optional)")}, enabled=!ui.loading, modifier=Modifier.fillMaxWidth())
+            Text("If a chroot with the same name exists", style=MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected=ui.conflict=="rename", onClick={onEvent(BkxHomeEvent.SetChrootImportConflict("rename"))}, label={Text("Rename")})
+                FilterChip(selected=ui.conflict=="overwrite", onClick={onEvent(BkxHomeEvent.SetChrootImportConflict("overwrite"))}, label={Text("Overwrite")})
+            }
+            Text("Import strategy", style=MaterialTheme.typography.labelLarge)
+            Row(modifier=Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                listOf("auto","staged","streaming").forEach { v -> FilterChip(selected=ui.strategy==v, onClick={onEvent(BkxHomeEvent.SetChrootImportStrategy(v))}, label={Text(v.replaceFirstChar { it.uppercase() })}) }
+            }
+        }
+        Button(onClick={onEvent(BkxHomeEvent.PreviewChrootImport)}, enabled=!ui.loading && ui.sourceLocation.isNotBlank(), modifier=Modifier.fillMaxWidth()) { Text(if(ui.preview==null) "Inspect archive" else "Inspect again") }
+        ui.progressMessage?.let { BkxOutlinedSurface { Text(it) } }
+        ui.error?.let { BkxOutlinedSurface { Text(it, color=MaterialTheme.colorScheme.error) } }
+        ui.preview?.let { preview ->
+            val i=preview.inspection
+            BkxSurfaceCard {
+                BkxSectionHeader("3. Inspection", "Review chrootctl's archive inspection before any mutation.")
+                BkxKeyValue("Suggested name", i.suggestedName)
+                BkxKeyValue("System", listOf(i.distro, i.release, i.version).filter{it.isNotBlank()}.joinToString(" · ").ifBlank{"Unknown"})
+                BkxKeyValue("Architecture", i.arch.ifBlank{"Unknown"})
+                BkxKeyValue("Archive size", formatBytes(i.sourceBytes))
+                BkxKeyValue("Expanded size", formatBytes(i.expandedBytes))
+                BkxKeyValue("Metadata", i.metadataFidelity)
+                BkxKeyValue("Checksum", when(i.checksumVerified){true->"Verified";false->"Failed";null->"Not reported"})
+                preview.warnings.forEach { Text(it, color=MaterialTheme.colorScheme.tertiary) }
+                preview.blockers.forEach { Text(it.message, color=MaterialTheme.colorScheme.error) }
+            }
+            if(preview.requiresLegacyOptIn) {
+                BkxSurfaceCard {
+                    BkxSectionHeader("Legacy archive", "This archive does not satisfy the current metadata contract. Compatibility is never enabled silently.")
+                    BkxSettingSwitch("Allow legacy metadata", "Explicitly permit chrootctl's legacy compatibility path for this reviewed archive.", ui.allowLegacyMetadata, {onEvent(BkxHomeEvent.SetChrootImportLegacyAllowed(it))}, !ui.loading)
+                }
+            }
+            BkxSurfaceCard {
+                BkxSectionHeader("4. Confirm import", "Import changes the device's chroot state and registers the result with chrootctl. It cannot be scheduled or started implicitly.")
+                if(!ui.confirmationArmed) {
+                    OutlinedButton(onClick={onEvent(BkxHomeEvent.ArmChrootImportConfirmation)}, enabled=!ui.loading && preview.isExecutable && (!preview.requiresLegacyOptIn || ui.allowLegacyMetadata), modifier=Modifier.fillMaxWidth()) { Text("Review complete — enable import") }
+                } else {
+                    Text("Confirmation armed for this reviewed preview only.", color=MaterialTheme.colorScheme.tertiary)
+                    Button(onClick={onEvent(BkxHomeEvent.ExecuteChrootImport)}, enabled=!ui.loading, modifier=Modifier.fillMaxWidth()) { Text("Import chroot") }
+                }
+            }
+        }
+        ui.resultMessage?.let { BkxSurfaceCard { Text(it) } }
+        ui.retainedStagingId?.let {
+            BkxSurfaceCard {
+                BkxSectionHeader("Recovery staging retained", "BKX could not prove cleanup at the end of the operation. The opaque staging ID is kept for a guarded cleanup retry.")
+                Text(it, style=MaterialTheme.typography.bodySmall)
+                OutlinedButton(onClick={onEvent(BkxHomeEvent.CleanupChrootImportStaging)}, enabled=!ui.loading, modifier=Modifier.fillMaxWidth()) { Text("Retry safe cleanup") }
+            }
+        }
+    }
 }

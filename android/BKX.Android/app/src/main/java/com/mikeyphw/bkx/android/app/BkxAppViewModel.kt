@@ -49,6 +49,9 @@ import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlExportPreview
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadiness
 import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlReadinessPort
 import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlExportCoordinator
+import com.mikeyphw.bkx.android.app.chrootctl.ChrootctlImportCoordinator
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlImportPlan
+import com.mikeyphw.bkx.android.core.chrootctl.ChrootctlImportPreview
 import com.mikeyphw.bkx.android.core.backend.BackendPort
 import com.mikeyphw.bkx.android.core.backend.BackendReadiness
 import com.mikeyphw.bkx.android.core.bridge.BridgeJson
@@ -142,6 +145,22 @@ data class BkxUiMessage(
     val text: String,
 )
 
+
+data class ChrootImportUiState(
+    val sourceLocation: String = "",
+    val requestedName: String = "",
+    val conflict: String = "rename",
+    val strategy: String = "auto",
+    val allowLegacyMetadata: Boolean = false,
+    val loading: Boolean = false,
+    val progressMessage: String? = null,
+    val preview: ChrootctlImportPreview? = null,
+    val confirmationArmed: Boolean = false,
+    val resultMessage: String? = null,
+    val retainedStagingId: String? = null,
+    val error: String? = null,
+)
+
 data class BkxHomeUiState(
     val title: String = "BKX",
     val readiness: BackendReadiness = BackendReadiness.Checking,
@@ -174,6 +193,7 @@ data class BkxHomeUiState(
     val chrootctlInventory: List<ChrootctlChrootRecord> = emptyList(),
     val chrootctlLoading: Boolean = false,
     val chrootctlMessage: String? = null,
+    val chrootImport: ChrootImportUiState = ChrootImportUiState(),
 ) {
     val backendToolState: BackendToolState = BackendToolState(
         readiness = readiness,
@@ -270,6 +290,15 @@ sealed interface BkxHomeEvent {
     data class ApplyBackupPlanPreview(val preview: BackupPlanPreview, val binding: BkxResponseBinding? = null) : BkxHomeEvent
     data object RequestBackupPlan : BkxHomeEvent
     data object CreateBackup : BkxHomeEvent
+    data class SetChrootImportSource(val location: String) : BkxHomeEvent
+    data class SetChrootImportName(val name: String) : BkxHomeEvent
+    data class SetChrootImportConflict(val conflict: String) : BkxHomeEvent
+    data class SetChrootImportStrategy(val strategy: String) : BkxHomeEvent
+    data class SetChrootImportLegacyAllowed(val allowed: Boolean) : BkxHomeEvent
+    data object PreviewChrootImport : BkxHomeEvent
+    data object ArmChrootImportConfirmation : BkxHomeEvent
+    data object ExecuteChrootImport : BkxHomeEvent
+    data object CleanupChrootImportStaging : BkxHomeEvent
 
     data class SelectArchive(val archive: ArchiveLocation) : BkxHomeEvent
     data class ApplyArchiveList(val archives: List<ArchiveListItem>) : BkxHomeEvent
@@ -346,6 +375,7 @@ class BkxAppViewModel(
     private val chrootctlReadinessPort: ChrootctlReadinessPort? = null,
     private val chrootctlBridgePort: ChrootctlBridgePort? = null,
     private val chrootctlExportCoordinator: ChrootctlExportCoordinator? = null,
+    private val chrootctlImportCoordinator: ChrootctlImportCoordinator? = null,
     private val operationCoordinator: BkxOperationCoordinator = BkxOperationCoordinator(
         context = null,
         backendPort = backendPort,
@@ -481,6 +511,15 @@ class BkxAppViewModel(
             }
             BkxHomeEvent.RequestBackupPlan -> requestBackupPlan()
             BkxHomeEvent.CreateBackup -> createBackup()
+            is BkxHomeEvent.SetChrootImportSource -> invalidateChrootImportPreview { copy(sourceLocation = event.location, preview = null, confirmationArmed = false, error = null) }
+            is BkxHomeEvent.SetChrootImportName -> invalidateChrootImportPreview { copy(requestedName = event.name, preview = null, confirmationArmed = false) }
+            is BkxHomeEvent.SetChrootImportConflict -> invalidateChrootImportPreview { copy(conflict = event.conflict, preview = null, confirmationArmed = false) }
+            is BkxHomeEvent.SetChrootImportStrategy -> invalidateChrootImportPreview { copy(strategy = event.strategy, preview = null, confirmationArmed = false) }
+            is BkxHomeEvent.SetChrootImportLegacyAllowed -> invalidateChrootImportPreview { copy(allowLegacyMetadata = event.allowed, preview = null, confirmationArmed = false) }
+            BkxHomeEvent.PreviewChrootImport -> previewChrootImport()
+            BkxHomeEvent.ArmChrootImportConfirmation -> updateChrootImport { copy(confirmationArmed = true) }
+            BkxHomeEvent.ExecuteChrootImport -> executeChrootImport()
+            BkxHomeEvent.CleanupChrootImportStaging -> cleanupChrootImportStaging()
 
             is BkxHomeEvent.SelectArchive -> navigate { current ->
                 current.copy(
@@ -1332,6 +1371,10 @@ class BkxAppViewModel(
                 val draft = _state.value.backupPlanning.draft
                 onEvent(BkxHomeEvent.UpdateBackupDraft(draft.copy(destination = BackupDestinationSelection("path-${path.hashCode()}", filesystemDisplayName(path), path))))
             }
+            FilesystemSelectionTarget.ChrootImportArchive -> {
+                if (isDirectory) { loadFilesystem(path); return }
+                invalidateChrootImportPreview { copy(sourceLocation = path, preview = null, confirmationArmed = false, error = null) }
+            }
             FilesystemSelectionTarget.Archive -> {
                 if (isDirectory) { loadFilesystem(path); return }
                 val archive = archiveLocation(path)
@@ -1358,6 +1401,70 @@ class BkxAppViewModel(
             }
         }
         _state.update { it.copy(filesystemBrowser = FilesystemBrowserUiState()) }
+    }
+
+    private fun updateChrootImport(transform: ChrootImportUiState.() -> ChrootImportUiState) {
+        _state.update { it.copy(chrootImport = it.chrootImport.transform()) }
+    }
+
+    private fun invalidateChrootImportPreview(transform: ChrootImportUiState.() -> ChrootImportUiState) {
+        val stalePreview = _state.value.chrootImport.preview
+        updateChrootImport(transform)
+        if (stalePreview != null) {
+            val coordinator = chrootctlImportCoordinator ?: return
+            viewModelScope.launch {
+                val cleaned = runCatching { coordinator.cleanupRetained(stalePreview) }.getOrDefault(false)
+                if (!cleaned) {
+                    updateChrootImport {
+                        copy(
+                            retainedStagingId = stalePreview.stagingId,
+                            error = error ?: "The previous inspected archive changed, but BKX could not prove its root staging was cleaned. Retry safe cleanup.",
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun currentChrootImportPlan(): ChrootctlImportPlan {
+        val ui = _state.value.chrootImport
+        return ChrootctlImportPlan(ui.sourceLocation.trim(), ui.requestedName.trim().ifBlank { null }, ui.conflict, ui.allowLegacyMetadata, ui.strategy)
+    }
+
+    private fun previewChrootImport() {
+        val coordinator = chrootctlImportCoordinator ?: run { updateChrootImport { copy(error="chrootctl import support is unavailable.") }; return }
+        val plan = runCatching { currentChrootImportPlan() }.getOrElse { updateChrootImport { copy(error=it.message) }; return }
+        updateChrootImport { copy(loading=true, progressMessage="Acquiring and inspecting archive…", preview=null, confirmationArmed=false, error=null, resultMessage=null) }
+        viewModelScope.launch {
+            runCatching {
+                val acquired=coordinator.acquire(plan) { p -> updateChrootImport { copy(progressMessage=p.message) } }
+                coordinator.stageAndPreview(plan, acquired).second
+            }.onSuccess { preview -> updateChrootImport { copy(loading=false, progressMessage=null, preview=preview, error=null) } }
+             .onFailure { e -> updateChrootImport { copy(loading=false, progressMessage=null, error=e.message ?: "Unable to inspect chroot archive.") } }
+        }
+    }
+
+    private fun executeChrootImport() {
+        val coordinator=chrootctlImportCoordinator ?: return
+        val ui=_state.value.chrootImport
+        val preview=ui.preview ?: run { updateChrootImport { copy(error="Inspect the archive before importing.") }; return }
+        if(!ui.confirmationArmed) { updateChrootImport { copy(error="Confirm the destructive import before continuing.") }; return }
+        val plan=runCatching { currentChrootImportPlan() }.getOrElse { updateChrootImport { copy(error=it.message) }; return }
+        updateChrootImport { copy(loading=true, error=null, resultMessage=null, progressMessage="Importing through chrootctl…") }
+        viewModelScope.launch {
+            runCatching { coordinator.import(plan, preview, confirmationGranted=true) { p -> updateChrootImport { copy(progressMessage=p.message) } } }
+                .onSuccess { result -> updateChrootImport { copy(loading=false, progressMessage=null, confirmationArmed=false, resultMessage="Imported ${result.name.ifBlank { preview.inspection.suggestedName }} and registered it with chrootctl.", retainedStagingId=result.retainedStagingId, error=null) } }
+                .onFailure { e -> updateChrootImport { copy(loading=false, progressMessage=null, confirmationArmed=false, error=e.message ?: "Chroot import failed.") } }
+        }
+    }
+
+    private fun cleanupChrootImportStaging() {
+        val coordinator=chrootctlImportCoordinator ?: return
+        val preview=_state.value.chrootImport.preview ?: return
+        viewModelScope.launch {
+            val ok=runCatching { coordinator.cleanupRetained(preview) }.getOrDefault(false)
+            updateChrootImport { if(ok) copy(retainedStagingId=null, resultMessage="Retained import staging cleaned up.") else copy(error="BKX could not prove that retained import staging was safe to remove.") }
+        }
     }
 
     private fun importProviderBackupTree(uri: String) = stageProvider("backup source") {
@@ -2074,6 +2181,7 @@ class BkxAppViewModel(
     private fun hydrateBackupRoute(route: BackupRoute) {
         when (route) {
             BackupRoute.Overview -> Unit
+            BackupRoute.ImportChroot -> Unit
             BackupRoute.Jobs -> {
                 refreshSavedJobs()
                 refreshSavedJobSchedules()
@@ -2224,6 +2332,7 @@ class BkxAppViewModelFactory(
     private val chrootctlReadinessPort: ChrootctlReadinessPort? = null,
     private val chrootctlBridgePort: ChrootctlBridgePort? = null,
     private val chrootctlExportCoordinator: ChrootctlExportCoordinator? = null,
+    private val chrootctlImportCoordinator: ChrootctlImportCoordinator? = null,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -2241,6 +2350,7 @@ class BkxAppViewModelFactory(
                 chrootctlReadinessPort = chrootctlReadinessPort,
                 chrootctlBridgePort = chrootctlBridgePort,
                 chrootctlExportCoordinator = chrootctlExportCoordinator,
+                chrootctlImportCoordinator = chrootctlImportCoordinator,
                 operationCoordinator = operationCoordinator,
             ) as T
         }

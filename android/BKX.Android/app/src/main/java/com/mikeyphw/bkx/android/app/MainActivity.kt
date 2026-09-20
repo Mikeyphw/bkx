@@ -27,6 +27,7 @@ class MainActivity : ComponentActivity() {
             chrootctlReadinessPort = DefaultBackendGraph.chrootctlReadinessPort(this),
             chrootctlBridgePort = DefaultBackendGraph.chrootctlBridgePort(this),
             chrootctlExportCoordinator = DefaultBackendGraph.chrootctlExportCoordinator(this),
+            chrootctlImportCoordinator = DefaultBackendGraph.chrootctlImportCoordinator(this),
         )
     }
 

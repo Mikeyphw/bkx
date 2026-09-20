@@ -9,6 +9,7 @@ enum class FilesystemSelectionTarget(
     BackupSource(false, true),
     BackupDestination(true, true, allowRemote = true),
     Archive(false, false, allowRemote = true),
+    ChrootImportArchive(false, false, allowRemote = true),
     RestoreDestination(true, true),
     SnapshotRestoreDestination(true, true),
     TransferSource(false, true, allowRemote = true),

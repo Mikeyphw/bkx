@@ -175,6 +175,7 @@ private fun DestinationContent(
 private fun BkxHomeEvent.requiresOperationNotificationPermission(): Boolean = when (this) {
     BkxHomeEvent.CreateBackup,
     BkxHomeEvent.ExecuteRestore,
+    BkxHomeEvent.ExecuteChrootImport,
     BkxHomeEvent.RunTransfer,
     is BkxHomeEvent.RunSavedJob,
     is BkxHomeEvent.InitializeRepository,

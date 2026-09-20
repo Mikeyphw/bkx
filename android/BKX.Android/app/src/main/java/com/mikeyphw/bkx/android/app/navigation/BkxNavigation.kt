@@ -45,7 +45,7 @@ fun BackendReadiness.toSetupActions(): List<SetupRemediationAction> = when (this
 
 enum class ArchiveDetailSection { Overview, Contents, Restore }
 
-enum class BackupRoute { Overview, Jobs, Snapshots, Repositories, History }
+enum class BackupRoute { Overview, ImportChroot, Jobs, Snapshots, Repositories, History }
 
 enum class MoreRoute { Overview, GoogleDrive, Remotes, Transfer, Automation, Diagnostics }
 
@@ -171,6 +171,7 @@ object BkxDeepLinkCodec {
 
     private fun String.toBackupRoute(): BackupRoute? = when (lowercase()) {
         "overview" -> BackupRoute.Overview
+        "import", "import-chroot", "chroot-import" -> BackupRoute.ImportChroot
         "jobs", "saved-jobs" -> BackupRoute.Jobs
         "snapshots" -> BackupRoute.Snapshots
         "repositories", "repos" -> BackupRoute.Repositories

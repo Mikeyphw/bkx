@@ -20,7 +20,7 @@ internal object ChrootctlRootBridgePolicy {
         "transfer.preview_export" to Spec(ChrootctlRootMode.Preview, setOf("archive", "name", "password")),
         "transfer.import_preview" to Spec(
             ChrootctlRootMode.Preview,
-            setOf("allowLegacyMetadata", "archive", "conflict", "importStrategy", "name", "password", "path"),
+            setOf("allowLegacyMetadata", "allow_legacy_metadata", "archive", "conflict", "importStrategy", "import_strategy", "name", "password", "path"),
         ),
         "transfer.export" to Spec(
             ChrootctlRootMode.Operation,
@@ -29,8 +29,8 @@ internal object ChrootctlRootBridgePolicy {
         "transfer.import" to Spec(
             ChrootctlRootMode.Operation,
             setOf(
-                "allowLegacyMetadata", "archive", "conflict", "importStrategy", "name", "password", "path", "postImport",
-                "previewId", "payloadHash", "resourceRevision",
+                "allowLegacyMetadata", "allow_legacy_metadata", "archive", "conflict", "importStrategy", "import_strategy", "name", "password", "path",
+                "postImport", "post_import", "previewId", "payloadHash", "resourceRevision",
             ),
         ),
     )

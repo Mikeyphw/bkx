@@ -40,6 +40,15 @@ class ChrootctlBridgeTransportContractTest {
     }
 
     @Test
+    fun `root bridge mirrors current import compatibility aliases without widening operations`() {
+        val policy = File(main, "java/com/mikeyphw/bkx/android/root/ChrootctlRootBridgePolicy.kt").readText()
+        assertTrue("\"allow_legacy_metadata\"" in policy)
+        assertTrue("\"import_strategy\"" in policy)
+        assertTrue("\"post_import\"" in policy)
+        assertFalse("arbitraryShell" in policy)
+    }
+
+    @Test
     fun `NDJSON transport is pipe based and per-event bounded`() {
         val client = File(main, "java/com/mikeyphw/bkx/android/root/RootBkxServiceClient.kt").readText()
         assertTrue("ParcelFileDescriptor.createPipe()" in client)

@@ -67,6 +67,33 @@ class ChrootctlRuntimeResolverContractTest {
     }
 
     @Test
+    fun `current chrootctl 1_3_3 module 18 remains compatible without raising minimum`() {
+        val identity = ChrootctlRuntimeResolver.PackageIdentity(
+            moduleVersion = "1.3.3",
+            moduleVersionCode = 18,
+            backendVersion = "0.11.0",
+            bridgeProtocolVersion = 1,
+            runtimeSchemaVersion = 2,
+            runtimeKind = "go-native",
+            runtimeAbi = "arm64-v8a",
+            runtimeEntrypoint = "chrootctl",
+        )
+        val document = Json.parseToJsonElement(
+            """{
+              "schemaVersion":3,
+              "project":"chrootctl",
+              "bridgeProtocolVersion":1,
+              "backend":{"implementation":"go","version":"0.11.0"},
+              "nativeRuntime":{"schemaVersion":2,"kind":"go-native","platform":"android","abi":"arm64-v8a","entrypoint":"chrootctl"},
+              "module":{"id":"chrootctl-magisk","version":"1.3.3","versionCode":18,"minimumSupportedBridgeProtocolVersion":1}
+            }""",
+        ).jsonObject
+        assertTrue(ChrootctlRuntimeResolver.validateExternalCompatibilityDocument(document, identity))
+        val source = File("src/main/java/com/mikeyphw/bkx/android/root/ChrootctlRuntimeResolver.kt").readText()
+        assertTrue("MIN_MODULE_VERSION_CODE = 15" in source)
+    }
+
+    @Test
     fun `capability validation is bounded to the fixed protocol and fails malformed output without throwing`() {
         val identity = ChrootctlRuntimeResolver.PackageIdentity(
             moduleVersion = "1.3.0",

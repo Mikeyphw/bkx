@@ -66,7 +66,7 @@ args = [
 
 [targets.bkx_android.tasks]
 restore = ["help"]
-build = [":app:assembleDebug"]
+build = [":app:assemblePersonalDebug"]
 test = [":app:bkxBr37BehavioralUnitSeal"]
 lint = [":app:lintDebug"]
 instrumentation = [":app:connectedDebugAndroidTest"]

@@ -562,31 +562,50 @@ tasks.register("verifyBkxRcloneRemoteTransportContract") {
         val browserModelsText = browserModels.readText()
         val backupText = backup.readText()
 
-        check("installBkxRcloneAndroidRuntime" in buildText && "generated/bkx-rclone-runtime/jniLibs" in buildText) {
-            "BKX Android must package the generated rclone Android runtime as a native-library source."
+        check(
+            "installBkxRcloneAndroidRuntime" in buildText &&
+                "generated/bkx-rclone-runtime/jniLibs" in buildText &&
+                "generated/bkx-rclone-runtime/assets" in buildText &&
+                "bclone/github-latest-stable/android-24-arm64/16k" in buildText &&
+                "@UntrackedTask" in buildText
+        ) {
+            "BKX Android must re-resolve the latest bclone release and package runtime provenance alongside the generated native runtime."
         }
         listOf(
-            "RCLONE_VERSION=\"1.75.1\"",
-            "RCLONE_SOURCE_ARCHIVE=\"rclone-v${'$'}{RCLONE_VERSION}.tar.gz\"",
-            "RCLONE_VENDOR_ARCHIVE=\"rclone-v${'$'}{RCLONE_VERSION}-vendor.tar.gz\"",
-            "RCLONE_SOURCE_SHA256=\"6ada25ecda8b3c8d971ed0aae1167e44d257dbcbf0be6598bf6c127daca2e13f\"",
-            "RCLONE_VENDOR_SHA256=\"a43cd21f71344ff96b3b00217196c069f2f28fa29835cd61cfa94edb1aa5b93b\"",
-            "downloads.rclone.org/v${'$'}{RCLONE_VERSION}",
+            "BCLONE_REPOSITORY=\"https://github.com/BenjiThatFoxGuy/bclone.git\"",
+            "BCLONE_LATEST_RELEASE_URL=\"https://github.com/BenjiThatFoxGuy/bclone/releases/latest\"",
+            "--write-out '%{url_effective}'",
+            "git ls-remote --tags",
+            "refs/tags/${'$'}BCLONE_TAG",
+            "checkout --quiet --detach \"${'$'}BCLONE_COMMIT\"",
+            "go mod download",
+            "go mod verify",
+            "go build -mod=readonly",
+            "-buildvcs=true",
+            "resolution=github-latest-stable-release",
+            "bkx-rclone-runtime.properties",
             "CGO_ENABLED=1",
             "rejected by Go/cgo + 16 KiB probe; trying next candidate",
             "termux-native-clang-ndk-sysroot",
             "make_termux_ndk_sysroot_shim",
             "max-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}",
             "common-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}",
-            "go build -mod=vendor",
             "verify-native-page-size.go",
             "bkx_rclone_validate_build_info",
             "bkx_rclone_validate_version_output",
-        ).forEach { token -> check(token in installerText) { "Pinned source-built Android rclone installer is missing '$token'." } }
+        ).forEach { token -> check(token in installerText) { "Latest-release bclone Android runtime installer is missing '$token'." } }
+        listOf(
+            "RCLONE_VERSION=\"1.75.1\"",
+            "RCLONE_SOURCE_SHA256=",
+            "RCLONE_VENDOR_SHA256=",
+            "downloads.rclone.org/",
+        ).forEach { token -> check(token !in installerText) { "Latest bclone runtime must not retain pinned upstream token '$token'." } }
         listOf(
             "GOOS=android",
             "GOARCH=arm64",
             "CGO_ENABLED=1",
+            "vcs.revision=",
+            "vcs.modified=false",
             "os/type: android",
             "os/arch: arm64",
         ).forEach { token -> check(token in runtimeContractText) { "Shared rclone runtime contract is missing '$token'." } }
@@ -2473,8 +2492,18 @@ tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
         ) {
             "BR35 release lint is missing from the validation lane."
         }
-        check(rcloneInstaller.contains("RCLONE_SOURCE_SHA256") && rcloneInstaller.contains("RCLONE_VENDOR_SHA256") && rcloneInstaller.contains("BKX_REQUIRED_NDK_REVISION=\"29.0.14206865\"") && rcloneInstaller.contains("BKX_ANDROID_PAGE_SIZE=\"16384\"")) {
-            "BR35 rclone/native-runtime release inputs are not pinned."
+        check(
+            rcloneInstaller.contains("BCLONE_LATEST_RELEASE_URL=\"https://github.com/BenjiThatFoxGuy/bclone/releases/latest\"") &&
+                rcloneInstaller.contains("git ls-remote --tags") &&
+                rcloneInstaller.contains("-buildvcs=true") &&
+                rcloneInstaller.contains("printf 'commit=%s\\n'") &&
+                rcloneInstaller.contains("resolution=github-latest-stable-release") &&
+                rcloneInstaller.contains("BKX_REQUIRED_NDK_REVISION=\"29.0.14206865\"") &&
+                rcloneInstaller.contains("BKX_ANDROID_PAGE_SIZE=\"16384\"") &&
+                !rcloneInstaller.contains("RCLONE_SOURCE_SHA256") &&
+                !rcloneInstaller.contains("RCLONE_VENDOR_SHA256")
+        ) {
+            "BR35 native-runtime policy must track latest stable bclone while pinning the Android toolchain and recording the resolved Git revision."
         }
         check(qualifyDevice.contains("--release-apk") && qualifyDevice.contains("--android-test-apk") && qualifyDevice.contains("bkxExactReleaseArtifact true") && qualifyDevice.contains("release-apk.sha256")) {
             "BR35 exact release APK physical qualification is missing."

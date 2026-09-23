@@ -10,11 +10,13 @@ The existing protocol-v1 `filesystem.list`, `filesystem.stat`, `transfer.plan`, 
 
 ## Runtime packaging
 
-Android packages rclone v1.75.1 as generated `arm64-v8a/libbkxrclone_exec.so`. The `.so` name is intentional: AGP extracts native libraries into `ApplicationInfo.nativeLibraryDir`, providing a stable executable path for `ProcessBuilder` without copying executables into writable app storage.
+Android packages the **latest stable bclone GitHub release** as generated `arm64-v8a/libbkxrclone_exec.so`. The `.so` name is intentional: AGP extracts native libraries into `ApplicationInfo.nativeLibraryDir`, providing a stable executable path for `ProcessBuilder` without copying executables into writable app storage.
 
-BKX does **not** package rclone's upstream Android testbuild directly. The v1.75.1 testbuild is linked with 4 KiB `PT_LOAD` alignment and triggers Android's 16 KiB memory-page compatibility mode. `scripts/install-rclone-android-runtime.sh` instead downloads both official release inputs: `rclone-v1.75.1.tar.gz` (the source tree) and `rclone-v1.75.1-vendor.tar.gz` (the dependency-only `vendor/` tree). It verifies both SHA-256 values from the signed upstream release manifest, merges `vendor/` into the source tree, and builds Android/arm64 offline with `-mod=vendor`, `CGO_ENABLED=1`, `CC`/`CC_FOR_TARGET`, the `android noselfupdate` tags used by Round Sync's proven Android rclone build shape, PIE, and explicit 16 KiB linker alignment. The build prefers the Gradle-selected NDK r29 toolchain; native Termux clang is an allowed Android/aarch64 fallback when the standard x86_64 NDK host tools cannot execute on ARM64.
+BKX does **not** package bclone's Linux ARM64 release asset or rclone's upstream Android testbuild. `scripts/install-rclone-android-runtime.sh` resolves `https://github.com/BenjiThatFoxGuy/bclone/releases/latest` at task execution time, resolves that release tag to its exact Git commit, fetches that exact tag, verifies the checkout still resolves to the same commit and preserves the `github.com/rclone/rclone` Go module identity, then builds Android/arm64 from source. Dependencies are resolved through the release's `go.mod`/`go.sum` and checked with `go mod verify`; the final build uses `-mod=readonly`, `CGO_ENABLED=1`, Android/arm64, PIE, the `android noselfupdate` tags, and explicit 16 KiB linker alignment. The build prefers the Gradle-selected NDK r29 toolchain; native Termux clang is an allowed Android/aarch64 fallback when the standard x86_64 NDK host tools cannot execute on ARM64.
 
-Before packaging, BKX verifies ELF64/AArch64/PIE identity, Go build metadata, `CGO_ENABLED=1`, exact rclone version identity, and every `PT_LOAD` segment's 16 KiB alignment/congruence. On Android hosts it also executes `rclone version`. The successful runtime is cached outside the repository so later builds avoid recompiling rclone.
+Because `latest` is mutable external state, Gradle deliberately runs the release resolver on every runtime task invocation. The installer caches successful binaries by **resolved tag + exact commit**, so an unchanged latest release is reused without recompilation while a newly published release automatically gets a distinct cache entry and rebuild.
+
+Before packaging, BKX verifies ELF64/AArch64/PIE identity, Go build metadata, `CGO_ENABLED=1`, the exact resolved Git revision with `vcs.modified=false`, exact rclone-compatible version identity, and every `PT_LOAD` segment's 16 KiB alignment/congruence. On Android hosts it also executes `rclone version`. A generated `bkx-rclone-runtime.properties` asset records provider, latest-release resolution policy, repository, tag, version, commit, source tree, Android API/architecture and page size for artifact/support diagnostics.
 
 ## Configuration ownership
 
@@ -45,18 +47,20 @@ When the packaged runtime is executable, readiness exposes `remote.rclone`, `tra
 
 ## Android runtime identity validation
 
-The source build retains rclone's release linker identity through `-X github.com/rclone/rclone/fs.Version=v1.75.1`. The raw ELF therefore carries the bare linker value; BKX does not rely on the already-formatted CLI phrase being contiguous in binary strings.
+The source build sets rclone's linker-visible version from the dynamically resolved bclone release tag. BKX does not treat a mutable `latest` pointer as provenance: each invocation resolves the tag and exact commit first, and all subsequent fetch/build/cache validation uses that immutable commit for the duration of the build.
 
 BKX validates the runtime in layers instead:
 
-1. mandatory SHA-256 verification of the official vendored source archive;
-2. Android/arm64 compiler proof plus an early 16 KiB linker probe;
-3. ELF64, little-endian, position-independent AArch64 identity;
-4. every `PT_LOAD` requires `p_align >= 16384` and file/vaddr congruence modulo 16384;
-5. embedded bare `v1.75.1` linker-value marker;
-6. Go build metadata proving the rclone module, `GOOS=android`, `GOARCH=arm64`, and `CGO_ENABLED=1`;
-7. on Android/Termux, execution of `rclone version`, requiring the exact `rclone v1.75.1`, `os/type: android`, and `os/arch: arm64` report;
-8. final debug/release APK scanning of every packaged native ELF through `verifyBkx16KbNativePageSizeContract`.
+1. GitHub `releases/latest` resolves to a stable `vX.Y.Z` release tag;
+2. that tag resolves to an exact Git commit and the fetched checkout must still match it;
+3. the checkout must preserve the `github.com/rclone/rclone` module identity and remain unmodified;
+4. Android/arm64 compiler proof plus an early 16 KiB linker probe;
+5. ELF64, little-endian, position-independent AArch64 identity;
+6. every `PT_LOAD` requires `p_align >= 16384` and file/vaddr congruence modulo 16384;
+7. Go build metadata proves the rclone module, `GOOS=android`, `GOARCH=arm64`, `CGO_ENABLED=1`, the resolved `vcs.revision`, and `vcs.modified=false`;
+8. on Android/Termux, execution of `rclone version` must report the dynamically resolved release version, `os/type: android`, and `os/arch: arm64`;
+9. the generated provenance asset records the exact tag/commit/tree that produced the packaged runtime;
+10. final debug/release APK scanning verifies every packaged native ELF through `verifyBkx16KbNativePageSizeContract`.
 
 The installer prints each validation stage so Devtool failures identify the rejected contract instead of surfacing only an opaque shell exit code.
 

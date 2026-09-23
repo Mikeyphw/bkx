@@ -1,21 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the pinned rclone release from the two official release inputs instead of
-# packaging the upstream Android testbuild. rclone's *-vendor.tar.gz contains only
-# vendor/, while the plain *.tar.gz contains the source tree; both are required for
-# an offline -mod=vendor build. BKX verifies both signed-release SHA-256 values, builds
-# an Android/arm64 PIE with explicit 16 KiB alignment, then inspects every PT_LOAD.
+# Build the latest stable release published by the official bclone fork instead of
+# packaging a Linux binary or rclone's upstream Android testbuild. The release tag is
+# resolved at build time, then locked to the exact Git commit advertised by the bclone
+# repository for the duration of this invocation. Go dependencies remain constrained by
+# that release's go.mod/go.sum and are verified before the Android/arm64 build.
 
-readonly RCLONE_VERSION="1.75.1"
+readonly BCLONE_REPOSITORY="https://github.com/BenjiThatFoxGuy/bclone.git"
+readonly BCLONE_LATEST_RELEASE_URL="https://github.com/BenjiThatFoxGuy/bclone/releases/latest"
 readonly RCLONE_ANDROID_API="24"
 readonly RCLONE_ANDROID_ARCH="arm64"
-readonly RCLONE_SOURCE_ARCHIVE="rclone-v${RCLONE_VERSION}.tar.gz"
-readonly RCLONE_VENDOR_ARCHIVE="rclone-v${RCLONE_VERSION}-vendor.tar.gz"
-readonly RCLONE_RELEASE_BASE_URL="https://downloads.rclone.org/v${RCLONE_VERSION}"
-# From the PGP-signed upstream v1.75.1 SHA256SUMS manifest.
-readonly RCLONE_SOURCE_SHA256="6ada25ecda8b3c8d971ed0aae1167e44d257dbcbf0be6598bf6c127daca2e13f"
-readonly RCLONE_VENDOR_SHA256="a43cd21f71344ff96b3b00217196c069f2f28fa29835cd61cfa94edb1aa5b93b"
 readonly BKX_ANDROID_PAGE_SIZE="16384"
 readonly BKX_REQUIRED_NDK_REVISION="29.0.14206865"
 
@@ -28,7 +23,7 @@ fail() {
     local code=$1
     local stage=$2
     shift 2
-    printf 'BKX rclone runtime install failed [%s]: %s\n' "$stage" "$*" >&2
+    printf 'BKX bclone runtime install failed [%s]: %s\n' "$stage" "$*" >&2
     exit "$code"
 }
 
@@ -36,85 +31,117 @@ run_native_page_verifier() {
     env GOTOOLCHAIN=local go run "$native_page_verifier" "$@"
 }
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "usage: $0 <jni-output-directory> [ndk-directory]" >&2
+if [[ $# -lt 1 || $# -gt 3 ]]; then
+    echo "usage: $0 <jni-output-directory> [ndk-directory] [provenance-output-directory]" >&2
     exit 64
 fi
 
 output_root=$1
 ndk_root=${2:-${ANDROID_NDK_ROOT:-${ANDROID_NDK_HOME:-}}}
+provenance_output_root=${3:-}
 output_dir="$output_root/arm64-v8a"
-cache_root="${BKX_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/bkx/rclone/v${RCLONE_VERSION}-android-${RCLONE_ANDROID_API}-arm64-16k}"
-source_archive="$cache_root/$RCLONE_SOURCE_ARCHIVE"
-vendor_archive="$cache_root/$RCLONE_VENDOR_ARCHIVE"
-cached_runtime="$cache_root/libbkxrclone_exec.so"
 target="$output_dir/libbkxrclone_exec.so"
 tmp_target="$target.tmp.$$"
-mkdir -p "$cache_root" "$output_dir"
+packaged_provenance=""
+if [[ -n "$provenance_output_root" ]]; then
+    packaged_provenance="$provenance_output_root/bkx-rclone-runtime.properties"
+fi
+mkdir -p "$output_dir"
+[[ -z "$provenance_output_root" ]] || mkdir -p "$provenance_output_root"
+[[ -z "$packaged_provenance" ]] || rm -f "$packaged_provenance"
 trap 'rm -f "$tmp_target"' EXIT HUP INT TERM
 
-fetch_archive() {
-    local archive_name=$1
-    local destination=$2
-    local label=$3
-    local url="$RCLONE_RELEASE_BASE_URL/$archive_name"
-    local tmp="$destination.download.$$"
-    rm -f "$tmp"
-    printf 'BKX rclone runtime: fetching verified %s %s\n' "$label" "$url" >&2
+fetch_text() {
+    local url=$1
     if command -v curl >/dev/null 2>&1; then
-        curl --fail --location --retry 3 --retry-delay 2 --output "$tmp" "$url" || {
-            rm -f "$tmp"
-            fail 69 fetch "curl could not fetch the pinned rclone $label archive"
-        }
+        curl --fail --location --retry 3 --retry-delay 2 --silent --show-error "$url"
     elif command -v wget >/dev/null 2>&1; then
-        wget --tries=3 --timeout=30 --output-document="$tmp" "$url" || {
-            rm -f "$tmp"
-            fail 69 fetch "wget could not fetch the pinned rclone $label archive"
-        }
+        wget --tries=3 --timeout=30 --quiet --output-document=- "$url"
     else
-        fail 69 fetch 'curl or wget is required to fetch the pinned rclone release inputs'
+        fail 69 fetch 'curl or wget is required to resolve the latest bclone release'
     fi
-    [[ -s "$tmp" ]] || fail 69 fetch "downloaded rclone $label archive is empty"
-    mv -f "$tmp" "$destination"
 }
 
-validate_archive() {
-    local archive=$1
-    local expected=$2
-    local actual
-    [[ -s "$archive" ]] || return 1
-    actual=$(sha256sum "$archive" | awk '{print $1}')
-    [[ "$actual" == "$expected" ]]
+resolve_latest_release_marker() {
+    if command -v curl >/dev/null 2>&1; then
+        # GitHub redirects /releases/latest to the current non-draft,
+        # non-prerelease release. Parsing the effective URL avoids an API token
+        # or unauthenticated API rate-limit dependency.
+        curl --fail --location --retry 3 --retry-delay 2 --silent --show-error \
+            --output /dev/null --write-out '%{url_effective}' "$BCLONE_LATEST_RELEASE_URL"
+    else
+        # wget does not expose curl's url_effective primitive portably; parsing
+        # the redirected release HTML title is the compatibility fallback.
+        fetch_text "$BCLONE_LATEST_RELEASE_URL"
+    fi
 }
 
-ensure_verified_archive() {
-    local archive_name=$1
-    local archive=$2
-    local expected=$3
-    local label=$4
-    local actual
-    if ! validate_archive "$archive" "$expected"; then
-        if [[ -e "$archive" ]]; then
-            printf 'BKX rclone runtime: cached %s checksum mismatch; refetching\n' "$label" >&2
-            rm -f "$archive"
-        fi
-        fetch_archive "$archive_name" "$archive" "$label"
-        if ! validate_archive "$archive" "$expected"; then
-            actual=$(sha256sum "$archive" | awk '{print $1}')
-            printf 'expected %s SHA-256: %s\nactual %s SHA-256:   %s\n' "$label" "$expected" "$label" "$actual" >&2
-            fail 65 checksum "official rclone $label archive checksum mismatch"
-        fi
-    fi
-    printf 'BKX rclone runtime: %s SHA-256 verified\n' "$label" >&2
+BCLONE_TAG=""
+BCLONE_COMMIT=""
+BCLONE_SHORT_COMMIT=""
+RCLONE_VERSION=""
+cache_root=""
+cached_runtime=""
+provenance_file=""
+module_cache=""
+build_cache=""
+
+resolve_latest_bclone_release() {
+    local latest_text refs direct peeled
+    latest_text=$(resolve_latest_release_marker) ||
+        fail 69 resolve 'could not resolve the latest bclone GitHub release'
+    BCLONE_TAG=$(bkx_bclone_extract_release_tag "$latest_text") ||
+        fail 65 resolve 'bclone latest release page did not contain a stable vX.Y.Z tag'
+    RCLONE_VERSION=${BCLONE_TAG#v}
+
+    command -v git >/dev/null 2>&1 || fail 69 resolve 'git is required to resolve the latest bclone release commit'
+    refs=$(git ls-remote --tags "$BCLONE_REPOSITORY" \
+        "refs/tags/$BCLONE_TAG" "refs/tags/$BCLONE_TAG^{}") || \
+        fail 69 resolve "could not resolve bclone tag $BCLONE_TAG"
+    peeled=$(awk '$2 ~ /\^\{\}$/ {print $1; exit}' <<<"$refs")
+    direct=$(awk -v ref="refs/tags/$BCLONE_TAG" '$2 == ref {print $1; exit}' <<<"$refs")
+    BCLONE_COMMIT=${peeled:-$direct}
+    [[ "$BCLONE_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]] || \
+        fail 65 resolve "bclone tag $BCLONE_TAG did not resolve to a Git commit"
+    BCLONE_COMMIT=${BCLONE_COMMIT,,}
+    BCLONE_SHORT_COMMIT=${BCLONE_COMMIT:0:12}
+
+    local cache_base
+    cache_base="${BKX_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/bkx/rclone}"
+    cache_root="$cache_base/bclone/${BCLONE_TAG}-${BCLONE_SHORT_COMMIT}/android-${RCLONE_ANDROID_API}-arm64-16k"
+    cached_runtime="$cache_root/libbkxrclone_exec.so"
+    provenance_file="$cache_root/bclone-provenance.txt"
+    module_cache="$cache_base/go-module-cache"
+    build_cache="$cache_base/go-build-cache"
+    mkdir -p "$cache_root" "$module_cache" "$build_cache"
+
+    printf 'BKX rclone-compatible runtime: latest bclone release %s (%s)\n' \
+        "$BCLONE_TAG" "$BCLONE_COMMIT" >&2
+}
+
+validate_provenance() {
+    [[ -s "$provenance_file" ]] || return 1
+    grep -Fqx "repository=$BCLONE_REPOSITORY" "$provenance_file" &&
+        grep -Fqx "tag=$BCLONE_TAG" "$provenance_file" &&
+        grep -Fqx "commit=$BCLONE_COMMIT" "$provenance_file"
+}
+
+publish_provenance() {
+    [[ -z "$packaged_provenance" ]] && return 0
+    local tmp="$packaged_provenance.tmp.$$"
+    cp -f "$provenance_file" "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$packaged_provenance"
 }
 
 validate_runtime() {
     local runtime=$1
     local build_info version_output
     [[ -s "$runtime" ]] || return 1
+    validate_provenance || return 1
     run_native_page_verifier elf --min-page-size "$BKX_ANDROID_PAGE_SIZE" "$runtime" >/dev/null || return 1
     build_info=$(go version -m "$runtime" 2>&1) || return 1
-    bkx_rclone_validate_build_info "$build_info" || return 1
+    bkx_rclone_validate_build_info "$build_info" "$BCLONE_COMMIT" || return 1
     # On the Android/Termux host we can execute the exact runtime as an additional
     # dynamic-linker/API proof. Cross-host validation retains the static proofs.
     if [[ -d /system && -e /system/bin/linker64 ]]; then
@@ -123,19 +150,20 @@ validate_runtime() {
     fi
 }
 
+resolve_latest_bclone_release
+
 if validate_runtime "$cached_runtime"; then
-    printf 'BKX rclone runtime: using verified 16 KiB cache %s\n' "$cached_runtime" >&2
+    printf 'BKX rclone-compatible runtime: using verified bclone cache %s\n' "$cached_runtime" >&2
     cp -f "$cached_runtime" "$tmp_target"
     chmod 0755 "$tmp_target"
     mv -f "$tmp_target" "$target"
+    publish_provenance
     trap - EXIT HUP INT TERM
-    printf 'BKX rclone runtime: packaged cached v%s -> %s\n' "$RCLONE_VERSION" "$target" >&2
+    printf 'BKX rclone-compatible runtime: packaged cached bclone %s (%s) -> %s\n' \
+        "$BCLONE_TAG" "$BCLONE_SHORT_COMMIT" "$target" >&2
     exit 0
 fi
-rm -f "$cached_runtime"
-
-ensure_verified_archive "$RCLONE_SOURCE_ARCHIVE" "$source_archive" "$RCLONE_SOURCE_SHA256" 'source'
-ensure_verified_archive "$RCLONE_VENDOR_ARCHIVE" "$vendor_archive" "$RCLONE_VENDOR_SHA256" 'vendor'
+rm -f "$cached_runtime" "$provenance_file"
 
 toolchain_cc=""
 toolchain_cxx=""
@@ -374,23 +402,48 @@ printf 'BKX rclone runtime: selected compiler %s\n' "$cc" >&2
 rm -rf "$probe_root"
 probe_root=""
 
-work_dir=$(mktemp -d "${TMPDIR:-$cache_root}/bkx-rclone-source-build.XXXXXX")
-printf 'BKX rclone runtime: extracting verified source + vendor release inputs\n' >&2
-run_native_page_verifier archive-safe "$source_archive" "$vendor_archive" >/dev/null || \
-    fail 65 source 'rclone release archive contains an unsafe path'
-tar -xzf "$source_archive" -C "$work_dir" || fail 65 source 'could not extract rclone source archive'
-source_dir=$(find "$work_dir" -mindepth 1 -maxdepth 1 -type d -name "rclone-v${RCLONE_VERSION}" -print -quit)
-[[ -n "$source_dir" && -f "$source_dir/go.mod" ]] || \
-    fail 65 source 'rclone source archive layout is incomplete'
-tar -xzf "$vendor_archive" -C "$source_dir" || fail 65 source 'could not extract rclone vendor archive into source tree'
-[[ -d "$source_dir/vendor" && -f "$source_dir/vendor/modules.txt" ]] || \
-    fail 65 source 'combined rclone source + vendor layout is incomplete'
+work_dir=$(mktemp -d "${TMPDIR:-$cache_root}/bkx-bclone-source-build.XXXXXX")
+source_dir="$work_dir/bclone"
+printf 'BKX rclone-compatible runtime: fetching exact bclone source %s (%s)\n' \
+    "$BCLONE_TAG" "$BCLONE_COMMIT" >&2
+git init --quiet "$source_dir" || fail 69 source 'could not initialize bclone source checkout'
+git -C "$source_dir" remote add origin "$BCLONE_REPOSITORY" || \
+    fail 69 source 'could not configure bclone source remote'
+git -C "$source_dir" fetch --quiet --depth=1 --no-tags origin "refs/tags/$BCLONE_TAG" || \
+    fail 69 source "could not fetch bclone tag $BCLONE_TAG"
+source_commit=$(git -C "$source_dir" rev-parse 'FETCH_HEAD^{commit}') || \
+    fail 65 source 'could not resolve fetched bclone commit'
+source_commit=${source_commit,,}
+[[ "$source_commit" == "$BCLONE_COMMIT" ]] || \
+    fail 65 source "bclone tag moved while resolving latest release (expected $BCLONE_COMMIT, fetched $source_commit)"
+git -C "$source_dir" checkout --quiet --detach "$BCLONE_COMMIT" || \
+    fail 69 source 'could not checkout resolved bclone release commit'
+[[ -f "$source_dir/go.mod" && -f "$source_dir/go.sum" ]] || \
+    fail 65 source 'bclone source checkout is missing go.mod/go.sum'
+grep -Fqx 'module github.com/rclone/rclone' "$source_dir/go.mod" || \
+    fail 65 source 'bclone source no longer preserves the rclone module identity'
+BCLONE_TREE=$(git -C "$source_dir" rev-parse 'HEAD^{tree}') || \
+    fail 65 source 'could not resolve bclone source tree identity'
 
 jobs=${BKX_RCLONE_BUILD_JOBS:-1}
 [[ "$jobs" =~ ^[1-9][0-9]*$ ]] || fail 64 build 'BKX_RCLONE_BUILD_JOBS must be a positive integer'
 ldflags="-s -w -X github.com/rclone/rclone/fs.Version=v${RCLONE_VERSION} -linkmode=external -extldflags=-Wl,-z,max-page-size=${BKX_ANDROID_PAGE_SIZE},-z,common-page-size=${BKX_ANDROID_PAGE_SIZE}"
 
-printf 'BKX rclone runtime: building v%s from verified source for android/arm64 (16 KiB)\n' "$RCLONE_VERSION" >&2
+printf 'BKX rclone-compatible runtime: verifying bclone Go dependencies for %s\n' "$BCLONE_TAG" >&2
+(
+    cd "$source_dir"
+    export GOTOOLCHAIN=local
+    export GOMODCACHE="$module_cache"
+    env -u LD_PRELOAD go mod download
+    env -u LD_PRELOAD go mod verify
+) || fail 69 dependencies 'bclone Go dependency download/verification failed'
+
+git -C "$source_dir" diff --quiet --exit-code && \
+    [[ -z "$(git -C "$source_dir" status --porcelain --untracked-files=no)" ]] || \
+    fail 65 source 'bclone source checkout changed before compilation'
+
+printf 'BKX rclone-compatible runtime: building latest bclone %s (%s) for android/arm64 (16 KiB)\n' \
+    "$BCLONE_TAG" "$BCLONE_SHORT_COMMIT" >&2
 (
     cd "$source_dir"
     export GOOS=android
@@ -406,39 +459,53 @@ printf 'BKX rclone runtime: building v%s from verified source for android/arm64 
     fi
     export CGO_CFLAGS="-O2 -fPIC"
     export CGO_LDFLAGS="-fuse-ld=lld -Wl,-z,max-page-size=${BKX_ANDROID_PAGE_SIZE} -Wl,-z,common-page-size=${BKX_ANDROID_PAGE_SIZE}"
-    export GOCACHE="$work_dir/go-build-cache"
-    export GOMODCACHE="$work_dir/go-module-cache"
-    mkdir -p "$GOCACHE" "$GOMODCACHE"
-    go build -mod=vendor -p "$jobs" -tags "android noselfupdate" -trimpath -buildvcs=false -buildmode=pie \
+    export GOCACHE="$build_cache"
+    export GOMODCACHE="$module_cache"
+    go build -mod=readonly -p "$jobs" -tags "android noselfupdate" \
+        -trimpath -buildvcs=true -buildmode=pie \
         -ldflags "$ldflags" -o "$tmp_target" .
-) || fail 70 build 'rclone Android/arm64 source build failed'
+) || fail 70 build 'bclone Android/arm64 source build failed'
 chmod 0755 "$tmp_target"
 
-printf 'BKX rclone runtime: validating AArch64 PIE, identity and 16 KiB PT_LOAD alignment\n' >&2
-run_native_page_verifier runtime \
-    --min-page-size "$BKX_ANDROID_PAGE_SIZE" \
-    --version "$RCLONE_VERSION" \
-    "$tmp_target" || fail 65 elf 'rclone runtime failed ELF/version/16 KiB validation'
+printf 'BKX rclone-compatible runtime: validating AArch64 PIE, bclone provenance and 16 KiB PT_LOAD alignment\n' >&2
+run_native_page_verifier runtime     --min-page-size "$BKX_ANDROID_PAGE_SIZE"     --version "$RCLONE_VERSION"     "$tmp_target" || fail 65 elf 'bclone runtime failed ELF/version/16 KiB validation'
 build_info=$(go version -m "$tmp_target" 2>&1) || {
     printf '%s\n' "$build_info" >&2
-    fail 66 build-info 'could not inspect rclone Go build metadata'
+    fail 66 build-info 'could not inspect bclone Go build metadata'
 }
-if ! bkx_rclone_validate_build_info "$build_info"; then
+if ! bkx_rclone_validate_build_info "$build_info" "$BCLONE_COMMIT"; then
     printf '%s\n' "$build_info" >&2
-    fail 65 build-info 'rclone runtime build metadata is not the required Android/ARM64/CGO shape'
+    fail 65 build-info 'bclone runtime build metadata is not the required Android/ARM64/CGO/revision shape'
 fi
 
 if [[ -d /system && -e /system/bin/linker64 ]]; then
-    printf 'BKX rclone runtime: executing on-host version smoke test\n' >&2
+    printf 'BKX rclone-compatible runtime: executing on-host version smoke test\n' >&2
     version_output=$("$tmp_target" version 2>&1) || {
         printf '%s\n' "$version_output" >&2
-        fail 66 execute 'rclone Android runtime failed its on-host version smoke test'
+        fail 66 execute 'bclone Android runtime failed its on-host version smoke test'
     }
     if ! bkx_rclone_validate_version_output "$version_output" "$RCLONE_VERSION"; then
         printf '%s\n' "$version_output" >&2
-        fail 65 identity 'unexpected rclone Android version output'
+        fail 65 identity 'unexpected bclone/rclone-compatible Android version output'
     fi
 fi
+
+provenance_tmp="$provenance_file.tmp.$$"
+{
+    printf 'provider=bclone\n'
+    printf 'resolution=github-latest-stable-release\n'
+    printf 'repository=%s\n' "$BCLONE_REPOSITORY"
+    printf 'tag=%s\n' "$BCLONE_TAG"
+    printf 'version=%s\n' "$RCLONE_VERSION"
+    printf 'commit=%s\n' "$BCLONE_COMMIT"
+    printf 'tree=%s\n' "$BCLONE_TREE"
+    printf 'go_module=github.com/rclone/rclone\n'
+    printf 'android_api=%s\n' "$RCLONE_ANDROID_API"
+    printf 'android_arch=%s\n' "$RCLONE_ANDROID_ARCH"
+    printf 'page_size=%s\n' "$BKX_ANDROID_PAGE_SIZE"
+} > "$provenance_tmp"
+mv -f "$provenance_tmp" "$provenance_file"
+publish_provenance
 
 cp -f "$tmp_target" "$cached_runtime"
 chmod 0755 "$cached_runtime"
@@ -446,4 +513,6 @@ mv -f "$tmp_target" "$target"
 rm -rf "$work_dir"
 work_dir=""
 trap - EXIT HUP INT TERM
-printf 'BKX rclone runtime: packaged source-built 16 KiB v%s -> %s\n' "$RCLONE_VERSION" "$target" >&2
+printf 'BKX rclone-compatible runtime: packaged latest bclone %s (%s) -> %s\n' \
+    "$BCLONE_TAG" "$BCLONE_SHORT_COMMIT" "$target" >&2
+printf 'BKX rclone-compatible runtime: provenance %s\n' "$provenance_file" >&2

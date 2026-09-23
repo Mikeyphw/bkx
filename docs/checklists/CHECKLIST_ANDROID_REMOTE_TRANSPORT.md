@@ -2,9 +2,12 @@
 
 OV4 is accepted only when all applicable items below are true.
 
-- [ ] rclone is pinned to v1.75.1 and built from the official vendored source archive; the upstream 4 KiB Android testbuild and Linux binaries are rejected.
-- [ ] Both official release inputs are mandatory: source tarball SHA-256 `6ada25ec...e13f` and vendor tarball SHA-256 `a43cd21f...b93b`, pinned to the signed v1.75.1 release manifest.
-- [ ] The vendor archive is dependency-only (`vendor/`); it must be merged into the verified source archive before `go build -mod=vendor`.
+- [ ] The runtime source tracks bclone's latest stable GitHub release; no fixed bclone/rclone version is embedded in the build policy.
+- [ ] `releases/latest` is resolved at execution time to a stable tag and then to an exact Git commit; the fetched source must match that commit before compilation.
+- [ ] The bclone checkout preserves the `github.com/rclone/rclone` Go module identity, remains unmodified, and dependencies pass `go mod verify`; builds use `-mod=readonly`.
+- [ ] Linux ARM64 release binaries and upstream rclone Android testbuilds remain forbidden packaging inputs.
+- [ ] Runtime cache identity includes the resolved bclone tag + commit, while the Gradle task always re-runs the latest-release resolver.
+- [ ] The APK packages `bkx-rclone-runtime.properties` with the exact provider/tag/version/commit/tree used for the runtime build.
 - [ ] Runtime build uses Android/arm64 CGO plus explicit 16 KiB linker alignment, preferring the Gradle-selected NDK r29 toolchain.
 - [ ] Runtime installer validates ELF64, AArch64, Android/arm64/CGO metadata, exact version identity, and every `PT_LOAD` for 16 KiB compatibility.
 - [ ] Final debug/release APKs pass `verifyBkx16KbNativePageSizeContract` for every packaged native ELF.
@@ -32,7 +35,7 @@ OV4 is accepted only when all applicable items below are true.
 - [ ] Installer reports verified-source fetch/cache, compiler/linker probe, source build, ELF/page-size, Go build-info, and execution-smoke stages.
 - [ ] Android/Termux validation reaches and passes the executable `rclone version` smoke test.
 - [ ] Runtime identity does not rely on the formatted `rclone v...` phrase being contiguous in raw ELF strings.
-- [ ] A cached source archive with the wrong SHA-256 is removed and fetched again before failing closed.
-- [ ] A cached runtime is reused only after the full 16 KiB + identity contract passes.
+- [ ] A moved/re-resolved release tag or mismatched fetched commit fails closed before compilation.
+- [ ] A cached runtime is reused only when its provenance matches the currently resolved latest tag + commit and the full 16 KiB + identity contract passes.
 
 - [ ] Native Termux rclone source builds use probe-driven compiler selection: failed NDK-direct/Bash-shim lanes continue to native Termux clang with the NDK r29 sysroot, and only a lane that passes the real Go/cgo + 16 KiB probe may build rclone.

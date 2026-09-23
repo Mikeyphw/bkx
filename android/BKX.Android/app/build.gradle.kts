@@ -6,6 +6,7 @@ import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.UntrackedTask
 import org.gradle.process.ExecOperations
 import org.gradle.util.GradleVersion
 import java.io.File
@@ -47,6 +48,7 @@ abstract class BuildBkxGoAndroidRuntimeTask @Inject constructor(
     }
 }
 
+@UntrackedTask(because = "resolves the mutable GitHub latest-release pointer at execution time")
 abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
@@ -62,6 +64,9 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
     @get:OutputDirectory
     abstract val outputDirectory: DirectoryProperty
 
+    @get:OutputDirectory
+    abstract val provenanceOutputDirectory: DirectoryProperty
+
     @TaskAction
     fun installRuntime() {
         execOperations.exec {
@@ -71,6 +76,7 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
                 installerScriptPath.get(),
                 outputDirectory.get().asFile.absolutePath,
                 ndkDirectoryPath.get(),
+                provenanceOutputDirectory.get().asFile.absolutePath,
             )
         }
     }
@@ -159,6 +165,7 @@ val bkxJavaVersion = JavaVersion.VERSION_21
 val bkxNdkVersion = "29.0.14206865"
 val bkxGoRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-go-runtime/jniLibs")
 val bkxRcloneRuntimeJniDir = layout.buildDirectory.dir("generated/bkx-rclone-runtime/jniLibs")
+val bkxRcloneRuntimeAssetsDir = layout.buildDirectory.dir("generated/bkx-rclone-runtime/assets")
 
 val bkxRepositoryRoot = rootProject.layout.projectDirectory.dir("../..").asFile.canonicalFile
 val bkxVersionFile = bkxRepositoryRoot.resolve("internal/version/version.go")
@@ -527,15 +534,18 @@ val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("bui
 
 val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRuntimeTask>("installBkxRcloneAndroidRuntime") {
     group = "build"
-    description = "Build the pinned ARM64 Android rclone runtime from verified vendored source with 16 KiB page-size alignment."
+    description = "Resolve the latest stable bclone release and build its rclone-compatible ARM64 Android runtime with 16 KiB page-size alignment."
     repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
     installerScriptPath.set(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh").absolutePath)
     ndkDirectoryPath.set(androidComponents.sdkComponents.ndkDirectory.map { it.asFile.absolutePath })
     outputDirectory.set(bkxRcloneRuntimeJniDir)
+    provenanceOutputDirectory.set(bkxRcloneRuntimeAssetsDir)
     inputs.file(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/rclone-runtime-contract.sh"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
-    inputs.property("rcloneAndroidRuntime", "v1.75.1/source+vendor/android-24-arm64/16k")
+    inputs.property("rcloneAndroidRuntime", "bclone/github-latest-stable/android-24-arm64/16k")
+    // The task is @UntrackedTask because GitHub's latest-release pointer is mutable;
+    // the installer itself reuses a verified cache keyed by resolved tag + commit.
 }
 
 val verifyBkx16KbNativePageSizeContract = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkx16KbNativePageSizeContract") {
@@ -558,6 +568,10 @@ androidComponents {
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             installBkxRcloneAndroidRuntime,
             InstallBkxRcloneAndroidRuntimeTask::outputDirectory,
+        )
+        variant.sources.assets?.addGeneratedSourceDirectory(
+            installBkxRcloneAndroidRuntime,
+            InstallBkxRcloneAndroidRuntimeTask::provenanceOutputDirectory,
         )
     }
 }

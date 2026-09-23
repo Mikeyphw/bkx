@@ -7,8 +7,8 @@ No real signing material belongs in the repository.
 The default external locations are:
 
 ```text
-~/.config/bkx/android-signing.properties
-~/.config/bkx/bkx-personal.p12
+~/.config/devtool/bkx/android-signing.properties
+~/.config/devtool/bkx/bkx-personal.p12
 ```
 
 `BKX_ANDROID_SIGNING_PROPERTIES` can override the properties path. `BKX_ANDROID_KEYSTORE` can override the keystore path when running the setup helper.
@@ -55,6 +55,16 @@ Build explicitly with the permanent identity:
 gradle :app:assemblePersonalDebug
 gradle :app:assemblePersonalRelease
 ```
+
+Devtool's developer-facing build, release, and package aliases are also fail-closed on this personal identity:
+
+```bash
+devtool -r ~/Code/bkx --target bkx_android build
+devtool -r ~/Code/bkx --target bkx_android release
+devtool -r ~/Code/bkx --target bkx_android package
+```
+
+The split validation aggregates remain signing-key-independent so CI and reproducible source validation do not require access to the developer's private key.
 
 The tracked schema example remains at:
 

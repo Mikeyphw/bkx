@@ -195,7 +195,7 @@ val bkxBuildCommit = bkxResolvedBuildCommit(bkxRepositoryRoot)
 
 val bkxSigningPropertiesFile = File(
     providers.environmentVariable("BKX_ANDROID_SIGNING_PROPERTIES").orNull
-        ?: File(System.getProperty("user.home"), ".config/bkx/android-signing.properties").absolutePath,
+        ?: File(System.getProperty("user.home"), ".config/devtool/bkx/android-signing.properties").absolutePath,
 ).absoluteFile
 val bkxPersonalSigningConfigured = bkxSigningPropertiesFile.isFile
 val bkxSigningProperties = Properties().apply {
@@ -564,3 +564,25 @@ androidComponents {
 
 // Verification tasks live outside the application build configuration.
 apply(from = rootProject.file("../../build-logic/android-verification.gradle.kts"))
+
+// Personal Devtool lanes are fail-closed without making CI/reproducible verification
+// require access to the developer's private signing key. When the signing verifier
+// is present in a task graph, run it before every other task so missing/invalid
+// personal signing fails before expensive compilation, packaging, or lint work.
+tasks.configureEach {
+    if (name != "verifyBkxPersonalSigningConfigured") {
+        mustRunAfter("verifyBkxPersonalSigningConfigured")
+    }
+}
+
+tasks.register("bkxPersonalReleaseSeal") {
+    group = "verification"
+    description = "Run the full BKX Android release seal only after permanent personal signing is verified."
+    dependsOn("verifyBkxPersonalSigningConfigured", "bkxAndroidReleaseSeal")
+}
+
+tasks.register("bkxPersonalPackageAndReleaseLintSeal") {
+    group = "verification"
+    description = "Run the optimized BKX package/release-lint seal only after permanent personal signing is verified."
+    dependsOn("verifyBkxPersonalSigningConfigured", "bkxBr37PackageAndReleaseLintSeal")
+}

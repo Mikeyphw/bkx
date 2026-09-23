@@ -38,7 +38,10 @@ class Ov56RoadmapSealContractTest {
         assertTrue(gradle.contains("""tasks.register("verifyBkxCloudProductReleaseSeal")"""))
         assertTrue(gradle.contains("""tasks.named("bkxAndroidReleaseSeal")"""))
         assertTrue(gradle.contains("\"verifyBkxCloudProductReleaseSeal\""))
-        val packagePhase = devtool.substringAfter("package = [").substringBefore("]")
+        val targetTasks = devtool.substringAfter("[targets.bkx_android.tasks]").substringBefore("[targets.bkx_android.artifacts]")
+        val validationPhases = devtool.substringAfter("[validation.phases]").substringBefore("[validation]")
+        val packagePhase = validationPhases.substringAfter("package = [").substringBefore("]")
+        assertTrue(targetTasks.contains("package = [\":app:bkxPersonalPackageAndReleaseLintSeal\"]"))
         assertTrue(packagePhase.contains(":app:bkxBr37PackageAndReleaseLintSeal"))
     }
 

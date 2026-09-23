@@ -239,8 +239,10 @@ tasks.register("verifyBkxPersonalSigningContract") {
     val setup = androidRootDir.resolve("tools/setup-personal-signing.sh")
     val fingerprint = androidRootDir.resolve("tools/print-personal-signing-fingerprint.sh")
     val example = androidRootDir.resolve("gradle/bkx-release-signing.properties.example")
-    val gitignore = androidRootDir.resolve("../../.gitignore").canonicalFile
-    inputs.files(appBuild, setup, fingerprint, example, gitignore)
+    val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+    val devtool = repositoryRoot.resolve(".devtool.toml")
+    val gitignore = repositoryRoot.resolve(".gitignore")
+    inputs.files(appBuild, setup, fingerprint, example, devtool, gitignore)
 
     doLast {
         check(setup.isFile) { "Missing personal signing setup helper." }
@@ -248,10 +250,11 @@ tasks.register("verifyBkxPersonalSigningContract") {
         val buildText = appBuild.readText()
         val setupText = setup.readText()
         val exampleText = example.readText()
+        val devtoolText = devtool.readText()
         val ignoreText = gitignore.readText()
         listOf(
             "BKX_ANDROID_SIGNING_PROPERTIES",
-            ".config/bkx/android-signing.properties",
+            ".config/devtool/bkx/android-signing.properties",
             "create(\"bkxPersonal\")",
             "getByName(\"debug\")",
             "getByName(\"release\")",
@@ -262,6 +265,8 @@ tasks.register("verifyBkxPersonalSigningContract") {
             "verifyBkxPersonalSigningConfigured",
             "assemblePersonalDebug",
             "assemblePersonalRelease",
+            "bkxPersonalReleaseSeal",
+            "bkxPersonalPackageAndReleaseLintSeal",
         ).forEach { token -> check(token in buildText) { "Personal signing build contract missing: $token" } }
         check("tasks.register(\"bkxSigningStatus\")" !in buildText) { "bkxSigningStatus must use a typed configuration-cache-safe task class." }
         check("tasks.register(\"verifyBkxPersonalSigningConfigured\")" !in buildText) { "verifyBkxPersonalSigningConfigured must use a typed configuration-cache-safe task class." }
@@ -270,6 +275,10 @@ tasks.register("verifyBkxPersonalSigningContract") {
         check("storeFile=" in exampleText && "storePassword=" in exampleText && "keyAlias=" in exampleText && "keyPassword=" in exampleText) {
             "Signing example schema is incomplete."
         }
+        val devtoolTargetTasks = devtoolText.substringAfter("[targets.bkx_android.tasks]").substringBefore("[targets.bkx_android.artifacts]")
+        check("build = [\":app:assemblePersonalDebug\"]" in devtoolTargetTasks) { "Devtool build must fail closed on personal signing." }
+        check("release = [\":app:bkxPersonalReleaseSeal\"]" in devtoolTargetTasks) { "Devtool release must fail closed on personal signing." }
+        check("package = [\":app:bkxPersonalPackageAndReleaseLintSeal\"]" in devtoolTargetTasks) { "Devtool package must fail closed on personal signing." }
         check("*.jks" in ignoreText && "*.keystore" in ignoreText && "*.p12" in ignoreText && "*.pfx" in ignoreText) { "Signing key material must remain ignored by Git." }
     }
 }

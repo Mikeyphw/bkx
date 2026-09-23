@@ -53,8 +53,11 @@ class ReleasePackagingSigningNativeRuntimeContractTest {
         assertTrue(verification.contains("bkxAndroidReleaseInstrumentationSeal"))
         assertTrue(verification.contains("verifyBkxReleasePackagingSigningNativeRuntimeSeal"))
         val preflightPhase = devtool.substringAfter("preflight = [").substringBefore("]")
-        val packagePhase = devtool.substringAfter("package = [").substringBefore("]")
+        val targetTasks = devtool.substringAfter("[targets.bkx_android.tasks]").substringBefore("[targets.bkx_android.artifacts]")
+        val validationPhases = devtool.substringAfter("[validation.phases]").substringBefore("[validation]")
+        val packagePhase = validationPhases.substringAfter("package = [").substringBefore("]")
         assertFalse(preflightPhase.contains("verifyBkx16KbNativePageSizeContract"))
+        assertTrue(targetTasks.contains("package = [\":app:bkxPersonalPackageAndReleaseLintSeal\"]"))
         assertTrue(
             packagePhase.contains("verifyBkx16KbNativePageSizeContract") ||
                 packagePhase.contains("bkxBr37PackageAndReleaseLintSeal"),

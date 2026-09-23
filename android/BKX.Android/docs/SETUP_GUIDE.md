@@ -31,7 +31,7 @@ Google Drive is optional and local backup/archive/restore remains fully usable w
 
 For a personal Google Drive build:
 
-1. Run `bash ./tools/setup-personal-signing.sh` once. Keep the generated `~/.config/bkx/bkx-personal.p12` and `~/.config/bkx/android-signing.properties` permanently and back them up privately.
+1. Run `bash ./tools/setup-personal-signing.sh` once. Keep the generated `~/.config/devtool/bkx/bkx-personal.p12` and `~/.config/devtool/bkx/android-signing.properties` permanently and back them up privately.
 2. Run `gradle :app:bkxSigningStatus` and record the SHA-1 printed by the setup helper. With personal signing configured, debug and release APKs use the same certificate.
 3. Enable the Google Drive API in the Google Cloud project used by the APK.
 4. Create one Android OAuth client for package `com.mikeyphw.bkx.android` and register the SHA-1 fingerprint of the permanent BKX certificate.

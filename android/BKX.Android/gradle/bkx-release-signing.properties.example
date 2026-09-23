@@ -1,6 +1,6 @@
 # Schema example only. Do NOT copy real secrets into the repository.
 # tools/setup-personal-signing.sh writes the real owner-only file to:
-# ~/.config/bkx/android-signing.properties
+# ~/.config/devtool/bkx/android-signing.properties
 storeFile=/absolute/path/outside/repo/bkx-personal.p12
 storePassword=REPLACE_ME
 keyAlias=bkx

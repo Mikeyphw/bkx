@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-KEYSTORE_PATH="${BKX_ANDROID_KEYSTORE:-$HOME/.config/bkx/bkx-personal.p12}"
+KEYSTORE_PATH="${BKX_ANDROID_KEYSTORE:-$HOME/.config/devtool/bkx/bkx-personal.p12}"
 KEY_ALIAS="${BKX_ANDROID_KEY_ALIAS:-bkx}"
 fail() { printf 'BKX fingerprint failed: %s\n' "$*" >&2; exit 1; }
 command -v keytool >/dev/null 2>&1 || fail "keytool was not found"

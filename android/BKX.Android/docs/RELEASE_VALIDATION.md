@@ -2,6 +2,8 @@
 
 The normal release validation is driven by `.devtool.toml`. BR37 replaces the old long explicit `--task` list with optimized aggregate tasks so split validation does not rerun release packaging, release lint, or Go-backed release-evidence work during cheap preflight. The behavioral phase still owns the full Android unit suite so regressions are fixed instead of hidden.
 
+The developer-facing `build`, `release`, and `package` aliases are intentionally separate from those CI-safe validation aggregates. They run `assemblePersonalDebug`, `bkxPersonalReleaseSeal`, and `bkxPersonalPackageAndReleaseLintSeal` respectively, so a local distributable build fails immediately unless the permanent signing material under `~/.config/devtool/bkx` is configured.
+
 For the BR37 overlay/apply smoke gate, use the optimized static graph seal:
 
 ```bash

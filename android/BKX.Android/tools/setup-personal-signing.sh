@@ -2,8 +2,8 @@
 set -euo pipefail
 umask 077
 
-CONFIG_PATH="${BKX_ANDROID_SIGNING_PROPERTIES:-$HOME/.config/bkx/android-signing.properties}"
-KEYSTORE_PATH="${BKX_ANDROID_KEYSTORE:-$HOME/.config/bkx/bkx-personal.p12}"
+CONFIG_PATH="${BKX_ANDROID_SIGNING_PROPERTIES:-$HOME/.config/devtool/bkx/android-signing.properties}"
+KEYSTORE_PATH="${BKX_ANDROID_KEYSTORE:-$HOME/.config/devtool/bkx/bkx-personal.p12}"
 KEY_ALIAS="${BKX_ANDROID_KEY_ALIAS:-bkx}"
 
 fail() { printf 'BKX signing setup failed: %s\n' "$*" >&2; exit 1; }

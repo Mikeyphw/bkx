@@ -764,7 +764,7 @@ internal object ChrootctlRuntimeResolver {
     private const val MODULE_PACKAGE_SCHEMA_VERSION = 1
     private const val NATIVE_RUNTIME_SCHEMA_VERSION = 2
     private const val MIN_MODULE_VERSION_CODE = 15
-    private const val MODULE_ID = "chrootctl-magisk"
+    private const val MODULE_ID = "chrootctl"
     private const val EXPECTED_BACKEND_IMPLEMENTATION = "go"
     private const val NATIVE_RUNTIME_KIND = "go-native"
     private const val NATIVE_RUNTIME_PLATFORM = "android"

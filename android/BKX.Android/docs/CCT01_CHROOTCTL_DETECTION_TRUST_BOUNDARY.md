@@ -15,7 +15,7 @@ This overlay intentionally does **not** add chroot export/import execution yet. 
 
 BKX adapts the installed-module/runtime checks from chrootctl's Android `RuntimeResolver`:
 
-- active module: `/data/adb/modules/chrootctl-magisk`;
+- active module: `/data/adb/modules/chrootctl`;
 - `modules_update` trees are diagnostic-only and are never execution candidates; active and pending module paths are exposed separately;
 - `module.prop` identity and minimum module versionCode 15;
 - compatibility schema 3 and bridge protocol 1;

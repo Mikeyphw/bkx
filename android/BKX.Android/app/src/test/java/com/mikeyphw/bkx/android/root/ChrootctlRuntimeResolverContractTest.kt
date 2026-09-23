@@ -56,7 +56,7 @@ class ChrootctlRuntimeResolverContractTest {
               "bridgeProtocolVersion":1,
               "backend":{"implementation":"go","version":"0.11.0"},
               "nativeRuntime":{"schemaVersion":2,"kind":"go-native","platform":"android","abi":"arm64-v8a","entrypoint":"chrootctl"},
-              "module":{"id":"chrootctl-magisk","version":"1.3.0","versionCode":15,"minimumSupportedBridgeProtocolVersion":1}
+              "module":{"id":"chrootctl","version":"1.3.0","versionCode":15,"minimumSupportedBridgeProtocolVersion":1}
             }""",
         ).jsonObject
         assertTrue(ChrootctlRuntimeResolver.validateExternalCompatibilityDocument(document, identity))
@@ -85,7 +85,7 @@ class ChrootctlRuntimeResolverContractTest {
               "bridgeProtocolVersion":1,
               "backend":{"implementation":"go","version":"0.11.0"},
               "nativeRuntime":{"schemaVersion":2,"kind":"go-native","platform":"android","abi":"arm64-v8a","entrypoint":"chrootctl"},
-              "module":{"id":"chrootctl-magisk","version":"1.3.3","versionCode":18,"minimumSupportedBridgeProtocolVersion":1}
+              "module":{"id":"chrootctl","version":"1.3.3","versionCode":18,"minimumSupportedBridgeProtocolVersion":1}
             }""",
         ).jsonObject
         assertTrue(ChrootctlRuntimeResolver.validateExternalCompatibilityDocument(document, identity))

@@ -10,14 +10,14 @@ class ChrootctlReadinessCodecTest {
         val expected = ChrootctlReadiness(
             code = ChrootctlReadinessCode.Ready,
             detail = "ready",
-            selectedPath = "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
+            selectedPath = "/data/adb/modules/chrootctl/system/bin/chrootctl",
             selectedSource = "module-launcher",
-            activeModulePath = "/data/adb/modules/chrootctl-magisk",
+            activeModulePath = "/data/adb/modules/chrootctl",
             moduleInstalled = true,
             packageSealReady = true,
             runtimeSealReady = true,
             pendingUpdate = true,
-            pendingUpdatePaths = listOf("/data/adb/modules_update/chrootctl-magisk"),
+            pendingUpdatePaths = listOf("/data/adb/modules_update/chrootctl"),
             rootProvider = "KernelSU",
             abi = "arm64-v8a",
             moduleVersion = "1.3.0",
@@ -27,7 +27,7 @@ class ChrootctlReadinessCodecTest {
             operations = listOf("chroots.list", "transfer.export"),
             candidates = listOf(
                 ChrootctlBinaryCandidate(
-                    path = "/data/adb/modules/chrootctl-magisk/system/bin/chrootctl",
+                    path = "/data/adb/modules/chrootctl/system/bin/chrootctl",
                     source = "module-launcher",
                     exists = true,
                     executable = true,

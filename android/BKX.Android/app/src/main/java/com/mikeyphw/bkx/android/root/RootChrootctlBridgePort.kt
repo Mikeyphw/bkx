@@ -24,7 +24,7 @@ class ChrootctlBridgeUnavailableException(message: String) : IllegalStateExcepti
  * All executable selection and process creation remains in the UID-0 RootService.
  * The app process can choose only one of the six BKX chroot integration operations.
  */
-class RootChrootctlBridgePort(
+class RootChrootctlBridgePort internal constructor(
     private val rootClient: RootBkxServiceClient,
     private val readinessPort: ChrootctlReadinessPort,
     private val modeProvider: () -> RootAccessMode,

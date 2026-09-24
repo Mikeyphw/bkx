@@ -199,3 +199,11 @@ low_priority = false
 enabled = true
 strategy = "single"
 message = "fix(android): repair BKX BR37 optimized graph and behavioral gate v6"
+
+[workspace]
+default_target = "bkx"
+
+[workspace.groups]
+core = ["bkx"]
+android = ["bkx_android"]
+all = ["@core", "@android"]

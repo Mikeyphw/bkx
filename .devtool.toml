@@ -1,6 +1,7 @@
 [project]
-kind = "go"
 run_command = "go run ./cmd/bkx --help"
+runner = "go"
+platform = "cli"
 
 [execution]
 environment = "auto"
@@ -11,7 +12,6 @@ device_serial = ""
 manager = "auto"
 
 [targets.bkx]
-type = "go"
 root = "."
 execution_environment = "auto"
 inputs = [
@@ -27,6 +27,8 @@ outputs = [
     ".devtool/build/go/**",
     ".devtool/package/go/**",
 ]
+runner = "go"
+platform = "cli"
 
 
 [go]
@@ -40,7 +42,6 @@ vet = true
 
 # Standalone BKX Android target; embedded/root engine and product UI are validated in-process.
 [targets.bkx_android]
-type = "android"
 root = "android/BKX.Android"
 execution_environment = "native-termux"
 inputs = [
@@ -51,6 +52,8 @@ outputs = [
     "android/BKX.Android/**/build/**",
     "android/BKX.Android/artifacts/**",
 ]
+runner = "android"
+platform = "android"
 
 [targets.bkx_android.android]
 variant = "debug"

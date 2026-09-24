@@ -14,6 +14,19 @@ manager = "auto"
 type = "go"
 root = "."
 execution_environment = "auto"
+inputs = [
+    ".devtool.toml",
+    "go.mod",
+    "go.sum",
+    "cmd/**",
+    "internal/**",
+    "pkg/**",
+    "scripts/**",
+]
+outputs = [
+    ".devtool/build/go/**",
+    ".devtool/package/go/**",
+]
 
 
 [go]
@@ -30,6 +43,14 @@ vet = true
 type = "android"
 root = "android/BKX.Android"
 execution_environment = "native-termux"
+inputs = [
+    ".devtool.toml",
+    "android/BKX.Android/**",
+]
+outputs = [
+    "android/BKX.Android/**/build/**",
+    "android/BKX.Android/artifacts/**",
+]
 
 [targets.bkx_android.android]
 variant = "debug"

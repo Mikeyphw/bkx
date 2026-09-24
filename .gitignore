@@ -17,8 +17,6 @@ htmlcov/
 venv/
 *.egg-info/
 
-# Devtool runtime state
-/.devtool/
 
 # Android / Gradle generated state
 **/.gradle/
@@ -47,3 +45,6 @@ android/**/*.pfx
 .DS_Store
 Thumbs.db
 .idea/
+
+# Devtool local runtime state
+.devtool/

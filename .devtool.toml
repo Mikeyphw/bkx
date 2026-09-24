@@ -46,7 +46,7 @@ provider = "auto"
 
 max_workers = 2
 
-structured_events = false
+structured_events = true
 
 no_daemon = true
 daemon_idle_timeout_ms = 900000

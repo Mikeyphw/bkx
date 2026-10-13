@@ -218,12 +218,6 @@ no_daemon = true
 low_priority = false
 
 
-# Devtool overlay commit metadata. Keep this in overlay artifacts so apply creates the commit.
-[commit]
-enabled = true
-strategy = "single"
-message = "fix(android): repair BKX BR37 optimized graph and behavioral gate v6"
-
 [workspace]
 default_target = "bkx"
 

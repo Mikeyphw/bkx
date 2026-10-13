@@ -1,0 +1,151 @@
+# BKX-specific ACTIONS-05 entrypoint consumed by Devtool's Android CI client.
+# Personal release signing is intentionally never exercised on GitHub.
+name: BKX Android - Devtool Debug Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_dir:
+        description: 'Android project root (must be android/BKX.Android)'
+        required: true
+        type: string
+        default: android/BKX.Android
+      module:
+        description: 'Android module (must be app)'
+        required: true
+        type: string
+        default: app
+      variant:
+        description: 'Only disposable debug signing is authorized in hosted CI'
+        required: true
+        type: choice
+        options: [debug]
+      format:
+        description: 'Android output format'
+        required: true
+        type: choice
+        options: [apk, aab]
+
+permissions:
+  contents: read
+
+jobs:
+  debug-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Validate dispatch before running third-party build code
+        shell: bash
+        env:
+          INPUT_PROJECT: ${{ inputs.project_dir }}
+          INPUT_MODULE: ${{ inputs.module }}
+          INPUT_VARIANT: ${{ inputs.variant }}
+          INPUT_FORMAT: ${{ inputs.format }}
+        run: |
+          set -euo pipefail
+          [[ "$INPUT_PROJECT" == 'android/BKX.Android' ]] || exit 2
+          [[ "$INPUT_MODULE" == 'app' ]] || exit 2
+          [[ "$INPUT_VARIANT" == 'debug' ]] || exit 2
+          case "$INPUT_FORMAT" in apk|aab) ;; *) exit 2 ;; esac
+          echo "BKX_FORMAT=$INPUT_FORMAT" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Bind checkout to the dispatched source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          test -f android/BKX.Android/gradlew
+          test ! -L android/BKX.Android/gradlew
+          test -f scripts/build-go-android-runtime.sh
+          test -f scripts/install-rclone-android-runtime.sh
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-go@v6
+        with:
+          # The bclone release built by BKX can require a newer Go toolchain
+          # than BKX's Go 1.23 minimum; its own script verifies the exact source.
+          go-version: stable
+          cache: true
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install BKX's declared Android SDK and NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install \
+            'platforms;android-36' \
+            'build-tools;36.0.0' \
+            'ndk;29.0.14206865'
+          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build BKX debug package and generated native runtimes
+        shell: bash
+        env:
+          BKX_BUILD_COMMIT: ${{ github.sha }}
+          BKX_RCLONE_BUILD_JOBS: '2'
+        run: |
+          set -euo pipefail
+          cd android/BKX.Android
+          chmod +x ./gradlew
+          case "$BKX_FORMAT" in
+            apk) task=:app:assembleDebug ;;
+            aab) task=:app:bundleDebug ;;
+            *) exit 2 ;;
+          esac
+          ./gradlew --no-daemon --stacktrace "$task"
+
+      - name: Verify exactly one package, native identity and signature
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$BKX_FORMAT" in
+            apk) source_dir='android/BKX.Android/app/build/outputs/apk/debug' ;;
+            aab) source_dir='android/BKX.Android/app/build/outputs/bundle/debug' ;;
+            *) exit 2 ;;
+          esac
+          test -d "$source_dir" && test ! -L "$source_dir"
+          shopt -s nullglob
+          packages=("$source_dir"/*."$BKX_FORMAT")
+          [[ "${#packages[@]}" -eq 1 ]] || { echo 'Expected exactly one BKX package' >&2; exit 2; }
+          test -s "${packages[0]}" && test ! -L "${packages[0]}"
+
+          out_dir="$RUNNER_TEMP/bkx-devtool-output"
+          mkdir -p "$out_dir"
+          package="$out_dir/bkx-debug.$BKX_FORMAT"
+          cp -- "${packages[0]}" "$package"
+          if [[ "$BKX_FORMAT" == apk ]]; then
+            go run scripts/verify-native-page-size.go apk --min-page-size 16384 "$package"
+            unzip -Z -1 "$package" | grep -Fqx 'lib/arm64-v8a/libbkxgo.so'
+            unzip -Z -1 "$package" | grep -Fqx 'lib/arm64-v8a/libbkxrclone_exec.so'
+            unzip -Z -1 "$package" | grep -Fqx 'assets/bkx-rclone-runtime.properties'
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$package"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$package" |
+              grep -F "package: name='com.mikeyphw.bkx.android'"
+          else
+            unzip -Z -1 "$package" | grep -Fqx 'base/lib/arm64-v8a/libbkxgo.so'
+            unzip -Z -1 "$package" | grep -Fqx 'base/lib/arm64-v8a/libbkxrclone_exec.so'
+            unzip -Z -1 "$package" | grep -Fqx 'base/assets/bkx-rclone-runtime.properties'
+            jarsigner -verify -strict "$package"
+          fi
+          sha256sum "$package"
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact debug package for Devtool inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: bkx-android-debug-${{ inputs.format }}
+          path: ${{ steps.verify.outputs.package }}
+          if-no-files-found: error
+          retention-days: 7

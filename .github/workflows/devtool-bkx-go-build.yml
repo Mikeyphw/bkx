@@ -1,0 +1,44 @@
+# Explicit, artifact-producing Go build that can be dispatched with
+# `devtool actions run devtool-bkx-go-build.yml --ref main --yes`.
+name: BKX Go - Devtool Build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Validate immutable source and Go tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+          go test ./...
+          go vet ./...
+      - name: Build executable and Android ARM64 Go runtime
+        shell: bash
+        env:
+          BKX_BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          bash scripts/build-go-release.sh "$RUNNER_TEMP/bkx-go-release"
+          cd "$RUNNER_TEMP/bkx-go-release"
+          sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bkx-go-linux-amd64-android-arm64
+          path: ${{ runner.temp }}/bkx-go-release/
+          if-no-files-found: error
+          retention-days: 7

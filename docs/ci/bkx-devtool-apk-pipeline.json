@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "name": "bkx-go-android-apk",
+  "nodes": [
+    {
+      "id": "source",
+      "kind": "local-git"
+    },
+    {
+      "id": "go_build",
+      "kind": "github-dispatch",
+      "needs": [
+        "source"
+      ],
+      "workflow": "devtool-bkx-go-build.yml",
+      "ref": "main"
+    },
+    {
+      "id": "android_build",
+      "kind": "github-dispatch",
+      "needs": [
+        "source"
+      ],
+      "workflow": "devtool-android-build.yml",
+      "ref": "main",
+      "inputs": {
+        "project_dir": "android/BKX.Android",
+        "module": "app",
+        "variant": "debug",
+        "format": "apk"
+      }
+    },
+    {
+      "id": "go_result",
+      "kind": "github-result",
+      "needs": [
+        "go_build"
+      ],
+      "from": "go_build"
+    },
+    {
+      "id": "android_result",
+      "kind": "github-result",
+      "needs": [
+        "android_build"
+      ],
+      "from": "android_build"
+    },
+    {
+      "id": "go_archive",
+      "kind": "github-archive",
+      "needs": [
+        "go_build",
+        "go_result"
+      ],
+      "from": "go_build",
+      "artifact_name": "bkx-go-linux-amd64-android-arm64"
+    },
+    {
+      "id": "android_archive",
+      "kind": "github-archive",
+      "needs": [
+        "android_build",
+        "android_result"
+      ],
+      "from": "android_build",
+      "artifact_name": "bkx-android-debug-apk"
+    }
+  ]
+}

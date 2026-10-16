@@ -225,3 +225,70 @@ default_target = "bkx"
 core = ["bkx"]
 android = ["bkx_android"]
 all = ["@core", "@android"]
+
+[targets.bkx.jobs.ci-actions-contract]
+runner = "command"
+command = ["python3", "scripts/devtool_actions_contract.py"]
+inputs = [".devtool.toml", ".github/workflows/*.yml", "scripts/devtool_actions_contract.py"]
+metadata = { read_only = true }
+
+[targets.bkx.workflows]
+ci-preflight = [
+  { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+]
+ci-local = [
+  { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
+  { id = "go-unit", ref = "runner:go#test", depends_on = ["actions-contract"] },
+  { id = "android-contracts", ref = "target:bkx_android#test", depends_on = ["actions-contract"] },
+]
+
+
+[workspace.scheduler]
+parallel = true
+max_parallel_nodes = 2
+max_gradle_nodes = 1
+max_dotnet_nodes = 1
+
+[wrapper]
+schema = 2
+default_command = "build"
+
+[wrapper.commands.build]
+description = "build through canonical Devtool and EXO"
+devtool = "build"
+target = "bkx"
+allow_passthrough = true
+
+[wrapper.commands.test]
+description = "test through canonical Devtool and EXO"
+devtool = "test"
+target = "bkx"
+allow_passthrough = true
+
+[wrapper.commands.android-build]
+description = "android-build through canonical Devtool and EXO"
+devtool = "build"
+target = "bkx_android"
+allow_passthrough = true
+
+[wrapper.commands.android-test]
+description = "android-test through canonical Devtool and EXO"
+devtool = "test"
+target = "bkx_android"
+allow_passthrough = true
+
+[wrapper.commands.android-validate]
+description = "android-validate through canonical Devtool and EXO"
+devtool = "validate"
+target = "bkx_android"
+allow_passthrough = true
+
+[wrapper.commands.ci-preflight]
+description = "ci-preflight through canonical Devtool and EXO"
+workflow = "ci-preflight"
+target = "bkx"
+
+[wrapper.commands.ci-local]
+description = "ci-local through canonical Devtool and EXO"
+workflow = "ci-local"
+target = "bkx"

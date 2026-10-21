@@ -1,7 +1,6 @@
 package com.mikeyphw.bkx.android.root
 
 import java.io.File
-import java.nio.file.Files
 import org.json.JSONObject
 
 internal data class TrustedChrootctlExportArtifact(
@@ -27,13 +26,13 @@ internal object ChrootctlManagedArtifactPolicy {
         val rootText = data.optString("managedRoot", data.optString("directory", "")).trim()
         require(rootText.startsWith('/')) { "chrootctl managed artifact root is invalid." }
         val configuredRoot = File(rootText)
-        require(!Files.isSymbolicLink(configuredRoot.toPath())) { "chrootctl managed artifact root must not be a symlink." }
+        require(configuredRoot.canonicalFile == configuredRoot.absoluteFile) { "chrootctl managed artifact root must not be a symlink." }
         val root = configuredRoot.canonicalFile
         require(root.isDirectory) { "chrootctl managed artifact root is not a directory." }
         val requested = File(requestedPath)
-        require(!Files.isSymbolicLink(requested.toPath())) { "Managed chrootctl export must not be a symlink." }
+        require(requested.canonicalFile == requested.absoluteFile) { "Managed chrootctl export must not be a symlink." }
         val canonical = requested.canonicalFile
-        require(canonical.toPath().startsWith(root.toPath()) && canonical != root) {
+        require(canonical.path.startsWith(root.path + File.separator) && canonical != root) {
             "Requested export is outside the chrootctl managed artifact root."
         }
         require(canonical.isFile) { "Requested chrootctl export is not a regular file." }

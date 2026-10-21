@@ -304,7 +304,7 @@ class BkxRootEngineService : RootService() {
         if (!directory.exists() && !directory.mkdir()) return chrootctlFailure(requestId, "IMPORT_STAGING_FAILED", "Unable to create chrootctl transfer staging.")
         Os.chmod(directory.path, 0x1c0) // 0700
         val stat = Os.lstat(directory.path)
-        if (stat.st_uid.toInt() != 0 || java.nio.file.Files.isSymbolicLink(directory.toPath()) || directory.canonicalFile != directory.absoluteFile) {
+        if (stat.st_uid.toInt() != 0 || directory.canonicalFile != directory.absoluteFile) {
             return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "chrootctl transfer staging is not a trusted root-owned directory.")
         }
         val id = UUID.randomUUID().toString().replace("-", "")
@@ -347,7 +347,7 @@ class BkxRootEngineService : RootService() {
             return chrootctlFailure(requestId.take(128).ifBlank { "unknown" }, "INVALID_IMPORT_CLEANUP", "Invalid chroot import cleanup request.")
         }
         val directory = File("/data/local/tmp/chrootctl-transfer")
-        if (!directory.isDirectory || java.nio.file.Files.isSymbolicLink(directory.toPath()) || directory.canonicalFile != directory.absoluteFile) {
+        if (!directory.isDirectory || directory.canonicalFile != directory.absoluteFile) {
             return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "chrootctl transfer staging is not a trusted directory.")
         }
         val stat = Os.lstat(directory.path)
@@ -357,7 +357,7 @@ class BkxRootEngineService : RootService() {
         val matches = directory.listFiles().orEmpty().filter { it.isFile && !it.name.startsWith(".") && it.name.startsWith("$stagingId-") }
         if (matches.size != 1) return chrootctlFailure(requestId, "IMPORT_STAGING_NOT_FOUND", "The exact retained chroot import staging artifact was not found.")
         val target = matches.single()
-        if (java.nio.file.Files.isSymbolicLink(target.toPath()) || target.canonicalFile.parentFile != directory.canonicalFile) {
+        if (target.canonicalFile != target.absoluteFile || target.canonicalFile.parentFile != directory.canonicalFile) {
             return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "The retained chroot import staging artifact is unsafe.")
         }
         val actual = MessageDigest.getInstance("SHA-256").let { digest ->
@@ -365,7 +365,7 @@ class BkxRootEngineService : RootService() {
         }
         if (!actual.equals(checksumSha256, true)) return chrootctlFailure(requestId, "IMPORT_STAGING_CHANGED", "The retained chroot import staging artifact changed; cleanup was refused.")
         val sidecar = File(directory, target.name + ".sha256")
-        if (sidecar.exists() && (java.nio.file.Files.isSymbolicLink(sidecar.toPath()) || sidecar.canonicalFile.parentFile != directory.canonicalFile)) {
+        if (sidecar.exists() && (sidecar.canonicalFile != sidecar.absoluteFile || sidecar.canonicalFile.parentFile != directory.canonicalFile)) {
             return chrootctlFailure(requestId, "IMPORT_STAGING_UNTRUSTED", "The retained checksum sidecar is unsafe.")
         }
         check(target.delete()) { "Unable to delete retained chroot import staging artifact." }

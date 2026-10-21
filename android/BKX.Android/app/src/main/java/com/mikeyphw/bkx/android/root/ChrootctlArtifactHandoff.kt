@@ -97,11 +97,11 @@ class ChrootctlArtifactHandoff(
     fun cleanup(staged: ChrootctlStagedArtifact): Boolean {
         val root = stagingRootOrNull()?.canonicalFile ?: return false
         val file = File(staged.stagedPath).canonicalFile
-        if (!file.toPath().startsWith(root.toPath()) || file == root) return false
+        if (!file.path.startsWith(root.path + File.separator) || file == root) return false
         val removed = !file.exists() || (file.isFile && file.delete())
         if (!removed) return false
         val parent = file.parentFile
-        if (parent != null && parent != root && parent.toPath().startsWith(root.toPath())) {
+        if (parent != null && parent != root && parent.path.startsWith(root.path + File.separator)) {
             parent.listFiles()?.takeIf { it.isEmpty() }?.let { parent.delete() }
         }
         return true

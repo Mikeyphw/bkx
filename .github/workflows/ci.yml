@@ -44,3 +44,25 @@ jobs:
       - name: BKX Android release packaging contract
         run: |
           gradle -p android/BKX.Android             :app:verifyBkxReleasePackagingSigningNativeRuntimeSeal             :app:testDebugUnitTest             :app:lintDebug             :app:lintRelease             --no-daemon --stacktrace
+
+      # Preserve lint diagnostics on failure; normal lintDebug/lintRelease remain strict gates.
+      - name: Print full Android Lint error reports
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          for report in android/BKX.Android/app/build/reports/lint-results-debug.xml android/BKX.Android/app/build/reports/lint-results-release.xml android/BKX.Android/app/build/reports/lint-results-debug.txt android/BKX.Android/app/build/reports/lint-results-release.txt; do
+            if [[ -f "$report" ]]; then
+              echo "=== ANDROID_LINT_REPORT: $report ==="
+              cat "$report"
+            fi
+          done
+      - name: Retain full Android Lint reports on failed CI
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bkx-android-ci-lint-reports
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            android/BKX.Android/app/build/reports/lint-results-debug.*
+            android/BKX.Android/app/build/reports/lint-results-release.*

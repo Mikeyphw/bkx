@@ -308,7 +308,7 @@ internal object ChrootctlRuntimeResolver {
             if (metadata.boolean("executable") != file.canExecute()) return null
         }
         val actual = activeModuleDir.walkTopDown()
-            .onEnter { directory -> !java.nio.file.Files.isSymbolicLink(directory.toPath()) }
+            .onEnter { directory -> runCatching { directory.canonicalFile == directory.absoluteFile }.getOrDefault(false) }
             .filter(File::isFile)
             .map { it.relativeTo(activeModuleDir).invariantSeparatorsPath }
             .filter { it != MODULE_PACKAGE_MANIFEST_PATH && !isModuleManagerMetadata(it) }
@@ -353,7 +353,7 @@ internal object ChrootctlRuntimeResolver {
             if (metadata.boolean("executable") != file.canExecute()) return false
         }
         val actual = runtimeRoot.walkTopDown()
-            .onEnter { directory -> !java.nio.file.Files.isSymbolicLink(directory.toPath()) }
+            .onEnter { directory -> runCatching { directory.canonicalFile == directory.absoluteFile }.getOrDefault(false) }
             .filter(File::isFile)
             .map { it.relativeTo(runtimeRoot).invariantSeparatorsPath }
             .filter { it != "runtime-manifest.json" }
@@ -489,7 +489,7 @@ internal object ChrootctlRuntimeResolver {
     }
 
     private fun isCanonicalTrustedModuleDir(path: File): Boolean {
-        if (!path.isDirectory || java.nio.file.Files.isSymbolicLink(path.toPath())) return false
+        if (!path.isDirectory || runCatching { path.canonicalFile != path.absoluteFile }.getOrDefault(true)) return false
         val canonical = runCatching { path.canonicalFile }.getOrNull() ?: return false
         val activeCanonical = runCatching { activeModuleDir.canonicalFile }.getOrNull() ?: return false
         if (canonical != path.absoluteFile || !(canonical == activeCanonical || canonical.path.startsWith(activeCanonical.path + File.separator))) return false
@@ -498,7 +498,7 @@ internal object ChrootctlRuntimeResolver {
     }
 
     private fun isCanonicalTrustedModuleFile(path: File): Boolean {
-        if (!path.isFile || java.nio.file.Files.isSymbolicLink(path.toPath())) return false
+        if (!path.isFile || runCatching { path.canonicalFile != path.absoluteFile }.getOrDefault(true)) return false
         val canonical = runCatching { path.canonicalFile }.getOrNull() ?: return false
         val activeCanonical = runCatching { activeModuleDir.canonicalFile }.getOrNull() ?: return false
         if (canonical != path.absoluteFile || !canonical.path.startsWith(activeCanonical.path + File.separator)) return false
@@ -507,7 +507,7 @@ internal object ChrootctlRuntimeResolver {
     }
 
     private fun isTrustedRootExecutable(path: File): Boolean {
-        if (!path.isFile || !path.canExecute() || java.nio.file.Files.isSymbolicLink(path.toPath())) return false
+        if (!path.isFile || !path.canExecute() || runCatching { path.canonicalFile != path.absoluteFile }.getOrDefault(true)) return false
         val canonical = runCatching { path.canonicalFile }.getOrNull() ?: return false
         if (canonical != path.absoluteFile) return false
         val stat = runCatching { Os.lstat(path.path) }.getOrNull() ?: return false

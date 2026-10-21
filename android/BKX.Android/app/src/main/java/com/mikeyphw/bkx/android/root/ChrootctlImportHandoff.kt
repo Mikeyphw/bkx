@@ -19,7 +19,7 @@ class ChrootctlImportHandoff(context: Context, private val rootClient: RootBkxSe
         require(archive.isFile && archive.length() > 0) { "BKX import acquisition is missing or empty." }
         val root=acquisitionRoot().canonicalFile
         val file=archive.canonicalFile
-        require(file.toPath().startsWith(root.toPath()) && file != root) { "Only BKX-owned import acquisition files may cross the root handoff." }
+        require(file.path.startsWith(root.path + File.separator) && file != root) { "Only BKX-owned import acquisition files may cross the root handoff." }
         val pfd=ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
         val raw=try { rootClient.chrootctlStageImportArchive(BridgeRequestIdPolicy.normalize(requestId), file.name, pfd) } finally { runCatching { pfd.close() } }
         val envelope=JSONObject(raw)
@@ -36,7 +36,7 @@ class ChrootctlImportHandoff(context: Context, private val rootClient: RootBkxSe
 
     fun cleanupAcquisition(file: File): Boolean {
         val root=acquisitionRoot().canonicalFile; val candidate=file.canonicalFile
-        if(candidate==root || !candidate.toPath().startsWith(root.toPath())) return false
+        if(candidate==root || !candidate.path.startsWith(root.path + File.separator)) return false
         return !candidate.exists() || (candidate.isFile && candidate.delete())
     }
 }

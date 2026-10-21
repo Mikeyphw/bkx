@@ -2434,9 +2434,11 @@ tasks.register("bkxAndroidReleaseFinalSeal") {
 tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
     group = "verification"
     description = "Verifies BR35 release packaging, signing, native runtime, CI, and exact-artifact qualification contracts."
+    // Resolve project layout at configuration time. Only the plain path String is
+    // captured by doLast, so Gradle's configuration cache never serializes Project.
+    val releaseSealRepositoryRootPath = rootProject.layout.projectDirectory.asFile.resolve("../..").canonicalPath
     doLast {
-        val androidRootDir = rootProject.layout.projectDirectory.asFile
-        val repositoryRoot = androidRootDir.resolve("../..").canonicalFile
+        val repositoryRoot = java.io.File(releaseSealRepositoryRootPath)
         val appBuild = repositoryRoot.resolve("android/BKX.Android/app/build.gradle.kts").readText()
         val androidBuild = repositoryRoot.resolve("android/BKX.Android/build.gradle.kts").readText()
         val verification = repositoryRoot.resolve("build-logic/android-verification.gradle.kts").readText()

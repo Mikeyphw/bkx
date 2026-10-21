@@ -66,3 +66,15 @@ jobs:
           path: |
             android/BKX.Android/app/build/reports/lint-results-debug.*
             android/BKX.Android/app/build/reports/lint-results-release.*
+
+      # Retain all JVM test failures, not only Gradle's summarized first assertion.
+      - name: Retain Android JVM test reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: bkx-android-ci-unit-test-reports
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            android/BKX.Android/app/build/test-results/testDebugUnitTest/**/*.xml
+            android/BKX.Android/app/build/reports/tests/testDebugUnitTest/**

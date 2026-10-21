@@ -30,7 +30,7 @@ class ChrootImportUiContractTest {
         val files=source("core/files/FilesystemBrowserModels.kt")
         val ui=source("feature/backup/BackupScreen.kt")
         assertTrue("ChrootImportArchive(false, false, allowRemote = true)" in files)
-        assertTrue("Browse local" in ui && "Browse remote" in ui)
+        assertTrue("Browse local" in ui && "Browse cloud / remote" in ui)
         assertTrue("RcloneConfigManager(context).snapshot().profiles" in ui)
     }
 
@@ -38,7 +38,10 @@ class ChrootImportUiContractTest {
         val screen = java.io.File("src/main/java/com/mikeyphw/bkx/android/feature/backup/BackupScreen.kt").readText()
         assertTrue(screen.contains("RcloneConfigManager(context).snapshot().profiles"))
         assertTrue(screen.contains("Google Drive ·"))
-        assertFalse(screen.contains("profiles.filterNot { it.managedByBkx }"))
+        val importScreen = screen.substringAfter("private fun ChrootImportScreen(")
+        val importProfiles = importScreen.substringAfter("val importRemotes =").substringBefore("\n")
+        assertTrue("RcloneConfigManager(context).snapshot().profiles" in importProfiles)
+        assertFalse("filterNot" in importProfiles)
     }
 
     @Test fun invalidatingPreviewAttemptsGuardedRootStagingCleanup() {

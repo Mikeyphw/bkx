@@ -63,9 +63,12 @@ class ChrootctlBridgeTransportContractTest {
         assertTrue("operationLedger.recordStarted" in port)
         assertTrue("operationLedger.recordTerminal" in port)
         assertTrue("getSharedPreferences" in ledger)
-        assertFalse("password" in ledger)
-        assertFalse("requestJson" in ledger)
-        assertFalse("payload" in ledger)
+        val ledgerImplementation = ledger.substringAfter("internal class ChrootctlOperationLedger(")
+        assertTrue("put(\"operationId\"" in ledgerImplementation)
+        assertTrue("put(\"terminal\"" in ledgerImplementation)
+        assertFalse("put(\"password\"" in ledgerImplementation)
+        assertFalse("put(\"requestJson\"" in ledgerImplementation)
+        assertFalse("put(\"payload\"" in ledgerImplementation)
     }
 
 }

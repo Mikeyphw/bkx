@@ -45,7 +45,7 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
             process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer ->
                 if (requestJson != null) writer.write(requestJson)
             }
-            finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+            finished = process.waitForChrootctlCompat(timeoutSeconds)
             timedOut = !finished
             if (timedOut) terminateTree(process, failures)
         } catch (interrupted: InterruptedException) {
@@ -54,7 +54,7 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
             Thread.currentThread().interrupt()
             throw interrupted
         } finally {
-            if (!finished && process.isAlive) terminateTree(process, failures)
+            if (!finished && process.isRunningChrootctlCompat()) terminateTree(process, failures)
             stdoutThread.join(READER_JOIN_TIMEOUT_MS)
             stderrThread.join(READER_JOIN_TIMEOUT_MS)
         }
@@ -82,7 +82,7 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
         var timedOut = false
         try {
             process.outputStream.bufferedWriter(StandardCharsets.UTF_8).use { writer -> writer.write(requestJson) }
-            finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+            finished = process.waitForChrootctlCompat(timeoutSeconds)
             timedOut = !finished
             if (timedOut) terminateTree(process, failures)
         } catch (interrupted: InterruptedException) {
@@ -91,7 +91,7 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
             Thread.currentThread().interrupt()
             throw interrupted
         } finally {
-            if (!finished && process.isAlive) terminateTree(process, failures)
+            if (!finished && process.isRunningChrootctlCompat()) terminateTree(process, failures)
             stdoutThread.join(READER_JOIN_TIMEOUT_MS)
             stderrThread.join(READER_JOIN_TIMEOUT_MS)
             runCatching { output.flush() }
@@ -127,7 +127,8 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
         runCatching {
             val rootPid = processPid(process)
             if (rootPid <= 0) {
-                process.destroyForcibly()
+                failures += "process PID unavailable; descendant termination cannot be verified"
+                process.killChrootctlCompat()
                 return@runCatching
             }
             val known = linkedSetOf<Int>()
@@ -149,7 +150,7 @@ internal class ChrootctlBridgeProcess(private val executable: String) {
             }
             refresh()
             signalKnown(OsConstants.SIGKILL)
-            runCatching { process.destroyForcibly() }
+            runCatching { process.killChrootctlCompat() }
         }.onFailure { failures += "process-tree termination failed: ${it.message ?: it.javaClass.simpleName}" }
     }
 
@@ -282,3 +283,34 @@ internal fun validateChrootctlProcessResult(
 }
 
 private const val MAX_VALIDATED_RESPONSE_BYTES = 1024 * 1024
+
+/** Java Process timeout/isAlive/destroyForcibly APIs are unavailable before Android 26. */
+internal fun Process.isRunningChrootctlCompat(): Boolean = try {
+    exitValue()
+    false
+} catch (_: IllegalThreadStateException) {
+    true
+}
+
+/** Bounded polling uses only Android API-24-compatible Process methods; interruption propagates. */
+internal fun Process.waitForChrootctlCompat(timeoutSeconds: Long): Boolean {
+    require(timeoutSeconds >= 0) { "Negative chrootctl process timeout" }
+    val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+    while (true) {
+        if (!isRunningChrootctlCompat()) return true
+        val remaining = deadline - System.nanoTime()
+        if (remaining <= 0L) return false
+        TimeUnit.NANOSECONDS.sleep(minOf(remaining, TimeUnit.MILLISECONDS.toNanos(50)))
+    }
+}
+
+/** Try a direct OS-level SIGKILL on the known PID, then close the Process handle. */
+internal fun Process.killChrootctlCompat() {
+    val pid = runCatching {
+        val field = javaClass.getDeclaredField("pid")
+        field.isAccessible = true
+        (field.get(this) as? Number)?.toInt() ?: -1
+    }.getOrDefault(-1)
+    if (pid > 0) runCatching { Os.kill(pid, OsConstants.SIGKILL) }
+    destroy() // API 1 fallback when reflection is denied or PID is unavailable
+}

@@ -470,13 +470,13 @@ internal object ChrootctlRuntimeResolver {
         val outThread = drain(process.inputStream, stdout, "bkx-chrootctl-probe-out")
         val errThread = drain(process.errorStream, stderr, "bkx-chrootctl-probe-err")
         val finished = try {
-            process.waitFor(PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            process.waitForChrootctlCompat(PROBE_TIMEOUT_SECONDS)
         } catch (interrupted: InterruptedException) {
-            process.destroyForcibly()
+            process.killChrootctlCompat()
             Thread.currentThread().interrupt()
             throw interrupted
         }
-        if (!finished) process.destroyForcibly()
+        if (!finished) process.killChrootctlCompat()
         outThread.join(PROBE_READER_JOIN_MS)
         errThread.join(PROBE_READER_JOIN_MS)
         return ProcessResult(

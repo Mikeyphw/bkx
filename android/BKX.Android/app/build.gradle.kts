@@ -391,6 +391,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit4)
+    // JVM Android unit tests need a real JSONObject; android.jar supplies only stubs.
+    testImplementation(libs.json.jvm)
     // kotlin.test.Test/assert* and assertFailsWith are used by the chroot contract suite.
     // Bind kotlin.test to our existing JUnit 4 runner rather than rewriting tests.
     testImplementation(libs.kotlin.test.junit)

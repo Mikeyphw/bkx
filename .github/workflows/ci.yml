@@ -12,6 +12,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23.x'
+      - name: Native Devtool and R1 source contracts (not device qualification)
+        run: |
+          go run ./cmd/devtoolgates actions
+          go run ./cmd/devtoolgates r1
       - name: BKX Go/Kotlin maintenance seal
         run: bash ./scripts/validate.sh
 
@@ -26,10 +30,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.7.1'
-      - uses: android-actions/setup-android@v3
-      - name: Install Android SDK lane
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools ndk;29.0.14206865'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Verify Android SDK and NDK installation
         run: |
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;29.0.14206865"
+          set -euo pipefail
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
+          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
       - name: BKX Android release packaging contract
         run: |
           gradle -p android/BKX.Android             :app:verifyBkxReleasePackagingSigningNativeRuntimeSeal             :app:testDebugUnitTest             :app:lintDebug             :app:lintRelease             --no-daemon --stacktrace

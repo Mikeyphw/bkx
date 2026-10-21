@@ -75,17 +75,21 @@ jobs:
           go-version: stable
           cache: true
 
-      - uses: android-actions/setup-android@v3
+      # Same hosted Android bootstrap contract as Skybind's passing workflow.
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools ndk;29.0.14206865'
+          log-accepted-android-sdk-licenses: 'false'
 
-      - name: Install BKX's declared Android SDK and NDK
+      - name: Verify Skybind-style installed Android SDK and BKX native NDK
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install \
-            'platforms;android-36' \
-            'build-tools;36.0.0' \
-            'ndk;29.0.14206865'
+          test -f "$ANDROID_HOME/platforms/android-36/android.jar"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          test -x "$ANDROID_HOME/build-tools/36.0.0/aapt"
           test -f "$ANDROID_HOME/ndk/29.0.14206865/source.properties"
+          test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
 
       - uses: gradle/actions/setup-gradle@v4
 

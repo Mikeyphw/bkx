@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -30,6 +31,11 @@ import com.mikeyphw.bkx.android.app.ui.components.BkxStatusPill
 import com.mikeyphw.bkx.android.app.ui.components.BkxSurfaceCard
 import com.mikeyphw.bkx.android.app.ui.theme.BkxTokens
 import com.mikeyphw.bkx.android.core.remotes.RcloneConfigManager
+import com.mikeyphw.bkx.android.r1.SkybindR1ReadClient
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun RcloneRemotesScreen(
@@ -39,6 +45,11 @@ fun RcloneRemotesScreen(
 ) {
     val context = LocalContext.current
     val manager = remember(context) { RcloneConfigManager(context) }
+    val skybindScope = rememberCoroutineScope()
+    var skybindRemote by remember { mutableStateOf("") }
+    var skybindPath by remember { mutableStateOf("") }
+    var skybindResult by remember { mutableStateOf("Not connected. An operator must approve this running BKX process.") }
+    var skybindBusy by remember { mutableStateOf(false) }
     var snapshot by remember { mutableStateOf(manager.snapshot()) }
     var message by remember { mutableStateOf<String?>(null) }
     val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -109,6 +120,48 @@ fun RcloneRemotesScreen(
                 ) { Text("Remove configuration") }
             }
             message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+
+        BkxSurfaceCard {
+            Text("Skybind · live read-only provider", style = MaterialTheme.typography.titleLarge)
+            Text("Uses Skybind's authenticated broker, not BKX rclone. Start the Skybind authority foreground session and operator gateway; then approve this BKX PID. No automatic fallback.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(
+                value = skybindRemote, onValueChange = { skybindRemote = it },
+                label = { Text("Approved Skybind remote") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = skybindPath, onValueChange = { skybindPath = it },
+                label = { Text("Relative path (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+            )
+            listOf("rclone.lsjson" to "List", "rclone.size" to "Size",
+                "rclone.listremotes" to "Remotes", "rclone.version" to "Version",
+                "system.capabilities" to "Capabilities").forEach { (op, label) ->
+                OutlinedButton(
+                    enabled = !skybindBusy,
+                    onClick = {
+                        val remote = skybindRemote.trim()
+                        val path = skybindPath.trim()
+                        skybindBusy = true
+                        skybindResult = "Waiting for an operator-approved grant for this BKX process…"
+                        skybindScope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    SkybindR1ReadClient.read(op, remote, path)
+                                }
+                                skybindResult = result.toString().take(16384)
+                            } catch (e: Exception) {
+                                // No token, exception stack or credentials are shown.
+                                skybindResult = "Read unavailable or denied. Check gateway, approved PID/scope and SELinux."
+                            } finally {
+                                skybindBusy = false
+                            }
+                        }
+                    }
+                ) { Text("Skybind $label") }
+            }
+            Text(skybindResult, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
 
         if (importedProfiles.isNotEmpty()) {

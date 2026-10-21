@@ -23,7 +23,7 @@ class BackupEngineUxContractTest {
 
     @Test fun resticReviewUsesBackendDryRun() {
         val repository = RepositoryDefinition(1, "phone", "Phone", "restic", "local", "/storage/emulated/0/BKX/restic", null, false, "now", "now")
-        val request = RepositoryRequestBuilder.snapshot("review", repository, listOf(source.stagedPath), dryRun = true)
+        val request = RepositoryRequestBuilder.snapshot("review", repository, listOf(requireNotNull(source.stagedPath)), dryRun = true)
         assertEquals("backup.snapshot", request.operation)
         assertEquals(true, request.payload["dry_run"]?.toString()?.toBoolean())
     }

@@ -1,0 +1,80 @@
+# Source-bound BKX debug app + AndroidJUnit instrumentation candidate.
+# Debug APKs are UNQUALIFIED; CI never installs, signs with a private release
+# key, or changes a device. Android acceptance requires independent compatible
+# signing, installed-app identity and root-operator approval.
+name: BKX R1 Android Device Acceptance APKs
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  apk-pair:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Pin source and expected test
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -f android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/r1/SkybindR1LiveBrokerAcceptanceTest.kt
+          test -f android/BKX.Android/app/src/debug/java/com/mikeyphw/bkx/android/r1/SkybindR1ReplayProbeService.kt
+          test -f android/BKX.Android/app/src/debug/AndroidManifest.xml
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools ndk;29.0.14206865'
+          log-accepted-android-sdk-licenses: 'false'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile debug app and instrumentation under the same ephemeral debug signer
+        shell: bash
+        env:
+          BKX_BUILD_COMMIT: ${{ github.sha }}
+          BKX_RCLONE_BUILD_JOBS: '2'
+        run: |
+          set -euo pipefail
+          cd android/BKX.Android
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Verify exact APK pair and create bounded source identity receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP=android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk
+          TEST=android/BKX.Android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          test -s "$APP" && test -s "$TEST"
+          test ! -L "$APP" && test ! -L "$TEST"
+          APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          "$APKSIGNER" verify --verbose --print-certs "$APP" > "$RUNNER_TEMP/app-signature.txt"
+          "$APKSIGNER" verify --verbose --print-certs "$TEST" > "$RUNNER_TEMP/test-signature.txt"
+          grep -q 'Verifies' "$RUNNER_TEMP/app-signature.txt"
+          grep -q 'Verifies' "$RUNNER_TEMP/test-signature.txt"
+          APP_CERT="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/app-signature.txt" | head -1)"
+          TEST_CERT="$(sed -n 's/.*Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/test-signature.txt" | head -1)"
+          [[ "$APP_CERT" =~ ^[0-9a-f]{64}$ && "$APP_CERT" == "$TEST_CERT" ]]
+          mkdir -p "$RUNNER_TEMP/bkx-r1-androidtest-candidate"
+          cp "$APP" "$RUNNER_TEMP/bkx-r1-androidtest-candidate/bkx-debug.apk"
+          cp "$TEST" "$RUNNER_TEMP/bkx-r1-androidtest-candidate/bkx-androidTest-debug.apk"
+          APP_SHA="$(sha256sum "$APP" | cut -d ' ' -f1)"
+          TEST_SHA="$(sha256sum "$TEST" | cut -d ' ' -f1)"
+          jq -n --arg repo 'Mikeyphw/bkx' --arg source "$GITHUB_SHA" --arg run "$GITHUB_RUN_ID" \
+            --arg cert "$APP_CERT" --arg app "$APP_SHA" --arg test "$TEST_SHA" \
+            '{schema:"bkx-r1-test-apk-pair-v1",repository:$repo,source_sha:$source,run_id:$run,signing_certificate_sha256:$cert,app_sha256:$app,test_apk_sha256:$test,device_qualified:false,release_qualified:false,signing:"ephemeral_hosted_debug"}' \
+            > "$RUNNER_TEMP/bkx-r1-androidtest-candidate/manifest.json"
+          cat "$RUNNER_TEMP/bkx-r1-androidtest-candidate/manifest.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bkx-r1-androidtest-source-bound-pair
+          path: ${{ runner.temp }}/bkx-r1-androidtest-candidate
+          retention-days: 7
+          if-no-files-found: error

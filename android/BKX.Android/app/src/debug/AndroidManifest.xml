@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Test-only, isolated process; not exported; absent from release. -->
+        <service
+            android:name="com.mikeyphw.bkx.android.r1.SkybindR1ReplayProbeService"
+            android:exported="false"
+            android:process=":r1acceptworker" />
+    </application>
+</manifest>

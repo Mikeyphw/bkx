@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "repository": "Mikeyphw/bkx",
+  "workflow": "bkx-android-unsigned-dual-release.yml",
+  "application_id": "com.mikeyphw.bkx.android",
+  "consumers": [
+    {"id":"bkx-embedded","variant":"embeddedRelease","artifact":"bkx-android-embedded-unsigned-release","apk":"bkx-embedded-release-unsigned.apk","required_files":["lib/arm64-v8a/libbkxgo.so","lib/arm64-v8a/libbkxrclone_exec.so","assets/bkx-rclone-runtime.properties"],"forbidden_files":[]},
+    {"id":"bkx-lite","variant":"liteRelease","artifact":"bkx-android-lite-unsigned-release","apk":"bkx-lite-release-unsigned.apk","required_files":["lib/arm64-v8a/libbkxgo.so"],"forbidden_files":["lib/arm64-v8a/libbkxrclone_exec.so","assets/bkx-rclone-runtime.properties"]}
+  ]
+}

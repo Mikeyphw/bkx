@@ -67,7 +67,9 @@ grep -Fq -- '-buildvcs=true' "$installer"
 grep -Fq 'vcs.revision=' "$script_dir/rclone-runtime-contract.sh"
 grep -Fq 'vcs.modified=false' "$script_dir/rclone-runtime-contract.sh"
 grep -Fq "printf 'provider=bclone\\n'" "$installer"
-grep -Fq "printf 'resolution=github-latest-stable-release\\n'" "$installer"
+grep -Fq 'BCLONE_RESOLUTION="github-latest-stable-release"' "$installer"
+grep -Fq 'resolve_reviewed_bclone_release' "$installer"
+grep -Fq 'BKX_RCLONE_REQUIRE_LOCK' "$installer"
 grep -Fq "printf 'commit=%s\\n'" "$installer"
 grep -Fq "printf 'tree=%s\\n'" "$installer"
 grep -Fq 'bkx-rclone-runtime.properties' "$installer"
@@ -133,4 +135,4 @@ if env GOTOOLCHAIN=local go run "$native_page_verifier" elf --min-page-size 1638
     echo '4 KiB ELF fixture unexpectedly passed the 16 KiB gate' >&2
     exit 1
 fi
-printf 'bclone latest-release Android runtime identity + 16 KiB contract tests: PASS\n'
+printf 'bclone latest-development + locked release Android runtime identity + 16 KiB contract tests: PASS\n'

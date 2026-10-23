@@ -123,7 +123,12 @@ validate_provenance() {
     [[ -s "$provenance_file" ]] || return 1
     grep -Fqx "repository=$BCLONE_REPOSITORY" "$provenance_file" &&
         grep -Fqx "tag=$BCLONE_TAG" "$provenance_file" &&
-        grep -Fqx "commit=$BCLONE_COMMIT" "$provenance_file"
+        grep -Fqx "commit=$BCLONE_COMMIT" "$provenance_file" &&
+        grep -Fqx "resolution=$BCLONE_RESOLUTION" "$provenance_file" &&
+        { [[ "$BCLONE_RESOLUTION" != "reviewed-source-lock" ]] || {
+            grep -Fqx "go_toolchain=$BCLONE_GO_TOOLCHAIN" "$provenance_file" &&
+            grep -Fqx "ndk_revision=$BCLONE_NDK_REVISION" "$provenance_file";
+        }; }
 }
 
 publish_provenance() {
@@ -150,7 +155,56 @@ validate_runtime() {
     fi
 }
 
-resolve_latest_bclone_release
+# A qualified hosted release is forbidden from resolving the mutable latest pointer.
+# The lock is source-controlled; GitHub also verifies the tag has not been moved.
+BCLONE_RESOLUTION="github-latest-stable-release"
+BCLONE_GO_TOOLCHAIN=""
+BCLONE_NDK_REVISION=""
+resolve_reviewed_bclone_release() {
+    local lock=$1
+    local validator="$script_dir/verify-bclone-source-lock.py"
+    [[ -f "$lock" && ! -L "$lock" ]] || fail 65 lock 'reviewed bclone lock is absent or a symlink'
+    python3 "$validator" "$lock" >/dev/null || fail 65 lock 'reviewed bclone source lock is invalid'
+    BCLONE_TAG=$(python3 "$validator" "$lock" --field tag) || fail 65 lock 'missing tag'
+    BCLONE_COMMIT=$(python3 "$validator" "$lock" --field commit) || fail 65 lock 'missing commit'
+    BCLONE_GO_TOOLCHAIN=$(python3 "$validator" "$lock" --field go_version) || fail 65 lock 'missing Go toolchain'
+    BCLONE_NDK_REVISION=$(python3 "$validator" "$lock" --field ndk_revision) || fail 65 lock 'missing NDK revision'
+    BCLONE_RESOLUTION="reviewed-source-lock"
+    RCLONE_VERSION=${BCLONE_TAG#v}
+    BCLONE_SHORT_COMMIT=${BCLONE_COMMIT:0:12}
+    [[ "$(go env GOVERSION)" == "$BCLONE_GO_TOOLCHAIN" ]] ||
+        fail 65 toolchain "bclone lock requires $BCLONE_GO_TOOLCHAIN"
+    local revision
+    [[ -f "$ndk_root/source.properties" ]] || fail 65 toolchain 'reviewed build needs a local NDK source.properties'
+    revision=$(sed -n 's/^[[:space:]]*Pkg\.Revision[[:space:]]*=[[:space:]]*//p' "$ndk_root/source.properties" | head -n1)
+    [[ "$revision" == "$BCLONE_NDK_REVISION" ]] ||
+        fail 65 toolchain "bclone lock requires NDK $BCLONE_NDK_REVISION, found $revision"
+    local refs actual peeled direct
+    refs=$(git ls-remote --tags "$BCLONE_REPOSITORY" "refs/tags/$BCLONE_TAG" "refs/tags/$BCLONE_TAG^{}") ||
+        fail 69 lock 'could not verify upstream reviewed bclone tag'
+    peeled=$(awk '$2 ~ /\^\{\}$/ {print $1; exit}' <<<"$refs")
+    direct=$(awk -v ref="refs/tags/$BCLONE_TAG" '$2 == ref {print $1; exit}' <<<"$refs")
+    actual=${peeled:-$direct}
+    [[ "${actual,,}" == "$BCLONE_COMMIT" ]] || fail 65 lock 'upstream bclone tag changed after review'
+    local cache_base
+    cache_base="${BKX_RCLONE_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/bkx/rclone}"
+    cache_root="$cache_base/bclone/${BCLONE_TAG}-${BCLONE_SHORT_COMMIT}/${BCLONE_GO_TOOLCHAIN}-${BCLONE_NDK_REVISION}/android-${RCLONE_ANDROID_API}-arm64-16k"
+    cached_runtime="$cache_root/libbkxrclone_exec.so"
+    provenance_file="$cache_root/bclone-provenance.txt"
+    module_cache="$cache_base/go-module-cache"
+    build_cache="$cache_base/go-build-cache"
+    mkdir -p "$cache_root" "$module_cache" "$build_cache"
+    printf 'BKX runtime: reviewed bclone %s %s (Go %s, NDK %s)\n' "$BCLONE_TAG" "$BCLONE_COMMIT" "$BCLONE_GO_TOOLCHAIN" "$BCLONE_NDK_REVISION" >&2
+}
+
+if [[ "${BKX_RCLONE_REQUIRE_LOCK:-0}" == 1 ]]; then
+    [[ -n "${BKX_RCLONE_SOURCE_LOCK:-}" ]] || fail 65 lock 'qualified release requires BKX_RCLONE_SOURCE_LOCK'
+    resolve_reviewed_bclone_release "$BKX_RCLONE_SOURCE_LOCK"
+elif [[ -n "${BKX_RCLONE_SOURCE_LOCK:-}" ]]; then
+    resolve_reviewed_bclone_release "$BKX_RCLONE_SOURCE_LOCK"
+else
+    resolve_latest_bclone_release
+fi
 
 if validate_runtime "$cached_runtime"; then
     printf 'BKX rclone-compatible runtime: using verified bclone cache %s\n' "$cached_runtime" >&2
@@ -493,12 +547,16 @@ fi
 provenance_tmp="$provenance_file.tmp.$$"
 {
     printf 'provider=bclone\n'
-    printf 'resolution=github-latest-stable-release\n'
+    printf 'resolution=%s\n' "$BCLONE_RESOLUTION"
     printf 'repository=%s\n' "$BCLONE_REPOSITORY"
     printf 'tag=%s\n' "$BCLONE_TAG"
     printf 'version=%s\n' "$RCLONE_VERSION"
     printf 'commit=%s\n' "$BCLONE_COMMIT"
     printf 'tree=%s\n' "$BCLONE_TREE"
+    if [[ "$BCLONE_RESOLUTION" == "reviewed-source-lock" ]]; then
+        printf 'go_toolchain=%s\n' "$BCLONE_GO_TOOLCHAIN"
+        printf 'ndk_revision=%s\n' "$BCLONE_NDK_REVISION"
+    fi
     printf 'go_module=github.com/rclone/rclone\n'
     printf 'android_api=%s\n' "$RCLONE_ANDROID_API"
     printf 'android_arch=%s\n' "$RCLONE_ANDROID_ARCH"

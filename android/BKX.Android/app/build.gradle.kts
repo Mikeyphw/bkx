@@ -230,6 +230,12 @@ val bkxPersonalSigningStoreFile = if (bkxPersonalSigningConfigured) {
     null
 }
 
+// GitHub's unsigned release producer must never read, load or use a private signing identity.
+val bkxHostedUnsignedRelease = providers.environmentVariable("BKX_UNSIGNED_CI_RELEASE").orNull == "1"
+check(!bkxHostedUnsignedRelease || !bkxPersonalSigningConfigured) {
+    "Hosted unsigned BKX releases refuse locally configured signing credentials"
+}
+
 // BKX editions share package identity and Go runtime. Only Embedded packages rclone.
 // No applicationIdSuffix: editions replace one another when signed with the same authorized key.
 android {
@@ -551,8 +557,10 @@ val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRunti
     provenanceOutputDirectory.set(bkxRcloneRuntimeAssetsDir)
     inputs.file(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/rclone-runtime-contract.sh"))
+    inputs.file(bkxRepositoryRoot.resolve("scripts/verify-bclone-source-lock.py"))
+    inputs.file(bkxRepositoryRoot.resolve("config/bclone-android-source.lock"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
-    inputs.property("rcloneAndroidRuntime", "bclone/github-latest-stable/android-24-arm64/16k")
+    inputs.property("rcloneAndroidRuntime", "bclone/source-reviewed-or-development-latest/android-24-arm64/16k")
     // The task is @UntrackedTask because GitHub's latest-release pointer is mutable;
     // the installer itself reuses a verified cache keyed by resolved tag + commit.
 }

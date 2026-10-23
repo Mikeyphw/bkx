@@ -17,10 +17,12 @@
       "note": "Both edition page/ZIP/manifest and lint/unit lanes source-wired; real Gradle graph and APK evidence unverified."
     },
     "REL-04": {
-      "status": "OPEN"
+      "status": "SOURCE_IMPLEMENTED_UPSTREAM_HOSTED_VERIFICATION_PENDING",
+      "note": "Reviewed bclone v1.75.3 Git tag and full commit locked; GitHub must demonstrate actual tag, toolchain, ELF and packaged provenance."
     },
     "REL-05": {
-      "status": "OPEN"
+      "status": "SOURCE_IMPLEMENTED_GITHUB_ARTIFACT_EVIDENCE_PENDING",
+      "note": "One workflow produces two unsigned ACTIONS-10 strict manifests; importer schema tests pass; no hosted APK built here."
     },
     "REL-06": {
       "status": "OPEN"
@@ -39,5 +41,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-03 source task-graph migration implemented, but real AGP task enumeration, APK and on-device evidence pending; REL-04 bclone source pinning still open."
+  "note": "REL-04/05 source implemented together. Hosted unsigned dual artifacts, RM16 consumer registration/LIFE signing, Android Gradle and Skybind device qualification remain open."
 }

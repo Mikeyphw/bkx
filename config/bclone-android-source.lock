@@ -1,0 +1,11 @@
+# Reviewed BKX Embedded runtime source. Update only after independent upstream review.
+# BKX REL-04; GitHub Actions must never resolve /releases/latest for a release.
+schema=bkx-bclone-source-lock-v1
+repository=https://github.com/BenjiThatFoxGuy/bclone.git
+tag=v1.75.3
+commit=7b63b1a4cc9d13465721ebbfc96f2f9bd810f600
+go_version=go1.27.2
+ndk_revision=29.0.14206865
+android_api=24
+android_arch=arm64
+page_size=16384

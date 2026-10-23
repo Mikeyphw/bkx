@@ -48,3 +48,7 @@ Thumbs.db
 
 # Devtool local runtime state
 .devtool/
+
+# REL-06: local-only Devtool LIFE signer fingerprint and reviewed consumer policy.
+# Intentionally not committed; dispatch still requires a clean producer checkout.
+/config/android-consumers.json

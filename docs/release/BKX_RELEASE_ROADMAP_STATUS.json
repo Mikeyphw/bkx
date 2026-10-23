@@ -25,7 +25,8 @@
       "note": "One workflow produces two unsigned ACTIONS-10 strict manifests; importer schema tests pass; no hosted APK built here."
     },
     "REL-06": {
-      "status": "OPEN"
+      "status": "SOURCE_IMPLEMENTED_LOCAL_LIFE_ENROLLMENT_AND_REAL_BATCH_EVIDENCE_PENDING",
+      "note": "Local-only reviewed consumer enrollment and RM16 typed batch operator; exact LIFE signer dynamically resolved; no signer fingerprint stored in source; no hosted run, signed APK or real device receipt yet."
     },
     "REL-07": {
       "status": "OPEN"
@@ -41,5 +42,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-04/05 source implemented together. Hosted unsigned dual artifacts, RM16 consumer registration/LIFE signing, Android Gradle and Skybind device qualification remain open."
+  "note": "REL-00\u201306 source implemented. REL-06 local LIFE enrollment, hosted artifacts, RM16 imports/signatures and REL-07/08 real-device/Skybind evidence remain pending."
 }

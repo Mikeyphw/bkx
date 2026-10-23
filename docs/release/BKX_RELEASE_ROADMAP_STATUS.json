@@ -29,10 +29,12 @@
       "note": "Local-only reviewed consumer enrollment and RM16 typed batch operator; exact LIFE signer dynamically resolved; no signer fingerprint stored in source; no hosted run, signed APK or real device receipt yet."
     },
     "REL-07": {
-      "status": "OPEN"
+      "status": "SOURCE_IMPLEMENTED_EXTERNAL_QUALIFICATION_PENDING",
+      "note": "Exact signed pair preflight, guarded installed-APK/UID/retention swap, same-signer instrumentation hardening, separate Skybind requirements. All real device/Skybind/Go/UI evidence pending."
     },
     "REL-08": {
-      "status": "OPEN"
+      "status": "OPEN_EVIDENCE_CLOSURE_DEPENDS_ON_REL07",
+      "note": "No final qualification from source-only checks; awaits hosted signing and real-device/Skybind receipts."
     }
   },
   "external": {
@@ -42,5 +44,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-00\u201306 source implemented. REL-06 local LIFE enrollment, hosted artifacts, RM16 imports/signatures and REL-07/08 real-device/Skybind evidence remain pending."
+  "note": "REL-00\u201307 source implementation delivered. Actual hosted APKs, local LIFE signing, rooted-device/instrumentation, Skybind R1 and final REL-08 evidence closure remain pending."
 }

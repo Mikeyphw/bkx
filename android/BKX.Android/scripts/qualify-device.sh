@@ -5,6 +5,9 @@ ADB="${ADB:-adb}"
 PACKAGE="com.mikeyphw.bkx.android"
 TEST_PACKAGE="com.mikeyphw.bkx.android.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
+APKSIGNER="${APKSIGNER:-apksigner}"
+# Explicitly exclude the separate Skybind operator-owned 12-case campaign.
+RELEASE_CLASSES="com.mikeyphw.bkx.android.release.ReleaseQualificationInstrumentationTest,com.mikeyphw.bkx.android.release.ProductAccessibilityVisualQualificationTest,com.mikeyphw.bkx.android.embedded.GoNativeRuntimeInstrumentationTest"
 OUT_DIR="${BKX_QUALIFICATION_OUT:-$PWD/artifacts/qualification-screenshots}"
 RELEASE_APK=""
 ANDROID_TEST_APK=""
@@ -38,7 +41,18 @@ done
 "$ADB" "${SERIAL_ARGS[@]}" get-state >/dev/null
 
 if [ -n "$RELEASE_APK" ]; then
+  if [ -z "$ANDROID_TEST_APK" ]; then
+    echo "An explicitly matching, same-signer instrumentation APK is required for a signed release" >&2
+    exit 64
+  fi
   [ -s "$RELEASE_APK" ] || { echo "release APK not found: $RELEASE_APK" >&2; exit 66; }
+  [ -s "$ANDROID_TEST_APK" ] || { echo "Missing test APK" >&2; exit 66; }
+  app_cert=$("$APKSIGNER" verify --print-certs "$RELEASE_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+  test_cert=$("$APKSIGNER" verify --print-certs "$ANDROID_TEST_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+  if ! [[ "$app_cert" =~ ^[a-fA-F0-9]{64}$ && "$app_cert" == "$test_cert" ]]; then
+    echo "Refusing instrumentation APK with mismatched signing identity" >&2
+    exit 65
+  fi
   "$ADB" "${SERIAL_ARGS[@]}" install -r "$RELEASE_APK" >/dev/null
 fi
 if [ -n "$ANDROID_TEST_APK" ]; then
@@ -64,10 +78,28 @@ The run validates the exact installed release artifact when --release-apk is sup
 then exercises Compose navigation semantics and captures five product screenshots.
 MSG
 
-"$ADB" "${SERIAL_ARGS[@]}" shell am instrument -w   -e bkxExactReleaseArtifact true   -e bkxDeviceQualification true   -e bkxVisualQualification true   "$TEST_PACKAGE/$RUNNER"
+# am instrument can print a failing test with exit code zero. Require an explicit
+# successful terminal status and retain its raw host-side log as evidence.
+INSTRUMENT_LOG="$OUT_DIR/release-instrumentation.txt"
+"$ADB" "${SERIAL_ARGS[@]}" shell am instrument -w \
+  -e class "$RELEASE_CLASSES" \
+  -e bkxExactReleaseArtifact true \
+  -e bkxDeviceQualification true \
+  -e bkxVisualQualification true \
+  "$TEST_PACKAGE/$RUNNER" | tee "$INSTRUMENT_LOG"
+if ! grep -Eq '^OK \([0-9]+ tests?\)' "$INSTRUMENT_LOG" || \
+   ! grep -q 'INSTRUMENTATION_CODE: -1' "$INSTRUMENT_LOG" || \
+   grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED' "$INSTRUMENT_LOG"; then
+  echo "Missing successful AndroidJUnit instrumentation terminal receipt" >&2
+  exit 2
+fi
 
+# Production APKs are not debuggable: run-as is correctly unavailable.
+# The operator already authorized root for this explicit qualification.
+"$ADB" "${SERIAL_ARGS[@]}" shell su -c id | grep -q 'uid=0'
 for screen in home backup archives activity more; do
-  "$ADB" "${SERIAL_ARGS[@]}" exec-out run-as "$PACKAGE"     cat "files/qualification-screenshots/$screen.png" > "$OUT_DIR/$screen.png"
+  "$ADB" "${SERIAL_ARGS[@]}" exec-out su -c \
+    "cat /data/user/0/$PACKAGE/files/qualification-screenshots/$screen.png" > "$OUT_DIR/$screen.png"
   if [ ! -s "$OUT_DIR/$screen.png" ]; then
     echo "Missing qualification screenshot: $screen" >&2
     exit 2

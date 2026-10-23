@@ -122,7 +122,13 @@ class SkybindR1LiveBrokerAcceptanceTest {
             }
             override fun onServiceDisconnected(name: ComponentName?) { attached.countDown() }
         }
-        val intent = Intent(ctx, SkybindR1ReplayProbeService::class.java)
+        // The probe service is debug-only. Keep this instrumentation source
+        // compilable for signed release variants without silently adding an
+        // interprocess token-replay endpoint to production APKs. In release,
+        // bindService fails closed; a debug-only receipt cannot qualify release.
+        val intent = Intent().setComponent(
+            ComponentName(ctx.packageName, "com.mikeyphw.bkx.android.r1.SkybindR1ReplayProbeService"),
+        )
         if (!ctx.bindService(intent, binding, Context.BIND_AUTO_CREATE)) return false
         try {
             if (!attached.await(8, TimeUnit.SECONDS)) return false

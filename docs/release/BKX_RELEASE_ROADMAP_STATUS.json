@@ -33,8 +33,8 @@
       "note": "Exact signed pair preflight, guarded installed-APK/UID/retention swap, same-signer instrumentation hardening, separate Skybind requirements. All real device/Skybind/Go/UI evidence pending."
     },
     "REL-08": {
-      "status": "OPEN_EVIDENCE_CLOSURE_DEPENDS_ON_REL07",
-      "note": "No final qualification from source-only checks; awaits hosted signing and real-device/Skybind receipts."
+      "status": "OPEN_EXTERNAL_GATES_SOURCE_IMPLEMENTED",
+      "note": "REL-08 reconciler and full promise audit exist, but release approval remains blocked by missing real hosted, LIFE, Gradle, instrumentation, Skybind and feature acceptance receipts."
     }
   },
   "external": {
@@ -44,5 +44,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-00\u201307 source implementation delivered. Actual hosted APKs, local LIFE signing, rooted-device/instrumentation, Skybind R1 and final REL-08 evidence closure remain pending."
+  "note": "REL-00–08 now have source implementations and a promise-by-promise ledger. Real hosted APKs, local LIFE signing, rooted-device runtime/instrumentation, Skybind and independent release authority remain PENDING. REL-08 must not self-approve."
 }

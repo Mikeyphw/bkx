@@ -106,7 +106,11 @@ class TestREL07(unittest.TestCase):
                   'consumers':['bkx-embedded','bkx-lite'],'source_sha':sha,
                   'run_id':51,'run_attempt':1,'imports':[
                      {'consumer_id':cid,'source_sha':sha,'run_id':51,'run_attempt':1,
-                      'qualified_release':False,'registry_id':'unsigned-'+cid}
+                      'qualified_release':False,'registry_id':'unsigned-'+cid,
+                      'artifact_id':101 if cid=='bkx-embedded' else 102,
+                      'variant':'embeddedRelease' if cid=='bkx-embedded' else 'liteRelease',
+                      'archive_verified':True,'unsigned_verified':True,
+                      'package':{'sha256':'1'*64 if cid=='bkx-embedded' else '2'*64}}
                      for cid in ('bkx-embedded','bkx-lite')]}
         results=[]
         for cid,variant,digest in [('bkx-embedded','embeddedRelease','c'*64),('bkx-lite','liteRelease','d'*64)]:
@@ -116,7 +120,9 @@ class TestREL07(unittest.TestCase):
                 'locally_signed':True,'signature_verified':True,'apk_16k_zipalign_verified':True,
                 'qualified_release':False,'github_provenance_verified':True,
                 'expected_signer_sha256':'a'*64,'signed_sha256':digest,
-                'signed_registry_id':'signed-'+cid,'remote_repository':'Mikeyphw/bkx'}})
+                'signed_registry_id':'signed-'+cid,'remote_repository':'Mikeyphw/bkx',
+                'remote_artifact_id':101 if cid=='bkx-embedded' else 102,
+                'unsigned_sha256':'1'*64 if cid=='bkx-embedded' else '2'*64}})
         signed={'phase':'ACTIONS-ANDROID-BATCH','operation':'local-life-sign','complete':True,
                 'qualified_release':False,'consumers':['bkx-embedded','bkx-lite'],'signed':results}
         im=self.base/'import.json';si=self.base/'sign.json'
@@ -126,7 +132,7 @@ class TestREL07(unittest.TestCase):
                                         'lite':{'apk_sha256':'3'*64,'signer_sha256':'a'*64}})
 
     def test_device_updates_stay_unqualified(self):
-        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},'qualified_release':False}
+        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},'qualified_release':False,'signer_sha256':'a'*64,'version_code':18}
         marker_events=[]
         def fake_adb(serial,*args,**kw):
             if args==('get-state',):return 'device'
@@ -135,7 +141,7 @@ class TestREL07(unittest.TestCase):
             if args[0]=='install':return 'Success'
             raise AssertionError(args)
         def probe(serial,sha,uid):return {'installed_sha256':sha,'app_uid':10333,'package':mod.PACKAGE}
-        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=probe),patch.object(mod,'marker',side_effect=lambda *x:marker_events.append(x)):
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=probe),patch.object(mod,'marker',side_effect=lambda *x:marker_events.append(x)),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
             output=mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
         self.assertEqual([x['edition'] for x in output['device_steps']],['embedded','lite','embedded'])
         self.assertEqual([x[2] for x in marker_events],['create','read','read','remove'])
@@ -144,7 +150,7 @@ class TestREL07(unittest.TestCase):
         self.assertFalse(output['qualified_release'])
 
     def test_failed_marker_stops_swap_and_still_cleans(self):
-        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}}}
+        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},'signer_sha256':'a'*64,'version_code':18}
         events=[]
         def fake_adb(serial,*args,**kw):
             if args==('get-state',):return 'device'
@@ -155,19 +161,59 @@ class TestREL07(unittest.TestCase):
         def marker(serial,token,action):
             events.append(action)
             if action=='read':raise mod.Reject('sentinel mismatch')
-        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=lambda *a: {'installed_sha256':a[1],'app_uid':10333}),patch.object(mod,'marker',side_effect=marker):
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=lambda *a: {'installed_sha256':a[1],'app_uid':10333}),patch.object(mod,'marker',side_effect=marker),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
             with self.assertRaisesRegex(mod.Reject,'sentinel mismatch'):
                 mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
         self.assertEqual(events,['create','read','remove'])
 
     def test_root_refusal_has_no_pass(self):
-        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}}}
+        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},'signer_sha256':'a'*64,'version_code':18}
         def fake_adb(serial,*args,**kw):
             return {'get-state':'device','shell':'denied'}.get(args[0],'')
         with patch.object(mod,'adb',side_effect=fake_adb):
             with self.assertRaisesRegex(mod.Reject,'arm64'):
                 mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
         self.assertNotIn('device_install_swap',report)
+
+    def test_preexisting_signer_refusal_before_any_install(self):
+        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},
+                'signer_sha256':'a'*64,'version_code':18}
+        def mock_adb(serial,*args,**kw):
+            if args==('get-state',):return 'device'
+            if args[:3]==('shell','getprop','ro.product.cpu.abilist'):return 'arm64-v8a'
+            if args==('shell','su','-c','id'):return 'uid=0(root)'
+            if args[0]=='install':raise AssertionError('Must not install before existing signature check')
+            raise AssertionError(args)
+        with patch.object(mod,'adb',side_effect=mock_adb),patch.object(mod,'prior_install_authority',side_effect=mod.Reject('Existing BKX signer differs')):
+            with self.assertRaisesRegex(mod.Reject,'signer differs'):
+                mod.device_run(self.embedded,self.lite,'serial123',report,lambda _:None)
+        self.assertNotIn('device_steps',report)
+
+    def test_preexisting_apk_denies_wrong_signer_and_downgrade(self):
+        original_command=mod.command
+        def fake_check(args,**kwargs):
+            if args[0]=='apksigner':return 'Signer #1 certificate SHA-256 digest: '+'b'*64+'\n'
+            if args[0]=='aapt':return "package: name='com.mikeyphw.bkx.android' versionCode='19' versionName='1'\n"
+            raise AssertionError(args)
+        def fake_adb(serial,*args,**kwargs):
+            if args==('shell','pm','path',mod.PACKAGE):return 'package:/data/app/example/base.apk\n'
+            raise AssertionError(args)
+        original_run=subprocess.run
+        def fake_run(cmd,**kwargs):
+            if cmd[0]=='adb':
+                kwargs['stdout'].write(b'installed-apk')
+                return type('Completed',(),{'returncode':0})()
+            return original_run(cmd,**kwargs)
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'command',side_effect=fake_check),patch.object(mod.subprocess,'run',side_effect=fake_run):
+            with self.assertRaisesRegex(mod.Reject,'signer differs'):
+                mod.prior_install_authority('serial','a'*64,20,'apksigner','aapt')
+        def correct_check(args,**kwargs):
+            if args[0]=='apksigner':return 'Signer #1 certificate SHA-256 digest: '+'a'*64+'\n'
+            if args[0]=='aapt':return "package: name='com.mikeyphw.bkx.android' versionCode='19' versionName='1'\n"
+            raise AssertionError(args)
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'command',side_effect=correct_check),patch.object(mod.subprocess,'run',side_effect=fake_run):
+            with self.assertRaisesRegex(mod.Reject,'downgrade'):
+                mod.prior_install_authority('serial','a'*64,18,'apksigner','aapt')
 
     def test_atomic_file_safety(self):
         out=self.base/'sub/evidence.json'

@@ -36,11 +36,21 @@ def audit(imported,signed):
     signatures=signed.get('signed')
     _require(isinstance(imports,list) and len(imports)==2 and isinstance(signatures,list) and len(signatures)==2,'Two immutable imports and two local sign results required')
     meta={}
+    artifact_ids=set()
     for i in imports:
         _require(isinstance(i,dict) and i.get('consumer_id') in IDS and i.get('consumer_id') not in meta,'Duplicate or missing import identity')
         _require(i.get('source_sha')==sha and i.get('run_id')==imported['run_id'] and i.get('run_attempt')==imported['run_attempt'],'Imported artifact source/run differs')
         _require(i.get('qualified_release') is False,'Imported candidate incorrectly qualified')
         _require(isinstance(i.get('registry_id'),str) and i['registry_id'],'Missing immutable unsigned registry ID')
+        _require(type(i.get('artifact_id')) is int and i['artifact_id'] > 0 and
+                 i['artifact_id'] not in artifact_ids, 'Distinct positive GitHub artifact IDs required')
+        artifact_ids.add(i['artifact_id'])
+        expected_variant = 'embeddedRelease' if i['consumer_id']=='bkx-embedded' else 'liteRelease'
+        package = i.get('package')
+        _require(i.get('variant')==expected_variant and i.get('archive_verified') is True and
+                 i.get('unsigned_verified') is True and isinstance(package,dict) and
+                 isinstance(package.get('sha256'),str) and SHA64.fullmatch(package['sha256']),
+                 'Verified exact consumer APK/import identity required')
         meta[i['consumer_id']]=i
     fingerprints=set()
     digest=set()
@@ -49,6 +59,9 @@ def audit(imported,signed):
         s=result.get('signing')
         _require(isinstance(s,dict) and s.get('consumer_id')==cid and s.get('variant')==('embeddedRelease' if cid=='bkx-embedded' else 'liteRelease'),'Signed variant/consumer mismatch')
         _require(s.get('registry_id')==meta[cid]['registry_id'] and s.get('remote_run_id')==imported['run_id'] and s.get('remote_run_attempt')==imported['run_attempt'] and s.get('remote_head_sha')==sha,'Signed candidate differs from imported source')
+        _require(s.get('remote_artifact_id')==meta[cid]['artifact_id'] and
+                 s.get('unsigned_sha256')==meta[cid]['package']['sha256'],
+                 'Signed output differs from immutable verified GitHub APK identity')
         _require(s.get('locally_signed') is True and s.get('signature_verified') is True and s.get('apk_16k_zipalign_verified') is True,'Signed APK lacks verified LIFE signature or 16KiB ZIP alignment')
         _require(s.get('qualified_release') is False and s.get('github_provenance_verified') is True,'Signed receipt overstates qualification or lacks provenance')
         cert=s.get('expected_signer_sha256','')

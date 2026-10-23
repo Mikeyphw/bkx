@@ -33,7 +33,11 @@ python3 scripts/bkx-rel07-qualify.py \
 
 * The operator must deliberately select the device and authorize root before beginning. No `adb uninstall`, `pm clear`, `install -d`, signing reset, or untrusted package installation is used.
 * The harness installs **Embedded → Lite → Embedded** with `adb install -r`, checks exact installed `/data/app/.../base.apk` SHA256 using approved `su`, checks the installed package UID remains unchanged, and writes a **temporary random marker only** under app-private files to verify in-place retention. It removes the marker at completion. The marker is not a substitute for testing real saved jobs, backup history, grants or settings. The operator must separately verify preservation of real BKX state. A failure leaves an explicitly FAILED JSON receipt, with all release gates unqualified. Run additional final Lite installation if the intended installed edition is Lite.
-* APK signature verification and package/version checks happen **before** any installation. If the existing BKX signature differs, Android's verified `install -r` must reject it. Do not uninstall the installed app to get around it.
+* APK signature verification and package/version checks happen **before** any installation. Before the **first** installation the harness also reads the exact pre-existing
+base APK via authorized root, verifies its certificate with Android build-tools,
+checks its package ID and rejects downgrades. Missing pre-existing BKX is not an
+in-place migration proof and is rejected rather than silently installed. Android
+`install -r` supplies a second certificate/permission enforcement boundary. Do not uninstall the installed app to get around it.
 * This is **partial** device evidence only. Successful installation/retention does not prove Go execution, storage permissions, real backups, Tasker actions, foreground notifications, user-visible unavailable-feature behavior or any Skybind broker operation.
 
 ## Separate production instrumentation lane

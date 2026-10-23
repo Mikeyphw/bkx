@@ -56,8 +56,9 @@ must contain the Go runtime `libbkxgo.so`. No Android key is sent to GitHub.
 The full edition-aware JVM suite invokes `testEmbeddedDebugUnitTest` and
 `testLiteDebugUnitTest`; the source-only smoke gate retains cheap BR37 preflight.
 Instrumentation defaults to Embedded and requires separate Lite device evidence.
-The dedicated GitHub unsigned producer and Devtool RM-16 artifact registrations
-are later roadmap steps and are **not** claimed completed here.
+The dedicated GitHub unsigned producer and Devtool RM-16 registration and
+local LIFE release handoff were subsequently implemented in REL-04–06 at source
+level; real workflow, signing, device and Skybind evidence remain pending.
 
 ### Current edition-aware task inventory (REL-03 migration evidence)
 
@@ -90,3 +91,18 @@ CI retains both debug JVM suites and all four debug/release lint reports.
 The BR37 cheap preflight never invokes those heavy tasks. See
 `docs/release/REL03_VARIANT_REGRESSION_AUDIT.md` for preserved historical
 promises and the external Gradle/device qualification work.
+
+## REL-08 final evidence reconciliation (source tool, not release authority)
+
+From BKX repository root, run `python3 scripts/bkx-rel08-evidence.py --output
+/private/path/bkx-evidence-index.json` to create a private, immutable JSON
+index with the exact promise map and missing external gates. Attach real
+`--import-json`, `--sign-json`, `--rel07-json` and independent operator receipts
+when obtained. `--require-qualified` exits nonzero until a distinct trusted
+authority has qualified the complete release; this script does not grant that
+authority. See `docs/release/REL08_FINAL_EVIDENCE_CLOSURE.md`.
+
+REL-07 swaps now require the *previously installed* BKX signer to match LIFE and
+forbid a versionCode downgrade before any installation. A fresh install must
+be authorized through a separate reviewed bootstrap path; the in-place upgrade
+proof cannot initialize its own baseline.

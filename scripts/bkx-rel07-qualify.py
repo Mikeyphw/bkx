@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import secrets
 import struct
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -150,6 +151,43 @@ def device_sample(serial,expected_sha,expected_uid=None):
     require(sha==expected_sha,'Installed APK SHA differs from signed artifact')
     return {'installed_sha256':sha,'app_uid':uid,'package':PACKAGE}
 
+def prior_install_authority(serial, expected_signer, expected_version, apksigner, aapt):
+    """Verify the ORIGINAL installed APK before mutating the selected device.
+
+    Do not trust a remote pm/dumpsys signature string: stream exact root-read
+    installed base.apk into a private bounded local file and inspect it using
+    the same Android SDK authorities as the release candidates.
+    """
+    require(SHA64.fullmatch(expected_signer), 'Expected LIFE certificate unavailable')
+    require(type(expected_version) is int and expected_version > 0, 'Expected version unavailable')
+    paths=adb(serial,'shell','pm','path',PACKAGE)
+    matches=re.findall(r'^package:(/\S+\.apk)\s*$',paths,re.M)
+    require(len(matches)==1, 'In-place qualification requires one already-installed BKX base APK')
+    existing=matches[0]
+    require(existing.startswith('/data/app/') and re.fullmatch(r'/[A-Za-z0-9_.=/+@-]+',existing),
+            'Installed APK path does not meet trusted package policy')
+    with tempfile.TemporaryDirectory(prefix='bkx-rel07-existing-') as tmp:
+        destination=Path(tmp)/'installed-base.apk'
+        # No shell interpolation beyond the deliberately restricted package path.
+        with destination.open('xb') as out:
+            proc=subprocess.run(['adb','-s',serial,'exec-out','su','-c','cat '+existing],
+                                stdout=out,stderr=subprocess.PIPE,timeout=120,check=False)
+        require(proc.returncode==0 and 0<destination.stat().st_size<=512*1024*1024,
+                'Cannot privately read currently installed BKX package')
+        signed=command([apksigner,'verify','--print-certs',destination])
+        matches=re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F:]{64,95})',signed)
+        require(len(matches)==1,'Installed BKX certificate missing or ambiguous')
+        cert=matches[0].replace(':','').lower()
+        require(cert==expected_signer,'Existing BKX signer differs from authorized local LIFE signer')
+        details=command([aapt,'dump','badging',destination])
+        m=re.search(r"^package: name='([^']+)' versionCode='([0-9]+)'",details,re.M)
+        require(m is not None and m[1]==PACKAGE,'Installed package ID differs from BKX')
+        old_version=int(m[2])
+        require(old_version<=expected_version,'Refusing an in-place downgrade of existing BKX')
+        return {'preexisting_package':PACKAGE,'preexisting_apk_sha256':digest(destination),
+                'preexisting_signer_sha256':cert,'preexisting_version_code':old_version,
+                'in_place_upgrade_authorized':True}
+
 def marker(serial,token,action):
     require(bool(HEX.fullmatch(token)),'Unsafe private retention marker')
     path='/data/user/0/'+PACKAGE+'/files/.bkx-rel07-retention-marker'
@@ -162,12 +200,15 @@ def marker(serial,token,action):
     elif action=='remove':
         adb(serial,'shell','su','-c','rm -f '+path)
 
-def device_run(embedded,lite,serial,report,save):
+def device_run(embedded,lite,serial,report,save,apksigner="apksigner",aapt="aapt"):
     require(re.fullmatch('[A-Za-z0-9_.:-]{1,100}',serial),'Invalid explicit Android serial')
     require(adb(serial,'get-state').strip()=='device','Android device not online')
     require(adb(serial,'shell','getprop','ro.product.cpu.abilist').strip().startswith('arm64-v8a'),
             'Qualification requires arm64 device')
     require('uid=0' in adb(serial,'shell','su','-c','id'),'Authorized root unavailable')
+    report['existing_install_authority']=prior_install_authority(
+        serial,report['signer_sha256'],report['version_code'],apksigner,aapt)
+    save(report)
     token=secrets.token_hex(16)
     sequence=[('embedded',embedded),('lite',lite),('embedded',embedded)]
     captured=[];uid=None;created=False
@@ -239,7 +280,7 @@ def main(argv=None):
             atomic_json(opts.evidence_json,report)
             try:
                 report=device_run(opts.embedded_apk,opts.lite_apk,opts.serial,report,
-                                  lambda data:atomic_json(opts.evidence_json,data))
+                                  lambda data:atomic_json(opts.evidence_json,data),opts.apksigner,opts.aapt)
             except (OSError,Reject,subprocess.TimeoutExpired) as error:
                 report['device_qualification']='FAILED'
                 report['device_error_type']=type(error).__name__

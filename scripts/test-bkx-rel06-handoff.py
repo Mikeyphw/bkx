@@ -105,7 +105,11 @@ class TestRM16(unittest.TestCase):
                   'repository':'Mikeyphw/bkx','consumers':['bkx-embedded','bkx-lite'],
                   'source_sha':source,'run_id':51,'run_attempt':1,'imports':[
                       {'consumer_id':id,'source_sha':source,'run_id':51,'run_attempt':1,
-                       'qualified_release':False,'registry_id':'unsigned-'+id}
+                       'qualified_release':False,'registry_id':'unsigned-'+id,
+                       'artifact_id': 101 if id=='bkx-embedded' else 102,
+                       'variant':'embeddedRelease' if id=='bkx-embedded' else 'liteRelease',
+                       'archive_verified':True,'unsigned_verified':True,
+                       'package':{'sha256':'1'*64 if id=='bkx-embedded' else '2'*64}}
                       for id in ('bkx-embedded','bkx-lite')]}
         signatures=[]
         for cid,variant,digest in [('bkx-embedded','embeddedRelease','c'*64),('bkx-lite','liteRelease','d'*64)]:
@@ -115,7 +119,9 @@ class TestRM16(unittest.TestCase):
                 'locally_signed':True,'signature_verified':True,'apk_16k_zipalign_verified':True,
                 'qualified_release':False,'github_provenance_verified':True,
                 'expected_signer_sha256':'a'*64,'signed_sha256':digest,
-                'signed_registry_id':'signed-'+cid,'remote_repository':'Mikeyphw/bkx'}})
+                'signed_registry_id':'signed-'+cid,'remote_repository':'Mikeyphw/bkx',
+                'remote_artifact_id':101 if cid=='bkx-embedded' else 102,
+                'unsigned_sha256':'1'*64 if cid=='bkx-embedded' else '2'*64}})
         signed={'phase':'ACTIONS-ANDROID-BATCH','operation':'local-life-sign','complete':True,
                 'qualified_release':False,'consumers':['bkx-embedded','bkx-lite'],'signed':signatures}
         report=audit.audit(imported,signed)

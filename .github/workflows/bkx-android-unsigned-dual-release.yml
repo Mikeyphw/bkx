@@ -69,7 +69,13 @@ jobs:
           set -euo pipefail
           test ! -e "$BKX_ANDROID_SIGNING_PROPERTIES"
           # One Gradle invocation reuses the BKX Go producer for both editions.
+          # The Embedded APK includes a large extracted ARM64 Go/rclone payload.
+          # Keep Termux's 1152m heap defaults intact; override JVM memory only
+          # on this 7 GiB hosted runner. Serialize resource-heavy AGP workers so
+          # Zipflinger packaging cannot overlap Lite R8/dex packaging.
           gradle -p android/BKX.Android --no-daemon --stacktrace \
+            --no-parallel --max-workers=1 \
+            '-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
             :app:assembleEmbeddedRelease :app:assembleLiteRelease \
             :app:verifyBkxEditionApkContents \
             :app:verifyBkxEmbeddedRelease16Kb :app:verifyBkxLiteRelease16Kb

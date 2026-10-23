@@ -40,6 +40,16 @@ def check():
     require(flow.count('gradle -p android/BKX.Android --no-daemon --stacktrace')==1 and
             ':app:assembleEmbeddedRelease :app:assembleLiteRelease' in flow,
             'single shared Gradle invocation for two editions required')
+    # REL05-HF02: the real 40037123461 hosted run exhausted a 1152m Gradle
+    # heap in Zipflinger while R8 for Lite was also active. A bounded CI-only
+    # heap/worker override is required; do not change local Termux defaults.
+    gradle_block=flow.split('gradle -p android/BKX.Android --no-daemon --stacktrace',1)[1].split('\n      - name:',1)[0]
+    require('--no-parallel --max-workers=1' in gradle_block,
+            'hosted APK packaging must serialize Gradle/R8 workers')
+    require("'-Dorg.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'" in gradle_block,
+            'hosted APK packaging needs isolated 4 GiB Gradle daemon heap')
+    require('useLegacyPackaging = true' in app,
+            'Android native executable extraction policy must remain intact')
     require('python3 scripts/produce-bkx-unsigned-candidates.py' in flow and
             'verifyBkxEmbeddedRelease16Kb' in flow and 'verifyBkxLiteRelease16Kb' in flow,
             'both candidate and native gates required before upload')

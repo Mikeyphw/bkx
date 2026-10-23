@@ -55,7 +55,7 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          for report in android/BKX.Android/app/build/reports/lint-results-embeddedDebug.xml android/BKX.Android/app/build/reports/lint-results-embeddedRelease.xml android/BKX.Android/app/build/reports/lint-results-liteRelease.xml android/BKX.Android/app/build/reports/lint-results-embeddedDebug.txt android/BKX.Android/app/build/reports/lint-results-embeddedRelease.txt android/BKX.Android/app/build/reports/lint-results-liteRelease.txt; do
+          for report in android/BKX.Android/app/build/reports/lint-results-embeddedDebug.xml android/BKX.Android/app/build/reports/lint-results-embeddedRelease.xml android/BKX.Android/app/build/reports/lint-results-liteDebug.xml android/BKX.Android/app/build/reports/lint-results-liteRelease.xml android/BKX.Android/app/build/reports/lint-results-embeddedDebug.txt android/BKX.Android/app/build/reports/lint-results-embeddedRelease.txt android/BKX.Android/app/build/reports/lint-results-liteDebug.txt android/BKX.Android/app/build/reports/lint-results-liteRelease.txt; do
             if [[ -f "$report" ]]; then
               echo "=== ANDROID_LINT_REPORT: $report ==="
               cat "$report"
@@ -71,6 +71,7 @@ jobs:
           path: |
             android/BKX.Android/app/build/reports/lint-results-embeddedDebug.*
             android/BKX.Android/app/build/reports/lint-results-embeddedRelease.*
+            android/BKX.Android/app/build/reports/lint-results-liteDebug.*
             android/BKX.Android/app/build/reports/lint-results-liteRelease.*
 
       # Retain all JVM test failures, not only Gradle's summarized first assertion.

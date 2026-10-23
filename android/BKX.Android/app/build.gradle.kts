@@ -93,10 +93,7 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
     abstract val minimumPageSize: Property<Int>
 
     @get:InputFile
-    abstract val embeddedReleaseApk: RegularFileProperty
-
-    @get:InputFile
-    abstract val liteReleaseApk: RegularFileProperty
+    abstract val releaseApk: RegularFileProperty
 
     @TaskAction
     fun verifyPageSize() {
@@ -108,8 +105,7 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
                 "apk",
                 "--min-page-size",
                 minimumPageSize.get().toString(),
-                embeddedReleaseApk.get().asFile.absolutePath,
-                liteReleaseApk.get().asFile.absolutePath,
+                releaseApk.get().asFile.absolutePath,
             )
         }
     }
@@ -561,15 +557,30 @@ val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRunti
     // the installer itself reuses a verified cache keyed by resolved tag + commit.
 }
 
-val verifyBkx16KbNativePageSizeContract = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkx16KbNativePageSizeContract") {
+// A release must prove both APKs independently. Retain the aggregate task name
+// as a compatibility alias for BR35–BR37 and existing Devtool task profiles.
+val verifyBkxEmbeddedRelease16Kb = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkxEmbeddedRelease16Kb") {
     group = "verification"
-    description = "Verify every packaged BKX native ELF is compatible with Android 16 KiB memory pages."
-    dependsOn("assembleEmbeddedRelease", "assembleLiteRelease")
+    description = "Verify 16 KiB ELF segments in the actual Embedded release APK."
+    dependsOn("assembleEmbeddedRelease")
     verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
     minimumPageSize.set(16_384)
-    embeddedReleaseApk.set(layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk"))
-    liteReleaseApk.set(layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk"))
+    releaseApk.set(layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
+}
+val verifyBkxLiteRelease16Kb = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkxLiteRelease16Kb") {
+    group = "verification"
+    description = "Verify 16 KiB ELF segments in the actual Lite release APK."
+    dependsOn("assembleLiteRelease")
+    verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
+    minimumPageSize.set(16_384)
+    releaseApk.set(layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk"))
+    inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
+}
+tasks.register("verifyBkx16KbNativePageSizeContract") {
+    group = "verification"
+    description = "Require independent Embedded and Lite 16 KiB APK verification."
+    dependsOn(verifyBkxEmbeddedRelease16Kb, verifyBkxLiteRelease16Kb)
 }
 
 androidComponents {

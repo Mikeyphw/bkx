@@ -35,6 +35,24 @@ class ReleasePackagingSigningNativeRuntimeContractTest {
     }
 
     @Test
+    fun bothReleaseApksReceiveIndependent16KiBAndContentsProofs() {
+        val build = File(androidRoot, "app/build.gradle.kts").readText()
+        val verification = File(repoRoot, "build-logic/android-verification.gradle.kts").readText()
+        assertTrue(build.contains("verifyBkxEmbeddedRelease16Kb"))
+        assertTrue(build.contains("verifyBkxLiteRelease16Kb"))
+        assertTrue(build.contains("dependsOn(verifyBkxEmbeddedRelease16Kb, verifyBkxLiteRelease16Kb)"))
+        val embedded = build.substringAfter("val verifyBkxEmbeddedRelease16Kb =")
+            .substringBefore("val verifyBkxLiteRelease16Kb")
+        val lite = build.substringAfter("val verifyBkxLiteRelease16Kb =")
+            .substringBefore("tasks.register(\"verifyBkx16KbNativePageSizeContract\")")
+        assertTrue(embedded.contains("app-embedded-release.apk"))
+        assertFalse(embedded.contains("app-lite-release.apk"))
+        assertTrue(lite.contains("app-lite-release.apk"))
+        assertFalse(lite.contains("app-embedded-release.apk"))
+        assertTrue(verification.contains("verifyBkxEditionApkContents"))
+    }
+
+    @Test
     fun exactReleaseQualificationAndCiArePresent() {
         val qualify = File(androidRoot, "scripts/qualify-device.sh").readText()
         val ci = File(repoRoot, ".github/workflows/ci.yml").readText()

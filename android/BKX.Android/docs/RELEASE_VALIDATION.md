@@ -78,3 +78,15 @@ Historical seal gate task references retained and still registered:
 `:app:verifyBkxReleaseMergedManifestContract`,
 `:app:verifyBkxReleasePackagingSigningNativeRuntimeSeal`,
 `:app:bkxAndroidReleaseSeal`.
+
+## REL-03 regression migration and split 16 KiB proof
+
+The BR35–BR37 gates now require exact APK page-size verification independently:
+`:app:verifyBkxEmbeddedRelease16Kb` and `:app:verifyBkxLiteRelease16Kb`.
+The prior `:app:verifyBkx16KbNativePageSizeContract` remains an aggregate
+that requires both tasks. The BR37 package phase includes both, both release
+lint variants, merged manifest checks, and `verifyBkxEditionApkContents`.
+CI retains both debug JVM suites and all four debug/release lint reports.
+The BR37 cheap preflight never invokes those heavy tasks. See
+`docs/release/REL03_VARIANT_REGRESSION_AUDIT.md` for preserved historical
+promises and the external Gradle/device qualification work.

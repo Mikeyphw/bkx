@@ -818,8 +818,12 @@ tasks.register("verifyBkxCloudProductReleaseSeal") {
             ":app:verifyBkxRcloneRemoteTransportContract",
             ":app:verifyBkxGoogleDriveProductContract",
             ":app:verifyBkxCloudProductReleaseSeal",
-            ":app:testDebugUnitTest",
-            ":app:lintDebug",
+            ":app:testEmbeddedDebugUnitTest",
+            ":app:testLiteDebugUnitTest",
+            ":app:lintEmbeddedDebug",
+            ":app:lintLiteDebug",
+            ":app:lintEmbeddedRelease",
+            ":app:lintLiteRelease",
         ).forEach { marker -> check(marker in acceptance.readText()) { "OV5/OV6 acceptance guide is missing $marker." } }
     }
 }
@@ -2483,6 +2487,15 @@ tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
         }
         check(verification.contains("verifyBkxReleaseMergedManifestContract") && verification.contains("processEmbeddedReleaseMainManifest") && verification.contains("processLiteReleaseMainManifest")) {
             "BR35 must verify the merged release manifest, not only source text."
+        }
+        check(
+            appBuild.contains("verifyBkxEmbeddedRelease16Kb") &&
+                appBuild.contains("verifyBkxLiteRelease16Kb") &&
+                appBuild.contains("outputs/apk/embedded/release/app-embedded-release.apk") &&
+                appBuild.contains("outputs/apk/lite/release/app-lite-release.apk") &&
+                verification.contains("verifyBkxEditionApkContents")
+        ) {
+            "BR35 must verify distinct actual APKs for 16 KiB ELF and Embedded/Lite package invariants."
         }
         check(verification.contains("bkxAndroidReleasePreflightSeal") && verification.contains("bkxAndroidReleasePackageSeal") && verification.contains("bkxAndroidReleaseInstrumentationSeal") && verification.contains("bkxAndroidReleaseFinalSeal")) {
             "BR35 staged release seal tasks are missing."

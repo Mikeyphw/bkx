@@ -13,7 +13,8 @@
       "status": "SOURCE_IMPLEMENTED_VALIDATION_PENDING"
     },
     "REL-03": {
-      "status": "PARTIAL_TASK_GRAPH_MIGRATION"
+      "status": "SOURCE_IMPLEMENTED_GRADLE_ACCEPTANCE_PENDING",
+      "note": "Both edition page/ZIP/manifest and lint/unit lanes source-wired; real Gradle graph and APK evidence unverified."
     },
     "REL-04": {
       "status": "OPEN"
@@ -38,5 +39,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-03 historical task/doc migration is partial; validation applies source-only and Go tests, not Gradle."
+  "note": "REL-03 source task-graph migration implemented, but real AGP task enumeration, APK and on-device evidence pending; REL-04 bclone source pinning still open."
 }

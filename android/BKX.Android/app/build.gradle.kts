@@ -11,6 +11,7 @@ import org.gradle.process.ExecOperations
 import org.gradle.util.GradleVersion
 import java.io.File
 import java.util.Properties
+import java.util.zip.ZipFile
 import javax.inject.Inject
 
 plugins {
@@ -92,10 +93,10 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
     abstract val minimumPageSize: Property<Int>
 
     @get:InputFile
-    abstract val debugApk: RegularFileProperty
+    abstract val embeddedReleaseApk: RegularFileProperty
 
     @get:InputFile
-    abstract val releaseApk: RegularFileProperty
+    abstract val liteReleaseApk: RegularFileProperty
 
     @TaskAction
     fun verifyPageSize() {
@@ -107,8 +108,8 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
                 "apk",
                 "--min-page-size",
                 minimumPageSize.get().toString(),
-                debugApk.get().asFile.absolutePath,
-                releaseApk.get().asFile.absolutePath,
+                embeddedReleaseApk.get().asFile.absolutePath,
+                liteReleaseApk.get().asFile.absolutePath,
             )
         }
     }
@@ -233,13 +234,20 @@ val bkxPersonalSigningStoreFile = if (bkxPersonalSigningConfigured) {
     null
 }
 
-// GO14 Android packages only the native Go protocol-v1 runtime.
+// BKX editions share package identity and Go runtime. Only Embedded packages rclone.
+// No applicationIdSuffix: editions replace one another when signed with the same authorized key.
 android {
     namespace = "com.mikeyphw.bkx.android"
     compileSdk = bkxValidationSdk
     buildToolsVersion = bkxBuildToolsVersion
     // Keep this literal so Devtool project inspection resolves --ndk-version auto to r29.
     ndkVersion = "29.0.14206865"
+
+    flavorDimensions += "edition"
+    productFlavors {
+        create("embedded") { dimension = "edition" }
+        create("lite") { dimension = "edition" }
+    }
 
     signingConfigs {
         if (bkxPersonalSigningConfigured) {
@@ -348,7 +356,7 @@ tasks.register<VerifyBkxPersonalSigningConfiguredTask>("verifyBkxPersonalSigning
 }
 
 tasks.configureEach {
-    if (name == "assembleDebug" || name == "assembleRelease") {
+    if (name in setOf("assembleEmbeddedDebug", "assembleLiteDebug", "assembleEmbeddedRelease", "assembleLiteRelease")) {
         mustRunAfter("verifyBkxPersonalSigningConfigured")
     }
 }
@@ -356,13 +364,13 @@ tasks.configureEach {
 tasks.register("assemblePersonalDebug") {
     group = "build"
     description = "Build a debug APK using the permanent BKX personal certificate."
-    dependsOn("verifyBkxPersonalSigningConfigured", "assembleDebug")
+    dependsOn("verifyBkxPersonalSigningConfigured", "assembleEmbeddedDebug")
 }
 
 tasks.register("assemblePersonalRelease") {
     group = "build"
     description = "Build a release APK using the permanent BKX personal certificate."
-    dependsOn("verifyBkxPersonalSigningConfigured", "assembleRelease")
+    dependsOn("verifyBkxPersonalSigningConfigured", "assembleEmbeddedRelease")
 }
 
 dependencies {
@@ -539,7 +547,7 @@ val buildBkxGoAndroidRuntime = tasks.register<BuildBkxGoAndroidRuntimeTask>("bui
 
 val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRuntimeTask>("installBkxRcloneAndroidRuntime") {
     group = "build"
-    description = "Resolve the latest stable bclone release and build its rclone-compatible ARM64 Android runtime with 16 KiB page-size alignment."
+    description = "Build the optional Embedded-edition rclone-compatible ARM64 runtime with 16 KiB page-size alignment."
     repositoryRootPath.set(bkxRepositoryRoot.absolutePath)
     installerScriptPath.set(bkxRepositoryRoot.resolve("scripts/install-rclone-android-runtime.sh").absolutePath)
     ndkDirectoryPath.set(androidComponents.sdkComponents.ndkDirectory.map { it.asFile.absolutePath })
@@ -556,11 +564,11 @@ val installBkxRcloneAndroidRuntime = tasks.register<InstallBkxRcloneAndroidRunti
 val verifyBkx16KbNativePageSizeContract = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkx16KbNativePageSizeContract") {
     group = "verification"
     description = "Verify every packaged BKX native ELF is compatible with Android 16 KiB memory pages."
-    dependsOn("assembleDebug", "assembleRelease")
+    dependsOn("assembleEmbeddedRelease", "assembleLiteRelease")
     verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
     minimumPageSize.set(16_384)
-    debugApk.set(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
-    releaseApk.set(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    embeddedReleaseApk.set(layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk"))
+    liteReleaseApk.set(layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk"))
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
 }
 
@@ -570,6 +578,10 @@ androidComponents {
             buildBkxGoAndroidRuntime,
             BuildBkxGoAndroidRuntimeTask::outputDirectory,
         )
+    }
+    // AGP registers the rclone producer only on the Embedded flavor's source graph.
+    // This is variant-scoped: a previous Embedded build cannot contaminate Lite.
+    onVariants(selector().withFlavor("edition" to "embedded")) { variant ->
         variant.sources.jniLibs?.addGeneratedSourceDirectory(
             installBkxRcloneAndroidRuntime,
             InstallBkxRcloneAndroidRuntimeTask::outputDirectory,
@@ -578,6 +590,40 @@ androidComponents {
             installBkxRcloneAndroidRuntime,
             InstallBkxRcloneAndroidRuntimeTask::provenanceOutputDirectory,
         )
+    }
+}
+
+// Both editions must contain BKX Go; rclone and provenance belong only to Embedded.
+// Verify real ZIP members, not generated directories that may contain stale prior outputs.
+tasks.register("verifyBkxEditionApkContents") {
+    group = "verification"
+    description = "Inspect Embedded/Lite release APK member invariants; fails closed on mixed editions."
+    dependsOn("assembleEmbeddedRelease", "assembleLiteRelease")
+    val embedded = layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk")
+    val lite = layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk")
+    inputs.files(embedded, lite)
+    doLast {
+        fun verify(apk: File, edition: String) {
+            check(apk.isFile) { "Missing $edition release APK: ${apk.absolutePath}" }
+            ZipFile(apk).use { zip ->
+                val members = zip.entries().asSequence().map { it.name }.toSet()
+                check("lib/arm64-v8a/libbkxgo.so" in members) { "$edition omitted BKX Go runtime" }
+                val rcloneMembers = setOf(
+                    "lib/arm64-v8a/libbkxrclone_exec.so",
+                    "assets/bkx-rclone-runtime.properties",
+                )
+                if (edition == "embedded") {
+                    check(members.containsAll(rcloneMembers)) { "Embedded release omitted rclone or provenance" }
+                } else {
+                    check(rcloneMembers.none { it in members }) { "Lite release contains Embedded rclone components" }
+                }
+                check(members.none { it.startsWith("lib/") && !it.startsWith("lib/arm64-v8a/") }) {
+                    "$edition contains unsupported ABI libraries"
+                }
+            }
+        }
+        verify(embedded.get().asFile, "embedded")
+        verify(lite.get().asFile, "lite")
     }
 }
 

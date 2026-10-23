@@ -9,11 +9,15 @@ class BkxAndroidReleaseContractTest {
     fun releaseSealDeclaresCompleteFinalValidationMatrix() {
         assertEquals(1, BkxAndroidReleaseContract.REQUIRED_PROTOCOL_VERSION)
         listOf(
-            ":app:testDebugUnitTest",
-            ":app:lintDebug",
-            ":app:lintRelease",
-            ":app:connectedDebugAndroidTest",
-            ":app:assembleRelease",
+            ":app:testEmbeddedDebugUnitTest",
+            ":app:testLiteDebugUnitTest",
+            ":app:lintEmbeddedDebug",
+            ":app:lintEmbeddedRelease",
+            ":app:lintLiteRelease",
+            ":app:connectedEmbeddedDebugAndroidTest",
+            ":app:assembleEmbeddedRelease",
+            ":app:assembleLiteRelease",
+            ":app:verifyBkxEditionApkContents",
             ":app:verifyBkxReleaseMergedManifestContract",
             ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",
             ":app:verifyBkxRuntimeHardeningContract",

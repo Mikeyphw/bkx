@@ -22,9 +22,11 @@ fail() {
 [[ -f android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/core/release/BkxReleaseArtifactPolicy.kt ]] || fail "missing BR35 release artifact policy"
 
 for marker in \
-  ':app:testDebugUnitTest' \
-  ':app:lintDebug' \
-  ':app:connectedDebugAndroidTest' \
+  ':app:testEmbeddedDebugUnitTest' \
+  ':app:testLiteDebugUnitTest' \
+  ':app:lintEmbeddedDebug' \
+  ':app:lintLiteDebug' \
+  ':app:connectedEmbeddedDebugAndroidTest' \
   ':app:verifyBkxRcloneRemoteTransportContract' \
   ':app:verifyBkx16KbNativePageSizeContract' \
   ':app:verifyBkxGoogleDriveProductContract' \
@@ -33,7 +35,8 @@ for marker in \
   ':app:verifyBkxPersonalSigningContract' \
   ':app:verifyBkxReleaseMergedManifestContract' \
   ':app:verifyBkxReleasePackagingSigningNativeRuntimeSeal' \
-  ':app:lintRelease' \
+  ':app:lintEmbeddedRelease' \
+  ':app:lintLiteRelease' \
   ':app:bkxAndroidReleaseSeal'; do
   grep -R -- "$marker" .devtool.toml android/BKX.Android/docs >/dev/null || fail "missing release marker $marker"
 done

@@ -296,7 +296,7 @@ private fun RemoteChoices(profiles: List<RcloneRemoteProfile>, enabled: Boolean,
         BkxOutlinedSurface(onClick = { if (enabled) onChoose(profile) }) {
             Text(profile.name, style = MaterialTheme.typography.titleMedium)
             Text(profile.type, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-            Text(if (enabled) "Browse remote" else "rclone runtime unavailable — refresh engine status", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (enabled) "Browse remote" else "Native remote transfer unavailable — requires BKX Embedded with working rclone", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

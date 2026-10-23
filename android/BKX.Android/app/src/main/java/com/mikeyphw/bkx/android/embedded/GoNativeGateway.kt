@@ -119,6 +119,8 @@ class GoNativeGateway(
         builder.environment()[BkxSharedStateContract.ENVIRONMENT] = desiredStateRoot.absolutePath
         builder.environment()["BKX_LEGACY_RUN_HISTORY"] = legacyRunHistory.absolutePath
         val rcloneConfig = appContext.filesDir.resolve("bkx/rclone/rclone.conf").also { it.parentFile?.mkdirs() }
+        // Intentionally pass the absolute *packaged* path even in Lite where it
+        // does not exist. The Go resolver must fail closed, not search ambient PATH.
         builder.environment()["BKX_RCLONE_PATH"] = rcloneRuntimeFile().absolutePath
         builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath
         val started = builder.start()

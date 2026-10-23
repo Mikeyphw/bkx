@@ -22,7 +22,7 @@ devtool -r ~/Code/bkx --target bkx_android validate \
   --task :app:bkxBr37BehavioralUnitSeal
 ```
 
-The first task proves that BR37 no longer pulls the full BR36 release graph into the apply smoke gate. The second task compiles unit-test sources, runs `:app:testDebugUnitTest` exactly once through the BR37 behavioral aggregate, and then runs the BR28-BR30 behavioral seals. The unit suite is part of the validation contract so stale or flaky regressions are fixed rather than bypassed.
+The first task proves that BR37 no longer pulls the full BR36 release graph into the apply smoke gate. The second task compiles unit-test sources, runs `:app:testEmbeddedDebugUnitTest` and `:app:testLiteDebugUnitTest` once per edition through the BR37 behavioral aggregate, and then runs the BR28-BR30 behavioral seals. The unit suite is part of the validation contract so stale or flaky regressions are fixed rather than bypassed.
 
 The split Devtool phase layout is now:
 
@@ -30,7 +30,7 @@ The split Devtool phase layout is now:
 preflight  -> :app:bkxBr37StaticPreflightSeal
 unit-test  -> :app:bkxBr37BehavioralUnitSeal
 package    -> :app:bkxBr37PackageAndReleaseLintSeal
-lint       -> :app:lintDebug
+lint       -> :app:lintEmbeddedDebug
 ```
 
 Release lint remains required through `bkxBr37PackageAndReleaseLintSeal`; it is not repeated in the standalone lint phase. The cumulative BR21-BR36 final audit task remains available as `:app:bkxBr36FinalAuditSeal` when the full release lane is explicitly desired.
@@ -42,3 +42,39 @@ The repository-side cumulative cloud/product replay is:
 ```
 
 The physical-device lane remains conditional through Devtool instrumentation policy. Run `scripts/qualify-device.sh` on hardware before distributing a release build; that script is the release qualification entry point for protocol/runtime boundary evidence.
+
+## REL-00–02 dual-edition source foundation
+
+The default Devtool Android target builds **Embedded debug** for fast local iteration.
+GitHub release production will build both `assembleEmbeddedRelease` and
+`assembleLiteRelease` in one run; **neither APK is release-qualified merely by
+passing Gradle**. The BR37 package seal inspects the exact ZIP contents of
+both release editions and verifies their 16 KiB ELF contract. Lite must not
+contain `libbkxrclone_exec.so` or its provenance asset, while both editions
+must contain the Go runtime `libbkxgo.so`. No Android key is sent to GitHub.
+
+The full edition-aware JVM suite invokes `testEmbeddedDebugUnitTest` and
+`testLiteDebugUnitTest`; the source-only smoke gate retains cheap BR37 preflight.
+Instrumentation defaults to Embedded and requires separate Lite device evidence.
+The dedicated GitHub unsigned producer and Devtool RM-16 artifact registrations
+are later roadmap steps and are **not** claimed completed here.
+
+### Current edition-aware task inventory (REL-03 migration evidence)
+
+This inventory supersedes historical unflavored references in older acceptance
+reports. Source and CI gates must resolve each registered task for its edition:
+
+- `:app:testEmbeddedDebugUnitTest`, `:app:testLiteDebugUnitTest`
+- `:app:lintEmbeddedDebug`, `:app:lintLiteDebug`
+- `:app:lintEmbeddedRelease`, `:app:lintLiteRelease`
+- `:app:connectedEmbeddedDebugAndroidTest` (Lite device acceptance separate)
+- `:app:assembleEmbeddedRelease`, `:app:assembleLiteRelease`
+- `:app:verifyBkxEditionApkContents`
+
+Historical seal gate task references retained and still registered:
+`:app:verifyBkx16KbNativePageSizeContract`,
+`:app:verifyBkxAutomationProductContract`,
+`:app:verifyBkxPersonalSigningContract`,
+`:app:verifyBkxReleaseMergedManifestContract`,
+`:app:verifyBkxReleasePackagingSigningNativeRuntimeSeal`,
+`:app:bkxAndroidReleaseSeal`.

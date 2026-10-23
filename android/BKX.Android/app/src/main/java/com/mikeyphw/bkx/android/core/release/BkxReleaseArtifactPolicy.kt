@@ -5,11 +5,24 @@ object BkxReleaseArtifactPolicy {
     const val REQUIRED_MIN_NATIVE_PAGE_SIZE = 16_384
     const val REQUIRED_BKX_RUNTIME = "libbkxgo.so"
     const val REQUIRED_RCLONE_RUNTIME = "libbkxrclone_exec.so"
+    const val RCLONE_PROVENANCE = "assets/bkx-rclone-runtime.properties"
+    val requiredEmbeddedMembers = setOf("lib/arm64-v8a/libbkxgo.so", "lib/arm64-v8a/libbkxrclone_exec.so", RCLONE_PROVENANCE)
+    val requiredLiteMembers = setOf("lib/arm64-v8a/libbkxgo.so")
+    val forbiddenLiteMembers = setOf("lib/arm64-v8a/libbkxrclone_exec.so", RCLONE_PROVENANCE)
+
+    fun editionMembersAreValid(edition: String, members: Set<String>): Boolean = when (edition) {
+        "embedded" -> members.containsAll(requiredEmbeddedMembers)
+        "lite" -> members.containsAll(requiredLiteMembers) && forbiddenLiteMembers.none { it in members }
+        else -> false
+    }
     const val UNKNOWN_COMMIT = "dev"
 
     val releaseArtifactTasks: List<String> = listOf(
-        ":app:assembleRelease",
-        ":app:lintRelease",
+        ":app:assembleEmbeddedRelease",
+        ":app:assembleLiteRelease",
+        ":app:lintEmbeddedRelease",
+        ":app:lintLiteRelease",
+        ":app:verifyBkxEditionApkContents",
         ":app:verifyBkxReleaseMergedManifestContract",
         ":app:verifyBkx16KbNativePageSizeContract",
         ":app:verifyBkxReleasePackagingSigningNativeRuntimeSeal",

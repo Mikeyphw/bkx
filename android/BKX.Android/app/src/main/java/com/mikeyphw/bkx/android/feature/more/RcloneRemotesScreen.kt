@@ -81,7 +81,7 @@ fun RcloneRemotesScreen(
                     Text("rclone runtime", style = MaterialTheme.typography.titleMedium)
                     Text(
                         when {
-                            !runtimeReady -> "The packaged Android ARM64 runtime is not available in the current engine session."
+                            !runtimeReady -> "Local rclone is unavailable. BKX Lite does not bundle it; use Embedded for native remote transfers. Skybind remains a separate, approved read-only provider."
                             snapshot.configured && !configuredInEngine -> "Configuration changed; refresh the engine so the current session sees it."
                             else -> "The packaged Android ARM64 runtime is ready for remote transfer and browsing."
                         },

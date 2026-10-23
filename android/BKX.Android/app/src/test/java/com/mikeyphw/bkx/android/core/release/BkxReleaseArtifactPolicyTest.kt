@@ -32,9 +32,13 @@ class BkxReleaseArtifactPolicyTest {
     @Test
     fun releaseArtifactGateTasksAreStaged() {
         val tasks = BkxReleaseArtifactPolicy.releaseArtifactTasks
-        assertTrue(tasks.contains(":app:assembleRelease"))
-        assertTrue(tasks.contains(":app:lintRelease"))
+        assertTrue(tasks.contains(":app:assembleEmbeddedRelease"))
+        assertTrue(tasks.contains(":app:assembleLiteRelease"))
+        assertTrue(tasks.contains(":app:lintEmbeddedRelease"))
+        assertTrue(tasks.contains(":app:lintLiteRelease"))
         assertTrue(tasks.contains(":app:verifyBkxReleaseMergedManifestContract"))
         assertTrue(tasks.contains(":app:verifyBkx16KbNativePageSizeContract"))
+        assertTrue(tasks.contains(":app:verifyBkxEditionApkContents"))
     }
 }
+

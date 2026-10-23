@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "baseline_bkx_sha": "f450deccfd26faa27482607fad7750cabaa36c83",
+  "devtool_rm16_source": "5861a38",
+  "milestones": {
+    "REL-00": {
+      "status": "SOURCE_IMPLEMENTED_VALIDATION_PENDING"
+    },
+    "REL-01": {
+      "status": "SOURCE_IMPLEMENTED_VALIDATION_PENDING"
+    },
+    "REL-02": {
+      "status": "SOURCE_IMPLEMENTED_VALIDATION_PENDING"
+    },
+    "REL-03": {
+      "status": "PARTIAL_TASK_GRAPH_MIGRATION"
+    },
+    "REL-04": {
+      "status": "OPEN"
+    },
+    "REL-05": {
+      "status": "OPEN"
+    },
+    "REL-06": {
+      "status": "OPEN"
+    },
+    "REL-07": {
+      "status": "OPEN"
+    },
+    "REL-08": {
+      "status": "OPEN"
+    }
+  },
+  "external": {
+    "android_gradle_compile": "PENDING",
+    "exact_apk_pair": "PENDING",
+    "github_actions": "PENDING",
+    "life_signing": "PENDING",
+    "skybind_device": "PENDING"
+  },
+  "note": "REL-03 historical task/doc migration is partial; validation applies source-only and Go tests, not Gradle."
+}

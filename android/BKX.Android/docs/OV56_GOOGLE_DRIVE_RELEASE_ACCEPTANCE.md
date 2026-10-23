@@ -14,3 +14,13 @@ The Android acceptance lane must run at least:
 The full `bkxAndroidReleaseSeal` remains the final package/release gate and includes the Drive/cloud contracts.
 
 A connected device is optional for ordinary overlay validation. Physical-device qualification remains the separate final instrumentation lane documented in `RELEASE_VALIDATION.md`.
+
+## REL-00–02 edition-aware supplement (supersedes unflavored task names above)
+
+The historical OV5/OV6 commands above are kept for provenance only. The active
+release-facing JVM and Android lint commands are now
+`:app:testEmbeddedDebugUnitTest`, `:app:testLiteDebugUnitTest`,
+`:app:lintEmbeddedDebug`, `:app:lintEmbeddedRelease`, and `:app:lintLiteRelease`.
+The rclone-specific OV5/OV6 runtime acceptance applies to **Embedded** only.
+Lite must reject remote rclone capability while retaining independent Skybind
+R1 read-only integration.

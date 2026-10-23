@@ -45,13 +45,13 @@ jobs:
           set -euo pipefail
           cd android/BKX.Android
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace :app:assembleDebug :app:assembleDebugAndroidTest
+          ./gradlew --no-daemon --stacktrace :app:assembleEmbeddedDebug :app:assembleEmbeddedDebugAndroidTest
       - name: Verify exact APK pair and create bounded source identity receipt
         shell: bash
         run: |
           set -euo pipefail
-          APP=android/BKX.Android/app/build/outputs/apk/debug/app-debug.apk
-          TEST=android/BKX.Android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          APP=android/BKX.Android/app/build/outputs/apk/embedded/debug/app-embedded-debug.apk
+          TEST=android/BKX.Android/app/build/outputs/apk/androidTest/embedded/debug/app-embedded-debug-androidTest.apk
           test -s "$APP" && test -s "$TEST"
           test ! -L "$APP" && test ! -L "$TEST"
           APKSIGNER="$ANDROID_HOME/build-tools/36.0.0/apksigner"

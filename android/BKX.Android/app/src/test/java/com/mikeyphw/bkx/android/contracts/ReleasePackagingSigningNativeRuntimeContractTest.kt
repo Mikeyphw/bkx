@@ -29,8 +29,9 @@ class ReleasePackagingSigningNativeRuntimeContractTest {
         assertTrue(build.contains("isShrinkResources = true"))
         assertTrue(File(androidRoot, "app/proguard-rules.pro").isFile)
         assertTrue(verification.contains("verifyBkxReleaseMergedManifestContract"))
-        assertTrue(verification.contains("processReleaseMainManifest"))
-        assertTrue(verification.contains("lintRelease"))
+        assertTrue(verification.contains("processEmbeddedReleaseMainManifest") && verification.contains("processLiteReleaseMainManifest"))
+        assertTrue(verification.contains("lintEmbeddedRelease"))
+        assertTrue(verification.contains("lintLiteRelease"))
     }
 
     @Test

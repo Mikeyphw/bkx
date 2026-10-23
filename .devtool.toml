@@ -56,7 +56,7 @@ runner = "android"
 platform = "android"
 
 [targets.bkx_android.android]
-variant = "debug"
+variant = "embeddedDebug"
 platform = "36"
 aapt2_provider = "sdk"
 instrumentation = "when-device-present"
@@ -92,8 +92,8 @@ args = [
 restore = ["help"]
 build = [":app:assemblePersonalDebug"]
 test = [":app:bkxBr37BehavioralUnitSeal"]
-lint = [":app:lintDebug"]
-instrumentation = [":app:connectedDebugAndroidTest"]
+lint = [":app:lintEmbeddedDebug"]
+instrumentation = [":app:connectedEmbeddedDebugAndroidTest"]
 release = [":app:bkxPersonalReleaseSeal"]
 package = [":app:bkxPersonalPackageAndReleaseLintSeal"]
 clean = [":app:clean"]
@@ -112,11 +112,11 @@ preflight = [
 ]
 
 compile = [
-  ":app:compileDebugSources",
+  ":app:compileEmbeddedDebugSources",
 ]
 
 resources = [
-  ":app:processDebugResources",
+  ":app:processEmbeddedDebugResources",
 ]
 
 unit-test = [
@@ -128,7 +128,7 @@ package = [
 ]
 
 lint = [
-  ":app:lintDebug",
+  ":app:lintEmbeddedDebug",
 ]
 
 

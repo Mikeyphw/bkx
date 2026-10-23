@@ -43,14 +43,19 @@ jobs:
           test -x "$ANDROID_HOME/ndk/29.0.14206865/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
       - name: BKX Android release packaging contract
         run: |
-          gradle -p android/BKX.Android             :app:verifyBkxReleasePackagingSigningNativeRuntimeSeal             :app:testDebugUnitTest             :app:lintDebug             :app:lintRelease             --no-daemon --stacktrace
+          gradle -p android/BKX.Android \
+            :app:verifyBkxReleasePackagingSigningNativeRuntimeSeal \
+            :app:testEmbeddedDebugUnitTest :app:testLiteDebugUnitTest \
+            :app:lintEmbeddedDebug :app:lintLiteDebug \
+            :app:lintEmbeddedRelease :app:lintLiteRelease \
+            --no-daemon --stacktrace
 
-      # Preserve lint diagnostics on failure; normal lintDebug/lintRelease remain strict gates.
+      # Preserve lint diagnostics on failure; normal lintEmbeddedDebug/lintEmbeddedRelease/lintLiteRelease remain strict gates.
       - name: Print full Android Lint error reports
         if: ${{ always() }}
         shell: bash
         run: |
-          for report in android/BKX.Android/app/build/reports/lint-results-debug.xml android/BKX.Android/app/build/reports/lint-results-release.xml android/BKX.Android/app/build/reports/lint-results-debug.txt android/BKX.Android/app/build/reports/lint-results-release.txt; do
+          for report in android/BKX.Android/app/build/reports/lint-results-embeddedDebug.xml android/BKX.Android/app/build/reports/lint-results-embeddedRelease.xml android/BKX.Android/app/build/reports/lint-results-liteRelease.xml android/BKX.Android/app/build/reports/lint-results-embeddedDebug.txt android/BKX.Android/app/build/reports/lint-results-embeddedRelease.txt android/BKX.Android/app/build/reports/lint-results-liteRelease.txt; do
             if [[ -f "$report" ]]; then
               echo "=== ANDROID_LINT_REPORT: $report ==="
               cat "$report"
@@ -64,8 +69,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
           path: |
-            android/BKX.Android/app/build/reports/lint-results-debug.*
-            android/BKX.Android/app/build/reports/lint-results-release.*
+            android/BKX.Android/app/build/reports/lint-results-embeddedDebug.*
+            android/BKX.Android/app/build/reports/lint-results-embeddedRelease.*
+            android/BKX.Android/app/build/reports/lint-results-liteRelease.*
 
       # Retain all JVM test failures, not only Gradle's summarized first assertion.
       - name: Retain Android JVM test reports
@@ -76,5 +82,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
           path: |
-            android/BKX.Android/app/build/test-results/testDebugUnitTest/**/*.xml
-            android/BKX.Android/app/build/reports/tests/testDebugUnitTest/**
+            android/BKX.Android/app/build/test-results/testEmbeddedDebugUnitTest/**/*.xml
+            android/BKX.Android/app/build/reports/tests/testEmbeddedDebugUnitTest/**
+            android/BKX.Android/app/build/test-results/testLiteDebugUnitTest/**/*.xml
+            android/BKX.Android/app/build/reports/tests/testLiteDebugUnitTest/**

@@ -19,8 +19,15 @@ def check():
     contracts=json.loads(read('config/bkx-android-unsigned-artifacts.json'))
     require('BKX_RCLONE_REQUIRE_LOCK: \'1\'' in flow and 'BKX_RCLONE_SOURCE_LOCK:' in flow,
             'hosted rclone input not explicitly locked')
-    require('BKX_UNSIGNED_CI_RELEASE: \'1\'' in flow and 'BKX_ANDROID_SIGNING_PROPERTIES:' in flow,
-            'hosted personal signing configuration must be forbidden')
+    require('BKX_UNSIGNED_CI_RELEASE: \'1\'' in flow and
+            'BKX_ANDROID_SIGNING_PROPERTIES: ${{ github.workspace }}/.bkx-signing-disabled-do-not-create.properties' in flow,
+            'hosted signing-disabled guard must use a valid early GitHub context')
+    # GitHub rejects workflow_dispatch for invalid expression contexts before a job starts.
+    # github context is allowed in job.env; runner context is allowed only in steps.env.
+    job_prefix = flow.split('\n    steps:',1)[0]
+    require('${{ runner.' not in job_prefix,
+            'runner context is forbidden in job-level env, causing GitHub HTTP 422')
+
     require('check(!bkxHostedUnsignedRelease || !bkxPersonalSigningConfigured)' in app,
             'Gradle must reject private signing config in unsigned workflow')
     require('resolve_reviewed_bclone_release' in installer and

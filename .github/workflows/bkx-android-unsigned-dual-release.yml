@@ -22,7 +22,7 @@ jobs:
       BKX_BUILD_COMMIT: ${{ github.sha }}
       BKX_RCLONE_BUILD_JOBS: '2'
       # Explicitly keep Gradle outside any developer-local personal signing config.
-      BKX_ANDROID_SIGNING_PROPERTIES: ${{ runner.temp }}/bkx-signing-disabled-do-not-create.properties
+      BKX_ANDROID_SIGNING_PROPERTIES: ${{ github.workspace }}/.bkx-signing-disabled-do-not-create.properties
     steps:
       - name: Checkout immutable run source
         uses: actions/checkout@v4

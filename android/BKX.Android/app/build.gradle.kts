@@ -354,6 +354,8 @@ android {
         jniLibs {
             // The Go runtime is executed as an app-owned PIE from nativeLibraryDir.
             // Force extraction so ProcessBuilder receives a real executable filesystem path.
+            // Real filesystem extraction is required for ProcessBuilder(execve).
+            // Runtime ELF must never be moved to writable app-private storage.
             useLegacyPackaging = true
         }
         resources {

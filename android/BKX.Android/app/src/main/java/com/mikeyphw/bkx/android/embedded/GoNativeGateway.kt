@@ -7,6 +7,7 @@ import com.mikeyphw.bkx.android.core.state.BkxControlPlaneRootResolver
 import com.mikeyphw.bkx.android.core.state.BkxSharedStateContract
 import java.io.BufferedWriter
 import java.io.File
+import java.io.IOException
 import java.io.OutputStreamWriter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -123,7 +124,7 @@ class GoNativeGateway(
         // does not exist. The Go resolver must fail closed, not search ambient PATH.
         builder.environment()["BKX_RCLONE_PATH"] = rcloneRuntimeFile().absolutePath
         builder.environment()["BKX_RCLONE_CONFIG"] = rcloneConfig.absolutePath
-        val started = builder.start()
+        val started = launchPackagedGoRuntime(builder, home)
         val startedWriter = BufferedWriter(OutputStreamWriter(started.outputStream, Charsets.UTF_8))
         val newSessionId = sessionId + 1L
         process = started
@@ -133,6 +134,58 @@ class GoNativeGateway(
         startErrorReader(started, stderr)
         startReader(started, newSessionId, stderr)
         SessionHandle(newSessionId, startedWriter)
+    }
+
+    /**
+     * The Go ELF is an app-packaged executable, not a JNI library. Android may
+     * report ENOENT for a present executable when its PT_INTERP resolution fails.
+     * Prefer normal execve. Only if execve reports ENOENT for an existing,
+     * executable app-owned ELF, try the fixed Android linker (no shell, no PATH,
+     * no copying binaries to Android app_data_file, no root escalation).
+     *
+     * Both branches inherit the identical state/environment/working directory.
+     * If neither launches, fail closed with a bounded and useful diagnostic.
+     */
+    private fun launchPackagedGoRuntime(primary: ProcessBuilder, home: File): Process {
+        val binary = runtimeFile()
+        check(binary.isFile && binary.canExecute()) {
+            "BKX Go executable is not extracted or not executable in Android nativeLibraryDir. " +
+                "Reinstall a verified Embedded/Lite APK with native extraction enabled."
+        }
+        check(home.isDirectory && home.canRead()) {
+            "BKX Go runtime home is unavailable; cannot launch a process with a missing working directory."
+        }
+        return try {
+            primary.start()
+        } catch (directError: IOException) {
+            val missing = directError.message?.contains("error=2") == true
+            val linker = File("/system/bin/linker64")
+            if (!missing || !binary.isFile || !binary.canExecute() ||
+                !home.isDirectory || !linker.isFile || !linker.canExecute()
+            ) {
+                throw IOException(
+                    "BKX Go runtime could not launch from extracted nativeLibraryDir " +
+                        "(binaryPresent=${binary.isFile}, binaryExecutable=${binary.canExecute()}, " +
+                        "homePresent=${home.isDirectory}, androidLinkerPresent=${linker.isFile}).",
+                    directError,
+                )
+            }
+            // Keep the exact CLI and environment; substitute only the fixed linker.
+            val wrapped = ProcessBuilder(
+                listOf(linker.absolutePath) + primary.command(),
+            ).directory(home)
+            wrapped.environment().putAll(primary.environment())
+            try {
+                wrapped.start()
+            } catch (linkerError: IOException) {
+                linkerError.addSuppressed(directError)
+                throw IOException(
+                    "BKX Go runtime failed direct and system-linker launches; " +
+                        "verify packaged ELF PT_INTERP, Android native extraction, and app UID execution.",
+                    linkerError,
+                )
+            }
+        }
     }
 
     private fun startReader(started: Process, readerSessionId: Long, stderrLog: File) {

@@ -21,6 +21,8 @@ import tempfile
 import time
 import zipfile
 
+from bkx_apksigner_certificate import parse_certificate
+
 ROOT=Path(__file__).resolve().parents[1]
 PACKAGE='com.mikeyphw.bkx.android'
 CONSUMERS={'embedded':('bkx-embedded','embeddedRelease'),'lite':('bkx-lite','liteRelease')}
@@ -89,10 +91,7 @@ def inspect(apk,edition,apksigner,zipalign,aapt):
     packaging=verify_archive(apk,edition)
     signing=command([apksigner,'verify','--verbose','--print-certs',apk])
     require('Verifies' in signing,'APK signature verification incomplete')
-    certs=re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F:]{64,95})',signing)
-    require(len(certs)==1,'Expected exactly one APK signing certificate')
-    cert=certs[0].replace(':','').lower()
-    require(bool(SHA64.fullmatch(cert)),'Bad signing fingerprint')
+    cert=parse_certificate(signing)
     command([zipalign,'-c','-P','16','4',apk])
     badge=command([aapt,'dump','badging',apk])
     match=re.search(r"^package: name='([^']+)' versionCode='([0-9]+)'",badge,re.M)
@@ -133,6 +132,20 @@ def preflight(embedded,lite,apksigner,zipalign,aapt,import_path,sign_path):
 def adb(serial,*args,binary=False):
     return command(['adb','-s',serial,*args],binary=binary)
 
+def trusted_installed_apk_path(path):
+    """Accept Android's legacy and modern base.apk paths, never shell syntax.
+
+    Android 10+ package paths often include an obfuscated `~~` component.
+    The returned pm-path remains untrusted until the original APK signature,
+    package ID, version, and (after updates) exact bytes have been checked.
+    """
+    if not isinstance(path, str) or len(path) > 512:
+        return False
+    if re.fullmatch(r'/data/app/(?:[A-Za-z0-9_+=@.~-]+/){1,4}base\.apk', path) is None:
+        return False
+    return all(part not in ('.', '..') for part in path.split('/'))
+
+
 def device_sample(serial,expected_sha,expected_uid=None):
     packages=adb(serial,'shell','cmd','package','list','packages','-U',PACKAGE)
     uids=re.findall(r'^package:'+re.escape(PACKAGE)+r'\s+uid:(\d+)\s*$',packages,re.M)
@@ -143,7 +156,7 @@ def device_sample(serial,expected_sha,expected_uid=None):
     entries=re.findall(r'^package:(/\S+\.apk)\s*$',paths,re.M)
     require(len(entries)==1,'Exactly one installed base APK required (no splits)')
     path=entries[0]
-    require(path.startswith('/data/app/') and re.fullmatch(r'/[A-Za-z0-9_.=/+@-]+',path),
+    require(trusted_installed_apk_path(path),
             'Unexpected installed APK location')
     # Operator-approved root is required; verify actual installed APK bytes.
     actual=adb(serial,'shell','su','-c','sha256sum '+path)
@@ -164,7 +177,7 @@ def prior_install_authority(serial, expected_signer, expected_version, apksigner
     matches=re.findall(r'^package:(/\S+\.apk)\s*$',paths,re.M)
     require(len(matches)==1, 'In-place qualification requires one already-installed BKX base APK')
     existing=matches[0]
-    require(existing.startswith('/data/app/') and re.fullmatch(r'/[A-Za-z0-9_.=/+@-]+',existing),
+    require(trusted_installed_apk_path(existing),
             'Installed APK path does not meet trusted package policy')
     with tempfile.TemporaryDirectory(prefix='bkx-rel07-existing-') as tmp:
         destination=Path(tmp)/'installed-base.apk'
@@ -175,9 +188,7 @@ def prior_install_authority(serial, expected_signer, expected_version, apksigner
         require(proc.returncode==0 and 0<destination.stat().st_size<=512*1024*1024,
                 'Cannot privately read currently installed BKX package')
         signed=command([apksigner,'verify','--print-certs',destination])
-        matches=re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F:]{64,95})',signed)
-        require(len(matches)==1,'Installed BKX certificate missing or ambiguous')
-        cert=matches[0].replace(':','').lower()
+        cert=parse_certificate(signed)
         require(cert==expected_signer,'Existing BKX signer differs from authorized local LIFE signer')
         details=command([aapt,'dump','badging',destination])
         m=re.search(r"^package: name='([^']+)' versionCode='([0-9]+)'",details,re.M)

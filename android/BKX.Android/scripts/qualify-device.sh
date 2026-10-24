@@ -6,6 +6,8 @@ PACKAGE="com.mikeyphw.bkx.android"
 TEST_PACKAGE="com.mikeyphw.bkx.android.test"
 RUNNER="androidx.test.runner.AndroidJUnitRunner"
 APKSIGNER="${APKSIGNER:-apksigner}"
+# Share the strict verified-certificate parser with REL-07 Python preflight.
+CERT_TOOL="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)/scripts/bkx_apksigner_certificate.py"
 # Explicitly exclude the separate Skybind operator-owned 12-case campaign.
 RELEASE_CLASSES="com.mikeyphw.bkx.android.release.ReleaseQualificationInstrumentationTest,com.mikeyphw.bkx.android.release.ProductAccessibilityVisualQualificationTest,com.mikeyphw.bkx.android.embedded.GoNativeRuntimeInstrumentationTest"
 OUT_DIR="${BKX_QUALIFICATION_OUT:-$PWD/artifacts/qualification-screenshots}"
@@ -47,8 +49,12 @@ if [ -n "$RELEASE_APK" ]; then
   fi
   [ -s "$RELEASE_APK" ] || { echo "release APK not found: $RELEASE_APK" >&2; exit 66; }
   [ -s "$ANDROID_TEST_APK" ] || { echo "Missing test APK" >&2; exit 66; }
-  app_cert=$("$APKSIGNER" verify --print-certs "$RELEASE_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
-  test_cert=$("$APKSIGNER" verify --print-certs "$ANDROID_TEST_APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)
+  if ! app_cert=$(python3 "$CERT_TOOL" --apksigner "$APKSIGNER" --apk "$RELEASE_APK"); then
+    echo "Release APK signer verification failed" >&2; exit 65
+  fi
+  if ! test_cert=$(python3 "$CERT_TOOL" --apksigner "$APKSIGNER" --apk "$ANDROID_TEST_APK"); then
+    echo "Instrumentation APK signer verification failed" >&2; exit 65
+  fi
   if ! [[ "$app_cert" =~ ^[a-fA-F0-9]{64}$ && "$app_cert" == "$test_cert" ]]; then
     echo "Refusing instrumentation APK with mismatched signing identity" >&2
     exit 65

@@ -21,6 +21,9 @@ class GoNativeRuntimeInstrumentationTest {
         assumeTrue(Build.SUPPORTED_ABIS.any { it == "arm64-v8a" })
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val gateway = GoNativeGateway(context)
+        val extractedGo = java.io.File(context.applicationInfo.nativeLibraryDir, "libbkxgo.so")
+        assertTrue("Android did not extract libbkxgo.so into nativeLibraryDir: ${context.applicationInfo.nativeLibraryDir}", extractedGo.isFile)
+        assertTrue("Extracted Go runtime is not executable", extractedGo.canExecute())
         assertTrue("Generated Go runtime must be packaged on this supported ABI", gateway.isAvailable())
 
         val readiness = Json.parseToJsonElement(gateway.readinessJson()).jsonObject

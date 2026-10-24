@@ -20,15 +20,22 @@ class RcloneRemoteTransportContractTest {
             ?: error("Unable to locate BKX repository root from ${File(".").canonicalPath}")
 
     @Test
-    fun androidBuildsLatestStableBcloneAsRcloneCompatibleRuntimeAndWiresItIntoGoSession() {
+    fun androidBuildsReviewedBcloneReleaseAndWiresItIntoGoSession() {
         val build = File(appProjectRoot, "build.gradle.kts").readText()
         val installer = File(repositoryRoot, "scripts/install-rclone-android-runtime.sh").readText()
+        val reviewedLock = File(repositoryRoot, "config/bclone-android-source.lock").readText()
         val runtimeContract = File(repositoryRoot, "scripts/rclone-runtime-contract.sh").readText()
         val gateway = File(mainRoot, "embedded/GoNativeGateway.kt").readText()
 
         assertTrue(build.contains("installBkxRcloneAndroidRuntime"))
         assertTrue(build.contains("generated/bkx-rclone-runtime/jniLibs"))
-        assertTrue(build.contains("bclone/github-latest-stable/android-24-arm64/16k"))
+        assertTrue(build.contains("bclone/source-reviewed-or-development-latest/android-24-arm64/16k"))
+        assertTrue(build.contains("config/bclone-android-source.lock"))
+        assertTrue(build.contains("scripts/verify-bclone-source-lock.py"))
+        assertTrue(reviewedLock.contains("schema=bkx-bclone-source-lock-v1"))
+        assertTrue(reviewedLock.contains("repository=https://github.com/BenjiThatFoxGuy/bclone.git"))
+        assertTrue(Regex("(?m)^tag=v[0-9]+\\.[0-9]+\\.[0-9]+$").containsMatchIn(reviewedLock))
+        assertTrue(Regex("(?m)^commit=[a-f0-9]{40}$").containsMatchIn(reviewedLock))
         assertTrue(build.contains("@UntrackedTask"))
         assertTrue(build.contains("androidComponents.sdkComponents.ndkDirectory"))
         assertTrue(build.contains("verifyBkx16KbNativePageSizeContract"))
@@ -36,7 +43,12 @@ class RcloneRemoteTransportContractTest {
         assertTrue(installer.contains("BCLONE_LATEST_RELEASE_URL=\"https://github.com/BenjiThatFoxGuy/bclone/releases/latest\""))
         assertTrue(installer.contains("git ls-remote --tags \"${'$'}BCLONE_REPOSITORY\""))
         assertTrue(installer.contains("git -C \"${'$'}source_dir\" checkout --quiet --detach \"${'$'}BCLONE_COMMIT\""))
-        assertTrue(installer.contains("resolution=github-latest-stable-release"))
+        // The mutable latest lane remains available for development; release CI selects the reviewed lock.
+        assertTrue(installer.contains("BCLONE_RESOLUTION=\"github-latest-stable-release\""))
+        assertTrue(installer.contains("BCLONE_RESOLUTION=\"reviewed-source-lock\""))
+        assertTrue(installer.contains("resolve_reviewed_bclone_release"))
+        assertTrue(installer.contains("BKX_RCLONE_REQUIRE_LOCK"))
+        assertTrue(installer.contains("BKX_RCLONE_SOURCE_LOCK"))
         assertTrue(installer.contains("bkx-rclone-runtime.properties"))
         assertTrue(runtimeContract.contains("vcs.revision="))
         assertTrue(installer.contains("go build -mod=readonly"))
@@ -47,7 +59,8 @@ class RcloneRemoteTransportContractTest {
         assertTrue(installer.contains("max-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}"))
         assertTrue(installer.contains("common-page-size=${'$'}{BKX_ANDROID_PAGE_SIZE}"))
         assertTrue(installer.contains("verify-native-page-size.go"))
-        assertFalse(installer.contains("python3"))
+        // Python validates the reviewed source lock; it is not an alternate native runtime compiler.
+        assertTrue(installer.contains("python3 \"${'$'}validator\" \"${'$'}lock\""))
         assertFalse(build.contains("python3"))
         assertTrue(File(repositoryRoot, "scripts/verify-native-page-size.go").isFile)
         assertFalse(File(repositoryRoot, "scripts/verify-elf-page-size.py").exists())

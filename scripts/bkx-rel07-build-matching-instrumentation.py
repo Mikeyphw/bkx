@@ -185,6 +185,21 @@ def selftest():
         else:raise AssertionError('Wrong package accepted')
     print('PASS_BKX_REL07_LIFE_INSTRUMENTATION_HELPER_SELFTEST')
 
+def audited_release_provenance(audited):
+    """Bind test APK evidence to the exact locally audited RM-16 release run."""
+    require(isinstance(audited,dict),'Missing audited release authority')
+    sha=audited.get('source_sha')
+    run_id=audited.get('run_id')
+    attempt=audited.get('run_attempt')
+    require(isinstance(sha,str) and re.fullmatch(r'[0-9a-f]{40}',sha) is not None,
+            'Invalid audited release source SHA')
+    require(type(run_id) is int and run_id>0 and type(attempt) is int and attempt>0,
+            'Invalid audited GitHub run identity')
+    require(audited.get('receipts_pass') is True and audited.get('qualified_release') is False,
+            'Release receipts not audited or improperly qualified')
+    return {'source_sha':sha,'github_run_id':run_id,'github_run_attempt':attempt}
+
+
 def main():
     global SHA, SIGNER
     p=argparse.ArgumentParser(description=__doc__)
@@ -206,7 +221,8 @@ def main():
     audit = module_from_spec(spec)
     spec.loader.exec_module(audit)
     result = audit.audit(import_doc,sign_doc)
-    SHA = result['source_sha']
+    audited_identity = audited_release_provenance(result)
+    SHA = audited_identity['source_sha']
     SIGNER = result['signer_sha256']
     require(SHA and SIGNER and len(SHA)==40 and len(SIGNER)==64,'REL06 source and signer authority absent')
     source_check(root)
@@ -232,7 +248,7 @@ def main():
         results.append(sign_test(root,candidate,edition,dest))
     source_check(root)
     evidence={'schema':'bkx-rel07-local-matching-instrumentation-v1',
-              'source_sha':SHA,'github_run_id':40045942016,
+              **audited_identity,
               'release_application_package':PKG,'test_package':TESTPKG,'test_runner':RUNNER,
               'gradle_build_log':str(log),'source_clean_after_build':True,'results':results,
               'device_installation':'NOT_RUN','instrumentation':'NOT_RUN','qualified_release':False}

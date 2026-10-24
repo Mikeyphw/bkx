@@ -199,17 +199,49 @@ def prior_install_authority(serial, expected_signer, expected_version, apksigner
                 'preexisting_signer_sha256':cert,'preexisting_version_code':old_version,
                 'in_place_upgrade_authorized':True}
 
+def retention_marker_parent_uid(serial):
+    """Fail closed *before install*: root may inspect filesDir but never create it.
+
+    Android must initialize its own /files directory with the package UID and
+    SELinux context. A root ``mkdir -p`` here can poison future app startup.
+    """
+    listed=adb(serial,'shell','cmd','package','list','packages','-U',PACKAGE)
+    values=re.findall(r'^package:'+re.escape(PACKAGE)+r'\s+uid:(\d+)\s*$',listed,re.M)
+    require(len(values)==1 and int(values[0])>10000,
+            'Cannot establish installed BKX app UID for retention marker')
+    uid=int(values[0])
+    directory='/data/user/0/'+PACKAGE+'/files'
+    # The Android-owned directory must already exist. Never ask root to make it.
+    probe='if [ -d '+directory+' ] && [ ! -L '+directory+' ]; then stat -c %u:%a '+directory+'; else echo MISSING; fi'
+    observed=adb(serial,'shell','su','-c',probe).strip()
+    require(re.fullmatch(r'[0-9]+:[0-7]{3,4}',observed) is not None,
+            'BKX filesDir is missing or unsafe; launch BKX once as app UID before device qualification')
+    owner,mode=observed.split(':',1)
+    require(int(owner)==uid and int(mode,8)&0o700==0o700,
+            'BKX filesDir has wrong ownership or permissions; no device mutation permitted')
+    return uid
+
+
 def marker(serial,token,action):
     require(bool(HEX.fullmatch(token)),'Unsafe private retention marker')
     path='/data/user/0/'+PACKAGE+'/files/.bkx-rel07-retention-marker'
     if action=='create':
-        # Marker contains random, non-secret fixture bytes; never touches settings.
-        adb(serial,'shell','su','-c',"mkdir -p /data/user/0/"+PACKAGE+"/files && printf '"+token+"' > "+path+" && chmod 600 "+path)
+        uid=retention_marker_parent_uid(serial)
+        # Exclusive/no-clobber file creation; never mkdir, overwrite, or follow
+        # an existing app-controlled link. Own the fixture as the app, not root.
+        script=("set -C; printf '%s' '"+token+"' > "+path+
+                " || exit 1; if chown "+str(uid)+":"+str(uid)+" "+path+
+                " && chmod 600 "+path+"; then exit 0; fi; " +
+                "rm -f "+path+"; exit 1")
+        adb(serial,'shell','su','-c',script)
     elif action=='read':
         require(adb(serial,'shell','su','-c','cat '+path).strip()==token,
                 'App-private retention marker disappeared after update')
     elif action=='remove':
+        # The fixed marker filename is under the app's private directory.
         adb(serial,'shell','su','-c','rm -f '+path)
+    else:
+        raise Reject('Unknown retention marker action')
 
 def device_run(embedded,lite,serial,report,save,apksigner="apksigner",aapt="aapt"):
     require(re.fullmatch('[A-Za-z0-9_.:-]{1,100}',serial),'Invalid explicit Android serial')
@@ -219,10 +251,14 @@ def device_run(embedded,lite,serial,report,save,apksigner="apksigner",aapt="aapt
     require('uid=0' in adb(serial,'shell','su','-c','id'),'Authorized root unavailable')
     report['existing_install_authority']=prior_install_authority(
         serial,report['signer_sha256'],report['version_code'],apksigner,aapt)
+    # Must run before the first adb install. A new/empty app data directory is
+    # not a reason to create filesDir as root: ask the app to initialize it.
+    uid=retention_marker_parent_uid(serial)
+    report['retention_marker_parent']='VERIFIED_APP_OWNED_PREINSTALL'
     save(report)
     token=secrets.token_hex(16)
     sequence=[('embedded',embedded),('lite',lite),('embedded',embedded)]
-    captured=[];uid=None;created=False
+    captured=[];created=False
     try:
         for i,(edition,apk) in enumerate(sequence):
             # -r preserves app-private data; never uninstall, clear data, or -d downgrade.

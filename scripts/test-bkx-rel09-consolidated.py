@@ -37,7 +37,7 @@ class TestRuntimeAndDeviceContracts(unittest.TestCase):
     def test_local_life_instrumentation_no_hardcoded_release_identity(self):
         text=BUILDER.read_text()
         ast.parse(text)
-        self.assertIn("SHA = result['source_sha']",text)
+        self.assertIn("SHA = audited_identity['source_sha']",text)
         self.assertIn("SIGNER = result['signer_sha256']",text)
         self.assertIn("audit.audit(import_doc,sign_doc)",text)
         self.assertIn("'--no-configuration-cache'",text)
@@ -46,6 +46,30 @@ class TestRuntimeAndDeviceContracts(unittest.TestCase):
         self.assertIn('sign_test(root,candidate,edition,dest)',text)
         self.assertIn('source_check(root)',text)
         self.assertNotIn('adb install',text)
+    def test_instrumentation_provenance_tracks_audited_new_run(self):
+        import importlib.util
+        spec=importlib.util.spec_from_file_location('bkx_test_builder_under_test',BUILDER)
+        builder=importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(builder)
+        for run,attempt in [(40114502372,1),(40123456789,2)]:
+            result=builder.audited_release_provenance({
+                'source_sha':'a'*40,'run_id':run,'run_attempt':attempt,
+                'receipts_pass':True,'qualified_release':False})
+            self.assertEqual(result['github_run_id'],run)
+            self.assertEqual(result['github_run_attempt'],attempt)
+            self.assertEqual(result['source_sha'],'a'*40)
+        for bad in [
+                {'source_sha':'a'*40,'run_id':False,'run_attempt':1,'receipts_pass':True,'qualified_release':False},
+                {'source_sha':'a'*40,'run_id':0,'run_attempt':1,'receipts_pass':True,'qualified_release':False},
+                {'source_sha':'a'*40,'run_id':1,'run_attempt':0,'receipts_pass':True,'qualified_release':False},
+                {'source_sha':'a'*40,'run_id':1,'run_attempt':1,'receipts_pass':False,'qualified_release':False},
+                {'source_sha':'a'*40,'run_id':1,'run_attempt':1,'receipts_pass':True,'qualified_release':True},
+                {'source_sha':'bad','run_id':1,'run_attempt':1,'receipts_pass':True,'qualified_release':False},
+        ]:
+            with self.assertRaises(builder.Rejected):
+                builder.audited_release_provenance(bad)
+        self.assertNotIn("'github_run_id':40045942016",BUILDER.read_text())
+
     def test_termux_and_sdk_signer_path_supported(self):
         text=(ROOT/'android/BKX.Android/scripts/qualify-device.sh').read_text()
         self.assertIn('bkx_apksigner_certificate.py',text)

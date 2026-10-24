@@ -141,11 +141,12 @@ class TestREL07(unittest.TestCase):
             if args[0]=='install':return 'Success'
             raise AssertionError(args)
         def probe(serial,sha,uid):return {'installed_sha256':sha,'app_uid':10333,'package':mod.PACKAGE}
-        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=probe),patch.object(mod,'marker',side_effect=lambda *x:marker_events.append(x)),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=probe),patch.object(mod,'marker',side_effect=lambda *x:marker_events.append(x)),patch.object(mod,'retention_marker_parent_uid',return_value=10333),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
             output=mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
         self.assertEqual([x['edition'] for x in output['device_steps']],['embedded','lite','embedded'])
         self.assertEqual([x[2] for x in marker_events],['create','read','read','remove'])
         self.assertEqual(output['device_qualification'],'PARTIAL_INSTALL_SWAP_ONLY')
+        self.assertEqual(output['retention_marker_parent'],'VERIFIED_APP_OWNED_PREINSTALL')
         self.assertEqual(output['root_runtime_instrumentation'],'NOT_RUN')
         self.assertFalse(output['qualified_release'])
 
@@ -161,10 +162,75 @@ class TestREL07(unittest.TestCase):
         def marker(serial,token,action):
             events.append(action)
             if action=='read':raise mod.Reject('sentinel mismatch')
-        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=lambda *a: {'installed_sha256':a[1],'app_uid':10333}),patch.object(mod,'marker',side_effect=marker),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
+        with patch.object(mod,'adb',side_effect=fake_adb),patch.object(mod,'device_sample',side_effect=lambda *a: {'installed_sha256':a[1],'app_uid':10333}),patch.object(mod,'marker',side_effect=marker),patch.object(mod,'retention_marker_parent_uid',return_value=10333),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}):
             with self.assertRaisesRegex(mod.Reject,'sentinel mismatch'):
                 mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
         self.assertEqual(events,['create','read','remove'])
+
+    def test_marker_parent_requires_existing_app_owned_directory(self):
+        command_output=[]
+        def checked_adb(serial,*args,**kwargs):
+            command_output.append(args)
+            if args==('shell','cmd','package','list','packages','-U',mod.PACKAGE):
+                return 'package:'+mod.PACKAGE+' uid:10341\n'
+            if args[:3]==('shell','su','-c'):
+                self.assertIn('stat -c %u:%a',args[3])
+                self.assertNotIn('mkdir',args[3])
+                return checked_adb.probe
+            raise AssertionError(args)
+        with patch.object(mod,'adb',side_effect=checked_adb):
+            for observed in ('MISSING\n','0:700\n','10342:700\n','10341:500\n','unexpected'):
+                checked_adb.probe=observed
+                with self.assertRaises(mod.Reject):
+                    mod.retention_marker_parent_uid('serial123')
+            checked_adb.probe='10341:700\n'
+            self.assertEqual(mod.retention_marker_parent_uid('serial123'),10341)
+            checked_adb.probe='10341:771\n'
+            self.assertEqual(mod.retention_marker_parent_uid('serial123'),10341)
+        self.assertFalse(any('mkdir' in ' '.join(x) for x in command_output))
+
+    def test_marker_create_uses_exclusive_app_owned_file_without_root_mkdir(self):
+        seen=[]
+        def checked_adb(serial,*args,**kwargs):
+            seen.append(args)
+            return ''
+        with patch.object(mod,'retention_marker_parent_uid',return_value=10341),patch.object(mod,'adb',side_effect=checked_adb):
+            token='a'*32
+            mod.marker('serial123',token,'create')
+            mod.marker('serial123',token,'read') if False else None
+            mod.marker('serial123',token,'remove')
+        self.assertEqual(len(seen),2)
+        command=seen[0][3]
+        self.assertIn('set -C;',command)
+        self.assertIn("printf '%s' '"+'a'*32+"'",command)
+        self.assertIn('chown 10341:10341',command)
+        self.assertIn('chmod 600',command)
+        self.assertIn('rm -f ',command)  # partial marker creation must clean up
+        self.assertIn('exit 1',command)
+        self.assertNotIn('mkdir',command)
+        self.assertNotIn('chmod 777',command)
+        with self.assertRaisesRegex(mod.Reject,'Unsafe'):
+            mod.marker('serial123','bad;token','create')
+        with self.assertRaisesRegex(mod.Reject,'Unknown'):
+            mod.marker('serial123','a'*32,'wrong')
+
+    def test_missing_marker_parent_aborts_before_any_install(self):
+        report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},
+                'signer_sha256':'a'*64,'version_code':18}
+        seen=[]
+        def checked_adb(serial,*args,**kwargs):
+            seen.append(args)
+            if args==('get-state',):return 'device'
+            if args[:3]==('shell','getprop','ro.product.cpu.abilist'):return 'arm64-v8a'
+            if args==('shell','su','-c','id'):return 'uid=0(root)'
+            if args[0]=='install':raise AssertionError('No installation before marker-parent preflight')
+            raise AssertionError(args)
+        with patch.object(mod,'adb',side_effect=checked_adb),patch.object(mod,'prior_install_authority',return_value={'in_place_upgrade_authorized':True}),patch.object(mod,'retention_marker_parent_uid',side_effect=mod.Reject('filesDir missing')):
+            with self.assertRaisesRegex(mod.Reject,'filesDir missing'):
+                mod.device_run(self.embedded,self.lite,'serial123',report,lambda x:None)
+        self.assertFalse(any(x[0]=='install' for x in seen))
+        self.assertNotIn('device_steps',report)
+        self.assertNotIn('device_install_swap',report)
 
     def test_root_refusal_has_no_pass(self):
         report={'variants':{'embedded':{'apk_sha256':'a'*64},'lite':{'apk_sha256':'b'*64}},'signer_sha256':'a'*64,'version_code':18}

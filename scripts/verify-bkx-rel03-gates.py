@@ -21,13 +21,25 @@ def check():
     for old in (":app:testDebugUnitTest", ":app:lintDebug", ":app:lintRelease", ":app:assembleRelease"):
         assert old not in gates and old not in ci and old not in guide, f"active legacy task: {old}"
     assert 'verifyBkxEmbeddedRelease16Kb' in gradle and 'verifyBkxLiteRelease16Kb' in gradle
-    # Distinct execution nodes, both consuming actual APK paths; aggregator cannot silently skip either.
+    # Distinct verification nodes must load each variant's real AGP output,
+    # not assume signed-style filenames in the unsigned GitHub release lane.
     sections = [
         gradle.split('tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkxEmbeddedRelease16Kb")',1)[1].split('val verifyBkxLiteRelease16Kb',1)[0],
         gradle.split('tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkxLiteRelease16Kb")',1)[1].split('tasks.register("verifyBkx16KbNativePageSizeContract")',1)[0],
     ]
-    assert 'app-embedded-release.apk' in sections[0] and 'app-lite-release.apk' not in sections[0]
-    assert 'app-lite-release.apk' in sections[1] and 'app-embedded-release.apk' not in sections[1]
+    for section, edition in zip(sections, ("embedded", "lite")):
+        assert f'outputs/apk/{edition}/release' in section
+        assert f'expectedVariant.set("{edition}Release")' in section
+        assert 'releaseOutputDirectory.set(' in section
+        assert 'releaseApk.set(' not in section
+    assert 'object BkxReleaseApkOutputs' in gradle
+    locator = gradle.split('object BkxReleaseApkOutputs', 1)[1].split('abstract class VerifyBkxApkNativePageSizeTask', 1)[0]
+    for token in ('output-metadata.json', 'JsonSlurper', 'variantName', 'applicationId', 'elements', 'outputFile', 'apks.size == 1', 'Files.isSymbolicLink'):
+        assert token in locator, f'AGP APK output locator missing {token}'
+    assert 'app-embedded-release.apk' not in gradle and 'app-lite-release.apk' not in gradle
+    contents = gradle.split('tasks.register("verifyBkxEditionApkContents")', 1)[1].split('// Verification tasks live outside', 1)[0]
+    assert 'BkxReleaseApkOutputs.locate(embeddedOutput.get().asFile, "embeddedRelease")' in contents
+    assert 'BkxReleaseApkOutputs.locate(liteOutput.get().asFile, "liteRelease")' in contents
     aggregate = gradle.split('tasks.register("verifyBkx16KbNativePageSizeContract")',1)[1].split('\nandroidComponents',1)[0]
     assert 'dependsOn(verifyBkxEmbeddedRelease16Kb, verifyBkxLiteRelease16Kb)' in aggregate
     assert '"verifyBkxEditionApkContents"' in gates

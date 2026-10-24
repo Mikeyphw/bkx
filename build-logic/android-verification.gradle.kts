@@ -2491,8 +2491,12 @@ tasks.register("verifyBkxReleasePackagingSigningNativeRuntimeSeal") {
         check(
             appBuild.contains("verifyBkxEmbeddedRelease16Kb") &&
                 appBuild.contains("verifyBkxLiteRelease16Kb") &&
-                appBuild.contains("outputs/apk/embedded/release/app-embedded-release.apk") &&
-                appBuild.contains("outputs/apk/lite/release/app-lite-release.apk") &&
+                appBuild.contains("releaseOutputDirectory.set(layout.buildDirectory.dir(\"outputs/apk/embedded/release\"))") &&
+                appBuild.contains("releaseOutputDirectory.set(layout.buildDirectory.dir(\"outputs/apk/lite/release\"))") &&
+                appBuild.contains("expectedVariant.set(\"embeddedRelease\")") &&
+                appBuild.contains("expectedVariant.set(\"liteRelease\")") &&
+                appBuild.contains("BkxReleaseApkOutputs.locate") &&
+                appBuild.contains("output-metadata.json") &&
                 verification.contains("verifyBkxEditionApkContents")
         ) {
             "BR35 must verify distinct actual APKs for 16 KiB ELF and Embedded/Lite package invariants."

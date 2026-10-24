@@ -1,9 +1,8 @@
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.DirectoryProperty
-import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
-import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.UntrackedTask
@@ -12,6 +11,8 @@ import org.gradle.util.GradleVersion
 import java.io.File
 import java.util.Properties
 import java.util.zip.ZipFile
+import java.nio.file.Files
+import groovy.json.JsonSlurper
 import javax.inject.Inject
 
 plugins {
@@ -83,6 +84,48 @@ abstract class InstallBkxRcloneAndroidRuntimeTask @Inject constructor(
     }
 }
 
+// Resolve the real, single AGP output for this variant. Unsigned release builds
+// normally emit app-<variant>-unsigned.apk, not app-<variant>.apk.
+// This is also the source of truth used by produce-bkx-unsigned-candidates.py.
+object BkxReleaseApkOutputs {
+    fun locate(directory: File, variant: String): File {
+        check(variant in setOf("embeddedRelease", "liteRelease")) {
+            "Unsupported BKX release variant: $variant"
+        }
+        val metadata = directory.resolve("output-metadata.json")
+        check(metadata.isFile && !Files.isSymbolicLink(metadata.toPath())) {
+            "Missing regular AGP metadata for $variant: ${metadata.absolutePath}"
+        }
+        check(metadata.length() in 1..1_048_576) { "Invalid AGP metadata size for $variant" }
+        val doc = JsonSlurper().parse(metadata) as? Map<*, *>
+            ?: error("Invalid AGP metadata document for $variant")
+        check(doc["variantName"] == variant) { "AGP variant mismatch for $variant" }
+        check(doc["applicationId"] == "com.mikeyphw.bkx.android") {
+            "AGP package identity mismatch for $variant"
+        }
+        val elements = doc["elements"] as? List<*>
+            ?: error("AGP output elements missing for $variant")
+        check(elements.size == 1) { "Expected one APK output for $variant" }
+        val element = elements.single() as? Map<*, *>
+            ?: error("Invalid APK output metadata for $variant")
+        val fileName = element["outputFile"] as? String
+            ?: error("AGP APK filename missing for $variant")
+        check(Regex("""[A-Za-z0-9_.-]+\.apk""").matches(fileName)) {
+            "Unsafe APK output filename for $variant"
+        }
+        val apk = directory.resolve(fileName)
+        check(apk.isFile && !Files.isSymbolicLink(apk.toPath())) {
+            "Missing declared $variant APK: ${apk.absolutePath}"
+        }
+        val apks = directory.listFiles()?.filter { it.isFile && it.extension == "apk" }
+            ?: error("Missing AGP output directory for $variant")
+        check(apks.size == 1 && apks.single().canonicalFile == apk.canonicalFile) {
+            "Unexpected additional APK outputs for $variant"
+        }
+        return apk
+    }
+}
+
 abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
     private val execOperations: ExecOperations,
 ) : DefaultTask() {
@@ -92,20 +135,22 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
     @get:Input
     abstract val minimumPageSize: Property<Int>
 
-    @get:InputFile
-    abstract val releaseApk: RegularFileProperty
+    @get:InputDirectory
+    abstract val releaseOutputDirectory: DirectoryProperty
+
+    @get:Input
+    abstract val expectedVariant: Property<String>
 
     @TaskAction
     fun verifyPageSize() {
+        val releaseApk = BkxReleaseApkOutputs.locate(
+            releaseOutputDirectory.get().asFile, expectedVariant.get(),
+        )
         execOperations.exec {
             commandLine(
-                "go",
-                "run",
-                verifierProgramPath.get(),
-                "apk",
-                "--min-page-size",
-                minimumPageSize.get().toString(),
-                releaseApk.get().asFile.absolutePath,
+                "go", "run", verifierProgramPath.get(), "apk",
+                "--min-page-size", minimumPageSize.get().toString(),
+                releaseApk.absolutePath,
             )
         }
     }
@@ -573,7 +618,8 @@ val verifyBkxEmbeddedRelease16Kb = tasks.register<VerifyBkxApkNativePageSizeTask
     dependsOn("assembleEmbeddedRelease")
     verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
     minimumPageSize.set(16_384)
-    releaseApk.set(layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk"))
+    releaseOutputDirectory.set(layout.buildDirectory.dir("outputs/apk/embedded/release"))
+    expectedVariant.set("embeddedRelease")
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
 }
 val verifyBkxLiteRelease16Kb = tasks.register<VerifyBkxApkNativePageSizeTask>("verifyBkxLiteRelease16Kb") {
@@ -582,7 +628,8 @@ val verifyBkxLiteRelease16Kb = tasks.register<VerifyBkxApkNativePageSizeTask>("v
     dependsOn("assembleLiteRelease")
     verifierProgramPath.set(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go").absolutePath)
     minimumPageSize.set(16_384)
-    releaseApk.set(layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk"))
+    releaseOutputDirectory.set(layout.buildDirectory.dir("outputs/apk/lite/release"))
+    expectedVariant.set("liteRelease")
     inputs.file(bkxRepositoryRoot.resolve("scripts/verify-native-page-size.go"))
 }
 tasks.register("verifyBkx16KbNativePageSizeContract") {
@@ -618,9 +665,10 @@ tasks.register("verifyBkxEditionApkContents") {
     group = "verification"
     description = "Inspect Embedded/Lite release APK member invariants; fails closed on mixed editions."
     dependsOn("assembleEmbeddedRelease", "assembleLiteRelease")
-    val embedded = layout.buildDirectory.file("outputs/apk/embedded/release/app-embedded-release.apk")
-    val lite = layout.buildDirectory.file("outputs/apk/lite/release/app-lite-release.apk")
-    inputs.files(embedded, lite)
+    val embeddedOutput = layout.buildDirectory.dir("outputs/apk/embedded/release")
+    val liteOutput = layout.buildDirectory.dir("outputs/apk/lite/release")
+    inputs.dir(embeddedOutput)
+    inputs.dir(liteOutput)
     doLast {
         fun verify(apk: File, edition: String) {
             check(apk.isFile) { "Missing $edition release APK: ${apk.absolutePath}" }
@@ -641,8 +689,8 @@ tasks.register("verifyBkxEditionApkContents") {
                 }
             }
         }
-        verify(embedded.get().asFile, "embedded")
-        verify(lite.get().asFile, "lite")
+        verify(BkxReleaseApkOutputs.locate(embeddedOutput.get().asFile, "embeddedRelease"), "embedded")
+        verify(BkxReleaseApkOutputs.locate(liteOutput.get().asFile, "liteRelease"), "lite")
     }
 }
 

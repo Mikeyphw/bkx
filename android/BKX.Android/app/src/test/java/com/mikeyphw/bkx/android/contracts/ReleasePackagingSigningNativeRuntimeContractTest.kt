@@ -45,10 +45,14 @@ class ReleasePackagingSigningNativeRuntimeContractTest {
             .substringBefore("val verifyBkxLiteRelease16Kb")
         val lite = build.substringAfter("val verifyBkxLiteRelease16Kb =")
             .substringBefore("tasks.register(\"verifyBkx16KbNativePageSizeContract\")")
-        assertTrue(embedded.contains("app-embedded-release.apk"))
-        assertFalse(embedded.contains("app-lite-release.apk"))
-        assertTrue(lite.contains("app-lite-release.apk"))
-        assertFalse(lite.contains("app-embedded-release.apk"))
+        assertTrue(embedded.contains("releaseOutputDirectory.set(layout.buildDirectory.dir(\"outputs/apk/embedded/release\"))"))
+        assertTrue(embedded.contains("expectedVariant.set(\"embeddedRelease\")"))
+        assertTrue(lite.contains("releaseOutputDirectory.set(layout.buildDirectory.dir(\"outputs/apk/lite/release\"))"))
+        assertTrue(lite.contains("expectedVariant.set(\"liteRelease\")"))
+        assertTrue(build.contains("BkxReleaseApkOutputs.locate"))
+        assertTrue(build.contains("output-metadata.json"))
+        assertFalse(build.contains("outputs/apk/embedded/release/app-embedded-release.apk"))
+        assertFalse(build.contains("outputs/apk/lite/release/app-lite-release.apk"))
         assertTrue(verification.contains("verifyBkxEditionApkContents"))
     }
 

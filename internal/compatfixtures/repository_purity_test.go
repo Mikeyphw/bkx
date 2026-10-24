@@ -8,6 +8,55 @@ import (
 	"testing"
 )
 
+// These are deliberately maintained Android release, validation, and test utilities.
+// GO20 retired the Python *application*; it did not retire Devtool/Android
+// operator tooling. A new Python source file needs an explicit policy review.
+var reviewedOperationalPython = map[string]bool{
+	"scripts/bkx-audit-rm16-receipts.py":                  true,
+	"scripts/bkx-devtool-life.py":                         true,
+	"scripts/bkx-devtool-release.py":                      true,
+	"scripts/bkx-rel07-build-matching-instrumentation.py": true,
+	"scripts/bkx-rel07-qualify.py":                        true,
+	"scripts/bkx-rel08-evidence.py":                       true,
+	"scripts/bkx_apksigner_certificate.py":                true,
+	"scripts/produce-bkx-unsigned-candidates.py":          true,
+	"scripts/test-android-editions.py":                    true,
+	"scripts/test-bkx-go-android-executable.py":           true,
+	"scripts/test-bkx-rel03-gates.py":                     true,
+	"scripts/test-bkx-rel0405-producer.py":                true,
+	"scripts/test-bkx-rel05-agp-metadata-resolution.py":   true,
+	"scripts/test-bkx-rel05-apk-packaging-memory.py":      true,
+	"scripts/test-bkx-rel05-dispatch-422.py":              true,
+	"scripts/test-bkx-rel05-hf04-native-abi-contract.py":  true,
+	"scripts/test-bkx-rel06-handoff.py":                   true,
+	"scripts/test-bkx-rel07-hf01-termux-signer.py":        true,
+	"scripts/test-bkx-rel07-hf02-modern-package-path.py":  true,
+	"scripts/test-bkx-rel07-qualification.py":             true,
+	"scripts/test-bkx-rel08-evidence.py":                  true,
+	"scripts/test-bkx-rel09-ci-hf01.py":                   true,
+	"scripts/test-bkx-rel09-consolidated.py":              true,
+	"scripts/verify-android-editions.py":                  true,
+	"scripts/verify-bclone-source-lock.py":                true,
+	"scripts/verify-bkx-go-android-executable.py":         true,
+	"scripts/verify-bkx-rel03-gates.py":                   true,
+	"scripts/verify-bkx-rel0405-producer.py":              true,
+	"scripts/verify-bkx-rel06-handoff.py":                 true,
+	"scripts/verify-bkx-rel07-qualification.py":           true,
+	"scripts/verify-bkx-rel08-evidence.py":                true,
+}
+
+func allowedOperationalPython(rel string) bool {
+	return reviewedOperationalPython[rel]
+}
+
+// The Android Go runtime builder may invoke only this reviewed, fail-closed
+// ELF contract validator. Any second interpreter call or changed invocation
+// must be approved separately, not hidden behind a broad Python exemption.
+func reviewedRuntimePythonHook(text string) bool {
+	const invocation = `python3 "$repo/scripts/verify-bkx-go-android-executable.py" "$tmp"`
+	return strings.Count(text, "python3") == 1 && strings.Count(text, invocation) == 1
+}
+
 func TestRepositoryPythonPurgeSeal(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 
@@ -65,8 +114,11 @@ func TestRepositoryPythonPurgeSeal(t *testing.T) {
 		if forbiddenFiles[rel] || forbiddenFiles[entry.Name()] {
 			t.Errorf("forbidden Python project file remains active: %s", rel)
 		}
-		if strings.HasSuffix(strings.ToLower(entry.Name()), ".py") || strings.HasSuffix(strings.ToLower(entry.Name()), ".pyc") {
-			t.Errorf("active Python source/bytecode remains: %s", rel)
+		// Refuse Python runtime/application and stray tooling, but allow only
+		// the explicitly reviewed Devtool/Android support scripts.
+		lower := strings.ToLower(entry.Name())
+		if strings.HasSuffix(lower, ".pyc") || (strings.HasSuffix(lower, ".py") && !allowedOperationalPython(rel)) {
+			t.Errorf("unreviewed Python source/bytecode remains: %s", rel)
 		}
 		return nil
 	})
@@ -95,7 +147,6 @@ func TestRepositoryPythonPurgeSeal(t *testing.T) {
 			"pyproject.toml",
 		},
 		"scripts/build-go-android-runtime.sh": {
-			"python3",
 			"PYTHONPATH",
 			"src/bkx",
 			"pyproject.toml",
@@ -124,6 +175,16 @@ func TestRepositoryPythonPurgeSeal(t *testing.T) {
 				t.Errorf("active file %s contains forbidden Python dependency marker %q", rel, needle)
 			}
 		}
+	}
+
+	// Android's verified Go executable needs its strict ELF interpreter/page
+	// inspector; do not mistakenly classify this as the retired Python app.
+	goBuilder, err := os.ReadFile(filepath.Join(root, "scripts/build-go-android-runtime.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reviewedRuntimePythonHook(string(goBuilder)) {
+		t.Error("Android Go runtime builder does not use exactly the reviewed ELF Python verifier")
 	}
 
 	devtool, err := os.Open(filepath.Join(root, ".devtool.toml"))

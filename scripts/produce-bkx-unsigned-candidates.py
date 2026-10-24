@@ -110,7 +110,10 @@ def unsigned_apk(path, consumer, tools, app):
         raise ContractError('APK package/version identity mismatch')
     if re.search(r'^application-debuggable\b',info,re.M):
         raise ContractError('release candidate is debuggable')
-    checked(['go','run',ROOT/'scripts/verify-native-page-size.go','apk','--min-page-size','16384',path])
+    edition=consumer['variant'].removesuffix('Release').lower()
+    if edition not in ('embedded','lite'):
+        raise ContractError('unknown edition for native APK verification')
+    checked(['go','run',ROOT/'scripts/verify-native-page-size.go','apk','--edition',edition,'--min-page-size','16384',path])
     return {'package':m.group(1),'code':int(m.group(2)),'name':m.group(3)}
 
 def selected_apk(out_root, consumer):

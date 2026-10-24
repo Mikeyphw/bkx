@@ -149,6 +149,7 @@ abstract class VerifyBkxApkNativePageSizeTask @Inject constructor(
         execOperations.exec {
             commandLine(
                 "go", "run", verifierProgramPath.get(), "apk",
+                "--edition", expectedVariant.get().removeSuffix("Release"),
                 "--min-page-size", minimumPageSize.get().toString(),
                 releaseApk.absolutePath,
             )

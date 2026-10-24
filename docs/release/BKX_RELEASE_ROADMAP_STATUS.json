@@ -22,7 +22,7 @@
     },
     "REL-05": {
       "status": "SOURCE_IMPLEMENTED_GITHUB_ARTIFACT_EVIDENCE_PENDING",
-      "note": "One workflow produces two unsigned ACTIONS-10 strict manifests; importer schema tests pass; no hosted APK built here."
+      "note": "Hosted dual APKs both assembled in GitHub run 40044773493; APK member gate and Embedded 16KiB gate passed, Lite failed because generic verifier falsely required embedded rclone. HF04 source repair implemented, new hosted run and two artifact uploads still pending."
     },
     "REL-06": {
       "status": "SOURCE_IMPLEMENTED_LOCAL_LIFE_ENROLLMENT_AND_REAL_BATCH_EVIDENCE_PENDING",
@@ -44,5 +44,5 @@
     "life_signing": "PENDING",
     "skybind_device": "PENDING"
   },
-  "note": "REL-00–08 now have source implementations and a promise-by-promise ledger. Real hosted APKs, local LIFE signing, rooted-device runtime/instrumentation, Skybind and independent release authority remain PENDING. REL-08 must not self-approve."
+  "note": "REL-05 HF04 fixes Lite-vs-Embedded native verifier contract from GitHub run 40044773493. Real dual-artifact upload, LIFE signing, rooted-device and Skybind qualification remain PENDING. No source test may self-qualify a release."
 }

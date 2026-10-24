@@ -12,7 +12,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strings"
 )
 
@@ -354,11 +353,12 @@ func archiveSafeCommand(args []string) int {
 func apkCommand(args []string) int {
 	fs := flag.NewFlagSet("apk", flag.ContinueOnError)
 	min := fs.Uint64("min-page-size", 16384, "minimum page size")
+	edition := fs.String("edition", "", "explicit BKX APK edition: embedded or lite")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if !validMin(*min) || fs.NArg() == 0 {
-		fmt.Fprintln(os.Stderr, "apk: min page size must be a power of two and at least one APK is required")
+	if !validMin(*min) || (*edition != "embedded" && *edition != "lite") || fs.NArg() != 1 {
+		fmt.Fprintln(os.Stderr, "apk: an explicit --edition embedded|lite, power-of-two --min-page-size, and exactly one APK are required")
 		return 2
 	}
 	failed := false
@@ -370,17 +370,25 @@ func apkCommand(args []string) int {
 			continue
 		}
 		nativeCount := 0
-		required := map[string]bool{"libbkxgo.so": false, "libbkxrclone_exec.so": false}
+		goNative := "lib/arm64-v8a/libbkxgo.so"
+		rcloneNative := "lib/arm64-v8a/libbkxrclone_exec.so"
+		rcloneProvenance := "assets/bkx-rclone-runtime.properties"
+		found := make(map[string]bool)
 		var problems []string
 		for _, f := range zr.File {
+			// Flag duplicates and foreign-ABI packaging rather than silently accepting
+			// a basename found outside the one supported arm64-v8a source set.
+			if found[f.Name] {
+				problems = append(problems, fmt.Sprintf("%s: duplicate ZIP member: %s", name, f.Name))
+			}
+			found[f.Name] = true
+			if strings.HasPrefix(f.Name, "lib/") && !strings.HasPrefix(f.Name, "lib/arm64-v8a/") {
+				problems = append(problems, fmt.Sprintf("%s: unsupported native ABI path: %s", name, f.Name))
+			}
 			if !strings.HasPrefix(f.Name, "lib/") || !strings.HasSuffix(f.Name, ".so") {
 				continue
 			}
 			nativeCount++
-			base := filepath.Base(f.Name)
-			if _, ok := required[base]; ok {
-				required[base] = true
-			}
 			rc, e := f.Open()
 			if e != nil {
 				problems = append(problems, fmt.Sprintf("%s!/%s: %v", name, f.Name, e))
@@ -407,9 +415,20 @@ func apkCommand(args []string) int {
 		if nativeCount == 0 {
 			problems = append(problems, fmt.Sprintf("%s: APK contains no native libraries", name))
 		}
-		for lib, ok := range required {
-			if !ok {
-				problems = append(problems, fmt.Sprintf("%s: required BKX native runtime is missing: %s", name, lib))
+		if !found[goNative] {
+			problems = append(problems, fmt.Sprintf("%s: required BKX Go runtime is missing: %s", name, goNative))
+		}
+		if *edition == "embedded" {
+			for _, member := range []string{rcloneNative, rcloneProvenance} {
+				if !found[member] {
+					problems = append(problems, fmt.Sprintf("%s: embedded release member is missing: %s", name, member))
+				}
+			}
+		} else {
+			for _, member := range []string{rcloneNative, rcloneProvenance} {
+				if found[member] {
+					problems = append(problems, fmt.Sprintf("%s: Lite must not package rclone: %s", name, member))
+				}
 			}
 		}
 		if printProblems(problems) {

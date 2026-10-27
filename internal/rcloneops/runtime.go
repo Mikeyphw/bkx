@@ -30,6 +30,9 @@ func RuntimeFromEnvironment() (Runtime, error) {
 // runtime/config bindings as direct BKX transfers without reading secret config
 // contents into operation specifications or diagnostics.
 func RuntimeFromEnviron(environ []string) (Runtime, error) {
+	if runtime, selected, err := skybindRuntimeFromEnviron(environ); selected {
+		return runtime, err
+	}
 	lookup := func(key string) string {
 		prefix := key + "="
 		for i := len(environ) - 1; i >= 0; i-- {

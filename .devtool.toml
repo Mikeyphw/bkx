@@ -238,16 +238,24 @@ command = ["go", "run", "./cmd/devtoolgates", "r1"]
 inputs = ["cmd/devtoolgates/**", "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/r1/**", "android/BKX.Android/app/src/main/java/com/mikeyphw/bkx/android/feature/more/RcloneRemotesScreen.kt", "android/BKX.Android/app/src/androidTest/java/com/mikeyphw/bkx/android/r1/**"]
 metadata = { read_only = true }
 
+[targets.bkx.jobs.api03-skybind-consumer]
+runner = "command"
+command = ["bash", "scripts/api03-source-check.sh"]
+inputs = ["internal/rcloneops/**", "scripts/api03-source-check.sh", "docs/r1/SKYBIND_API03_ROOT_RCLONE_CONSUMER_20261026.md"]
+metadata = { read_only = true }
+
 [targets.bkx.workflows]
 ci-preflight = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
   { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
+  { id = "api03", ref = "job:api03-skybind-consumer", depends_on = [] },
 ]
 ci-local = [
   { id = "actions-contract", ref = "job:ci-actions-contract", depends_on = [] },
   { id = "r1-source", ref = "job:r1-source-contract", depends_on = [] },
-  { id = "go-unit", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source"] },
-  { id = "android-contracts", ref = "target:bkx_android#test", depends_on = ["actions-contract", "r1-source"] },
+  { id = "api03", ref = "job:api03-skybind-consumer", depends_on = [] },
+  { id = "go-unit", ref = "runner:go#test", depends_on = ["actions-contract", "r1-source", "api03"] },
+  { id = "android-contracts", ref = "target:bkx_android#test", depends_on = ["actions-contract", "r1-source", "api03"] },
 ]
 
 

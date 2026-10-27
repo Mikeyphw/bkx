@@ -16,6 +16,8 @@ jobs:
         run: |
           go run ./cmd/devtoolgates actions
           go run ./cmd/devtoolgates r1
+      - name: API-03 root-only Skybind provider source gate
+        run: bash scripts/api03-source-check.sh
       - name: BKX Go/Kotlin maintenance seal
         run: bash ./scripts/validate.sh
 

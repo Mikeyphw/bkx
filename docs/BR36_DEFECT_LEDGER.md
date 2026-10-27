@@ -47,3 +47,22 @@ The first BR36 validation attempt was intentionally rollback-safe and exposed ad
 ## BR36 v5 Android compile-gate repair
 
 The Android final gate now also seals the Kotlin compile blockers exposed by the aggregate `bkxBr36FinalAuditSeal` run: release manifest marker strings use escaped quotes, storage location direct-usability checks are declared before first use in `discoverLocations`, and provider staging sanitizes slash, backslash, and control characters without relying on invalid Kotlin regex escapes.
+
+## API-03 / BKX native Skybind consumer (2026-10-26)
+
+- **Finding API03-BKX-01 — consumer trust boundary:** BKX's Android app-private rclone runtime and config cannot be transparently replaced with Skybind's root-private `/data/adb/skybind/config/rclone.conf`. Its existing R1 consumer is separate and strictly read-only; using the root-native config from a non-root BKX PID would either fail or create an unsafe privilege expansion.
+- **Delivered source remediation:** explicit `BKX_RCLONE_PROVIDER=skybind` for an independently authorized **root BKX CLI**, with pinned module launcher/native-engine/alias checks, root-owner and permissions checks, canonical private configuration, fail-closed invalid/ambiguous overrides, focused behavioral regression tests and read-only Devtool/CI gates. Existing app-bundled provider and R1 client unchanged.
+- **Affected repositories:** `Mikeyphw/bkx`, `Mikeyphw/skybind` (producer API-01/02 contract), and future chrootctl/BKX interoperability.
+- **Devtool improvement:** require identity-specific negative tests for optional privileged providers, not only file-presence checks; keep source-only passing results separate from Android SELinux/provider acceptance.
+- **Status:** Consumer root-CLI adapter SOURCE IMPLEMENTED. Hosted full suite, on-device principal and Skybind config reconciliation OPEN. BKX non-root Android managed-feature consumer transport is **NOT IMPLEMENTED**; R1 and bundled rclone must not be retired.
+
+
+### API03-BKX-02 — inactive Skybind module selected from direct path (2026-10-26)
+Evidence: root opt-in provider resolved `/data/adb/modules/skybind/system/bin/rclone` even when a module-manager `disable` or `remove` marker was present; direct file existence alone does not mean an active installed module. Fix: require trusted module.prop with exact `id=skybind` and refuse disabled/pending-removal markers, regression-tested with fake root-owned module fixtures. Device/root-manager qualification remains OPEN; existing app-private BKX runtime and R1 are untouched.
+
+
+### API03-BKX-03 — unprivileged Termux fixture cannot emulate root ownership (2026-10-26)
+Evidence: Devtool transaction `af27fac12cd44663ae2b5dc20e753ccf`, `internal/rcloneops/skybind_provider_test.go:38`, build artifact PASS, root provider fixture FAIL `untrusted Skybind directory owner/mode`. Root-owned production state must not be downgraded to the test UID. R3 fix: an internal fixture-only owner argument while the production resolver remains UID0-pinned, with negative production-owner test and writable-directory rejection. Status: SOURCE REPAIRED; Devtool rerun pending.
+
+### API03-BKX-04 — Go suite process I/O completion delay (2026-10-26)
+Evidence: same Devtool transaction, `go test -json -p 2 ./...` reported `exec: WaitDelay expired before I/O complete` for internal/config, internal/publiccli and internal/services. May involve inherited child-process descriptors or test-runner output lifetime; unproven. Recommended: retain full tests as mandatory, isolate package subprocesses/pipe inheritance and run a serial or package-level diagnostic with exact receipt. No skip flags or silent success classification. Status: OPEN; independent from provider fixture.
